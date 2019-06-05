@@ -39,6 +39,7 @@ DT_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 class VariableValue(models.Model):
     _name = "base.variable_value"
+    _description="Exceptions: variable value"
 
     frame = fields.Many2one('base.frame', 'Frame',
                             on_delete="cascade")
@@ -48,6 +49,7 @@ class VariableValue(models.Model):
 
 class Frame(models.Model):
     _name = "base.frame"
+    _description="Exceptions: call frame"
 
     gexception = fields.Many2one('base.general_exception', 'Exception',
                                  on_delete="cascade")
@@ -72,6 +74,7 @@ class Frame(models.Model):
 
 class GeneralException (models.Model):
     _name = "base.general_exception"
+    _description="Exceptions: exception log"
     _order = "timestamp desc"
 
     name = fields.Char('ID', readonly=True)
