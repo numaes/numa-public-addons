@@ -77,7 +77,7 @@ class GeneralException (models.Model):
     _description="Exceptions: exception log"
     _order = "timestamp desc"
 
-    name = fields.Char('ID', readonly=True)
+    name = fields.Char('Identification', readonly=True)
     service = fields.Char('Service', readonly=True)
     exception = fields.Text('Exception', readonly=True)
     method = fields.Char('Method', readonly=True)
