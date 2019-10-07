@@ -22,7 +22,7 @@ msgid "<p class=\"oe_view_nocontent_create\">\n"
 "              </p>\n"
 "            "
 msgstr "<p class=\"oe_view_nocontent_create\">\n"
-"                  Exceptions recorded. \n"
+"                  Excepciones registradas \n"
 "              </p>\n"
 "            "
 
@@ -60,7 +60,7 @@ msgstr "Exceptions"
 #. module: numa_exceptions
 #: field:base.frame,file_name:0
 msgid "File name"
-msgstr "File name"
+msgstr "Nombre del archivo"
 
 #. module: numa_exceptions
 #: view:base.frame:0

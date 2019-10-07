@@ -22,7 +22,6 @@
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, ValidationError
-from odoo.tools import DEFAULT_SERVER_DATETIME_FORMAT
 from odoo import SUPERUSER_ID
 from odoo.loglevels import exception_to_unicode, ustr
 
@@ -37,9 +36,10 @@ _logger=logging.getLogger(__name__)
 
 DT_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+
 class VariableValue(models.Model):
     _name = "base.variable_value"
-    _description="Exceptions: variable value"
+    _description = "Exceptions: variable value"
 
     frame = fields.Many2one('base.frame', 'Frame',
                             on_delete="cascade")
@@ -47,9 +47,10 @@ class VariableValue(models.Model):
     name = fields.Char('Name', readonly=True)
     value = fields.Text('Value', readonly=True)
 
+
 class Frame(models.Model):
     _name = "base.frame"
-    _description="Exceptions: call frame"
+    _description = "Exceptions: call frame"
 
     gexception = fields.Many2one('base.general_exception', 'Exception',
                                  on_delete="cascade")
@@ -67,14 +68,15 @@ class Frame(models.Model):
 
     @api.model
     def name_search(self, name, args=None, operator='ilike', context=None, limit=80):
-        frames = self.search(['|', ('file_name', operator, name), ('line_number', operator,name)],
+        frames = self.search(['|', ('file_name', operator, name), ('line_number', operator, name)],
                              limit=limit)
                           
         return frames.name_get()
 
+
 class GeneralException (models.Model):
     _name = "base.general_exception"
-    _description="Exceptions: exception log"
+    _description = "Exceptions: exception log"
     _order = "timestamp desc"
 
     name = fields.Char('Identification', readonly=True)
@@ -104,18 +106,19 @@ class GeneralException (models.Model):
             'view_type': 'form',
             'res_model': 'base.frame',
             'type': 'ir.actions.act_window',
-            'domain': [('gexception','=',ge.id)],
-            'context': dict(default_gexception=ge.id),
+            'domain': [('gexception', '=', ge.id)],
             'nodestroy': True,
-            'context': False,
         }
         
     def action_clean(self):
         now = datetime.datetime.utcnow()
         one_month_before_dt = now - datetime.timedelta(days=30)
         one_month_before = one_month_before_dt.strftime(DT_FORMAT)
-        to_delete = super(GeneralException, self).search([('do_not_purge','!=',True),
-                                         ('timestamp','<',one_month_before)])
+        to_delete = super(GeneralException, self).search(
+            [('do_not_purge', '!=', True),
+             ('timestamp', '<', one_month_before)
+             ]
+        )
         _logger.info("Cleaning old exceptions. %d eligible exceptions found" % len(to_delete))
         if to_delete:
             to_delete.unlink()
@@ -126,8 +129,8 @@ class GeneralException (models.Model):
     def new_exception(self, e, service_name='unknown', method='unknown', params=None):
         register_exception(service_name, method, params, self.env.cr.dbname, self.env.user.id, e)
 
-def register_exception(service_name, method, params, db, uid, e):
 
+def register_exception(service_name, method, params, db, uid, e):
     if not db:
         return None
 
@@ -150,10 +153,11 @@ def register_exception(service_name, method, params, db, uid, e):
                 while tb:
                     frame = tb.tb_frame
                     local_vars = []
-                    output = ''
+                    output = '<pre>\n'
                     try:
                         if count >= 0:
-                            local_vars = [(0,0,{'name': ustr(k), 'value': ustr(v)}) for k,v in frame.f_locals.items()]
+                            local_vars = [(0, 0, {'name': ustr(k), 'value': ustr(v)})
+                                          for k, v in frame.f_locals.items()]
                             local_vars.sort(key=lambda x: x[2]['name'])
                             seq = 1
                             for lv in local_vars:
@@ -161,16 +165,22 @@ def register_exception(service_name, method, params, db, uid, e):
                                 seq += 1
                             lines, lineno = inspect.getsourcelines(frame)
                             for l in lines:
-                                if lineno >= (frame.f_lineno - 10) and lineno <= (frame.f_lineno + 10):
-                                    output += u"%s%d: %s" % (frame.f_lineno == lineno and '*' or ' ', lineno, l)
+                                if (frame.f_lineno - 10) < lineno < (frame.f_lineno + 10):
+                                    if frame.f_lineno == lineno:
+                                        fmt = '</pre><b><pre>%5d: %s</pre></b><pre>'
+                                    else:
+                                        fmt = '%5d: %s'
+                                    output += fmt % (lineno, l)
                                 lineno += 1
                     except Exception as process_exception:
                         output += "\nEXCEPTION DURING PROCESSING: %s" % exception_to_unicode(process_exception)
 
-                    frames.append((0,0, {'file_name': frame.f_code.co_filename,
-                                         'line_number': frame.f_lineno,
-                                         'src_code': output,
-                                         'locals': local_vars}))
+                    output += '</pre>'
+                    frames.append(
+                        (0, 0, {'file_name': frame.f_code.co_filename,
+                                'line_number': frame.f_lineno,
+                                'src_code': output,
+                                'locals': local_vars}))
                     count += 1
                     tb = tb.tb_next
                 frames.reverse()
@@ -199,8 +209,10 @@ def register_exception(service_name, method, params, db, uid, e):
 
     cr.close()
     return None
-    
+
+
 old_dispatch_rpc = odoo.http.dispatch_rpc
+
 
 def new_dispatch_rpc(service_name, method, params):
     global old_dispatch_rpc
@@ -223,9 +235,11 @@ def new_dispatch_rpc(service_name, method, params):
 
         raise e
 
+
 odoo.http.dispatch_rpc = new_dispatch_rpc
 
 old_json_dispatch = odoo.http.JsonRequest.dispatch
+
 
 def new_json_dispatch(self):
     global old_json_dispatch
@@ -253,9 +267,11 @@ def new_json_dispatch(self):
 
         raise e
 
+
 odoo.http.JsonRequest.dispatch = new_json_dispatch
 
 old_json_handle_exception = odoo.http.JsonRequest._handle_exception
+
 
 def new_json_handle_exception(self, exception):
     global old_json_handle_exception
@@ -279,5 +295,6 @@ def new_json_handle_exception(self, exception):
             exception = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
     return old_json_handle_exception(self, exception)
+
 
 odoo.http.JsonRequest._handle_exception = new_json_handle_exception
