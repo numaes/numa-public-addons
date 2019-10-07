@@ -3,28 +3,33 @@
     'name': "numa_product_extension",
 
     'summary': """
-        Short (1 phrase/line) summary of the module's purpose, used as
-        subtitle on modules listing or apps.openerp.com""",
+        Product extensions by NUMA""",
 
     'description': """
-        Long description of module's purpose
+        Base extensions to give more flexibility to products and pricelists
+        - The possibility to create product where the price is computed per weight or
+          other product attributes is its properly extended
+        - Free currency to products prices and costs
+        - Structured pricelist, easily extendend in dependant modules
+        - Compute cost based on supplier's prices
+        - Supplier's pricelists
     """,
 
-    'author': "My Company",
-    'website': "http://www.yourcompany.com",
+    'author': "NUMA Extreme Systems",
+    'website': "http://www.numaes.com",
 
     # Categories can be used to filter modules in modules listing
     # Check https://github.com/odoo/odoo/blob/12.0/odoo/addons/base/data/ir_module_category_data.xml
     # for the full list
-    'category': 'Uncategorized',
+    'category': 'Product',
     'version': '0.1',
 
     # any module necessary for this one to work correctly
-    'depends': ['base'],
+    'depends': ['base', 'product'],
 
     # always loaded
     'data': [
-        # 'security/ir.model.access.csv',
+        'security/ir.model.access.csv',
         'views/views.xml',
         'views/templates.xml',
     ],
