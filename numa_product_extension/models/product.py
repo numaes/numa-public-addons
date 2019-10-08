@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 
-from odoo import models, fields, api
-
 from odoo import models, fields, api, tools
 from odoo.exceptions import UserError
-from itertools import chain
+
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
@@ -27,11 +25,10 @@ class ProductTemplate(models.Model):
     )
 
     list_price_currency = fields.Many2one('res.currency', 'List price currency',
-                                    default=_get_default_currency, required=True)
+                                          default=_get_default_currency, required=True)
     cost_currency = fields.Many2one('res.currency', 'Cost currency',
                                     default=_get_default_currency, required=True)
 
-    @api.multi
     def _compute_currency_id(self):
         for template in self:
             if template.list_price_currency:
@@ -51,12 +48,10 @@ class ProductTemplate(models.Model):
 class ProductProduct(models.Model):
     _inherit = 'product.product'
 
-    @api.multi
     def _compute_currency_id(self):
         for product in self:
             product.currency_id = product.product_tmpl_id.company_id.id
 
-    @api.multi
     def price_compute(self, price_type, uom=False, currency=False, company=False):
         prices = super(ProductProduct, self).price_compute(price_type,
                                                            uom=uom,
@@ -90,9 +85,9 @@ class ProductProduct(models.Model):
 class ProductPricelist(models.Model):
     _inherit = 'product.pricelist'
 
-    @api.multi
     def _compute_price_rule(self, products_qty_partner, date=False, uom_id=False):
-        """ Low-level method - Mono pricelist, multi products
+        r"""
+        Low-level method - Mono pricelist, multi products
         Returns: dict{product_id: (price, suitable_rule) for the given pricelist}
 
         If date in context: Date of the pricelist (%Y-%m-%d)
@@ -100,6 +95,7 @@ class ProductPricelist(models.Model):
             :param products_qty_partner: list of typles products, quantity, partner
             :param datetime date: validity date
             :param ID uom_id: intermediate unit of measure
+
         """
         self.ensure_one()
         if not date:
@@ -109,7 +105,8 @@ class ProductPricelist(models.Model):
         if uom_id:
             # rebrowse with uom if given
             products = [product.with_context(uom=uom_id) for product, qty, partner in products_qty_partner]
-            products_qty_partner = [(products[index], data_struct[1], data_struct[2]) for index, data_struct in enumerate(products_qty_partner)]
+            products_qty_partner = [(products[index], data_struct[1], data_struct[2])
+                                    for index, data_struct in enumerate(products_qty_partner)]
         else:
             products = [product for product, qty, partner in products_qty_partner]
 
@@ -127,30 +124,27 @@ class ProductPricelist(models.Model):
         results = {}
         for product, qty, partner in products_qty_partner:
             results[product.id] = 0.0
-            suitable_rule = False
-
             # Final unit price is computed according to `qty` in the `qty_uom_id` UoM.
             # An intermediary unit price may be computed according to a different UoM, in
             # which case the price_uom_id contains that UoM.
             # The final price will be converted to match `qty_uom_id`.
+
             qty_uom_id = self._context.get('uom') or product.uom_id.id
-            price_uom_id = product.uom_id.id
             qty_in_product_uom = qty
             if qty_uom_id != product.uom_id.id:
                 try:
-                    qty_in_product_uom = self.env['uom.uom'].browse([self._context['uom']])._compute_quantity(qty, product.uom_id)
+                    qty_in_product_uom = self.env['uom.uom'].browse([self._context['uom']]).\
+                        _compute_quantity(qty, product.uom_id)
                 except UserError:
                     # Ignored - incompatible UoM in context, use default product UoM
                     pass
 
             # if Public user try to access standard price from website sale, need to call price_compute.
             # TDE SURPRISE: product can actually be a template
-            price = product.price_compute('list_price')[product.id]
-
             price_uom = self.env['uom.uom'].browse([qty_uom_id])
             for rule in items:
                 if rule.is_appliable(product, qty, partner):
-                    price = rule.compute_price(product, qty, partner, price_uom, qty_in_product_uom, date)
+                    price = rule.internal_compute_price(product, qty, partner, price_uom, qty_in_product_uom, date)
                     if price:
                         if 'basePricelistComputation' not in self.env.context:
                             price = product.convert_to_price_kind(price)
@@ -196,7 +190,7 @@ class PricelistItem(models.Model):
 
         return True
 
-    def compute_price(self, product, qty, partner, price_uom, qty_in_product_uom, date):
+    def internal_compute_price(self, product, qty, partner, price_uom, qty_in_product_uom, date):
         self.ensure_one()
 
         rule = self
@@ -215,6 +209,7 @@ class PricelistItem(models.Model):
         else:
             # if base option is public price take sale price else cost price of product
             # price_compute returns the price in the context UoM, i.e. qty_uom_id
+
             price = product.price_compute(rule.base)[product.id]
 
         convert_to_price_uom = (lambda price: product.uom_id._compute_price(price, price_uom))

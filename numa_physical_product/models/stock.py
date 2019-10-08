@@ -20,8 +20,6 @@
 ##############################################################################
 
 from odoo import models, fields, api
-from odoo.exceptions import UserError, ValidationError
-import odoo.addons.decimal_precision as dp
 import logging
 _logger = logging.getLogger(__name__)
 
@@ -56,11 +54,10 @@ class StockPicking(models.Model):
 class StockMove(models.Model):
     _inherit = 'stock.move'
 
-    unit_weight = fields.Float('Unit item weight', digits=dp.get_precision('Stock Weight'))
-    total_weight = fields.Float('Total items weight', digits=dp.get_precision('Stock Weight'))
-    unit_volume = fields.Float('Unit item volume', digits=dp.get_precision('Stock Volume'))
-    total_volume = fields.Float('Total items volume', digits=dp.get_precision('Stock Volume'))
-
+    unit_weight = fields.Float('Unit item weight', digits='Stock Weight')
+    total_weight = fields.Float('Total items weight', digits='Stock Weight')
+    unit_volume = fields.Float('Unit item volume', digits='Stock Volume')
+    total_volume = fields.Float('Total items volume', digits='Stock Volume')
 
     @api.onchange('product_id')
     @api.depends('product_id')
