@@ -79,12 +79,16 @@ class BackgroundJob(models.Model):
             del newVals['state']
 
         newJob = super(BackgroundJob, self).create(newVals)
+        newJobId = newJob.id
+
+        self.env.cr.commit()
 
         BackgroundThread(self.env.cr.dbname,
                          self.env.user.id,
                          vals['name'],
-                         newJob.id,
+                         newJobId,
                          context=self.env.context)
+
         return newJob
 
     def refresh_state(self):
@@ -103,143 +107,154 @@ class BackgroundJob(models.Model):
                 ended_on=str(job.ended_on),
                 aborted_on=str(job.aborted_on),
             )
-            _logger.info("Mandando state %s" % job.state)
+            self.env.cr.commit()
             busModel.sendone(channel, message)
             self.env.cr.commit()
 
     def start(self, statusMsg=None):
         ids = [o.id for o in self]
+        self.flush()
 
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
-            with api.Environment.manage():
-                env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-                bkJobObj = env['res.background_job']
-                for job in bkJobObj.browse(ids):
-                    if job.state == 'init':
-                        job.write({
-                            'started_on': fields.Datetime.now(),
-                            'state': 'started',
-                            'current_status': statusMsg or _('Started'),
-                            'error': False,
-                            'completion_rate': 0,
-                        })
-                        cr.commit()
-                        job.refresh_state()
+            env = api.Environment(cr, SUPERUSER_ID, self.env.context)
+            bkJobObj = env['res.background_job']
+            bkJobObj.invalidate_cache()
+            for job in bkJobObj.browse(ids):
+                if job.state == 'init':
+                    job.write({
+                        'started_on': fields.Datetime.now(),
+                        'state': 'started',
+                        'current_status': statusMsg or _('Started'),
+                        'error': False,
+                        'completion_rate': 0,
+                    })
+                    job.flush()
+                cr.commit()
+                job.refresh_state()
             cr.close()
 
     def end(self, statusMsg=None, errorMsg=None):
         ids = [o.id for o in self]
+        self.flush()
 
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
-            with api.Environment.manage():
-                env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-                bkJobObj = env['res.background_job']
-                for job in bkJobObj.browse(ids):
-                    if job.state == 'started':
-                        if errorMsg is not None:
-                            job.error = errorMsg
+            env = api.Environment(cr, SUPERUSER_ID, self.env.context)
+            bkJobObj = env['res.background_job']
+            bkJobObj.invalidate_cache()
+            for job in bkJobObj.browse(ids):
+                if job.state not in ['ended', 'aborted']:
+                    if errorMsg is not None:
+                        job.error = errorMsg
 
-                        job.write({
-                            'ended_on': fields.Datetime.now(),
-                            'current_status': statusMsg or '',
-                            'state': 'ended',
-                        })
-                        cr.commit()
-                        job.refresh_state()
+                    job.write({
+                        'ended_on': fields.Datetime.now(),
+                        'current_status': statusMsg or '',
+                        'state': 'ended',
+                    })
+                    job.flush()
+                cr.commit()
+                job.refresh_state()
             cr.close()
 
     def abort(self, statusMsg=None, errorMsg=None):
         ids = [o.id for o in self]
+        self.flush()
 
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
-            with api.Environment.manage():
-                env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-                bkJobObj = env['res.background_job']
-                for job in bkJobObj.browse(ids):
-                    if job.state in ('started', 'aborting'):
-                        if statusMsg is not None:
-                            job.current_status = statusMsg
-                        if errorMsg is not None:
-                            job.error = errorMsg
+            env = api.Environment(cr, SUPERUSER_ID, self.env.context)
+            bkJobObj = env['res.background_job']
+            bkJobObj.invalidate_cache()
+            for job in bkJobObj.browse(ids):
+                if job.state in ('started', 'aborting'):
+                    if statusMsg is not None:
+                        job.current_status = statusMsg
+                    if errorMsg is not None:
+                        job.error = errorMsg
 
-                        job.write({
-                            'aborted_on': fields.Datetime.now(),
-                            'state': 'aborted',
-                        })
-                        cr.commit()
-                        job.refresh_state()
+                    job.write({
+                        'aborted_on': fields.Datetime.now(),
+                        'state': 'aborted',
+                    })
+                    job.flush()
+                cr.commit()
+                job.refresh_state()
             cr.close()
 
     def try_to_abort(self, statusMsg=None):
         ids = [o.id for o in self]
+        self.flush()
 
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
-            with api.Environment.manage():
-                env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-                bkJobObj = env['res.background_job']
-                for job in bkJobObj.browse(ids):
-                    if job.state == 'started':
-                        job.write({
-                            'aborted_on': fields.Datetime.now(),
-                            'current_status': statusMsg or _('Aborting ...'),
-                            'state': 'aborting',
-                            'error': False,
-                        })
-                        cr.commit()
-                        job.refresh_state()
-
+            env = api.Environment(cr, SUPERUSER_ID, self.env.context)
+            bkJobObj = env['res.background_job']
+            bkJobObj.invalidate_cache()
+            for job in bkJobObj.browse(ids):
+                if job.state == 'started':
+                    job.write({
+                        'aborted_on': fields.Datetime.now(),
+                        'current_status': statusMsg or _('Aborting ...'),
+                        'state': 'aborting',
+                        'error': False,
+                    })
+                    job.flush()
+                cr.commit()
+                job.refresh_state()
             cr.close()
 
     def was_aborted(self):
         self.ensure_one()
+        self.flush()
+
         bkjId = self.id
 
         wasAborted = True
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
-            with api.Environment.manage():
-                env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-                bkJobObj = env['res.background_job']
-                job = bkJobObj.browse(bkjId)
-                wasAborted = job.state not in ['started']
-                cr.commit()
+            env = api.Environment(cr, SUPERUSER_ID, self.env.context)
+            bkJobObj = env['res.background_job']
+            bkJobObj.invalidate_cache()
+            job = bkJobObj.browse(bkjId)
+            wasAborted = job.state not in ['started']
+            cr.commit()
             cr.close()
 
-        _logger.info("Was aborted %s" % wasAborted)
         return wasAborted
 
     def update_status(self, rate=None, statusMsg=None, errorMsg=None):
         ids = [o.id for o in self]
+        self.flush()
 
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
-            with api.Environment.manage():
-                env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-                bkJobObj = env['res.background_job']
-                for job in bkJobObj.browse(ids):
-                    if job.state == 'started':
-                        if statusMsg is not None:
-                            job.current_status = statusMsg
-                        if errorMsg is not None:
-                            job.error = errorMsg
-                        if rate is not None:
-                            job.completion_rate = rate
-                    cr.commit()
-                    job.refresh_state()
+            env = api.Environment(cr, SUPERUSER_ID, self.env.context)
+            bkJobObj = env['res.background_job']
+            bkJobObj.invalidate_cache()
+            for job in bkJobObj.browse(ids):
+                if job.state == 'started':
+                    if statusMsg is not None:
+                        job.current_status = statusMsg
+                    if errorMsg is not None:
+                        job.error = errorMsg
+                    if rate is not None:
+                        job.completion_rate = rate
+                    job.flush()
+                cr.commit()
+                job.refresh_state()
             cr.close()
 
     def get_current_state(self):
         self.ensure_one()
+        self.flush()
 
         bjId = self.id
         state = None
@@ -248,12 +263,12 @@ class BackgroundJob(models.Model):
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
-            with api.Environment.manage():
-                env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-                bkJobObj = env['res.background_job']
-                job = bkJobObj.browse(bjId)
-                state = job.state
-                completionRate = job.completion_rate
+            env = api.Environment(cr, SUPERUSER_ID, self.env.context)
+            bkJobObj = env['res.background_job']
+            bkJobObj.invalidate_cache()
+            job = bkJobObj.browse(bjId)
+            state = job.state
+            completionRate = job.completion_rate
             cr.commit()
             cr.close()
 
@@ -286,13 +301,12 @@ class BackgroundThread(threading.Thread):
         self.start()
 
     def run(self):
-
-        attemptCount = 0
-        while attemptCount < 10:
-            db = odoo.modules.registry.Registry(self.dbName)
-            if db:
-                cr = db.cursor()
-                with api.Environment.manage():
+        with api.Environment.manage():
+            attemptCount = 0
+            while attemptCount < 10:
+                db = odoo.modules.registry.Registry(self.dbName)
+                if db:
+                    cr = db.cursor()
                     env = api.Environment(cr, self.uid, self.context)
                     bkJobObj = env['res.background_job']
                     bkJob = bkJobObj.browse(self.jobId)
@@ -310,15 +324,9 @@ class BackgroundThread(threading.Thread):
 
                                 if state == 'started' and completionRate >= 100:
                                     bkJob.end()
-
-                                if state in ['init', 'started', 'ended']:
-                                    cr.commit()
-                                else:
-                                    cr.rollback()
                             else:
                                 bkJob.abort(
-                                    statusMsg="It was not possible to start the process after 10 attempts!")
-                            cr.close()
+                                    statusMsg="No method defined!")
                         except Exception as e:
                             exc_type, exc_value, exc_traceback = sys.exc_info()
                             exceptionLines = traceback.format_exception(exc_type, exc_value, exc_traceback)
@@ -330,11 +338,11 @@ class BackgroundThread(threading.Thread):
                                 statusMsg=u'Unexpected exception!',
                                 errorMsg='\n'.join(exceptionLines))
 
-                            cr.close()
-
-                        return
+                        cr.commit()
+                        cr.close()
+                        break
                     else:
+                        cr.rollback()
+                        cr.close()
                         attemptCount += 1
                         time.sleep(1)
-
-                cr.close()

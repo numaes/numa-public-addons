@@ -54,8 +54,11 @@ class BackgroundJobTest(models.TransientModel):
             'type': 'ir.actions.act_window',
         }
 
-    def action_start(self):
+    def action_start(self, run_type=None):
         bjt = self[0]
+
+        bjt.state = 'running'
+        bjt.run_type = run_type if run_type else 'normal'
 
         bjt.job = self.env["res.background_job"].create({
             'name': 'Prueba',
@@ -65,8 +68,6 @@ class BackgroundJobTest(models.TransientModel):
             'reference_id': bjt.id,
         })
 
-        bjt.state = 'running'
-        bjt.run_type = 'normal'
         return {
             'name': _("Running test"),
             'view_mode': 'form',
@@ -79,14 +80,14 @@ class BackgroundJobTest(models.TransientModel):
 
     def action_start_with_error(self):
         bjt = self[0]
-        action = bjt.action_start()
-        bjt.run_type = 'with_error'
+        action = bjt.action_start(run_type='with_error')
+        action['name'] = _("Running test with error")
         return action
 
     def action_start_with_exception(self):
         bjt = self[0]
-        action = bjt.action_start()
-        bjt.run_type = 'with_exception'
+        action = bjt.action_start(run_type='with_exception')
+        action['name'] = _("Running test with exception")
         return action
 
     def action_abort(self):
@@ -116,19 +117,19 @@ class BackgroundJobTest(models.TransientModel):
         wizard = self.env['res.background_job_test'].browse(bkJob.reference_id)
 
         while count < 10:
+            if bkJob.was_aborted():
+                bkJob.abort(errorMsg=u'Aborted by user')
+                break
+
             count += 1
             _logger.info("Job count: %d" % count)
 
             if wizard.run_type == 'with_error' and count == 6:
-                bkJob.try_to_abort()
                 bkJob.update_status(errorMsg=u'Error forzado')
                 break
             elif wizard.run_type == 'with_exception' and count == 7:
                 a = 7/0
 
-            if bkJob.was_aborted():
-                bkJob.abort(errorMsg=u'Aborted by user')
-                break
             bkJob.update_status(rate=10 * count,
                                 statusMsg="Current counter: %d" % count)
             time.sleep(2)
