@@ -1,0 +1,28 @@
+.numa_bank th {vertical-align: bottom !important;}
+.numa_bank [data-id="image"] {width: 50px;}
+.numa_bank [data-id="bic"] {width: 50px;}
+.numa_bank [data-id="clearing_propio"] {width: 50px;}
+
+.numa_bank_branch th {vertical-align: bottom !important;}
+.numa_bank_branch [data-id="image"] {width: 50px;}
+.numa_bank_branch [data-id="branch_code"] {width: 50px;}
+.numa_bank_branch [data-id="clearing_en_sucursal"] {width: 50px;}
+
+.numa_check_notebook th {vertical-align: bottom !important;}
+.numa_check_notebook [data-id="image"] {width: 50px;}
+
+.numa_own_check th {vertical-align: bottom !important;}
+.numa_own_check [data-id="image"] {width: 50px;}
+.numa_own_check [data-id="currency_id"] {width: 50px;}
+.numa_own_check [data-id="check_number"] {width: 100px;}
+
+.numa_fiscal_periods th {vertical-align: bottom !important;}
+.numa_fiscal_periods [data-id="fiscalyear_id"] {width: 100px;}
+.numa_fiscal_periods [data-id="code"] {width: 100px;}
+.numa_fiscal_periods [data-id="special"] {width: 50px;}
+.numa_fiscal_periods [data-id="date_start"] {width: 100px;}
+.numa_fiscal_periods [data-id="date_end"] {width: 100px;}
+.numa_fiscal_periods [data-id="state"] {width: 100px;}
+.numa_fiscal_periods [data-field="action_open"] {width: 30px;}
+.numa_fiscal_periods [data-field="action_process"] {width: 30px;}
+

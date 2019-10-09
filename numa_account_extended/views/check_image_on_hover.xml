@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+      <data>
+            <template id="assets_backend" name="project assets" inherit_id="web.assets_backend">
+                  <xpath expr="." position="inside">
+                        <script type="text/javascript" src="/numa_account_extended/static/src/js/check_image_on_hover.js"></script>
+                  </xpath>
+            </template>
+
+            <record id="numa_check_image" model="ir.ui.view">
+                <field name="name">numa.check.hover.tree</field>
+                <field name="model">account.own_check</field>
+                <field name="inherit_id" ref="numa_own_check_tree_view"/>
+                <field name="arch" type="xml">
+                    <xpath expr="//field[@name='front_image']" position="replace">
+                        <field name="front_image" widget="image" height="30" class="img-circle"></field>
+                    </xpath>
+                </field>
+		    </record>
+      </data>
+</odoo>

@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<openerp>
+    <data>
+        <!--
+        <record id="view_partner_form" model="ir.ui.view">
+            <field name="name">Partner with supplier's pricelist</field>
+            <field name="model">res.partner</field>
+            <field name="inherit_id" ref="base.view_partner_form" />
+            <field name="arch" type="xml">
+                <data>
+                    <group name="purchase" position="inside">
+                        <field name="supplier_pricelist_id"
+                               domain="[('for_purchase','=',True)]"
+                               default="{'default_for_purchase': True, 'default_for_sale': False}"/>
+                    </group>
+                </data>
+            </field>
+        </record>
+        -->
+
+        <record id="view_partner_supplier_pricelist_form" model="ir.ui.view">
+            <field name="name">Supplier Pricelist</field>
+            <field name="model">res.partner</field>
+       		<field name="inherit_id" ref="base.view_partner_form"/>
+            <field name="arch" type="xml">
+				<xpath expr="//field[@name='active']" position="after">	
+					<button class="oe_inline oe_stat_button" name="action_show_supplier_pricelist" type="object" icon="fa-list" attrs="{'invisible': [('supplier','=',False)]}">
+                        <field string="Precios Compra" name="supplier_pricelist_count" widget="statinfo" />
+                    </button>
+				</xpath>
+            </field>
+        </record>
+
+    </data>
+</openerp>

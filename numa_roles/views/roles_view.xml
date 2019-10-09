@@ -1,0 +1,84 @@
+<?xml version="1.0"?>
+<openerp>
+    <data>
+
+        <record id="view_groups_search" model="ir.ui.view">
+            <field name="name">res.groups.search with roles</field>
+            <field name="model">res.groups</field>
+            <field name="inherit_id" ref="base.view_groups_search" />
+            <field name="arch" type="xml">
+                <field name="share" position="after">
+                    <field name="is_role" />
+                </field>
+            </field>
+        </record>
+        <record id="view_groups_form" model="ir.ui.view">
+            <field name="name">res.groups.form with roles</field>
+            <field name="model">res.groups</field>
+            <field name="inherit_id" ref="base.view_groups_form" />
+            <field name="arch" type="xml">
+                <field name="share" position="after">
+                    <field name="is_role" />
+                    <field name="type_ids" widget="many2many_tags"/>
+                </field>
+            </field>
+        </record>
+        <record id="action_res_roles" model="ir.actions.act_window">
+            <field name="name">Roles</field>
+            <field name="type">ir.actions.act_window</field>
+            <field name="res_model">res.groups</field>
+            <field name="view_type">form</field>
+            <field name="domain">[('is_role','=',True)]</field>
+            <field name="context">{'default_is_role': 1, 'search_default_no_share': 1}</field>
+            <field name="help">A role is special group that express the permissions needed to perform a function in the company</field>
+        </record>
+
+        <menuitem action="action_res_roles" id="menu_action_res_roles" parent="base.menu_users" groups="base.group_no_one" sequence="5"/>
+
+        <record id="view_users_form" model="ir.ui.view">
+            <field name="name">res.users.form with roles</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_form" />
+            <field name="arch" type="xml">
+                <field name="groups_id" position="attributes">
+                    <attribute name="domain" >[('is_role','=',True)]</attribute>
+                </field>
+            </field>
+        </record>
+
+        <record id="res_groups_search_view" model="ir.ui.view">
+            <field name="name">Groups Type Search</field>
+            <field name="model">res.groups</field>
+            <field name="inherit_id" ref="base.view_groups_search"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='name']" position="after">
+					<field name="type_ids"/>
+                </xpath>
+            </field>
+        </record>
+
+        <record id="res_groups_type_tree_view" model="ir.ui.view" >
+            <field name="name">Groups Type Tree</field>
+            <field name="model">res.groups_type</field>
+            <field name="arch" type="xml">
+				<tree editable="bottom">
+					<field name="name"/>
+					<field name="description"/>
+                    <field name="active"/>
+				</tree>
+            </field>
+        </record>
+
+
+        <record id="action_res_groups_type" model="ir.actions.act_window">
+            <field name="name">Groups Type</field>
+            <field name="type">ir.actions.act_window</field>
+            <field name="res_model">res.groups_type</field>
+            <field name="view_type">form</field>
+            <field name="help">A type of group allows grouping them for better identification</field>
+        </record>
+
+        <menuitem action="action_res_groups_type" id="menu_action_res_groups_type" parent="base.menu_users" groups="base.group_no_one" sequence="4"/>
+
+    </data>
+</openerp>

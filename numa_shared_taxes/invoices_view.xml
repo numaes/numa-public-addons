@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<openerp>
+    <data>
+    
+        <record id="invoice_form" model="ir.ui.view">
+            <field name="name">NUMA Shared taxes invoice form</field>
+            <field name="model">account.invoice</field>
+            <field name="type">form</field>
+            <field name="inherit_id" ref="account.invoice_form" />
+            <field name="arch" type="xml">
+                <data>
+                    <xpath expr="//field[@name='invoice_line']//field[@name='invoice_line_tax_id']" position="attributes" >
+                        <attribute name="domain" >['|',('company_id', '=', parent.company_id),('company_id','=',False),('parent_id','=',False)]</attribute>
+                    </xpath>                
+                </data>
+            </field>
+        </record>
+
+        <record id="invoice_supplier_form" model="ir.ui.view">
+            <field name="name">NUMA Shared taxes supplier invoice form</field>
+            <field name="model">account.invoice</field>
+            <field name="type">form</field>
+            <field name="inherit_id" ref="account.invoice_supplier_form" />
+            <field name="arch" type="xml">
+                <data>
+                    <xpath expr="//field[@name='invoice_line']//field[@name='invoice_line_tax_id']" position="attributes" >
+                        <attribute name="domain" >['|',('company_id', '=', parent.company_id),('company_id','=',False),('parent_id','=',False)]</attribute>
+                    </xpath>                
+                </data>
+            </field>
+        </record>
+
+
+    </data>
+</openerp>

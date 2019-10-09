@@ -1,0 +1,420 @@
+<?xml version="1.0" ?>
+<openerp>
+    <data>
+
+        <record id="numa_partner_extended_form2_view" model="ir.ui.view">
+            <field name="name">Partner Extended Form</field>
+            <field name="model">res.partner</field>
+			<field name="inherit_id" ref="product.view_partner_property_form"/>
+            <field name="arch" type="xml">
+				<xpath expr="//field[@name='property_product_pricelist']" position="after">
+				    <field name="property_supplier_product_pricelist"/>
+				</xpath>
+			</field>
+		</record>
+
+        <record id="numa_partner_parent_extended_form_view" model="ir.ui.view">
+            <field name="name">Partner Extended Form</field>
+            <field name="model">res.partner</field>
+			<field name="inherit_id" ref="base.view_partner_form"/>
+            <field name="arch" type="xml">
+				<xpath expr="//field[@name='parent_id']" position="attributes">
+					<attribute name="attrs">{}</attribute>
+				</xpath>
+			</field>
+		</record>
+
+        <record id="numa_partner_extended_form2_view" model="ir.ui.view">
+            <field name="name">Partner Extended Form2</field>
+            <field name="model">res.partner</field>
+			<field name="inherit_id" ref="account.partner_view_buttons"/>
+            <field name="arch" type="xml">
+				<xpath expr="//group[@name='banks']" position="attributes">
+					<attribute name="invisible">1</attribute>
+				</xpath>
+			</field>
+		</record>
+
+        <record id="numa_partner_extended_form_view" model="ir.ui.view">
+            <field name="name">Partner Extended Form</field>
+            <field name="model">res.partner</field>
+			<field name="inherit_id" ref="account.view_partner_property_form"/>
+            <field name="arch" type="xml">
+                <div name="button_box" position="inside">
+                    <button type="object" class="oe_stat_button" icon="fa-money" name="action_current_account">
+                        <div class="o_form_field o_stat_info">
+                            <span class="o_stat_text">Cuenta Corriente</span>
+                        </div>
+                    </button>
+				</div>
+
+				<xpath expr="//group[@name='fiscal_information']" position="attributes">
+					<attribute name="invisible">1</attribute>
+				</xpath>
+				<xpath expr="//field[@name='company_type']" position="replace">
+				    <field name="company_type" options="{'horizontal': true}" widget="radio"/>
+				</xpath>
+				<xpath expr="//field[@name='parent_id']" position="attributes">
+					<attribute name="invisible">0</attribute>
+				</xpath>
+				<xpath expr="//field[@name='property_payment_term_id']" position="before">
+					<field name="profile_payment_customer_id" widget="selection"/>
+				</xpath>
+				<xpath expr="//field[@name='property_supplier_payment_term_id']" position="before">
+					<field name="profile_payment_supplier_id" widget="selection"/>
+				</xpath>
+				<xpath expr="//field[@name='property_payment_term_id']" position="replace">
+					<field name="property_payment_term_id" widget="selection" domain="[('profile_payment_ids','=',profile_payment_customer_id)]"/>
+				</xpath>
+				<xpath expr="//field[@name='property_supplier_payment_term_id']" position="replace">
+					<field name="property_supplier_payment_term_id" widget="selection" domain="[('profile_payment_ids','=',profile_payment_supplier_id)]"/>
+				</xpath>
+				<xpath expr="//group[@name='acc_purchase']" position="after">
+					<group string="Limit Credit">
+						<field name="credit_profile_customer"/>
+						<field name="credit_current_account_customer" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_customer','=','no_credit')]}"/>
+						<field name="credit_checks_own_customer" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_customer','=','no_credit')]}"/>
+						<field name="credit_checks_third_customer" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_customer','=','no_credit')]}"/>
+						<field name="credit_documents_customer" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_customer','=','no_credit')]}"/>
+						<field name="credit_card_customer" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_customer','=','no_credit')]}"/>
+						<field name="credit_total_customer" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_customer','=','no_credit')]}"/>
+					</group>
+					<group string="Limit Credit">
+						<field name="credit_profile_supplier"/>
+						<field name="credit_current_account_supplier" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_supplier','=','no_credit')]}"/>
+						<field name="credit_checks_own_supplier" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_supplier','=','no_credit')]}"/>
+						<field name="credit_checks_third_supplier" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_supplier','=','no_credit')]}"/>
+						<field name="credit_documents_supplier" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_supplier','=','no_credit')]}"/>
+						<field name="credit_card_supplier" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_supplier','=','no_credit')]}"/>
+						<field name="credit_total_supplier" widget="monetary" style="text-align: right; width: 30% !important;" attrs="{'invisible':[('credit_profile_supplier','=','no_credit')]}"/>
+					</group>
+				</xpath>
+				<xpath expr="//field[@name='website']" position="before">
+					<field name="fantasy_name"/>
+				</xpath>
+				<xpath expr="//page[@name='internal_notes']" position="before">
+					<page name="company_child_ids" string="Sub Empresas">
+						<field name="company_child_ids" mode="kanban" context="{'default_parent_id': active_id,'default_company_type':'company','default_is_company':True}">
+          					<kanban  create="0">
+								<field name="color"/>
+								<field name="name"/>
+								<field name="title"/>
+								<field name="type"/>
+								<field name="email"/>
+								<field name="parent_id"/>
+								<field name="is_company"/>
+								<field name="function"/>
+								<field name="phone"/>
+								<field name="street_name"/>
+								<field name="street_number"/>
+								<field name="street_floor"/>
+								<field name="street_door"/>
+								<field name="zip_cpa_rel"/>
+								<field name="city_rel"/>
+								<field name="street2"/>
+								<field name="zip"/>
+								<field name="city"/>
+								<field name="country_id"/>
+								<field name="mobile"/>
+								<field name="fax"/>
+								<field name="state_id"/>
+								<field name="image"/>
+								<field name="lang"/>
+								<!-- fields in form x2many view to diminish requests -->
+								<field name="comment"/>
+								<field name="customer"/>
+								<field name="display_name"/>
+								<field name="supplier"/>
+								<templates>
+									<t t-name="kanban-box">
+										<t t-set="color" t-value="kanban_color(record.color.raw_value)"/>
+										<div t-att-class="color + (record.title.raw_value == 1 ? ' oe_kanban_color_alert' : '') + ' oe_kanban_global_click'">
+											<!--<a t-if="!read_only_mode" type="delete" class="fa fa-times pull-right"/>-->
+											<div class="o_kanban_image">
+												<img t-if="record.image.raw_value" t-att-src="'data:image/png;base64,'+record.image.raw_value"/>
+												<t t-if="!record.image.raw_value">
+													<img t-if="record.type.raw_value === 'delivery'" t-att-src='_s + "/numa_partner_adress_extended/static/src/img/truck.png"'/>
+													<img t-if="record.type.raw_value === 'invoice'" t-att-src='_s + "/numa_partner_adress_extended/static/src/img/money.png"'/>
+													<t t-if="record.type.raw_value !== 'invoice' &amp;&amp; record.type.raw_value !== 'delivery'">
+														<img t-if="record.is_company.raw_value === true" t-att-src='_s + "/numa_partner_adress_extended/static/src/img/company_image.png"'/>
+														<img t-if="record.is_company.raw_value === false" t-att-src='_s + "/numa_partner_adress_extended/static/src/img/avatar.png"'/>
+													</t>
+												</t>
+											</div>
+											<div class="oe_kanban_details">
+												<field name="name"/>
+												<div t-if="record.function.raw_value"><field name="function"/></div>
+												<div t-if="record.email.raw_value"><field name="email"/></div>
+												<div t-if="record.type.raw_value != 'contact'">
+													<div>
+														<li>
+															<field name="street_name"/>&amp;nbsp;
+															<field name="street_number"/>&amp;nbsp;
+															<field name="street_floor"/>&amp;nbsp;
+															<field name="street_door"/>
+														</li>
+														<li>
+															<field name="zip_cpa_rel"/>&amp;nbsp;-&amp;nbsp;
+															<field name="city_rel"/>
+														</li>
+													</div>
+													<field t-if="record.state_rel.raw_value" name="state_rel"/>
+													<field name="country_rel"/>
+												</div>
+												<div t-if="record.phone.raw_value">Phone: <field name="phone"/></div>
+												<div t-if="record.mobile.raw_value">Mobile: <field name="mobile"/></div>
+												<div t-if="record.fax.raw_value">Fax: <field name="fax"/></div>
+											</div>
+										</div>
+									</t>
+								</templates>
+							</kanban>
+						</field>
+					</page>
+				</xpath>
+			</field>
+        </record>
+        
+        <record id="numa_profile_payment_tree_view" model="ir.ui.view" >
+            <field name="name">numa.profile_payment.tree</field>
+            <field name="model">numa.profile_payment</field>
+            <field name="arch" type="xml">
+				<tree>
+					<field name="name"/>
+					<field name="partner_domain"/>
+					<field name="payment_term_ids"/>
+				</tree>
+            </field>
+        </record>
+
+
+        <record id="numa_profile_payment_search_view" model="ir.ui.view">
+            <field name="name">numa.profile_payment.search</field>
+            <field name="model">numa.profile_payment</field>
+            <field name="arch" type="xml">
+                <search string="AGIP - Padrón de Sujetos de Riesgo" >
+					<field name="name"/>
+					<field name="partner_domain"/>
+					<field name="payment_term_ids"/>			
+                </search>
+            </field>
+        </record>
+
+        <record id="numa_profile_payment_form_view" model="ir.ui.view">
+            <field name="name">Profile Payment</field>
+            <field name="model">numa.profile_payment</field>
+            <field name="type">form</field>
+            <field name="arch" type="xml">
+                <form string="Profile Payment">
+					<sheet>
+						<header>
+
+						</header>
+						<group string="Profile Payment">
+							<field name="name"/>
+							<field name="note"/>
+							<field name="partner_domain"/>
+							<field name="payment_term_ids"/>	
+						</group>
+					</sheet>
+                </form>
+            </field>
+        </record>
+		
+        <record id="current_account_form_view" model="ir.ui.view">
+            <field name="name">Partner's current account form</field>
+            <field name="model">account.current_account</field>
+            <field name="type">form</field>
+            <field name="arch" type="xml">
+                <form string="Partner's Current account">
+					<header>
+						<button name="print_current_account" string="Imprimir" type="object" class="btn btn-primary"/>
+					</header>
+					<sheet>
+						<field name="image" widget="image" class="oe_avatar" style="width:90px; height:90px;"/>
+                        <div class="oe_title">
+							<field name="edit_field" invisible="1"/>
+                            <label for="partner_id" class="oe_edit_only"/>
+                            <h1>
+                                <field name="partner_id" options="{'no_create_edit':[('edit_field','=',False)]}" attrs="{'readonly':[('edit_field','=',False)]}"/>
+                            </h1>
+                            <field name="customer_ok" attrs="{'invisible':[('customer','=',False)]}"/>
+                            <label for="customer_ok" attrs="{'invisible':[('customer','=',False)]}"/>
+                            <field name="supplier_ok" attrs="{'invisible':[('supplier','=',False)]}"/>
+                            <label for="supplier_ok" attrs="{'invisible':[('supplier','=',False)]}"/>
+                        </div>
+						<field name="customer" invisible="1"/>
+						<field name="supplier" invisible="1"/>
+						<group colspan="4" col="6">
+							<group string="Filtros" colspan="2">
+								<field name="from_date"/>
+								<field name="til_date"/>
+								<field name="currency_id" options="{'no_create_edit':[('edit_field','=',False)]}" attrs="{'readonly':[('edit_field','=',False)]}"/>
+								<field name="company_id" options="{'no_create_edit':[('edit_field','=',False)]}" attrs="{'readonly':[('edit_field','=',False)]}"/>
+							</group>
+  							<group string="Opciones" colspan="2">
+								<field name="with_balance"/>
+								<field name="on_due_date"/>
+								<field name="by_maturity"/>
+								<field name="orden_z_a"/>
+								<field name="include_children"/>
+								<field name="subcompanies"/>
+							</group>
+							<group string="Saldos Actuales" colspan="2">
+								<field name="current_balance_customer" readonly="True" attrs="{'invisible':[('customer','=',False)]}"/>
+								<field name="current_balance_supplier" readonly="True" attrs="{'invisible':[('supplier','=',False)]}"/>
+								<separator string="Valores Pendientes" colspan="2"/>
+								<field name="check_customer_pending" readonly="True" attrs="{'invisible':[('customer','=',False)]}"/>
+								<field name="check_supplier_pending" readonly="True" attrs="{'invisible':[('supplier','=',False)]}"/>
+							</group>
+						</group>
+
+						<notebook>
+							<page name="moves" string="Moves">
+								<div class="oe_right oe_button_box" name="buttons" style="margin-top:15px;">
+									<button name="action_refresh_account_current" type="object"	string="Refresh" class="oe_inline oe_stat_button" icon="fa-refresh"/>
+								</div>
+								<group>
+									<field name="line_ids" nolabel="1" colspan="2">
+										<tree edit="0" create="0" delete="0">
+											<field name="aml_id" invisible="1"/>
+											<field name="registration_date" invisible="1"/>
+											<field name="date" />
+											<field name="name" />
+											<field name="date_maturity" />
+											<field name="other_amount" widget="monetary" attrs="{'invisible':[('other_amount','=',0.0)]}"/>
+											<field name="other_currency_id" />
+											<field name="exchange_rate" attrs="{'invisible':[('exchange_rate','=',0.0)]}"/>
+											<field name="debit" widget="monetary" sum="Total Debits" attrs="{'invisible':[('debit','=',0.0)]}"/>
+											<field name="credit" widget="monetary" sum="Total Credits" attrs="{'invisible':[('credit','=',0.0)]}"/>
+											<field name="currency_id" />
+											<field name="balance" widget="monetary"/>
+											<button name="action_show" type="object" icon="fa fa-file-text-o" help="Muestra Comprobante" attrs="{'invisible':[('credit','=',0.0),('debit','=',0.0)]}"/>
+											<button name="action_print" type="object" icon="fa fa-print" help="Imprimir Comprobante" attrs="{'invisible':[('credit','=',0.0),('debit','=',0.0)]}"/>
+										</tree>
+									</field>
+								</group>
+							</page>
+							<page name="profile_credit" string="Perfil Crédito">
+								<group col="4" colspan="4">
+									<group colspan="2" attrs="{'invisible':[('customer','=',True)]}"></group>
+									<group name="customer_credit" string="Customer" colspan="2" attrs="{'invisible':[('customer','=',False)]}">
+										<separator string="Plazos Pago" colspan="2"/>
+										<field name="profile_payment_customer_id" readonly="1"/>
+										<field name="property_payment_term_id" readonly="1"/>
+										<field name="trust" readonly="1"/>
+									</group>
+									<group name="supplier_credit" string="Supplier" colspan="2" attrs="{'invisible':[('supplier','=',False)]}">
+										<separator string="Plazos Pago" colspan="2"/>
+										<field name="profile_payment_supplier_id" readonly="1"/>
+										<field name="property_supplier_payment_term_id" readonly="1"/>
+									</group>
+								</group>
+								<group col="4" colspan="4">
+									<group colspan="2" attrs="{'invisible':[('customer','=',True)]}"></group>
+									<group name="customer_limits" colspan="2" attrs="{'invisible':[('customer','=',False)]}">
+										<separator string="Limits" colspan="2"/>
+										<field name="credit_profile_customer"/>
+										<field name="credit_current_account_customer"/>
+										<field name="credit_checks_own_customer"/>
+										<field name="credit_checks_third_customer"/>
+										<field name="credit_documents_customer"/>
+										<field name="credit_card_customer"/>
+										<field name="credit_total_customer"/>
+									</group>
+									<group name="supplier_limits" colspan="2" attrs="{'invisible':[('supplier','=',False)]}">
+										<separator string="Limits" colspan="2"/>
+										<field name="credit_profile_supplier"/>
+										<field name="credit_current_account_supplier"/>
+										<field name="credit_checks_own_supplier"/>
+										<field name="credit_checks_third_supplier"/>
+										<field name="credit_documents_supplier"/>
+										<field name="credit_card_supplier"/>
+										<field name="credit_total_supplier"/>
+									</group>
+								</group>
+							</page>
+							<page name="check_customer" string="Checks Customer" attrs="{'invisible':[('customer','=',False)]}">
+								<group colspan="4">
+									<field name="check_customer_history"/>
+								</group>
+								<group name="check_customer" colspan="4">
+									<field name="check_customer_ids" nolabel="1">
+										<tree>
+											<field name="image" style="width:50px;"/>
+											<field name="bank_id"/>
+											<field name="bank_branch_id"/>
+											<field name="check_number"/>
+											<field name="payment_date"/>
+											<field name="currency_id"/>
+											<field name="amount" widget="monetary"/>
+											<field name="cruzado"/>
+											<field name="no_a_la_orden"/>
+											<field name="its_own_check"/>
+											<field name="issue_date"/>
+											<field name="valid_from_date"/>
+											<field name="handed_on"/>
+											<field name="handed_to"/>
+											<field name="name_titular"/>
+										</tree>
+									</field>
+								</group>
+							</page>
+							<page name="check_supplier" string="Checks Supplier" attrs="{'invisible':[('supplier','=',False)]}">
+								<group colspan="4">
+									<field name="check_supplier_history"/>
+								</group>
+								<group name="check_supplier" colspan="4">
+									<field name="check_supplier_ids" nolabel="1">
+										<tree>
+											<field name="image" style="width:50px;"/>
+											<field name="bank_id"/>
+											<field name="bank_account_id"/>
+											<field name="check_number"/>
+											<field name="payment_date"/>
+											<field name="currency_id"/>
+											<field name="amount" widget="monetary"/>
+											<field name="issue_date"/>
+											<field name="valid_from_date"/>
+											<field name="handed_on"/>
+											<field name="payed_on"/>
+										</tree>
+									</field>
+								</group>
+							</page>
+						</notebook>
+						<footer>
+
+						</footer>
+					</sheet>
+                </form>
+            </field>
+        </record>
+
+		<record id="action_profile_payment" model="ir.actions.act_window">
+			<field name="name">Profile Payment</field>
+			<field name="type">ir.actions.act_window</field>
+			<field name="res_model">numa.profile_payment</field>
+			<field name="view_type">form</field>
+			<field name="view_mode">tree,form</field>
+		</record>
+
+		<record id="action_account_current" model="ir.actions.act_window">
+			<field name="name">Cuenta Corriente</field>
+			<field name="type">ir.actions.act_window</field>
+			<field name="res_model">account.current_account</field>
+			<field name="view_type">form</field>
+			<field name="view_mode">form</field>
+			<field name="initial_mode">edit</field>
+			<field name="context">{'default_edit_field':True}</field>
+			<field name="flags">{'form': {'action_buttons': False}}</field>
+		</record>
+
+		<menuitem name="Profile Payment" id="numa_profile_payment" action="action_profile_payment" parent="account.account_management_menu" sequence="1"/>
+		<menuitem name="Cuenta Corriente" id="account_current_sale_menu" action="action_account_current" parent= "sales_team.menu_sales" sequence= "4"/>
+		<menuitem name="Cuenta Corriente" id="account_current_purchase_menu" action="action_account_current" parent= "purchase.menu_procurement_management" sequence= "4"/>
+    </data>
+</openerp>
+
+
+

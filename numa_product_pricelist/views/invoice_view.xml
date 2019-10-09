@@ -1,0 +1,101 @@
+<?xml version="1.0"?>
+<odoo>
+	<data>
+        <record model="ir.ui.view" id="numa_account_invoice_global_discount_form_view">
+            <field name="name">Numa Account Invoice Discount Form</field>
+            <field name="model">account.invoice</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="numa_l10n_ar_base.numa_l10n_ar_account_invoice_form_view" />
+            <field name="arch" type="xml">
+				<xpath expr="//field[@name='invoice_line_ids']" position="after">
+                    <group colspan="4">
+                        <field name="discount_ids" nolabel="1"  colspan="4">
+                            <tree editable="bottom" string="Discounts">
+                                <field name="display_discount_name"/>
+                                <!--Need invisible fields for on_change to create all necessary info -->
+                                <field name="manual" invisible="0"/>
+                                <field name="account_id"/>
+                                <field name="currency_id" invisible="1"/>
+                                <field name="product_tmpl_id"/>
+                                <!--
+                                <field name="product_id"/>
+                                <field name="product_categ_id"/>
+                                <field name="product_trademark_id"/>
+                                <field name="product_attr_value_id"/>
+                                <field name="product_lot_id"/>
+                                <field name="product_serial_id"/>
+                                -->
+                                <field name="base" sum="Total"/>
+                                <field name="percent"/>
+                                <field name="tax_id"/>
+                                <field name="amount_tax" sum="Total"/>
+                                <field name="amount" sum="Total"/>
+                            </tree>
+                        </field>
+                    </group>
+                </xpath>
+			</field>
+        </record>
+
+        <record model="ir.ui.view" id="numa_account_invoice_discount_form_view">
+            <field name="name">Numa Account Invoice Form</field>
+            <field name="model">account.invoice</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="numa_account_extended.numa_account_invoice_form_view" />
+            <field name="arch" type="xml">
+				<xpath expr="//field[@name='amount_untaxed']" position="before">
+                    <field name="amount_untaxed_nodiscounts"/>
+                    <field name="amount_discounts"/>
+                </xpath>
+			</field>
+        </record>
+        <record model="ir.ui.view" id="numa_account_invoice_global_discount_supplier_form_view">
+            <field name="name">Numa Account Invoice Discount Form</field>
+            <field name="model">account.invoice</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="numa_l10n_ar_base.numa_l10n_ar_account_invoice_supplier_form_view" />
+            <field name="arch" type="xml">
+				<xpath expr="//field[@name='invoice_line_ids']" position="after">
+                    <group colspan="4">
+                        <field name="discount_ids" nolabel="1"  colspan="4">
+                            <tree editable="bottom" string="Discounts">
+                                <field name="display_discount_name"/>
+                                <!--Need invisible fields for on_change to create all necessary info -->
+                                <field name="manual" invisible="0"/>
+                                <field name="account_id"/>
+                                <field name="currency_id" invisible="1"/>
+                                <field name="product_tmpl_id"/>
+                                <!--
+                                <field name="product_id"/>
+                                <field name="product_categ_id"/>
+                                <field name="product_trademark_id"/>
+                                <field name="product_attr_value_id"/>
+                                <field name="product_lot_id"/>
+                                <field name="product_serial_id"/>
+                                -->
+                                <field name="base" sum="Total"/>
+                                <field name="percent"/>
+                                <field name="tax_id"/>
+                                <field name="amount_tax" sum="Total"/>
+                                <field name="amount" sum="Total"/>
+                            </tree>
+                        </field>
+                    </group>
+                </xpath>
+			</field>
+        </record>
+
+        <record model="ir.ui.view" id="numa_account_invoice_discount_supplier_form_view">
+            <field name="name">Numa Account Invoice Supplier Form</field>
+            <field name="model">account.invoice</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="numa_account_extended.numa_account_supplier_extended_form_view" />
+            <field name="arch" type="xml">
+				<xpath expr="//field[@name='amount_untaxed']" position="before">
+                    <field name="amount_untaxed_nodiscounts"/>
+                    <field name="amount_discounts"/>
+                </xpath>
+			</field>
+        </record>
+	</data>
+</odoo>

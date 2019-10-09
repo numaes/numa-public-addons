@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <record id="employee_role" model="res.groups">
+            <field name="name">Employee Role</field>
+            <field name="is_role">True</field>
+            <field name="category_id" ref="base.module_category_human_resources"/>
+            <field name="implied_ids" eval="[(4, ref('base.group_user'))]"/>
+        </record>
+
+        <record id="base.default_user" model="res.users">
+            <field name="implied_ids" eval="[(6, 0, [ref('employee_role')])]"/>
+        </record>
+
+        <record id="group_type_permission" model="res.groups_type">
+            <field name="name">Vista</field>
+            <field name="description">Permiso que Habilita un Campo en una Vista</field>
+            <field name="active">True</field>
+        </record>
+
+        <record id="group_type_model" model="res.groups_type">
+            <field name="name">Modelo Datos</field>
+            <field name="description">Permisos Referidos a un Objeto</field>
+            <field name="active">True</field>
+        </record>
+
+    </data>
+</odoo>

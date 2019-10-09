@@ -1,0 +1,99 @@
+<?xml version="1.0"?>
+<odoo>
+    <data>
+        <record model="ir.ui.view" id="numa_purchase_order_extended_form_view">
+            <field name="name">purchase.order.extended.form</field>
+            <field name="model">purchase.order</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="purchase.purchase_order_form" />
+            <field name="arch" type="xml">
+                <xpath expr="//div[@name='button_box']" position="after">
+                    <field name="image" widget="image" class="oe_avatar"/>
+                </xpath>
+                <xpath expr="//field[@name='date_order']" position="before">
+                    <field name="base_purchase_order" readonly="1"/>
+                </xpath>
+				<xpath expr="//field[@name='order_line']/tree/field[@name='taxes_id']" position="after">
+                    <field name="discount"/>
+				</xpath>
+				<xpath expr="//field[@name='order_line']/tree/field[@name='price_subtotal']" position="after">
+					<field name="bien_uso_ok" invisible="1"/>
+                    <field name="bien_de_uso" attrs="{'invisible': [('bien_uso_ok','=',False)]}"/>
+				</xpath>
+				<xpath expr="//field[@name='order_line']/form/sheet/group/group/field[@name='price_unit']" position="after">
+                    <field name="discount"/>
+				</xpath>
+				<xpath expr="//field[@name='order_line']/form/sheet/group/group/field[@name='product_id']" position="before">
+					<field name="bien_uso_ok" invisible="1"/>
+                    <field name="bien_de_uso" attrs="{'invisible': [('bien_uso_ok','=',False)]}"/>
+				</xpath>
+                <xpath expr="//notebook/page/group" position="replace">
+					<group col="8" colspan="4" name="tax_perceptions">
+						<group colspan="4">
+							<field name="tax_line_ids"  nolabel="1"  colspan="4">
+								<tree editable="bottom" string="Taxes" create="0" edit="0" delete="0">
+									<field name="name"/>
+									<!--Need invisible fields for on_change to create all necessary info -->
+									<field name="tax_id" invisible="1"/>
+									<field name="account_analytic_id" invisible="1"/>
+									<field name="sequence" invisible="1"/>
+									<field name="manual" invisible="1"/>
+									<field name="account_id" groups="account.group_account_user"/>
+									<field name="base" sum="Total"/>
+									<field name="amount" sum="Total"/>
+									<field name="currency_id" invisible="1"/>
+								</tree>
+							</field>
+							<field name="perception_ids" nolabel="1"  colspan="4">
+								<tree editable="bottom" string="Perceptions" create="0" edit="0" delete="0">
+                                    <field name="perception_id" invisible="1"/>
+									<field name="name"/>
+									<!--Need invisible fields for on_change to create all necessary info -->
+									<field name="manual" invisible="1"/>
+									<field name="account_id" invisible="1"/>
+									<field name="base" sum="Total"/>
+									<field name="percent"/>
+									<field name="amount" sum="Total"/>
+									<field name="currency_id" invisible="1"/>
+								</tree>
+							</field>
+						</group>
+						<div style="background:#efeff8; width: 40%; margin-top: 10px; float: right;">
+							<table class="o_list_view table table-condensed table-striped">
+								<thead>
+									<tr>
+										<th>
+											Totales
+										</th>
+									</tr>
+								</thead>
+							</table>
+                            <group class="oe_subtotal_footer oe_right" colspan="2" name="sale_total">
+                                <field name="amount_untaxed" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                                <field name="amount_tax" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                                <field name="amount_perceptions" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                                <div class="oe_subtotal_footer_separator oe_inline o_td_label">
+                                    <label for="amount_total"/>
+                                    <button name="button_dummy" states="draft,sent" string="(update)" type="object" class="oe_edit_only oe_link"/>
+                                </div>
+                                <field name="amount_total" nolabel="1" class="oe_subtotal_footer_separator" widget="monetary" options="{'currency_field': 'currency_id'}"/>
+                            </group>
+                            <!--
+							<group colspan="4" class="oe_subtotal_footer oe_right">
+								<field name="amount_untaxed"/>
+								<field name="amount_tax"/>
+								<field name="amount_perceptions"/>
+								<field name="amount_total" class="oe_subtotal_footer_separator"/>
+								<field name="payments_widget" colspan="2" nolabel="1" widget="payment"/>
+								<field name="residual" class="oe_subtotal_footer_separator" attrs="{'invisible': [('state', '=', 'draft')]}"/>
+								<field name="reconciled" invisible="1"/>
+								<field name="outstanding_credits_debits_widget" colspan="2" nolabel="1" widget="payment" attrs="{'invisible': [('state', 'not in', ['open'])]}"/>
+							</group>
+							-->
+						</div>
+					</group>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>

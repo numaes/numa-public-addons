@@ -1,0 +1,72 @@
+<?xml version="1.0"?>
+<odoo>
+    <data>
+        <record model="ir.ui.view" id="numa_account_extended_form_view">
+            <field name="name">Invoice Extended Form</field>
+            <field name="model">account.invoice</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="account.invoice_form" />
+            <field name="arch" type="xml">
+				<xpath expr="//sheet/h1" position="replace">
+                    <field name="image" widget="image" class="oe_avatar"/>
+                    <div class="oe_title">
+                        <label string="Pro Forma Invoice" attrs="{'invisible': [('state','not in',('proforma','proforma2'))]}"/>
+                        <label string="Refund" attrs="{'invisible': ['|',('state','in',('draft','proforma','proforma2')), ('type','&lt;&gt;','out_refund')]}"/>
+                        <h1 class="mt0">
+                            <label style="font-size: 26px !important" string="Draft Invoice" attrs="{'invisible': ['|',('state','not in',('draft',)), ('type','&lt;&gt;','out_invoice')]}"/>
+                            <label style="font-size: 26px !important" string="Draft Refund" attrs="{'invisible': ['|',('state','not in',('draft',)), ('type','&lt;&gt;','out_refund')]}"/>
+                            <field name="number" readonly="1" class="oe_inline" attrs="{'invisible': [('state','in',('draft',))]}"/>
+                        </h1>
+					</div>
+				</xpath>
+				<xpath expr="//field[@name='type']" position="after">
+					<field name="legal_country_code" invisible="1"/>
+				</xpath>
+				<xpath expr="//field[@name='date_invoice']" position="after">
+					<field name="pricelist_id"/>
+				</xpath>
+				<xpath expr="//field[@name='partner_shipping_id']" position="attributes">
+                    <attribute name="context">{'show_address':1}</attribute>
+				</xpath>
+				<xpath expr="//field[@name='comment']" position="after">
+                    <field name="notes" placeholder="Internal Notes..."/>
+				</xpath>
+				<xpath expr="//field[@name='invoice_line_ids']/tree/field[@name='price_subtotal']" position="after">
+                    <field name="bien_de_uso"/>
+				</xpath>
+			</field>
+        </record>
+        <record model="ir.ui.view" id="numa_account_supplier_extended_form_view">
+            <field name="name">Invoice Extended Supplier Form</field>
+            <field name="model">account.invoice</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="account.invoice_supplier_form" />
+            <field name="arch" type="xml">
+				<xpath expr="//sheet/div" position="replace">
+                    <field name="image" widget="image" class="oe_avatar"/>
+                     <div class="oe_title">
+                        <label string="Bill" attrs="{'invisible': ['|',('state','in',('draft')), ('type','&lt;&gt;','in_invoice')]}"/>
+                        <label string="Refund" attrs="{'invisible': ['|',('state','in',('draft')), ('type','&lt;&gt;','in_refund')]}"/>
+                        <h1 class="mt0">
+                            <label style="font-size: 26px !important" string="Draft Bill" attrs="{'invisible': ['|',('state','in',('draft',)), ('type','&lt;&gt;','in_invoice')]}"/>
+                            <label style="font-size: 26px !important" string="Draft Refund" attrs="{'invisible': ['|',('state','in',('draft',)), ('type','&lt;&gt;','in_refund')]}"/>
+                            <field name="number" readonly="1" class="oe_inline" attrs="{'invisible': [('state','in',('draft',))]}"/>
+                        </h1>
+					</div>
+				</xpath>
+				<xpath expr="//field[@name='type']" position="after">
+					<field name="legal_country_code" invisible="1"/>
+				</xpath>
+				<xpath expr="//field[@name='date_invoice']" position="after">
+					<field name="pricelist_id"/>
+				</xpath>
+				<xpath expr="//field[@name='comment']" position="after">
+                    <field name="notes" placeholder="Internal Notes..."/>
+				</xpath>
+				<xpath expr="//field[@name='invoice_line_ids']/tree/field[@name='price_subtotal']" position="after">
+                    <field name="bien_de_uso"/>
+				</xpath>
+			</field>
+        </record>
+    </data>
+</odoo>

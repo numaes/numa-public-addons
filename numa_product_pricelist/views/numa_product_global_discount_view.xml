@@ -1,0 +1,224 @@
+<?xml version="1.0" ?>
+<openerp>
+    <data>
+
+        <record id="numa_product_pricelist_global_discount_form_view" model="ir.ui.view">
+            <field name="name">numa.product.pricelist.global_discount.form</field>
+            <field name="model">product.pricelist</field>
+            <field name="inherit_id" ref="product.product_pricelist_view"/>
+            <field name="arch" type="xml">
+				<xpath expr="//field[@name='active']" position="after">	
+					<button class="oe_inline oe_stat_button" name="action_global_discount_items" type="object" icon="fa-list">
+                        <field string="Descuentos" name="global_discount_count" widget="statinfo" />
+                    </button>
+				</xpath>                
+            </field>
+        </record>
+        
+        <record model="ir.ui.view" id="product_global_discount_item_view_search">
+            <field name="name">product.global_discount.item.search</field>
+            <field name="model">product.global_discount.item</field>
+            <field name="arch" type="xml">
+                <search string="Products Global Discount Item Search">
+                    <field name="name"/>
+                    <field name="pricelist_id"/>
+                    <filter string="Archived" name="inactive" domain="[('active','=',False)]"/>
+                </search>
+            </field>
+        </record>
+        
+        <record id="product_global_discount_item_tree_view" model="ir.ui.view">
+            <field name="name">product.global_discount.item.tree</field>
+            <field name="model">product.global_discount.item</field>
+            <field name="arch" type="xml">
+                <tree string="Global Discount Items">
+                    <field name="sequence" widget="handle"/>
+                    <field name="product_id"  invisible="1" groups="product.group_product_variant"/>
+                    <field name="product_tmpl_id" invisible="1"/>
+                    <field name="categ_id" invisible="1"/>
+                    <field name="pricelist_id"/>
+                    <field name="name"/>
+                    <field name="applied_on"/>
+                    <field name="compute_price"/>
+                    <field name="price"/>                    
+                    <field name="date_start"/>
+                    <field name="date_end"/>
+                    <field name="base"/>
+                    <field name="base_pricelist_id"/>
+                </tree>
+            </field>
+        </record>
+
+        <record id="product_global_discount_item_form_view" model="ir.ui.view">
+            <field name="name">product.global_discount.item.form</field>
+            <field name="model">product.global_discount.item</field>
+            <field name="arch" type="xml">
+                <form string="Global Discount Items">
+                    <sheet>
+                        <h1><field name="name"/></h1>
+                        <group>
+                            <group>
+                                <field name="applied_on" widget="radio"/>
+                                <field name="apply_text" attrs="{'invisible':[('applied_on', '!=', '4_multi')]}"/>
+                                <field name="categ_id" attrs="{'invisible':[('applied_on', '!=', '2_product_category')], 'required':[('applied_on', '=', '2_product_category')]}"/>
+                                <field name="product_tmpl_id" attrs="{'invisible':[('applied_on', '!=', '1_product')],'required':[('applied_on', '=', '1_product')]}" string="Product"/>
+                                <field name="product_id" attrs="{'invisible':[('applied_on', '!=', '0_product_variant')],'required':[('applied_on', '=', '0_product_variant')]}" string="Product Variant"/>
+                            </group>
+                            <group>
+                                <field name="sequence"/>
+                                <field name="description"/>
+                                <field name="type_amount_total" widget="radio"/>
+                                <field name="amount_total" widget="monetary"/>
+                                <field name="account_id"/>
+                                <field name="date_start"/>
+                                <field name="date_end"/>
+                            </group>
+                        </group>
+                        <separator string="Discount Computation"/>
+                        <group>
+                            <group>
+                                <label for="compute_price" string="Compute Discount"/>
+                                <div>
+                                    <field name="compute_price" widget="radio"/>
+                                    <field name="currency_id" invisible="1"/>
+                                    <div attrs="{'invisible':[('compute_price', '!=', 'fixed')]}">
+                                        <group>
+                                            <field name="fixed_price"  widget='monetary' options="{'currency_field': 'currency_id'}"/>
+                                        </group>
+                                    </div>
+                                    <div attrs="{'invisible':[('compute_price','not in',['percentage','segunda_unidad'])]}">
+                                        <group>
+                                            <field name="percent_price" style="width:30% !important"/>%%
+                                            <field name="segunda_unidad_quantity" style="width:30% !important" attrs="{'invisible':[('compute_price','not in',['segunda_unidad'])]}"/>
+                                        </group>
+                                    </div>
+                                    <div attrs="{'invisible':[('compute_price', '!=', 'carry_pay')]}">
+                                        <group col="2">
+                                            <field name="carry" attrs="{'required':[('compute_price', '=', 'carry_pay')]}" style="width:30% !important"/>
+                                            <field name="pay" attrs="{'required':[('compute_price', '=', 'carry_pay')]}" style="width:30% !important"/>
+                                            <field name="carry_pay_quantity" style="width:30% !important"/>
+                                        </group>
+                                    </div>
+                                </div>
+                            </group>
+                        </group>
+                        <group col="6" attrs="{'invisible':[('compute_price','not in',['productos'])]}">
+                            <div attrs="{'invisible':[('compute_price','not in',['productos'])]}">
+                                <field name="product_bonificado_ids" nolabel="1">
+                                    <tree string="Productos Bonificados" editable="bottom">
+                                        <field name="product_id"/>
+                                        <field name="quantity"/>
+                                    </tree>
+                                </field>
+                            </div>
+                        </group>
+                        <div class="oe_grey" groups="product.group_uom">
+                            <p>The computed discount is calculed on totals or sub-totals of document.</p>
+                        </div>
+                        <group col="6" attrs="{'invisible':[('compute_price','not in',['formula','percentage'])]}">
+                            <field name="base" colspan="6"/>
+
+                            <label string="New Price =" attrs="{'invisible':[('compute_price', '!=', 'formula')]}"/>
+                            <div attrs="{'invisible':[('compute_price', '!=', 'formula')]}">
+                                 <span attrs="{'invisible':[('base', '!=', 'pricelist')]}">Other Pricelist  -  </span>
+                            </div>
+                            <label for="price_discount" attrs="{'invisible':[('compute_price', '!=', 'formula')]}"/>
+                            <div class="o_row" attrs="{'invisible':[('compute_price', '!=', 'formula')]}">
+                                <field name="price_discount"/>
+                                <span>%%</span>
+                            </div>
+                            <label string=" + " for="price_surcharge" attrs="{'invisible':[('compute_price', '!=', 'formula')]}"/>
+                            <field name="price_surcharge" nolabel="1" attrs="{'invisible':[('compute_price', '!=', 'formula')]}"/>
+
+                            <field name="price_round" string="Rounding Method" attrs="{'invisible':[('compute_price', '!=', 'formula')]}"/>
+                            <field name="price_min_margin" string="Min. Margin" attrs="{'invisible':[('compute_price', '!=', 'formula')]}"/>
+                            <field name="price_max_margin" string="Max. Margin" attrs="{'invisible':[('compute_price', '!=', 'formula')]}"/>
+
+                            <field name="base_pricelist_id" attrs="{'invisible':[('base', '!=', 'pricelist')],'required': [('base','=', 'pricelist')]}"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="numa_product_global_discount_item_form_view_2" model="ir.ui.view">
+            <field name="name">product.global_discount.item.form2</field>
+            <field name="model">product.global_discount.item</field>
+            <field name="inherit_id" ref="product_global_discount_item_form_view"/>
+            <field name="arch" type="xml">
+                <xpath expr="//sheet" position="inside">
+                    <div attrs="{'invisible':[('compute_price', '!=', 'python')]}">
+						<label for="python_code" string="Python Code" style="margin-bottom:10px"/>
+						<field name="python_code" nolabel="1" attrs="{'required':[('compute_price', '=', 'python')]}"/>
+                    </div>
+                </xpath>
+                <xpath expr="//group" position="after">
+					<field name="not_multiple_condition" attrs="{'invisible':[('applied_on', '!=', '4_multi')]}"/>
+					<label for="not_multiple_condition" string="Not Multiple Condition" attrs="{'invisible':[('applied_on', '!=', '4_multi')]}"/>
+					<notebook attrs="{'invisible':[('applied_on', '!=', '4_multi')]}">
+						<page string="Productos">
+							<notebook>
+								<page string="Plantilla Productos">
+									<field name="product_tmpl_ids" nolabel="1"/>
+								</page>
+								<page string="Variantes Productos">
+									<field name="product_ids" nolabel="1"/>
+								</page>
+								<page string="Categorias Producto">
+									<field name="product_category_ids" nolabel="1"/>
+								</page>
+								<page string="Marcas">
+									<field name="product_trademark_ids" nolabel="1"/>
+								</page>
+								<page string="Lotes">
+									<field name="product_lot_ids" nolabel="1"/>
+								</page>
+								<page string="Seriales">
+									<field name="product_serial_ids" nolabel="1"/>
+								</page>
+							</notebook>
+						</page>
+						<page string="Empresas">
+							<notebook>
+								<page string="Empresas">
+									<field name="partner_ids" nolabel="1"/>
+								</page>
+								<page string="Categorias Empresas">
+									<field name="partner_category_ids" nolabel="1"/>
+								</page>
+								<page string="Puntos de Venta">
+									<field name="afip_punto_venta_ids" nolabel="1"/>
+								</page>
+								<page string="Vendedores">
+									<field name="partner_seller_ids" nolabel="1"/>
+								</page>
+							</notebook>
+						</page>								
+						<page string="Zonas">
+							<notebook>
+								<page string="Ciudades">
+									<field name="city_ids" nolabel="1"/>
+								</page>
+								<page string="Provincias">
+									<field name="state_ids" nolabel="1"/>
+								</page>
+								<page string="Paises">
+									<field name="country_ids" nolabel="1"/>
+								</page>
+							</notebook>
+						</page>	
+					</notebook>
+				</xpath>
+                <xpath expr="//field[@name='base']" position="after">
+                    <field name="pricelist_base_id" colspan="6" attrs="{'invisible':[('base', '!=', 'pricelist_base')],'required':[('base', '=', 'pricelist_base')]}"/>
+                </xpath>
+                <xpath expr="//field[@name='date_end']" position="after">
+                    <field name="note"/>
+                </xpath>
+            </field>
+        </record>
+                     
+	</data>
+</openerp>
+
+

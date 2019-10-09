@@ -1,0 +1,48 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+#	* numa_roles
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 10.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2019-04-05 01:37+0000\n"
+"PO-Revision-Date: 2019-04-05 01:37+0000\n"
+"Last-Translator: <>\n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: numa_roles
+#: model:ir.actions.act_window,help:numa_roles.action_res_roles
+msgid "A role is special group that express the permissions needed to perform a function in the company"
+msgstr "Un rol es un grupo especial que define los permisos necesarios para ejercer una función en la compañía"
+
+#. module: numa_roles
+#: model:ir.model,name:numa_roles.model_res_groups
+msgid "Access Groups"
+msgstr "Grupos de Acceso"
+
+#. module: numa_roles
+#: model:res.groups,name:numa_roles.employee_role
+msgid "Employee Role"
+msgstr "Rol: Empleado"
+
+#. module: numa_roles
+#: model:ir.model.fields,field_description:numa_roles.field_res_groups_is_role
+msgid "Is role?"
+msgstr "Es un rol?"
+
+#. module: numa_roles
+#: model:ir.actions.act_window,name:numa_roles.action_res_roles
+#: model:ir.ui.menu,name:numa_roles.menu_action_res_roles
+msgid "Roles"
+msgstr "Roles"
+
+#. module: numa_roles
+#: model:ir.model,name:numa_roles.model_res_users
+msgid "Users"
+msgstr "Usuarios"
+

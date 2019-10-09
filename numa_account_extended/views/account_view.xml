@@ -1,0 +1,170 @@
+<?xml version="1.0"?>
+<odoo>
+    <data>
+
+        <record id="numa_account_account_tree_view" model="ir.ui.view">
+            <field name="name">Numa Account Account Tree</field>
+            <field name="model">account.account</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="account.view_account_list" />
+            <field name="arch" type="xml">
+				<xpath expr="//field[@name='name']" position="after">
+					<field name="parent_id"/>
+				</xpath>
+            </field>
+        </record>
+        
+        <record id="numa_account_account_form_view" model="ir.ui.view">
+            <field name="name">Numa Account Account Form</field>
+            <field name="model">account.account</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="account.view_account_form" />
+            <field name="arch" type="xml">
+				<xpath expr="//form/sheet/group" position="replace">
+                    <div class="oe_title">
+                        <label for="name"/>
+                        <h1>
+                            <field name="name"/>
+                        </h1>
+                        <label for="code"/>
+                        <h3>
+                            <field name="code" placeholder="código..." style="width:200px !important;"/>
+                        </h3>
+                    </div>
+				    <group col="8" colspan="4">
+                        <group colspan="4">
+                            <field name="parent_id"/>
+					        <field name="account_type" widget="radio"/>
+					        <field name="user_type_id" widget="selection"/>
+					        <field name="tax_ids" widget="many2many_tags"/>
+					        <field name="tag_ids" widget="many2many_tags" domain="[('applicability', '!=', 'taxes')]" context="{'default_applicability': 'accounts'}" options="{'no_create_edit': True}"/>
+					    </group>
+                        <group colspan="4">
+                            <field name="company_id" options="{'no_create': True}" groups="base.group_multi_company"/>
+                            <field name="currency_id" options="{'no_create': True}" groups="base.group_multi_currency"/>
+                            <field name="internal_type" invisible="1" readonly="1"/>
+                            <label for="reconcile"/>
+                            <div>
+                                <field name="reconcile"/>
+                                <button name="action_open_reconcile" class="oe_link" type="object" string=" -> Reconcile" attrs="{'invisible': [('reconcile', '=', False)]}"/>
+                            </div>
+                            <field name="deprecated"/>
+                            <field name="note"/>
+                        </group>
+				    </group>
+				</xpath>
+            </field>
+        </record>
+
+        <record id="numa_account_move_tree_view" model="ir.ui.view">
+            <field name="name">Numa Account Move Tree</field>
+            <field name="model">account.move</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="account.view_move_tree" />
+            <field name="arch" type="xml">
+				<field name="journal_id" position="after">
+					<field name="period_id"/>  
+				</field>
+            </field>
+        </record>
+        <record id="numa_account_move_form_view" model="ir.ui.view">
+            <field name="name">Numa Account Move Form</field>
+            <field name="model">account.move</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="account.view_move_form" />
+            <field name="arch" type="xml">
+				<field name="journal_id" position="after">
+					<field name="period_id"/>  
+				</field>
+            </field>
+        </record>
+
+        <record id="numa_account_move_line_tree_view" model="ir.ui.view">
+            <field name="name">Numa Account Move Line Tree</field>
+            <field name="model">account.move.line</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="account.view_move_line_tree" />
+            <field name="arch" type="xml">
+				<field name="date" position="after">
+					<field name="period_rel"/>
+				</field>
+            </field>
+        </record>
+        <record id="numa_account_move_line_form_view" model="ir.ui.view">
+            <field name="name">Numa Account Move Line Form</field>
+            <field name="model">account.move.line</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="account.view_move_line_form" />
+            <field name="arch" type="xml">
+				<field name="date" position="after">
+					<field name="period_rel"/>
+				</field>
+            </field>
+        </record>
+
+        <record id="numa_view_account_tree" model="ir.ui.view">
+            <field name="name">numa.account.tree</field>
+            <field name="model">account.account</field>
+            <field name="type">tree</field>
+            <field name="field_parent">child_ids</field>
+            <field name="arch" type="xml">
+                <tree string="Chart of accounts" editable="top" colors="blue:account_type=='view'">
+					<field name="account_type" invisible="1"/>
+					<field name="parent_id" invisible="1"/>
+                    <field name="name"/>
+                    <field name="code"/>
+                    <field name="user_type_id"/>
+                    <field name="currency_id" options="{'no_create': True}" groups="base.group_multi_currency"/>
+                    <field name="company_id" options="{'no_create': True}" groups="base.group_multi_company"/>
+                </tree>
+            </field>
+        </record> 
+
+        <record model="ir.ui.view" id="partner_impositiva_form_view">
+            <field name="name">Numa Impositiva Form</field>
+            <field name="model">res.partner</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="account.view_partner_property_form" />
+            <field name="arch" type="xml">
+				<xpath expr="//page[@name='accounting']" position="after" >
+					<page string="Impositiva" name="impositiva" attrs="{'invisible': [('is_company','=',False),('parent_id','!=',False)]}">
+						<notebook name="impositiva">
+						</notebook>
+					</page>
+				</xpath>
+			</field>
+        </record>
+                
+        <record id="numa_account_action" model="ir.actions.act_window">
+            <field name="name">Accounting Plan</field>
+            <field name="res_model">account.account</field>
+            <field name="type">ir.actions.act_window</field>
+            <field name="view_type">tree</field>
+            <field name="view_mode">tree,form</field>
+            <field name="view_id" ref="numa_view_account_tree"/>
+            <field name="domain">[('parent_id','=',False)]</field>
+        </record>
+
+        <record id="numa_account_selected_action" model="ir.actions.act_window">
+            <field name="name">Journal Items</field>
+            <field name="res_model">account.move.line</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">tree,form</field>
+            <field name="view_id" ref="account.view_move_line_tree"/>
+            <field name="search_view_id" ref="account.view_account_move_line_filter"/>
+            <field name="context">{'search_default_account_id':[active_id]}</field>
+        </record>
+
+        <record id="numa_account_selected_values" model="ir.values">
+            <field name="key2">tree_but_open</field>
+            <field name="model">account.account</field>
+            <field name="name">Open Journal Items</field>
+            <field name="value" eval="'ir.actions.act_window,%d'%numa_account_selected_action"/>
+        </record>
+
+           
+        <menuitem name="Plan Contable" action="numa_account_action" id="numa_account_menu" parent="account.account_account_menu" sequence="10" />
+        <menuitem name="Impositiva" id="numa_impositiva_menu" parent="account.account_account_menu" sequence="10" />
+            
+    </data>
+</odoo>

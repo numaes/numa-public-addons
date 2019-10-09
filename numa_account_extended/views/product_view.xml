@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<openerp>
+    <data>
+
+        <record id="numa_product_template_extended_form_view" model="ir.ui.view">
+            <field name="name">Product Template Extended Form</field>
+            <field name="model">product.template</field>
+			<field name="inherit_id" ref="product.product_template_form_view"/>
+            <field name="arch" type="xml">
+				<xpath expr="//field[@name='taxes_id']" position="after">
+				    <field name="bien_uso_posible"/>
+					<field name="bien_uso_default"/>
+				</xpath>
+				<xpath expr="//field[@name='supplier_taxes_id']" position="after">
+				    <field name="bien_uso_supplier_posible"/>
+					<field name="bien_uso_supplier_default"/>
+				</xpath>
+			</field>
+		</record>
+
+     </data>
+</openerp>
+
+
+
