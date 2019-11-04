@@ -31,7 +31,7 @@ class BackgroundJobTest(models.TransientModel):
         ('ended', 'Ended'),
         ('aborting', 'Aborting ...'),
         ('aborted', 'Aborted'),
-    ], u'State', related="job.state")
+    ], u'Job State', related="job.state")
     state = fields.Selection([
         ('init', 'Initializing'),
         ('running', 'Running'),
@@ -41,7 +41,7 @@ class BackgroundJobTest(models.TransientModel):
         ('normal', 'Normal'),
         ('with_error', 'With error'),
         ('with_exception', 'With exception'),
-    ], u'State', default='normal')
+    ], u'Run type', default='normal')
 
     def action_refresh(self):
         return {

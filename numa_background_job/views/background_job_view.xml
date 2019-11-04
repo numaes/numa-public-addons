@@ -8,7 +8,6 @@
         <record model="ir.ui.view" id="background_job_tree">
             <field name="name">NUMA Background job tree</field>
             <field name="model">res.background_job</field>
-            <field name="type">tree</field>
             <field name="arch" type="xml">
                 <tree string="Background Jobs">
                     <field name="name"/>
@@ -34,7 +33,6 @@
         <record model="ir.ui.view" id="background_job_form">
             <field name="name">NUMA Background job form</field>
             <field name="model">res.background_job</field>
-            <field name="type">form</field>
             <field name="arch" type="xml">
                 <form string="Background Job" version="7.0">
                     <header>
@@ -72,7 +70,6 @@
         <record model="ir.ui.view" id="background_job_search" >
             <field name="name">NUMA Background job search</field>
             <field name="model">res.background_job</field>
-            <field name="type">search</field>
             <field name="arch" type="xml">
                 <search string="Search background jobs">
                     <filter string="Initialized" name="initialized" domain="[('state','=','init')]" />
@@ -92,7 +89,6 @@
         <record id="background_job_action" model="ir.actions.act_window">
             <field name="name">Background job</field>
             <field name="res_model">res.background_job</field>
-            <field name="view_type">form</field>
             <field name="view_mode">tree,form</field>
         </record>
 
