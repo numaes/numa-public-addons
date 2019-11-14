@@ -15,18 +15,16 @@
 		<!-- Scheduler for Clean Action-->
 		<record forcecreate="True" id="ir_cron_scheduler_alarm"
 			model="ir.cron">
-			<field name="name">Exceptions cleaning</field>
-			<field eval="True" name="active" />
-			<field name="user_id" ref="base.user_root" />
-			<field name="interval_number">1</field>
-			<field name="interval_type">days</field>
-			<field name="numbercall">-1</field>
-			<field eval="False" name="doall" />
-			<field ref="model_base_general_exception" name="model_id" />
-			<field eval="'action_clean'" name="function" />
-			<field eval="'()'" name="args" />
+            <field name='name'>Exceptions cleaning</field>
+            <field name='interval_number'>1</field>
+            <field name='interval_type'>days</field>
+            <field name="numbercall">-1</field>
+            <field name="active">True</field>
+            <field name="doall" eval="False" />
+            <field name="model_id" ref="model_base_general_exception"/>
+            <field name="state">code</field>
+            <field name="code">model.action_clean()</field>
 		</record>
-
 
     </data>
 </openerp>
