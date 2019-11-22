@@ -1,14 +1,14 @@
-# Translation of OpenERP Server.
+# Translation of Odoo Server.
 # This file contains the translation of the following modules:
-#	* numa_exceptions
+# 	* numa_exceptions
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: OpenERP Server 8.beta1rc\n"
+"Project-Id-Version: Odoo Server 13.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2014-06-06 01:20+0000\n"
-"PO-Revision-Date: 2014-06-06 01:20+0000\n"
-"Last-Translator: <>\n"
+"POT-Creation-Date: 2019-11-22 16:02+0000\n"
+"PO-Revision-Date: 2019-11-22 16:02+0000\n"
+"Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -16,151 +16,202 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. module: numa_exceptions
-#: model:ir.actions.act_window,help:numa_exceptions.exceptions_action
-msgid "<p class=\"oe_view_nocontent_create\">\n"
-"                  Exceptions recorded. \n"
-"              </p>\n"
-"            "
-msgstr "<p class=\"oe_view_nocontent_create\">\n"
-"                  Excepciones registradas \n"
-"              </p>\n"
-"            "
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__create_uid
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__create_uid
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__create_uid
+msgid "Created by"
+msgstr "Creado por"
 
 #. module: numa_exceptions
-#: view:base.general_exception:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__create_date
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__create_date
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__create_date
+msgid "Created on"
+msgstr "Creado el"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__display_name
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__display_name
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__display_name
+msgid "Display Name"
+msgstr "Nombre mostrado"
+
+#. module: numa_exceptions
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_search_view
 msgid "Do not purge"
-msgstr "No borrar"
+msgstr "No autolimpiar"
 
 #. module: numa_exceptions
-#: field:base.general_exception,do_not_purge:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__do_not_purge
 msgid "Do not purge?"
-msgstr "No borrar?"
+msgstr "No autolimpiar"
 
 #. module: numa_exceptions
-#: code:addons/numa_exceptions/exceptions.py:198
-#, python-format
-msgid "Error!"
-msgstr "Error!"
-
-#. module: numa_exceptions
-#: field:base.frame,gexception:0
-#: view:base.general_exception:0
-#: field:base.general_exception,exception:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__gexception
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__exception
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_form_view
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_list_view
 msgid "Exception"
 msgstr "Excepción"
 
 #. module: numa_exceptions
-#: view:base.general_exception:0
 #: model:ir.actions.act_window,name:numa_exceptions.exceptions_action
 #: model:ir.ui.menu,name:numa_exceptions.exceptions_menu
 #: model:ir.ui.menu,name:numa_exceptions.exceptions_submenu
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_search_view
 msgid "Exceptions"
-msgstr "Exceptions"
+msgstr "Excepciones"
 
 #. module: numa_exceptions
-#: field:base.frame,file_name:0
+#: model:ir.actions.server,name:numa_exceptions.ir_cron_scheduler_alarm_ir_actions_server
+#: model:ir.cron,cron_name:numa_exceptions.ir_cron_scheduler_alarm
+#: model:ir.cron,name:numa_exceptions.ir_cron_scheduler_alarm
+msgid "Exceptions cleaning"
+msgstr "Limpiar excepciones"
+
+#. module: numa_exceptions
+#: model_terms:ir.actions.act_window,help:numa_exceptions.exceptions_action
+msgid "Exceptions recorded."
+msgstr "Excepciones registradas"
+
+#. module: numa_exceptions
+#: model:ir.model,name:numa_exceptions.model_base_frame
+msgid "Exceptions: call frame"
+msgstr "Excepciones: call frame"
+
+#. module: numa_exceptions
+#: model:ir.model,name:numa_exceptions.model_base_general_exception
+msgid "Exceptions: exception log"
+msgstr "Excepciones: log"
+
+#. module: numa_exceptions
+#: model:ir.model,name:numa_exceptions.model_base_variable_value
+msgid "Exceptions: variable value"
+msgstr "Excepciones: variable"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__file_name
 msgid "File name"
-msgstr "Nombre del archivo"
+msgstr "Nombre de archivo"
 
 #. module: numa_exceptions
-#: view:base.frame:0
-#: field:base.variable_value,frame:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__frame
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_form_view
 msgid "Frame"
+msgstr ""
+
+#. module: numa_exceptions
+#: code:addons/numa_exceptions/models/exceptions.py:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__frames
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_list_view
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_form_view
+#, python-format
+msgid "Frames"
 msgstr "Frame"
 
 #. module: numa_exceptions
-#: code:addons/numa_exceptions/exceptions.py:107
-#: view:base.frame:0
-#: view:base.general_exception:0
-#: field:base.general_exception,frames:0
-#, python-format
-msgid "Frames"
-msgstr "Frames"
-
-#. module: numa_exceptions
-#: view:base.frame:0
-#: view:base.general_exception:0
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_form_view
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_form_view
 msgid "General"
 msgstr "General"
 
 #. module: numa_exceptions
-#: field:base.general_exception,name:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__id
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__id
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__id
 msgid "ID"
 msgstr "ID"
 
 #. module: numa_exceptions
-#: field:base.frame,line_number:0
-msgid "Line number"
-msgstr "Número de linea"
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__name
+msgid "Identification"
+msgstr "Identificación"
 
 #. module: numa_exceptions
-#: field:base.frame,locals:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame____last_update
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception____last_update
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value____last_update
+msgid "Last Modified on"
+msgstr "Última modificación en"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__write_uid
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__write_uid
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__write_uid
+msgid "Last Updated by"
+msgstr "Última actualización por"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__write_date
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__write_date
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__write_date
+msgid "Last Updated on"
+msgstr "Última actualización el"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__line_number
+msgid "Line number"
+msgstr "Nro. de línea"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__locals
 msgid "Local variables"
 msgstr "Variables locales"
 
 #. module: numa_exceptions
-#: view:base.frame:0
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_form_view
 msgid "Locals"
 msgstr "Locales"
 
 #. module: numa_exceptions
-#: field:base.variable_value,name:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__method
+msgid "Method"
+msgstr "Método"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__name
 msgid "Name"
 msgstr "Nombre"
 
 #. module: numa_exceptions
-#: code:addons/numa_exceptions/exceptions.py:199
-#, python-format
-msgid "Please contact your system administrator, exception ID [%s]"
-msgstr "Por favor contacte con su administrador de sistema, ID excepción [%s]"
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__params
+msgid "Params"
+msgstr "Parámetros"
 
 #. module: numa_exceptions
-#: field:base.general_exception,request:0
-msgid "Request"
-msgstr "Pedido"
-
-#. module: numa_exceptions
-#: field:base.variable_value,sequence:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__sequence
 msgid "Sequence"
 msgstr "Secuencia"
 
 #. module: numa_exceptions
-#: field:base.general_exception,service:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__service
 msgid "Service"
 msgstr "Servicio"
 
 #. module: numa_exceptions
-#: field:base.frame,src_code:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__src_code
 msgid "Source code"
 msgstr "Código fuente"
 
 #. module: numa_exceptions
-#: field:base.general_exception,timestamp:0
+#: code:addons/numa_exceptions/models/exceptions.py:0
+#: code:addons/numa_exceptions/models/exceptions.py:0
+#: code:addons/numa_exceptions/models/exceptions.py:0
+#, python-format
+msgid "System error %s. Get in touch with your System Admin"
+msgstr "Error de sistema %s. Póngase en contacto con su Administrador de sistema"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__timestamp
 msgid "Timestamp"
 msgstr "Timestamp"
 
 #. module: numa_exceptions
-#: field:base.general_exception,user:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__user
 msgid "User"
 msgstr "Usuario"
 
 #. module: numa_exceptions
-#: field:base.variable_value,value:0
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__value
 msgid "Value"
 msgstr "Valor"
-
-#. module: numa_exceptions
-#: model:ir.model,name:numa_exceptions.model_base_frame
-msgid "base.frame"
-msgstr "base.frame"
-
-#. module: numa_exceptions
-#: model:ir.model,name:numa_exceptions.model_base_general_exception
-msgid "base.general_exception"
-msgstr "base.general_exception"
-
-#. module: numa_exceptions
-#: model:ir.model,name:numa_exceptions.model_base_variable_value
-msgid "base.variable_value"
-msgstr "base.variable_value"
-
