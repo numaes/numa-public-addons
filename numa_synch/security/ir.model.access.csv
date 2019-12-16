@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_synch_link,General access link,numa_synch.model_synch_link,,1,1,1,1
+access_synch_log,General access logs,numa_synch.model_synch_log,,1,1,1,1
+access_synch_remote,General access remotes,numa_synch.model_synch_remote,,1,1,1,1
+access_synch_timestamp,General access timestamp,numa_synch.model_synch_timestamp,,1,1,1,1

@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+        <!-- Synch Remote -->
+
+        <record model="ir.ui.view" id="synch_remote_form_view">
+            <field name="name">synch_remote form</field>
+            <field name="model">synch.remote</field>
+            <field name="mode">primary</field>
+            <field name="arch" type="xml">
+                <form string="Synch Remote Form">
+                    <sheet>
+                        <header >
+                            <button name="action_synch"
+                                    type="object"
+                                    string="Synch" />
+                         </header>
+                        <group name="top">
+                            <h1>
+                                <field name="name" />
+                            </h1>
+                        </group>
+                        <group>
+                            <field name="type"/>
+                        </group>
+                        <group name="configuration" string="Configuration">
+
+                        </group>
+                        <group name="log" string="Log" colspan="4">
+                            <field name="log_messages" readonly="True" nolabel="1" colspan="2">
+                                <tree name="messages">
+                                    <field name="timestamp" />
+                                    <field name="message" widget="html"/>
+                                </tree>
+                            </field>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="synch_remote_tree_view">
+            <field name="name">synch_remote tree view</field>
+            <field name="model">synch.remote</field>
+            <field name="arch" type="xml">
+                <tree string="Synch Remotes">
+                    <field name="name"/>
+                    <field name="type"/>
+                </tree>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="synch_remote_search_view">
+            <field name="name">synch_remote search view</field>
+            <field name="model">synch.remote</field>
+            <field name="arch" type="xml">
+                <search string="synch_remote search">
+                    <field name="name"/>
+                    <field name="type"/>
+                    <group expand="0" string="Group By">
+                        <filter string="Type" name="type"
+                                domain="[]" context="{'group_by':'type'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="remote_action">
+            <field name="name">Synch Remote</field>
+            <field name="res_model">synch.remote</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+        <record model="ir.ui.view" id="link_tree_view">
+            <field name="name">synch_link tree view</field>
+            <field name="model">synch.link</field>
+            <field name="arch" type="xml">
+                <tree string="Synch Links" editable="bottom">
+                    <field name="remote"/>
+                    <field name="model"/>
+                    <field name="remote_id"/>
+                    <field name="local_id"/>
+                </tree>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="link_search_view">
+            <field name="name">synch_link search view</field>
+            <field name="model">synch.link</field>
+            <field name="arch" type="xml">
+                <search string="synch link search">
+                    <field name="remote"/>
+                    <field name="model"/>
+                    <field name="remote_id"/>
+                    <field name="local_id"/>
+                    <group expand="0" string="Group By">
+                        <filter string="Remote" name="remote"
+                                domain="[]" context="{'group_by':'remote'}"/>
+                        <filter string="Model" name="model"
+                                domain="[]" context="{'group_by':'model'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="link_action">
+            <field name="name">Synch Links</field>
+            <field name="res_model">synch.link</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">tree</field>
+        </record>
+
+        <record model="ir.ui.view" id="log_tree_view">
+            <field name="name">synch_log tree view</field>
+            <field name="model">synch.log</field>
+            <field name="arch" type="xml">
+                <tree string="Synch Logs" editable="bottom">
+                    <field name="remote"/>
+                    <field name="timestamp"/>
+                    <field name="message"/>
+                </tree>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="log_search_view">
+            <field name="name">synch_log search view</field>
+            <field name="model">synch.log</field>
+            <field name="arch" type="xml">
+                <search string="synch log search">
+                    <field name="remote"/>
+                    <field name="timestamp"/>
+                    <group expand="0" string="Group By">
+                        <filter string="Remote" name="remote"
+                                domain="[]" context="{'group_by':'remote'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="log_action">
+            <field name="name">Synch Log</field>
+            <field name="res_model">synch.log</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">tree</field>
+        </record>
+
+        <record model="ir.ui.view" id="timestamp_tree_view">
+            <field name="name">synch_timestamp tree view</field>
+            <field name="model">synch.timestamp</field>
+            <field name="arch" type="xml">
+                <tree string="Synch Timestamp" editable="bottom">
+                    <field name="remote"/>
+                    <field name="model"/>
+                    <field name="last_update"/>
+                </tree>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="timestamp_search_view">
+            <field name="name">synch_timestamp search view</field>
+            <field name="model">synch.timestamp</field>
+            <field name="arch" type="xml">
+                <search string="synch timestamp search">
+                    <field name="remote"/>
+                    <field name="model"/>
+                    <field name="last_update"/>
+                    <group expand="0" string="Group By">
+                        <filter string="Remote" name="remote"
+                                domain="[]" context="{'group_by':'remote'}"/>
+                        <filter string="Model" name="model"
+                                domain="[]" context="{'group_by':'model'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="timestamp_action">
+            <field name="name">Synch Timestamp</field>
+            <field name="res_model">synch.timestamp</field>
+            <field name="view_type">form</field>
+            <field name="view_mode">tree</field>
+        </record>
+
+    </data>
+</odoo>

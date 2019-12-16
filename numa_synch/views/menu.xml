@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+        <menuitem name="Remote Systems Synch"
+                  parent="base.menu_custom"
+                  id="remote_systems_synch"/>
+
+        <menuitem id="menu_remotes" name="Remotos"
+            parent="remote_systems_synch"
+            action="remote_action"/>
+        <menuitem id="menu_links" name="Links"
+            parent="remote_systems_synch"
+            action="link_action"/>
+        <menuitem id="menu_logs" name="Log"
+            parent="remote_systems_synch"
+            action="log_action"/>
+        <menuitem id="menu_timestamp" name="Timestamps"
+            parent="remote_systems_synch"
+            action="timestamp_action"/>
+
+    </data>
+</odoo>
