@@ -68,7 +68,6 @@
         <record model="ir.actions.act_window" id="remote_action">
             <field name="name">Synch Remote</field>
             <field name="res_model">synch.remote</field>
-            <field name="view_type">form</field>
             <field name="view_mode">tree,form</field>
         </record>
 
@@ -107,7 +106,6 @@
         <record model="ir.actions.act_window" id="link_action">
             <field name="name">Synch Links</field>
             <field name="res_model">synch.link</field>
-            <field name="view_type">form</field>
             <field name="view_mode">tree</field>
         </record>
 
@@ -141,7 +139,6 @@
         <record model="ir.actions.act_window" id="log_action">
             <field name="name">Synch Log</field>
             <field name="res_model">synch.log</field>
-            <field name="view_type">form</field>
             <field name="view_mode">tree</field>
         </record>
 
@@ -178,7 +175,6 @@
         <record model="ir.actions.act_window" id="timestamp_action">
             <field name="name">Synch Timestamp</field>
             <field name="res_model">synch.timestamp</field>
-            <field name="view_type">form</field>
             <field name="view_mode">tree</field>
         </record>
 
