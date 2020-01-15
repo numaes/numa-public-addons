@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record  id="view_message_form" model="ir.ui.view">
+        <field name="name">mail.message.form.fetchmail</field>
+        <field name="model">mail.message</field>
+        <field name="inherit_id" ref="mail.view_message_form"/>
+        <field name="arch" type="xml">
+            <field name="mail_server_id" position="after">
+                <field name="fetchmail_server_id"/>
+            </field>
+            <field name="notification_ids" position="after">
+                <field name="child_ids" />
+            </field>
+        </field>
+    </record>
+
+    <act_window
+        id="fetchmail.act_server_history"
+        name="Messages"
+        res_model="mail.message"
+        src_model="fetchmail.server"
+        domain="[('email_from', '!=', False), ('fetchmail_server_id', '=', active_id)]"
+        context="{'default_fetchmail_server_id': active_id}"/>
+
+</odoo>
