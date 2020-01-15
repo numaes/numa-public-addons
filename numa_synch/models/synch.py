@@ -7,6 +7,7 @@ _logger = logging.getLogger(__name__)
 
 class SynchRemote(models.Model):
     _name = 'synch.remote'
+    _description = 'Servidor remoto'
 
     name = fields.Char('Name')
     type = fields.Selection([], 'Type', required=True)
@@ -85,6 +86,7 @@ class SynchRemote(models.Model):
 
 class SynchLog(models.Model):
     _name = 'synch.log'
+    _description = 'Log de remoto'
     _order = 'timestamp desc'
 
     remote = fields.Many2one('synch.remote', 'Remote')
@@ -94,6 +96,7 @@ class SynchLog(models.Model):
 
 class SynchLink(models.Model):
     _name = 'synch.link'
+    _description = 'Vínculo objecto local/remoto'
 
     remote = fields.Many2one('synch.remote', 'Remote')
     model = fields.Many2one('ir.model', 'Model')
@@ -166,6 +169,7 @@ class SynchLink(models.Model):
 
 class SynchTimestamp(models.Model):
     _name = 'synch.timestamp'
+    _description = 'Objecto remoto timestamp'
 
     remote = fields.Many2one('synch.remote', 'Remote')
     model = fields.Many2one('ir.model', 'Model')
