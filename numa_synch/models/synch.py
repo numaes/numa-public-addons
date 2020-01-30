@@ -143,7 +143,7 @@ class SynchLink(models.Model):
                 remote=remote.id,
                 model=model.id,
                 remote_id=remote_id,
-                local_id= local_obj.id,
+                local_id=local_obj.id,
             ))
 
         return link

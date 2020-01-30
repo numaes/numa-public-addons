@@ -36,7 +36,7 @@ class FetchmailServer(models.Model):
 
     last_uid = fields.Integer('Last received UID')
 
-    @api.multi
+    #@api.multi
     def fetch_mail(self):
         """ WARNING: meant for cron usage only - will commit() after each email! """
         additionnal_context = {
@@ -57,13 +57,13 @@ class FetchmailServer(models.Model):
             return f'{last_week.day}-{monthNames[last_week.month]}-{last_week.year}'
 
         for server in self:
-            _logger.info('start checking for new emails on %s server %s', server.type, server.name)
+            _logger.info('start checking for new emails on %s server %s', server.server_type, server.name)
             additionnal_context['default_fetchmail_server_id'] = server.id
             additionnal_context['default_message_type'] = 'email'
             count, failed = 0, 0
             imap_server = None
             selected = False
-            if server.type == 'imap':
+            if server.server_type == 'imap':
                 try:
                     imap_server = server.connect()
                     response, data = imap_server.list()
@@ -91,7 +91,7 @@ class FetchmailServer(models.Model):
                                         _logger.info(f'Mail with UID {num} from server {server.name} was processed')
                                     except Exception:
                                         _logger.info('Failed to process mail from %s server %s.',
-                                                     server.type,
+                                                     server.server_type,
                                                      server.name,
                                                      exc_info=True)
                                         failed += 1
@@ -102,7 +102,7 @@ class FetchmailServer(models.Model):
                                     count += 1
                                 _logger.info("Fetched %d email(s) on %s server %s; %d succeeded, %d failed.",
                                              count,
-                                             server.type,
+                                             server.server_type,
                                              server.name,
                                              (count - failed),
                                              failed)
@@ -111,7 +111,7 @@ class FetchmailServer(models.Model):
                         server.env.cr.commit()
                 except Exception:
                     _logger.info("General failure when trying to fetch mail from %s server %s.",
-                                 server.type,
+                                 server.server_type,
                                  server.name,
                                  exc_info=True)
                     server.env.cr.rollback()
