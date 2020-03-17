@@ -7,10 +7,20 @@
         <field name="inherit_id" ref="mail.view_message_form"/>
         <field name="arch" type="xml">
             <field name="mail_server_id" position="after">
-                <field name="fetchmail_server_id"/>
-            </field>
+                <field name="fetchmail_server_id"/>            </field>
             <field name="notification_ids" position="after">
                 <field name="child_ids" />
+            </field>
+        </field>
+    </record>
+
+    <record id="view_email_server_form" model="ir.ui.view">
+        <field name="name">fetchmail.server.form</field>
+        <field name="model">fetchmail.server</field>
+        <field name="inherit_id" ref="fetchmail.view_email_server_form"/>
+        <field name="arch" type="xml">
+            <field name="active" position="after">
+                <field name="initially_from" />
             </field>
         </field>
     </record>
