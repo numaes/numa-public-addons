@@ -1,0 +1,26 @@
+{
+	'name' : 'Numa Pricelist Extension',
+	'version' : '1.0',
+	'author' : 'Numa Extreme Systems',
+	'category' : 'Specific Numa Applications',
+	'website': 'https://www.numaes.com',
+	'depends' : ['base', 'product'],
+	'demo' : [],
+	'data' : ['views/numa_product_pricelist_view.xml',
+			  'views/numa_product_global_discount_view.xml',
+			  'views/invoice_view.xml',
+			  'views/sale_order_view.xml',
+			  'views/purchase_order_view.xml',
+			  'security/ir.model.access.csv',
+			  'security/security.xml',
+			  'views/product_view.xml',
+			  'views/res_partner_view.xml',],
+	'css': [],
+	'description': """Manager Product Price List""",
+	'summary': 'Manager Product Price List',
+	'auto_install': False,
+	'installable': True,
+	'application': False,
+}
+
+# vim:expandtab:smartindent:tabstop=4:softtabstop=4:shiftwidth=4:
