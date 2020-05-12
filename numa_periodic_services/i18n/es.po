@@ -1,13 +1,13 @@
 # Translation of Odoo Server.
 # This file contains the translation of the following modules:
-# 	* numa_exceptions
+# 	* numa_periodic_services
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 13.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2019-11-22 16:02+0000\n"
-"PO-Revision-Date: 2019-11-22 16:02+0000\n"
+"POT-Creation-Date: 2020-05-12 14:14+0000\n"
+"PO-Revision-Date: 2020-05-12 14:14+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -15,203 +15,398 @@ msgstr ""
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: \n"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__create_uid
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__create_uid
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__create_uid
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_needaction
+msgid "Action Needed"
+msgstr "Se requiere acción"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__activity_ids
+msgid "Activities"
+msgstr "Actividades"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__activity_exception_decoration
+msgid "Activity Exception Decoration"
+msgstr "Excepción de actividad"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__activity_state
+msgid "Activity State"
+msgstr "Estado de la actividad"
+
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_search_view
+msgid "Grouped by"
+msgstr "Agrupado por"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_attachment_count
+msgid "Attachment Count"
+msgstr "Cantidad de adjuntos"
+
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_form_view
+msgid "Back to configuration"
+msgstr "Volver a configuración"
+
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_form_view
+msgid "Cancel service"
+msgstr "Cancelar servicio"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields.selection,name:numa_periodic_services.selection__base_periodic_service__state__canceled
+msgid "Canceled"
+msgstr "Cancelado"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields.selection,name:numa_periodic_services.selection__base_periodic_service__state__draft
+msgid "Configuration"
+msgstr "Configuración"
+
+#. module: numa_periodic_services
+#: code:addons/numa_periodic_services/models/periodic_services.py:0
+#, python-format
+msgid ""
+"Configuration error. At service trigger no processing could be executed.\n"
+"Please check the configuration of periodic service %s"
+msgstr "Error de configuración. Al disparar el servicio no pudo ser ejecutado.\n"
+"Por favor revisar la configuración del servicio"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__create_uid
 msgid "Created by"
 msgstr "Creado por"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__create_date
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__create_date
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__create_date
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__create_date
 msgid "Created on"
 msgstr "Creado el"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__display_name
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__display_name
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__display_name
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__error_count
+msgid "Current error count"
+msgstr "Cuenta de errores"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields.selection,name:numa_periodic_services.selection__base_periodic_service__interval_type__days
+msgid "Days"
+msgstr "Días"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__display_name
 msgid "Display Name"
-msgstr "Nombre mostrado"
+msgstr "Nombre para mostrar"
 
-#. module: numa_exceptions
-#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_search_view
-msgid "Do not purge"
-msgstr "No autolimpiar"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__error_limit
+msgid "Error count limit"
+msgstr "Límite de errores"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__do_not_purge
-msgid "Do not purge?"
-msgstr "No autolimpiar"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__error_treatment
+msgid "Error treatment"
+msgstr "Tratamiento de errores"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__gexception
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__exception
-#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_form_view
-#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_list_view
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_form_view
 msgid "Exception"
 msgstr "Excepción"
 
-#. module: numa_exceptions
-#: model:ir.actions.act_window,name:numa_exceptions.exceptions_action
-#: model:ir.ui.menu,name:numa_exceptions.exceptions_menu
-#: model:ir.ui.menu,name:numa_exceptions.exceptions_submenu
-#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_search_view
-msgid "Exceptions"
-msgstr "Excepciones"
-
-#. module: numa_exceptions
-#: model:ir.actions.server,name:numa_exceptions.ir_cron_scheduler_alarm_ir_actions_server
-#: model:ir.cron,cron_name:numa_exceptions.ir_cron_scheduler_alarm
-#: model:ir.cron,name:numa_exceptions.ir_cron_scheduler_alarm
-msgid "Exceptions cleaning"
-msgstr "Limpiar excepciones"
-
-#. module: numa_exceptions
-#: model_terms:ir.actions.act_window,help:numa_exceptions.exceptions_action
-msgid "Exceptions recorded."
-msgstr "Excepciones registradas"
-
-#. module: numa_exceptions
-#: model:ir.model,name:numa_exceptions.model_base_frame
-msgid "Exceptions: call frame"
-msgstr "Excepciones: call frame"
-
-#. module: numa_exceptions
-#: model:ir.model,name:numa_exceptions.model_base_general_exception
-msgid "Exceptions: exception log"
-msgstr "Excepciones: log"
-
-#. module: numa_exceptions
-#: model:ir.model,name:numa_exceptions.model_base_variable_value
-msgid "Exceptions: variable value"
-msgstr "Excepciones: variable"
-
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__file_name
-msgid "File name"
-msgstr "Nombre de archivo"
-
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__frame
-#: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_form_view
-msgid "Frame"
-msgstr ""
-
-#. module: numa_exceptions
-#: code:addons/numa_exceptions/models/exceptions.py:0
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__frames
-#: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_list_view
-#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_form_view
+#. module: numa_periodic_services
+#: code:addons/numa_periodic_services/models/periodic_services.py:0
 #, python-format
-msgid "Frames"
-msgstr "Frame"
+msgid ""
+"Execution at %s: unexpected exception\n"
+"%s"
+msgstr ""
+"Ejecución del %s: excepción inesperada\n"
 
-#. module: numa_exceptions
-#: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_form_view
-#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_form_view
-msgid "General"
-msgstr "General"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_follower_ids
+msgid "Followers"
+msgstr "Seguidores"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__id
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__id
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__id
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_channel_ids
+msgid "Followers (Channels)"
+msgstr "Seguidores (canales)"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_partner_ids
+msgid "Followers (Partners)"
+msgstr "Seguidores (Partners)"
+
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_form_view
+msgid "Go into maintenance mode"
+msgstr "Ir a mantenimiento"
+
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_form_view
+msgid "Go to test mode"
+msgstr "Ir a modo test"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields.selection,name:numa_periodic_services.selection__base_periodic_service__interval_type__hours
+msgid "Hours"
+msgstr "Horas"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__id
 msgid "ID"
 msgstr "ID"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__name
-msgid "Identification"
-msgstr "Identificación"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__activity_exception_icon
+msgid "Icon"
+msgstr "Icono"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame____last_update
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception____last_update
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value____last_update
+#. module: numa_periodic_services
+#: model:ir.model.fields,help:numa_periodic_services.field_base_periodic_service__activity_exception_icon
+msgid "Icon to indicate an exception activity."
+msgstr "Icono para indicar una excepción en actividades."
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,help:numa_periodic_services.field_base_periodic_service__message_needaction
+#: model:ir.model.fields,help:numa_periodic_services.field_base_periodic_service__message_unread
+msgid "If checked, new messages require your attention."
+msgstr "Si está marcado, hay nuevos mensajes para revisar"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,help:numa_periodic_services.field_base_periodic_service__message_has_error
+msgid "If checked, some messages have a delivery error."
+msgstr "Si está marcado, algunos mensajes no pudieron ser enviados"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields.selection,name:numa_periodic_services.selection__base_periodic_service__state__running
+msgid "In operation"
+msgstr "En operación"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__interval_type
+msgid "Interval unit"
+msgstr "Unidad del intervalo"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_is_follower
+msgid "Is Follower"
+msgstr "Es seguidor"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service____last_update
 msgid "Last Modified on"
-msgstr "Última modificación en"
+msgstr "Ultima modificación"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__write_uid
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__write_uid
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__write_uid
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__write_uid
 msgid "Last Updated by"
-msgstr "Última actualización por"
+msgstr "Modificado por"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__write_date
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__write_date
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__write_date
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__write_date
 msgid "Last Updated on"
-msgstr "Última actualización el"
+msgstr "Ultima actualización"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__line_number
-msgid "Line number"
-msgstr "Nro. de línea"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_main_attachment_id
+msgid "Main Attachment"
+msgstr "Adjunto principal"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__locals
-msgid "Local variables"
-msgstr "Variables locales"
+#. module: numa_periodic_services
+#: model:ir.model.fields.selection,name:numa_periodic_services.selection__base_periodic_service__state__maintenance
+msgid "Maintenance"
+msgstr "Mantenimiento"
 
-#. module: numa_exceptions
-#: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_form_view
-msgid "Locals"
-msgstr "Locales"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_has_error
+msgid "Message Delivery error"
+msgstr "Error de envio de mensaje"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__method
-msgid "Method"
-msgstr "Método"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_ids
+msgid "Messages"
+msgstr "Mensajes"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__name
+#. module: numa_periodic_services
+#: model:ir.model.fields.selection,name:numa_periodic_services.selection__base_periodic_service__interval_type__minutes
+msgid "Minutes"
+msgstr "Minutos"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__name
 msgid "Name"
 msgstr "Nombre"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__params
-msgid "Params"
-msgstr "Parámetros"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__activity_date_deadline
+msgid "Next Activity Deadline"
+msgstr "Fecha límite prox. actividad"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__sequence
-msgid "Sequence"
-msgstr "Secuencia"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__activity_summary
+msgid "Next Activity Summary"
+msgstr "Resumen de próxima actividad"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__service
-msgid "Service"
-msgstr "Servicio"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__activity_type_id
+msgid "Next Activity Type"
+msgstr "Tipo de próxima actividad"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__src_code
-msgid "Source code"
-msgstr "Código fuente"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__next_execution
+msgid "Next execution"
+msgstr "Próxima ejecución"
 
-#. module: numa_exceptions
-#: code:addons/numa_exceptions/models/exceptions.py:0
-#: code:addons/numa_exceptions/models/exceptions.py:0
-#: code:addons/numa_exceptions/models/exceptions.py:0
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_needaction_counter
+msgid "Number of Actions"
+msgstr "Cantidad de acciones"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_has_error_counter
+msgid "Number of errors"
+msgstr "Cantidad de errores"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,help:numa_periodic_services.field_base_periodic_service__message_needaction_counter
+msgid "Number of messages which requires an action"
+msgstr "Cantidad de mensajes que requieren atención"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,help:numa_periodic_services.field_base_periodic_service__message_has_error_counter
+msgid "Number of messages with delivery error"
+msgstr "Cantidad de mensajes con errores de envío"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,help:numa_periodic_services.field_base_periodic_service__message_unread_counter
+msgid "Number of unread messages"
+msgstr "Cantidad de mensajes no leidos"
+
+#. module: numa_periodic_services
+#: model:ir.actions.act_window,name:numa_periodic_services.periodic_service_action
+#: model:ir.ui.menu,name:numa_periodic_services.periodic_service_menu
+msgid "Periodic Service"
+msgstr "Servicio Periódico"
+
+#. module: numa_periodic_services
+#: model_terms:ir.actions.act_window,help:numa_periodic_services.periodic_service_action
+#: model:ir.model,name:numa_periodic_services.model_base_periodic_service
+#: model:ir.ui.menu,name:numa_periodic_services.periodic_service_submenu
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_list_view
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_search_view
+msgid "Periodic Services"
+msgstr "Servicios Periódicos"
+
+#. module: numa_periodic_services
+#: model:ir.actions.server,name:numa_periodic_services.ir_cron_scheduler_alarm_ir_actions_server
+#: model:ir.cron,cron_name:numa_periodic_services.ir_cron_scheduler_alarm
+#: model:ir.cron,name:numa_periodic_services.ir_cron_scheduler_alarm
+msgid "Periodic Services scheduler"
+msgstr "Programador de servicios periódicos"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__interval_value
+msgid "Repetition interval"
+msgstr "Intervalo de repetición"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__activity_user_id
+msgid "Responsible User"
+msgstr "Usuario responsable"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields.selection,name:numa_periodic_services.selection__base_periodic_service__error_treatment__retry_forever
+msgid "Retry forever"
+msgstr "Volver a intentar siempre"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields.selection,name:numa_periodic_services.selection__base_periodic_service__error_treatment__retry_with_limit
+msgid "Retry with limit"
+msgstr "Volver a intentar con límite"
+
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_search_view
+msgid "Running services"
+msgstr "Servicios en ejecución"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__type
+msgid "Service type"
+msgstr "Tipo de servicio"
+
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_form_view
+msgid "Set normal operation"
+msgstr "Fijar operación normal"
+
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_form_view
+msgid "Settings"
+msgstr "Configuración"
+
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_form_view
+msgid "Specific data"
+msgstr "Datos específicos"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__state
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_search_view
+msgid "State"
+msgstr "Estado"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,help:numa_periodic_services.field_base_periodic_service__activity_state
+msgid ""
+"Status based on activities\n"
+"Overdue: Due date is already passed\n"
+"Today: Activity date is today\n"
+"Planned: Future activities."
+msgstr ""
+"Estado basado en actividades\n"
+"Vencido: la fecha programada se ha superado\n"
+"Hoy: la fecha programada es hoy\n"
+"Planificado: es una actividad en el futuro."
+
+#. module: numa_periodic_services
+#: model:ir.model.fields.selection,name:numa_periodic_services.selection__base_periodic_service__state__testing
+msgid "Testing"
+msgstr "Prueba"
+
+#. module: numa_periodic_services
+#: model_terms:ir.ui.view,arch_db:numa_periodic_services.periodic_service_search_view
+msgid "Type"
+msgstr "Tipo"
+
+#. module: numa_periodic_services
+#: model:ir.model.fields,help:numa_periodic_services.field_base_periodic_service__activity_exception_decoration
+msgid "Type of the exception activity on record."
+msgstr "Tipo de excepción en la actividad"
+
+#. module: numa_periodic_services
+#: code:addons/numa_periodic_services/models/periodic_services.py:0
 #, python-format
-msgid "System error %s. Get in touch with your System Admin"
-msgstr "Error de sistema %s. Póngase en contacto con su Administrador de sistema"
+msgid "Unexpected exception executing service"
+msgstr "Excepción inesperada ejecutando el servicio"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__timestamp
-msgid "Timestamp"
-msgstr "Timestamp"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_unread
+msgid "Unread Messages"
+msgstr "Mensajes no leidos"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__user
-msgid "User"
-msgstr "Usuario"
+#. module: numa_periodic_services
+#: model:ir.model.fields,field_description:numa_periodic_services.field_base_periodic_service__message_unread_counter
+msgid "Unread Messages Counter"
+msgstr "Cantidad de mensajes no leidos"
 
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__value
-msgid "Value"
-msgstr "Valor"
+#. module: numa_periodic_services
+#: code:addons/numa_periodic_services/models/periodic_services.py:0
+#, python-format
+msgid ""
+"You must configure the next excecution point in time before going into "
+"operation"
+msgstr ""
+"El momento de la siguiente ejecución debe ser fijado antes de entrar en operación normal"
+

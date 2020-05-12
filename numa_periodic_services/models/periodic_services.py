@@ -1,6 +1,6 @@
 from odoo import models, fields, api, exceptions, _, SUPERUSER_ID
 from datetime import timedelta
-from addons.numa_exceptions import register_exception
+from odoo.addons import numa_exceptions
 
 import logging
 
@@ -18,7 +18,7 @@ class PeriodicServices(models.Model):
             ('draft', 'Configuration'),
             ('testing', 'Testing'),
             ('running', 'In operation'),
-            ('maintenance', 'Mantenance'),
+            ('maintenance', 'Maintenance'),
             ('canceled', 'Canceled'),
         ],
         string='State',
@@ -57,6 +57,25 @@ class PeriodicServices(models.Model):
         readonly=True,
         states={'draft': [('readonly', False)]},
     )
+
+    error_treatment = fields.Selection(
+        [
+            ('retry_forever', 'Retry forever'),
+            ('retry_with_limit', 'Retry with limit'),
+        ],
+        'Error treatment',
+        readonly=True,
+        required=True,
+        default='retry_forever',
+        states={
+            'draft': [('readonly', False)],
+            'testing': [('readonly', False)],
+            'maintenance': [('readonly', False)],
+        },
+    )
+
+    error_count = fields.Integer('Current error count')
+    error_limit = fields.Integer('Error count limit')
 
     def on_start_running(self):
         pass
@@ -142,11 +161,12 @@ class PeriodicServices(models.Model):
                     + (timedelta(days=service.interval_value)
                        if service.interval_type == 'days' else zero_delta)
                 service.next_execution = next_trigger
+                service.error_count = 0
                 service.env.cr.commit()
             except Exception as e:
                 service.env.cr.abort()
                 _logger.warning(f'Unexpected exception on service {service.name}, exception {e}')
-                register_exception(
+                numa_exceptions.register_exception(
                     service.name,
                     'trigger',
                     [],
@@ -154,10 +174,17 @@ class PeriodicServices(models.Model):
                     self.env.user.id,
                     e
                 )
+
                 service.message_post(
                     subject=_('Unexpected exception executing service'),
-                    body=_('Execution at {now}: unexpected exception\n%s') % e,
+                    body=_('Execution at %s: unexpected exception\n%s') % (now, e),
                 )
+
+                service.error_count += 1
+                if service.error_treatment == 'retry_with_limit':
+                    if service.error_count >= service.error_limit:
+                        service.action_into_maintenance()
+
                 service.env.cr.commit()
 
         _logger.info('Ending periodic service dispatch')

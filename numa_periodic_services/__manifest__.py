@@ -51,6 +51,7 @@ checked to run the ones wich its next run is already happened.
 	'summary': "Periodic Services administration",
     'version': '1.0',
     'depends': ['base',
+                'mail',
                 'numa_exceptions'],
     'data': [
         'security/ir.model.access.csv',

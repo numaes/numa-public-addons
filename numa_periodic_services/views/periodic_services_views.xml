@@ -2,7 +2,7 @@
 <openerp>
     <data>
 
-        <menuitem name="Periodic Services" parent="base.menu_custom" id="exceptions_submenu"/>
+        <menuitem name="Periodic Services" parent="base.menu_custom" id="periodic_service_submenu"/>
 
         <record id="periodic_service_form_view" model="ir.ui.view">
             <field name="name">Periodic Service form</field>
@@ -25,7 +25,7 @@
                         <button name="action_into_configuration"
                                 type="object"
                                 string="Back to configuration"
-                                states="testing,running,maintenance"/>
+                                states="testing,running,maintenance,canceled"/>
                         <button name="action_cancel"
                                 type="object"
                                 string="Cancel service"
@@ -52,99 +52,64 @@
                         <group name="specific_data" string="Specific data">
                         </group>
                     </sheet>
+                    <div class="oe_chatter">
+                        <field name="message_follower_ids" widget="mail_followers"/>
+                        <field name="activity_ids" widget="mail_activity"/>
+                        <field name="message_ids" widget="mail_thread"/>
+                    </div>
                 </form>
             </field>
         </record>
 
-        <record id="exceptions_list_view" model="ir.ui.view">
-            <field name="name">Exceptions list</field>
-            <field name="model">base.general_exception</field>
+        <record id="periodic_service_list_view" model="ir.ui.view">
+            <field name="name">Periodic Service list</field>
+            <field name="model">base.periodic_service</field>
             <field name="arch" type="xml">
-                <tree string="Exception" create="0">
-                    <field name="user" select="True"/>
-                    <field name="name" select="True" />
-                    <field name="timestamp" select="True" />
-                    <field name="service" select="True" />
-                    <field name="method" select="True" />
+                <tree string="Periodic Services" >
+                    <field name="name" select="True"/>
+                    <field name="type" select="True" />
+                    <field name="next_execution" select="True" />
+                    <field name="error_count" select="True" />
+                    <field name="state" select="True" />
                 </tree>
             </field>
         </record>
 
-        <record id="exceptions_search_view" model="ir.ui.view">
-            <field name="name">Exceptions search</field>
-            <field name="model">base.general_exception</field>
+        <record id="periodic_service_search_view" model="ir.ui.view">
+            <field name="name">Periodic Service search</field>
+            <field name="model">base.periodic_service</field>
             <field name="arch" type="xml">
-                <search string="Exceptions" >
-                    <filter string="Do not purge" name="do_not_purge"
-                            domain="[('do_not_purge','=',True)]"/>
+                <search string="Periodic Services" >
+                    <filter string="Running services" name="running_services"
+                            domain="[('state','=','running')]"/>
                     <separator orientation="vertical"/>
                     <field name="name"/>
-                    <field name="user" />
-                    <field name="timestamp" />
-                    <field name="service" />
+                    <field name="type" />
+                    <field name="state" />
+                    <group expand="0" string="Group by">
+                        <filter string="State" name="state_grouped" context="{'group_by': 'state'}"/>
+                        <filter string="Type" name="type_grouped" context="{'group_by': 'type'}"/>
+                    </group>
                 </search>
             </field>
         </record>
 
-        <record id="exceptions_action" model="ir.actions.act_window">
-            <field name="name">Exceptions</field>
+        <record id="periodic_service_action" model="ir.actions.act_window">
+            <field name="name">Periodic Service</field>
             <field name="type">ir.actions.act_window</field>
-            <field name="res_model">base.general_exception</field>
+            <field name="res_model">base.periodic_service</field>
             <field name="view_mode">list,form</field>
             <field name="help" type="html">
               <p class="oe_view_nocontent_create">
-                  Exceptions recorded. 
+                  Periodic Services
               </p>
             </field>
         </record>
 
-        <menuitem id="exceptions_menu"
-            action="exceptions_action"
-            parent="exceptions_submenu" 
+        <menuitem id="periodic_service_menu"
+            action="periodic_service_action"
+            parent="periodic_service_submenu"
             sequence="10"/>
-            
-        <record id="exc_frame_form_view" model="ir.ui.view">
-            <field name="name">Exception frames form</field>
-            <field name="model">base.frame</field>
-            <field name="arch" type="xml">
-                <form string="Frame" >
-                    <header>
-                    </header>
-                    <sheet>
-                        <div class="oe_title">
-                            <label for="file_name" class="oe_edit_only"/>
-                            <h2>
-                                <field name="file_name" width="500"/>
-                            </h2>
-                        </div>
-                        <group string="General">
-                            <field name="gexception" invisible="True" />
-                            <field name="line_number"/>
-                            <field name="src_code" widget="html"/>
-                            <field name="locals" readonly="True">
-                                <tree string="Locals">
-                                    <field name="sequence" invisible="True"/>
-                                    <field name="name"/>
-                                    <field name="value"/>
-                                </tree>
-                            </field>
-                        </group>
-                    </sheet>
-                </form>
-            </field>
-        </record>
-
-        <record id="exc_frame_list_view" model="ir.ui.view">
-            <field name="name">Exceptions frames list</field>
-            <field name="model">base.frame</field>
-            <field name="arch" type="xml">
-                <tree string="Frames" create="0">
-                    <field name="gexception" select="True"/>
-                    <field name="file_name" select="True" />
-                    <field name="line_number" select="True" />
-                </tree>
-            </field>
-        </record>
 
     </data>
 </openerp>
