@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+    <data noupdate="1">
+
+		<!-- Scheduler for periodic services-->
+		<record forcecreate="True" id="ir_cron_scheduler_alarm"
+			model="ir.cron">
+            <field name='name'>Periodic Services scheduler</field>
+            <field name='interval_number'>10</field>
+            <field name='interval_type'>minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="active">True</field>
+            <field name="doall" eval="False" />
+            <field name="model_id" ref="model_base_periodic_service"/>
+            <field name="state">code</field>
+            <field name="code">model.dispatch()</field>
+		</record>
+
+    </data>
+</openerp>

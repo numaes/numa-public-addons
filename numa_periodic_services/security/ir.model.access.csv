@@ -1,0 +1,2 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+"access_periodic_services_general","Periodic Services, general access","model_base_periodic_service",,1,1,1,1
