@@ -142,6 +142,7 @@ class PeriodicServices(models.Model):
         services_to_trigger = self.search(
             [
                 ('state', '=', 'running'),
+                ('next_execution', '!=', False),
                 ('next_execution', '<=', now)
             ]
         )
