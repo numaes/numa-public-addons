@@ -1,0 +1,1794 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+#	* numa_voucher
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 8.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2015-06-30 10:24+0000\n"
+"PO-Revision-Date: 2015-06-30 10:24+0000\n"
+"Last-Translator: <>\n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: numa_voucher
+#: help:account.customer_voucher,state:0
+msgid " * 'Draft' state is used on new document entries.                         \n"
+"* 'Posted' is used when the document is registered and account moves are generated                         \n"
+"* 'Canceled' is used for canceled documents."
+msgstr " * El estado 'Borrador' se usa mientras se completa el ingreso de nuevos documentos.\n"
+"* El estado 'Publicado' se usa cuando el documento ha sido registrado en el sistema y se han generado los correspondientes asientos contables de registro\n"
+"* El estado 'Cancelado' se usa para documentos cancelados."
+
+#. module: numa_voucher
+#: help:account.supplier_voucher,state:0
+msgid " * 'Draft' state is used on new document entries.                         \n"
+"* 'Ready to post' when all data is loaded and the document is ready for approval                         \n"
+"* 'Posted' is used when the document is registered and account moves are generated                         \n"
+"* 'Payed' is used when the supplier has already recognized the payment                         \n"
+"* 'Canceled' is used for canceled documents."
+msgstr " El estado 'Borrador' se usa mientras se completa el ingreso de nuevos documentos.                         \n"
+"* El estado 'Listo para aprobar' significa que el documento está completo esperando aprobación                         \n"
+"* El estado 'Publicado' significa que la orden de pago fue aprobada y ha sido registrada en la contabilidad                         \n"
+"* El estado 'Pagado' significa que el proveedor ha recibido y reconocido el pago                         \n"
+"* El estado 'Cancelado' significa que la orden de pago ha sido cancelada y sus efectos contables revertidos"
+
+#. module: numa_voucher
+#: help:account.customer_reconcile,state:0
+#: help:account.supplier_reconcile,state:0
+msgid " * 'Draft' state is used on new document entry.                         \n"
+"* 'Posted' is used when the document is registered and account moves are generated                         \n"
+"* 'Canceled' is used for canceled documents."
+msgstr " * El estado 'Borrador' se usa mientras se completa el ingreso de nuevos documentos.\n"
+"* El estado 'Publicado' se usa cuando el documento ha sido registrado en el sistema y se han generado los correspondientes asientos contables de registro\n"
+"* El estado 'Cancelado' se usa para documentos cancelados."
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "- Account"
+msgstr "- Cuenta"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,account:0
+#: field:account.customer_reconcile_credit,account:0
+#: field:account.customer_reconcile_debt,account:0
+#: field:account.customer_voucher,account:0
+#: field:account.cv_bank_transfer,account:0
+#: field:account.cv_debt,account:0
+#: field:account.supplier_reconcile,account:0
+#: field:account.supplier_reconcile_credit,account:0
+#: field:account.supplier_reconcile_debt,account:0
+#: field:account.supplier_voucher,account:0
+#: field:account.sv_bank_transfer,account:0
+#: field:account.sv_debt,account:0
+msgid "Account"
+msgstr "Cuenta"
+
+#. module: numa_voucher
+#: field:account.sv_tax,base_code_id:0
+msgid "Account Base Code"
+msgstr "Cuenta de Código base"
+
+#. module: numa_voucher
+#: field:account.sv_tax,tax_code_id:0
+msgid "Account Tax Code"
+msgstr "Código Impuesto de cuenta"
+
+#. module: numa_voucher
+#: field:account.customer_voucher,move:0
+#: field:account.supplier_voucher,move:0
+msgid "Account move"
+msgstr "Asiento contable"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Accounting"
+msgstr "Contabilidad"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Accounting information"
+msgstr "Información contable"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,move:0
+#: field:account.supplier_reconcile,move:0
+msgid "Accounting move"
+msgstr "Movimiento contable"
+
+#. module: numa_voucher
+#: help:account.customer_voucher,unassigned_payments:0
+#: help:account.supplier_voucher,unassigned_payments:0
+msgid "Acumulated payments, registered but not assigned to any document"
+msgstr "Pagos acumulados, registrados pero aun no asignados a ningún documento"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Additional retentions"
+msgstr "Retenciones adicionales"
+
+#. module: numa_voucher
+#: field:account.cv_bank_transfer,amount:0
+#: field:account.cv_cash,amount:0
+#: field:account.cv_credit_card_voucher,amount:0
+#: field:account.cv_doc,amount:0
+#: field:account.cv_quick_move,amount:0
+#: field:account.sv_bank_transfer,amount:0
+#: field:account.sv_cash,amount:0
+#: field:account.sv_odoc,amount:0
+#: field:account.sv_quick_move,amount:0
+#: field:account.sv_tpdoc,amount:0
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "Amount"
+msgstr "Importe"
+
+#. module: numa_voucher
+#: field:account.cv_cash,original_amount:0
+#: field:account.sv_cash,original_amount:0
+msgid "Amount on original currency"
+msgstr "Importe en la moneda original"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:753
+#: code:addons/numa_voucher/models/customer_reconcile.py:842
+#: code:addons/numa_voucher/models/customer_voucher.py:1441
+#: code:addons/numa_voucher/models/supplier_reconcile.py:751
+#: code:addons/numa_voucher/models/supplier_reconcile.py:840
+#: code:addons/numa_voucher/models/supplier_voucher.py:1718
+#, python-format
+msgid "Amount should be positive and at most like the unreconciled amount! Please check it"
+msgstr "El importe debe ser positivo y a lo sumo como el importe aun no cancelado! Por favor revisar"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile_credit,amount:0
+#: field:account.customer_reconcile_debt,amount:0
+#: field:account.cv_debt,amount:0
+#: field:account.supplier_reconcile_credit,amount:0
+#: field:account.supplier_reconcile_debt,amount:0
+#: field:account.sv_debt,amount:0
+msgid "Amount to be applied"
+msgstr "Importe a ser aplicado"
+
+#. module: numa_voucher
+#: field:account.supplier_voucher,amount_to_pay:0
+msgid "Amount to pay"
+msgstr "Importe a pagar"
+
+#. module: numa_voucher
+#: help:account.supplier_voucher,amount_to_pay:0
+msgid "Amount you wish to pay with this payment order"
+msgstr "Importe a abonar con esta orden de pago"
+
+#. module: numa_voucher
+#: field:account.cv_doc,analytic_account:0
+#: field:account.sv_odoc,analytic_account:0
+#: field:account.sv_tpdoc,analytic_account:0
+msgid "Analitic account"
+msgstr "Cuento analítica"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile_credit,analytic_account:0
+#: field:account.customer_reconcile_debt,analytic_account:0
+#: field:account.cv_bank_transfer,analytic_account:0
+#: field:account.cv_cash,analytic_account:0
+#: field:account.cv_credit_card_voucher,analytic_account:0
+#: field:account.cv_debt,analytic_account:0
+#: field:account.cv_quick_move,analytic_account:0
+#: field:account.supplier_reconcile_credit,analytic_account:0
+#: field:account.supplier_reconcile_debt,analytic_account:0
+#: field:account.sv_bank_transfer,analytic_account:0
+#: field:account.sv_cash,analytic_account:0
+#: field:account.sv_debt,analytic_account:0
+#: field:account.sv_quick_move,analytic_account:0
+msgid "Analytic account"
+msgstr "Cuenta analítica"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,debts:0
+#: field:account.customer_voucher,debt_entries:0
+#: field:account.supplier_reconcile,debts:0
+#: field:account.supplier_voucher,debt_entries:0
+msgid "Applied debts"
+msgstr "Deudas aplicadas"
+
+#. module: numa_voucher
+#: field:account.supplier_voucher,tax_entries:0
+msgid "Applied taxes"
+msgstr "Impuestos aplicados"
+
+#. module: numa_voucher
+#: field:account.customer_voucher,audit:0
+#: field:account.supplier_voucher,audit:0
+msgid "Audit ?"
+msgstr "A auditar ?"
+
+#. module: numa_voucher
+#: field:account.sv_tax,automatic:0
+msgid "Automatically computed?"
+msgstr "Calculado automaticamente?"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Back to draft"
+msgstr "Volver a borrador"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,balance:0
+#: field:account.customer_voucher,balance:0
+#: field:account.supplier_reconcile,balance:0
+#: field:account.supplier_voucher,balance:0
+msgid "Balance"
+msgstr "Balance"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:541
+#: code:addons/numa_voucher/models/supplier_reconcile.py:539
+#, python-format
+msgid "Balance should be 0 to register the conciliation. Currently: %f!"
+msgstr "El balance debe ser 0 para poder registrar la conciliación. Actualmente: %f!"
+
+#. module: numa_voucher
+#: field:account.cv_bank_transfer,bank_account:0
+#: field:account.sv_bank_transfer,bank_account:0
+msgid "Bank Account"
+msgstr "Cuenta bancaria"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+msgid "Bank Transfers"
+msgstr "Transferencias bancarias"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: field:account.customer_voucher,bt_entries:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: field:account.supplier_voucher,bt_entries:0
+#: report:supplier_voucher_print:0
+msgid "Bank transfers"
+msgstr "Transferencias bancarias"
+
+#. module: numa_voucher
+#: field:account.sv_tax,base:0
+msgid "Base"
+msgstr "Base"
+
+#. module: numa_voucher
+#: field:account.sv_tax,base_amount:0
+msgid "Base Amount"
+msgstr "Importe base"
+
+#. module: numa_voucher
+#: help:account.sv_tax,base_amount:0
+#: help:account.sv_tax,tax_amount:0
+msgid "Base of tax computation, in company currency"
+msgstr "Base del cálculo de impuesto, en moneda de la compañía"
+
+#. module: numa_voucher
+#: help:account.sv_tax,base:0
+msgid "Base of tax computation."
+msgstr "Base del cálculo de impuestos."
+
+#. module: numa_voucher
+#: report:supplier_voucher_print:0
+msgid "Base:"
+msgstr "Base:"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "Borrador"
+msgstr "Borrador"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:336
+#: code:addons/numa_voucher/models/customer_voucher.py:659
+#: code:addons/numa_voucher/models/supplier_reconcile.py:334
+#: code:addons/numa_voucher/models/supplier_voucher.py:816
+#, python-format
+msgid "CANCELATION"
+msgstr "CANCELACION"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:43
+#, python-format
+msgid "CRECON %s"
+msgstr "CRECON %s"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:44
+#, python-format
+msgid "CVOUCHER %s"
+msgstr "CVOUCHER %s"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:44
+#, python-format
+msgid "CVOUCHER CANC %s"
+msgstr "CVOUCHER CANC %s"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Cancel"
+msgstr "Cancelar"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "Cancelado"
+msgstr "Cancelado"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,cancelation_move:0
+#: field:account.customer_voucher,cancelation_move:0
+#: field:account.supplier_reconcile,cancelation_move:0
+#: field:account.supplier_voucher,cancelation_move:0
+msgid "Cancelation accounting move"
+msgstr "Asiento contable de cancelación"
+
+#. module: numa_voucher
+#: selection:account.customer_reconcile,state:0
+#: selection:account.customer_voucher,state:0
+#: selection:account.supplier_reconcile,state:0
+#: selection:account.supplier_voucher,state:0
+msgid "Canceled"
+msgstr "Cancelado"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: field:account.customer_voucher,cash_entries:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: field:account.supplier_voucher,cash_entries:0
+#: code:addons/numa_voucher/models/customer_voucher.py:903
+#: code:addons/numa_voucher/models/supplier_voucher.py:1050
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+#, python-format
+msgid "Cash"
+msgstr "Efectivo"
+
+#. module: numa_voucher
+#: field:account.cv_quick_move,qm:0
+#: field:account.sv_quick_move,qm:0
+msgid "Code"
+msgstr "Código"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,company:0
+#: field:account.customer_reconcile_credit,company:0
+#: field:account.customer_reconcile_debt,company:0
+#: field:account.customer_voucher,company:0
+#: field:account.cv_debt,company:0
+#: field:account.supplier_reconcile,company:0
+#: field:account.supplier_reconcile_credit,company:0
+#: field:account.supplier_reconcile_debt,company:0
+#: field:account.supplier_voucher,company:0
+#: field:account.sv_debt,company:0
+msgid "Company"
+msgstr "Compañía"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Compute retentions"
+msgstr "Calcular retenciones"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:1145
+#: code:addons/numa_voucher/models/customer_voucher.py:1322
+#: code:addons/numa_voucher/models/customer_voucher.py:1327
+#: code:addons/numa_voucher/models/supplier_voucher.py:1309
+#: code:addons/numa_voucher/models/supplier_voucher.py:1432
+#: code:addons/numa_voucher/models/supplier_voucher.py:1437
+#: code:addons/numa_voucher/models/supplier_voucher.py:1502
+#: code:addons/numa_voucher/models/supplier_voucher.py:1507
+#, python-format
+msgid "Configuration error!"
+msgstr "Error de configuración!"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,create_uid:0
+#: field:account.customer_reconcile_credit,create_uid:0
+#: field:account.customer_reconcile_debt,create_uid:0
+#: field:account.customer_voucher,create_uid:0
+#: field:account.cv_bank_transfer,create_uid:0
+#: field:account.cv_cash,create_uid:0
+#: field:account.cv_credit_card_voucher,create_uid:0
+#: field:account.cv_debt,create_uid:0
+#: field:account.cv_doc,create_uid:0
+#: field:account.cv_quick_move,create_uid:0
+#: field:account.supplier_reconcile,create_uid:0
+#: field:account.supplier_reconcile_credit,create_uid:0
+#: field:account.supplier_reconcile_debt,create_uid:0
+#: field:account.supplier_voucher,create_uid:0
+#: field:account.sv_bank_transfer,create_uid:0
+#: field:account.sv_cash,create_uid:0
+#: field:account.sv_debt,create_uid:0
+#: field:account.sv_odoc,create_uid:0
+#: field:account.sv_quick_move,create_uid:0
+#: field:account.sv_tax,create_uid:0
+#: field:account.sv_tpdoc,create_uid:0
+msgid "Created by"
+msgstr "Creado por"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,create_date:0
+#: field:account.customer_reconcile_credit,create_date:0
+#: field:account.customer_reconcile_debt,create_date:0
+#: field:account.customer_voucher,create_date:0
+#: field:account.cv_bank_transfer,create_date:0
+#: field:account.cv_cash,create_date:0
+#: field:account.cv_credit_card_voucher,create_date:0
+#: field:account.cv_debt,create_date:0
+#: field:account.cv_doc,create_date:0
+#: field:account.cv_quick_move,create_date:0
+#: field:account.supplier_reconcile,create_date:0
+#: field:account.supplier_reconcile_credit,create_date:0
+#: field:account.supplier_reconcile_debt,create_date:0
+#: field:account.supplier_voucher,create_date:0
+#: field:account.sv_bank_transfer,create_date:0
+#: field:account.sv_cash,create_date:0
+#: field:account.sv_debt,create_date:0
+#: field:account.sv_odoc,create_date:0
+#: field:account.sv_quick_move,create_date:0
+#: field:account.sv_tax,create_date:0
+#: field:account.sv_tpdoc,create_date:0
+msgid "Created on"
+msgstr "Creado el"
+
+#. module: numa_voucher
+#: field:account.cv_credit_card_voucher,credit_account:0
+#: field:account.cv_doc,credit_account:0
+#: field:account.cv_quick_move,credit_account:0
+#: field:account.sv_odoc,credit_account:0
+#: field:account.sv_quick_move,credit_account:0
+#: field:account.sv_tpdoc,credit_account:0
+msgid "Credit account"
+msgstr "Cuenta de crédito"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: field:account.cv_credit_card_voucher,ccv:0
+msgid "Credit card voucher"
+msgstr "Voucher de tarjeta"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:844
+#, python-format
+msgid "Credit card voucher [%s] is not longer in data complete state!. Please check it!"
+msgstr "El voucher de tarjeta [%s] no está en el estado de 'datos completos'!. Por favor revisar!"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: field:account.customer_voucher,ccv_entries:0
+#: report:customer_voucher_print:0
+msgid "Credit card vouchers"
+msgstr "Vouchers de tarjeta"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+msgid "Credit cards"
+msgstr "Tarjetas de crédito"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+msgid "Credits"
+msgstr "Créditos"
+
+#. module: numa_voucher
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+msgid "Credits from supplier"
+msgstr "Créditos del proveedor"
+
+#. module: numa_voucher
+#: field:account.customer_voucher,currency:0
+#: field:account.cv_bank_transfer,currency:0
+#: field:account.cv_cash,currency:0
+#: field:account.cv_credit_card_voucher,currency:0
+#: field:account.cv_doc,currency:0
+#: field:account.supplier_voucher,currency:0
+#: field:account.sv_bank_transfer,currency:0
+#: field:account.sv_cash,currency:0
+#: field:account.sv_odoc,currency:0
+#: field:account.sv_tpdoc,currency:0
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "Currency"
+msgstr "Moneda"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+#: field:account.customer_reconcile,partner:0
+#: field:account.customer_reconcile_credit,partner:0
+#: field:account.customer_reconcile_debt,partner:0
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+#: field:account.customer_voucher,partner:0
+#: field:account.cv_debt,partner:0
+#: report:customer_voucher_print:0
+msgid "Customer"
+msgstr "Cliente"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: field:account.customer_reconcile_credit,crec:0
+#: field:account.customer_reconcile_debt,crec:0
+msgid "Customer Reconcile"
+msgstr "Reconciliación de cliente"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: field:account.cv_quick_move,cv:0
+msgid "Customer Voucher"
+msgstr "Voucher del cliente"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+msgid "Customer reconcile"
+msgstr "Reconciliación de cliente"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_customer_reconcile_debt
+msgid "Customer reconcile Debts"
+msgstr "Deudas a reconciliar"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_customer_reconcile_credit
+msgid "Customer reconcile credit"
+msgstr "Créditos a reconciliar"
+
+#. module: numa_voucher
+#: model:ir.actions.act_window,name:numa_voucher.customer_reconcile_action
+#: model:ir.ui.menu,name:numa_voucher.customer_reconcile_menu
+msgid "Customer reconciles"
+msgstr "Reconciliaciones de cliente"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_tree
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_tree
+#: field:account.cv_bank_transfer,cv:0
+#: field:account.cv_cash,cv:0
+#: field:account.cv_credit_card_voucher,cv:0
+#: field:account.cv_debt,cv:0
+#: field:account.cv_doc,cv:0
+#: report:customer_voucher_print:0
+#: model:ir.actions.report.xml,name:numa_voucher.report_customer_voucher
+msgid "Customer voucher"
+msgstr "Recibo de cliente"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_cv_credit_card_voucher
+msgid "Customer voucher Credit Card vouchers"
+msgstr "Vouchers de tarjeta a recibos de cliente"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_cv_debt
+msgid "Customer voucher Debts"
+msgstr "Deudas a recibos de cliente"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_cv_doc
+msgid "Customer voucher Document"
+msgstr "Documentos de terceros a recibos de cliente"
+
+#. module: numa_voucher
+#: model:ir.actions.act_window,name:numa_voucher.customer_voucher_action
+#: model:ir.model,name:numa_voucher.model_account_customer_voucher
+#: model:ir.ui.menu,name:numa_voucher.customer_voucher_menu
+msgid "Customer vouchers"
+msgstr "Recibos de cliente"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,date:0
+#: field:account.customer_reconcile_credit,original_date:0
+#: field:account.customer_reconcile_debt,original_date:0
+#: field:account.customer_voucher,date:0
+#: field:account.cv_debt,original_date:0
+#: field:account.supplier_reconcile,date:0
+#: field:account.supplier_reconcile_credit,original_date:0
+#: field:account.supplier_reconcile_debt,original_date:0
+#: field:account.supplier_voucher,date:0
+#: field:account.sv_debt,original_date:0
+#: report:customer_voucher_print:0
+msgid "Date"
+msgstr "Fecha"
+
+#. module: numa_voucher
+#: help:account.supplier_voucher,received_on:0
+msgid "Date of the effective reception by supplier"
+msgstr "Fecha de recepción del pago por el proveedor"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+msgid "Debits"
+msgstr "Débitos"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:519
+#: code:addons/numa_voucher/models/customer_voucher.py:860
+#: code:addons/numa_voucher/models/supplier_reconcile.py:517
+#: code:addons/numa_voucher/models/supplier_voucher.py:1009
+#, python-format
+msgid "Debt [%s], amount to apply should be positive and not larger than the open amount. Please check it!"
+msgstr "En la deuda [%s], el importe a aplicar debe ser positivo y no mayor que el importe aun no cancelado! Por favor revisar"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Debts"
+msgstr "Deudas"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Debts and Taxes"
+msgstr "Deudas e impuestos"
+
+#. module: numa_voucher
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+msgid "Debts to supplier"
+msgstr "Deudas al proveedor"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile_credit,name:0
+#: field:account.customer_reconcile_debt,name:0
+#: field:account.cv_credit_card_voucher,description:0
+#: field:account.cv_doc,description:0
+#: field:account.cv_quick_move,description:0
+#: field:account.supplier_reconcile_credit,name:0
+#: field:account.supplier_reconcile_debt,name:0
+#: field:account.sv_odoc,description:0
+#: field:account.sv_quick_move,description:0
+#: field:account.sv_tpdoc,description:0
+msgid "Description"
+msgstr "Descripción"
+
+#. module: numa_voucher
+#: report:supplier_voucher_print:0
+msgid "Detalle de documentos de terceros entregados"
+msgstr "Detalle de documentos de terceros entregados"
+
+#. module: numa_voucher
+#: report:supplier_voucher_print:0
+msgid "Detalle de documentos propios emitidos"
+msgstr "Detalle de documentos propios emitidos"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: field:account.cv_doc,doc:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: field:account.sv_tpdoc,doc:0
+msgid "Document"
+msgstr "Documento"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:854
+#, python-format
+msgid "Document [%s] is not longer in data complete state!. Please check it!"
+msgstr "El documento de terceros [%s] no está en el estado 'datos completos'! Por favor revisar!"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_cv_quick_move
+#: model:ir.model,name:numa_voucher.model_account_sv_quick_move
+msgid "Document receipt Retentions"
+msgstr "Retenciones de recibo"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Documents"
+msgstr "Documentos"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+#: selection:account.customer_reconcile,state:0
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+#: selection:account.customer_voucher,state:0
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+#: selection:account.supplier_reconcile,state:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+#: selection:account.supplier_voucher,state:0
+msgid "Draft"
+msgstr "Borrador"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+msgid "Draft Customer voucher"
+msgstr "Recibo de cliente borrador"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Draft Supplier voucher"
+msgstr "Orden de pago borrador"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+msgid "Draft vouchers"
+msgstr "Documentos borrador"
+
+#. module: numa_voucher
+#: help:account.customer_reconcile,date:0
+#: help:account.supplier_reconcile,date:0
+msgid "Efective operation date"
+msgstr "Fecha efectiva de la operación"
+
+#. module: numa_voucher
+#: help:account.customer_reconcile,period:0
+#: help:account.customer_voucher,period:0
+#: help:account.supplier_reconcile,period:0
+#: help:account.supplier_voucher,period:0
+msgid "Effective date of the reconciliation"
+msgstr "Fecha efectiva de la reconciliación"
+
+#. module: numa_voucher
+#: help:account.customer_voucher,date:0
+#: help:account.supplier_voucher,date:0
+msgid "Effective receipt date"
+msgstr "Fecha efectiva de recepción"
+
+#. module: numa_voucher
+#: help:account.cv_bank_transfer,transfer_date:0
+#: help:account.sv_bank_transfer,transfer_date:0
+msgid "Effective transfer date, according to bank"
+msgstr "Fecha efectiva de transferencia, según el banco"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:512
+#: code:addons/numa_voucher/models/customer_reconcile.py:518
+#: code:addons/numa_voucher/models/customer_voucher.py:843
+#: code:addons/numa_voucher/models/customer_voucher.py:853
+#: code:addons/numa_voucher/models/customer_voucher.py:859
+#: code:addons/numa_voucher/models/supplier_reconcile.py:510
+#: code:addons/numa_voucher/models/supplier_reconcile.py:516
+#: code:addons/numa_voucher/models/supplier_voucher.py:995
+#: code:addons/numa_voucher/models/supplier_voucher.py:1002
+#: code:addons/numa_voucher/models/supplier_voucher.py:1008
+#, python-format
+msgid "Error !"
+msgstr "Error !"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:319
+#: code:addons/numa_voucher/models/customer_reconcile.py:360
+#: code:addons/numa_voucher/models/customer_reconcile.py:490
+#: code:addons/numa_voucher/models/customer_reconcile.py:722
+#: code:addons/numa_voucher/models/customer_reconcile.py:752
+#: code:addons/numa_voucher/models/customer_reconcile.py:811
+#: code:addons/numa_voucher/models/customer_reconcile.py:841
+#: code:addons/numa_voucher/models/customer_voucher.py:509
+#: code:addons/numa_voucher/models/customer_voucher.py:546
+#: code:addons/numa_voucher/models/customer_voucher.py:670
+#: code:addons/numa_voucher/models/customer_voucher.py:1069
+#: code:addons/numa_voucher/models/customer_voucher.py:1156
+#: code:addons/numa_voucher/models/customer_voucher.py:1410
+#: code:addons/numa_voucher/models/customer_voucher.py:1440
+#: code:addons/numa_voucher/models/supplier_reconcile.py:317
+#: code:addons/numa_voucher/models/supplier_reconcile.py:358
+#: code:addons/numa_voucher/models/supplier_reconcile.py:488
+#: code:addons/numa_voucher/models/supplier_reconcile.py:720
+#: code:addons/numa_voucher/models/supplier_reconcile.py:750
+#: code:addons/numa_voucher/models/supplier_reconcile.py:809
+#: code:addons/numa_voucher/models/supplier_reconcile.py:839
+#: code:addons/numa_voucher/models/supplier_voucher.py:576
+#: code:addons/numa_voucher/models/supplier_voucher.py:612
+#: code:addons/numa_voucher/models/supplier_voucher.py:774
+#: code:addons/numa_voucher/models/supplier_voucher.py:785
+#: code:addons/numa_voucher/models/supplier_voucher.py:794
+#: code:addons/numa_voucher/models/supplier_voucher.py:798
+#: code:addons/numa_voucher/models/supplier_voucher.py:827
+#: code:addons/numa_voucher/models/supplier_voucher.py:1233
+#: code:addons/numa_voucher/models/supplier_voucher.py:1320
+#: code:addons/numa_voucher/models/supplier_voucher.py:1687
+#: code:addons/numa_voucher/models/supplier_voucher.py:1717
+#, python-format
+msgid "Error!"
+msgstr "Error!"
+
+#. module: numa_voucher
+#: field:account.cv_bank_transfer,exchange_rate:0
+#: field:account.cv_cash,exchange_rate:0
+#: field:account.cv_credit_card_voucher,exchange_rate:0
+#: field:account.cv_doc,exchange_rate:0
+#: field:account.sv_bank_transfer,exchange_rate:0
+#: field:account.sv_cash,exchange_rate:0
+#: field:account.sv_odoc,exchange_rate:0
+#: field:account.sv_tpdoc,exchange_rate:0
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "Exchange rate"
+msgstr "Tasa de cambio"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+msgid "Extended filters ..."
+msgstr "Filtros extendidos ..."
+
+#. module: numa_voucher
+#: report:supplier_voucher_print:0
+msgid "Fecha:"
+msgstr "Fecha:"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+msgid "Get credit and debts"
+msgstr "Tomar créditos y deudas"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Get debts"
+msgstr "Tomar deudas"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+msgid "Grouped by..."
+msgstr "Agrupado por ..."
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,id:0
+#: field:account.customer_reconcile_credit,id:0
+#: field:account.customer_reconcile_debt,id:0
+#: field:account.customer_voucher,id:0
+#: field:account.cv_bank_transfer,id:0
+#: field:account.cv_cash,id:0
+#: field:account.cv_credit_card_voucher,id:0
+#: field:account.cv_debt,id:0
+#: field:account.cv_doc,id:0
+#: field:account.cv_quick_move,id:0
+#: field:account.supplier_reconcile,id:0
+#: field:account.supplier_reconcile_credit,id:0
+#: field:account.supplier_reconcile_debt,id:0
+#: field:account.supplier_voucher,id:0
+#: field:account.sv_bank_transfer,id:0
+#: field:account.sv_cash,id:0
+#: field:account.sv_debt,id:0
+#: field:account.sv_odoc,id:0
+#: field:account.sv_quick_move,id:0
+#: field:account.sv_tax,id:0
+#: field:account.sv_tpdoc,id:0
+msgid "ID"
+msgstr "ID"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:529
+#: code:addons/numa_voucher/models/customer_reconcile.py:540
+#: code:addons/numa_voucher/models/supplier_reconcile.py:527
+#: code:addons/numa_voucher/models/supplier_reconcile.py:538
+#, python-format
+msgid "Incomplete!"
+msgstr "Incompleto!"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+#: field:account.customer_reconcile,journal:0
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+#: field:account.customer_voucher,journal:0
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+#: field:account.supplier_reconcile,journal:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+#: field:account.supplier_voucher,journal:0
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "Journal"
+msgstr "Diario"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_move_line
+msgid "Journal Items"
+msgstr "Registros del diario"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,write_uid:0
+#: field:account.customer_reconcile_credit,write_uid:0
+#: field:account.customer_reconcile_debt,write_uid:0
+#: field:account.customer_voucher,write_uid:0
+#: field:account.cv_bank_transfer,write_uid:0
+#: field:account.cv_cash,write_uid:0
+#: field:account.cv_credit_card_voucher,write_uid:0
+#: field:account.cv_debt,write_uid:0
+#: field:account.cv_doc,write_uid:0
+#: field:account.cv_quick_move,write_uid:0
+#: field:account.supplier_reconcile,write_uid:0
+#: field:account.supplier_reconcile_credit,write_uid:0
+#: field:account.supplier_reconcile_debt,write_uid:0
+#: field:account.supplier_voucher,write_uid:0
+#: field:account.sv_bank_transfer,write_uid:0
+#: field:account.sv_cash,write_uid:0
+#: field:account.sv_debt,write_uid:0
+#: field:account.sv_odoc,write_uid:0
+#: field:account.sv_quick_move,write_uid:0
+#: field:account.sv_tax,write_uid:0
+#: field:account.sv_tpdoc,write_uid:0
+msgid "Last Updated by"
+msgstr "Ultima actualización por"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,write_date:0
+#: field:account.customer_reconcile_credit,write_date:0
+#: field:account.customer_reconcile_debt,write_date:0
+#: field:account.customer_voucher,write_date:0
+#: field:account.cv_bank_transfer,write_date:0
+#: field:account.cv_cash,write_date:0
+#: field:account.cv_credit_card_voucher,write_date:0
+#: field:account.cv_debt,write_date:0
+#: field:account.cv_doc,write_date:0
+#: field:account.cv_quick_move,write_date:0
+#: field:account.supplier_reconcile,write_date:0
+#: field:account.supplier_reconcile_credit,write_date:0
+#: field:account.supplier_reconcile_debt,write_date:0
+#: field:account.supplier_voucher,write_date:0
+#: field:account.sv_bank_transfer,write_date:0
+#: field:account.sv_cash,write_date:0
+#: field:account.sv_debt,write_date:0
+#: field:account.sv_odoc,write_date:0
+#: field:account.sv_quick_move,write_date:0
+#: field:account.sv_tax,write_date:0
+#: field:account.sv_tpdoc,write_date:0
+msgid "Last Updated on"
+msgstr "Ultima actualización el"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile_credit,maturity_date:0
+#: field:account.customer_reconcile_debt,maturity_date:0
+#: field:account.cv_debt,maturity_date:0
+#: field:account.cv_doc,maturity_date:0
+#: field:account.supplier_reconcile_credit,maturity_date:0
+#: field:account.supplier_reconcile_debt,maturity_date:0
+#: field:account.sv_debt,maturity_date:0
+#: field:account.sv_odoc,maturity_date:0
+#: field:account.sv_tpdoc,maturity_date:0
+msgid "Maturity date"
+msgstr "Fecha efectiva"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,currency:0
+#: field:account.supplier_reconcile,currency:0
+msgid "Moneda"
+msgstr "Moneda"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile_credit,move_line:0
+#: field:account.customer_reconcile_debt,move_line:0
+#: field:account.cv_debt,move_line:0
+#: field:account.supplier_reconcile_credit,move_line:0
+#: field:account.supplier_reconcile_debt,move_line:0
+#: field:account.sv_debt,move_line:0
+msgid "Move line"
+msgstr "Línea de asiento"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:812
+#: code:addons/numa_voucher/models/supplier_reconcile.py:810
+#, python-format
+msgid "Move line is not valid or posted! Please check"
+msgstr "La linea de asiento no fue publicada! Por favor revisar"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:723
+#: code:addons/numa_voucher/models/customer_voucher.py:1411
+#: code:addons/numa_voucher/models/supplier_reconcile.py:721
+#: code:addons/numa_voucher/models/supplier_voucher.py:1688
+#, python-format
+msgid "Move line is not valid! Please check it"
+msgstr "La línea de asiento no es válida! Por favor revisar"
+
+#. module: numa_voucher
+#: help:account.supplier_voucher,received_by:0
+msgid "Name of the supplier's person accepting the payment"
+msgstr "Nombre de la persona del proveedor que recibió el pago"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_voucher.py:1508
+#, python-format
+msgid "No account defined on [Account for not transferable payable documents] for company %s!"
+msgstr "No se ha definido una [Cuenta para documentos a pagar No transferibles] para la compañía %s!"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:1328
+#: code:addons/numa_voucher/models/supplier_voucher.py:1438
+#, python-format
+msgid "No account defined on [Account for not transferable received documents] for company %s!"
+msgstr "No se ha definido una [Cuenta para documentos de terceros no transferibles] para la compañía %s!"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_voucher.py:1503
+#, python-format
+msgid "No account defined on [Account for payable documents] for company %s!"
+msgstr "No se ha definido una [Cuenta para documentos a pagar] para la compañía %s!"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:1323
+#: code:addons/numa_voucher/models/supplier_voucher.py:1433
+#, python-format
+msgid "No account defined on [Account for received documents] for company %s!"
+msgstr "No se ha definido una [Cuenta para documentos de terceros] para la compañía %s!"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:865
+#: code:addons/numa_voucher/models/supplier_voucher.py:1014
+#, python-format
+msgid "No credit entered!"
+msgstr "No se ha ingresado ningún crédito!"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:1070
+#: code:addons/numa_voucher/models/customer_voucher.py:1157
+#: code:addons/numa_voucher/models/supplier_voucher.py:1234
+#: code:addons/numa_voucher/models/supplier_voucher.py:1321
+#, python-format
+msgid "No currency defined. Probably you didn't select the company yet! Please check"
+msgstr "No se ha definido la moneda. Probablemente aún no ha ingresado la compañía! Por favor revisar"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:1146
+#: code:addons/numa_voucher/models/supplier_voucher.py:1310
+#, python-format
+msgid "No journal or default account defined on bank account for credit or debit entries!. Please configure them or select another account!"
+msgstr "No se ha definido un diario o cuenta por defecto para la cuenta bancaria! Por favor configúrelas o elija otra cuenta"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:530
+#: code:addons/numa_voucher/models/supplier_reconcile.py:528
+#, python-format
+msgid "No payment was selected!"
+msgstr "No se ha seleccionado ningún pago!"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:320
+#: code:addons/numa_voucher/models/customer_voucher.py:510
+#: code:addons/numa_voucher/models/supplier_reconcile.py:318
+#: code:addons/numa_voucher/models/supplier_voucher.py:577
+#, python-format
+msgid "No period for the given date!"
+msgstr "No se ha definido un perído para la fecha dada!"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,credits:0
+#: field:account.supplier_reconcile,credits:0
+msgid "Non reconciled credits"
+msgstr "Créditos no reconciliados"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:864
+#: code:addons/numa_voucher/models/supplier_voucher.py:1013
+#, python-format
+msgid "Not complete!"
+msgstr "No completo!"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: field:account.customer_reconcile,notes:0
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: field:account.customer_voucher,notes:0
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+#: field:account.supplier_reconcile,notes:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: field:account.supplier_voucher,notes:0
+#: report:customer_voucher_print:0
+msgid "Notes"
+msgstr "Notas"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+msgid "Number"
+msgstr "Número"
+
+#. module: numa_voucher
+#: report:supplier_voucher_print:0
+msgid "Número:"
+msgstr "Número:"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_voucher.py:795
+#, python-format
+msgid "Only vouchers already issued could be considered payed!"
+msgstr "Solo ordenes de pago publicadas pueden ser consideradas ya pagadas!"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_voucher.py:775
+#, python-format
+msgid "Only vouchers in \"Draft\" state could be set ready to approve!"
+msgstr "Solo vouchers en el estado \"Borrador\" pueden prepararse para aprobación!"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_voucher.py:786
+#, python-format
+msgid "Only vouchers in \"Ready to approve\" state could be moved back to draft!"
+msgstr "Solo se pueden volver a borrador documentos en el estado 'Listo para aprobación'!"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile_credit,original_amount:0
+#: field:account.customer_reconcile_debt,original_amount:0
+#: field:account.cv_bank_transfer,original_amount:0
+#: field:account.cv_credit_card_voucher,original_amount:0
+#: field:account.cv_debt,original_amount:0
+#: field:account.cv_doc,original_amount:0
+#: field:account.supplier_reconcile_credit,original_amount:0
+#: field:account.supplier_reconcile_debt,original_amount:0
+#: field:account.sv_bank_transfer,original_amount:0
+#: field:account.sv_debt,original_amount:0
+#: field:account.sv_odoc,original_amount:0
+#: field:account.sv_tpdoc,original_amount:0
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "Original amount"
+msgstr "Importe original"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Other info"
+msgstr "Otra información"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_voucher.py:1003
+#, python-format
+msgid "Own document [%s] is not longer in data complete state!. Please check it!"
+msgstr "El documento a pagar [%s] no está en el estado 'datos completos'! Por favor revisar!"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: field:account.supplier_voucher,odoc_entries:0
+msgid "Own documents"
+msgstr "Documentos a pagar"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_voucher.py:44
+#, python-format
+msgid "PAYORDER %s"
+msgstr "PAYORDER %s"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_voucher.py:44
+#, python-format
+msgid "PAYORDER CANC %s"
+msgstr "PAYORDER CANC %s"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "PRO-FORMA"
+msgstr "PRO-FORMA"
+
+#. module: numa_voucher
+#: field:account.sv_odoc,doc:0
+msgid "Payable Document"
+msgstr "Documento a pagar"
+
+#. module: numa_voucher
+#: selection:account.supplier_voucher,state:0
+msgid "Payed"
+msgstr "Pagada"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:513
+#: code:addons/numa_voucher/models/supplier_reconcile.py:511
+#, python-format
+msgid "Payment [%s], amount to apply should be positive and not larger than the open amount. Please check it!"
+msgstr "Pago [%s], el importe a pagar debe ser positivo y no mayor que importe aún no cancelado! Por favor revisar"
+
+#. module: numa_voucher
+#: model:ir.actions.report.xml,name:numa_voucher.report_supplier_voucher
+#: report:supplier_voucher_print:0
+msgid "Payment order"
+msgstr "Orden de pago"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_sv_tax
+msgid "Payment taxes"
+msgstr "Impuestos"
+
+#. module: numa_voucher
+#: field:account.supplier_voucher,qm_entries:0
+msgid "Performed retentions"
+msgstr "Retenciones realizadas"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,period:0
+#: field:account.customer_voucher,period:0
+#: field:account.supplier_reconcile,period:0
+#: field:account.supplier_voucher,period:0
+msgid "Period"
+msgstr "Período"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:360
+#: code:addons/numa_voucher/models/customer_voucher.py:546
+#: code:addons/numa_voucher/models/supplier_reconcile.py:358
+#: code:addons/numa_voucher/models/supplier_voucher.py:612
+#, python-format
+msgid "Period is not open. Please check it!"
+msgstr "El período no esta abierto! Por favor revisar"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_voucher.py:799
+#, python-format
+msgid "Please fill both, received by and reception date before setting the payment order as payed!"
+msgstr "Please fill both, received by and reception date before setting the payment order as payed!"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+msgid "Post"
+msgstr "Publicar"
+
+#. module: numa_voucher
+#: selection:account.customer_reconcile,state:0
+#: selection:account.customer_voucher,state:0
+#: selection:account.supplier_reconcile,state:0
+#: selection:account.supplier_voucher,state:0
+msgid "Posted"
+msgstr "Publicado"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:490
+#: code:addons/numa_voucher/models/supplier_reconcile.py:488
+#, python-format
+msgid "Posted documents could not be cancelled!"
+msgstr "Los documentos publicados no pueden ser cancelados!"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:671
+#: code:addons/numa_voucher/models/supplier_voucher.py:828
+#, python-format
+msgid "Posted or canceled vouchers could not be deleted!"
+msgstr "Los documentos publicados o cancelados no pueden ser borrados!"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+msgid "Posted vouchers"
+msgstr "Documentos publicados"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Print"
+msgstr "Imprimir"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Publish"
+msgstr "Publicar"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_voucher.py:966
+#: code:addons/numa_voucher/models/supplier_voucher.py:1089
+#, python-format
+msgid "Quick Move"
+msgstr "Movimiento rápido"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+msgid "Quick moves"
+msgstr "Movimientos rápidos"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Ready to approve"
+msgstr "Listo para aprobar"
+
+#. module: numa_voucher
+#: selection:account.supplier_voucher,state:0
+msgid "Ready to post"
+msgstr "Listo para publicar"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Reasign credit"
+msgstr "Reasignar crédito"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_cv_bank_transfer
+#: model:ir.model,name:numa_voucher.model_account_sv_bank_transfer
+msgid "Received bank transfer"
+msgstr "Transferencia bancaria recibida"
+
+#. module: numa_voucher
+#: field:account.supplier_voucher,received_by:0
+msgid "Received by"
+msgstr "Recibido por"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Received by supplier"
+msgstr "Recibido por el proveedor"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_cv_cash
+#: model:ir.model,name:numa_voucher.model_account_sv_cash
+msgid "Received cash"
+msgstr "Efectivo recibido"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: field:account.customer_voucher,doc_entries:0
+msgid "Received documents"
+msgstr "Documentos de terceros recibidos"
+
+#. module: numa_voucher
+#: field:account.supplier_voucher,received_on:0
+msgid "Received on"
+msgstr "Fecha de recepción"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: field:account.customer_voucher,qm_entries:0
+msgid "Received retentions"
+msgstr "Retenciones recibidas"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+msgid "Received values"
+msgstr "Valores recibidos"
+
+#. module: numa_voucher
+#: field:account.supplier_voucher,reception_notes:0
+msgid "Reception notes"
+msgstr "Notas de recepción"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+msgid "Receptor signature"
+msgstr "Firma del receptor"
+
+#. module: numa_voucher
+#: report:supplier_voucher_print:0
+msgid "Receptor's signature"
+msgstr "Firma del receptor"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_customer_reconcile
+msgid "Reconciliation of unreciled customer documents"
+msgstr "Reconciliación de documentos abiertos del cliente"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_supplier_reconcile
+msgid "Reconciliation of unreciled supplier documents"
+msgstr "Reconciliación de documentos abiertos del proveedor"
+
+#. module: numa_voucher
+#: field:account.customer_voucher,reference:0
+#: field:account.cv_bank_transfer,reference:0
+#: field:account.supplier_voucher,reference:0
+#: field:account.sv_bank_transfer,reference:0
+msgid "Ref #"
+msgstr "Ref #"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "Ref. :"
+msgstr "Ref. :"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile,name:0
+#: field:account.customer_reconcile_credit,ref:0
+#: field:account.customer_reconcile_debt,ref:0
+#: field:account.cv_debt,ref:0
+#: field:account.supplier_reconcile,name:0
+#: field:account.supplier_reconcile_credit,ref:0
+#: field:account.supplier_reconcile_debt,ref:0
+#: field:account.supplier_voucher,name:0
+#: field:account.sv_debt,ref:0
+msgid "Reference"
+msgstr "Referencia"
+
+#. module: numa_voucher
+#: help:account.customer_voucher,reference:0
+#: help:account.cv_bank_transfer,reference:0
+#: help:account.supplier_voucher,reference:0
+#: help:account.sv_bank_transfer,reference:0
+msgid "Reference number."
+msgstr "Número de referencia."
+
+#. module: numa_voucher
+#: field:account.customer_voucher,name:0
+msgid "Refernnce"
+msgstr "Referencia"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "Registrado"
+msgstr "Registrado"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Reset applied amount"
+msgstr "Limpiar importes aplicados"
+
+#. module: numa_voucher
+#: field:account.customer_reconcile_credit,unreconciled_amount:0
+#: field:account.customer_reconcile_debt,unreconciled_amount:0
+#: field:account.cv_debt,unreconciled_amount:0
+#: field:account.supplier_reconcile_credit,unreconciled_amount:0
+#: field:account.supplier_reconcile_debt,unreconciled_amount:0
+#: field:account.sv_debt,unreconciled_amount:0
+msgid "Residual ammount"
+msgstr "Importe aún no cancelado"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Retention"
+msgstr "Retención"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: report:supplier_voucher_print:0
+msgid "Retentions"
+msgstr "Retenciones"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_reconcile.py:41
+#, python-format
+msgid "SRECON %s"
+msgstr "SRECON %s"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+msgid "Search customer reconciles"
+msgstr "Buscar retenciones de cliente"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+msgid "Search customer voucher"
+msgstr "Buscar recibos de cliente"
+
+#. module: numa_voucher
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+msgid "Search supplier reconciles"
+msgstr "Buscar reconciliaciones de cliente"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+msgid "Search supplier voucher"
+msgstr "Buscar ordenes de pago"
+
+#. module: numa_voucher
+#: field:account.sv_tax,sequence:0
+msgid "Sequence"
+msgstr "Secuencia"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+#: field:account.customer_reconcile,state:0
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+#: field:account.customer_voucher,state:0
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+#: field:account.supplier_reconcile,state:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+#: field:account.supplier_voucher,state:0
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "State"
+msgstr "Estado"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+#: field:account.supplier_voucher,partner:0
+#: report:supplier_voucher_print:0
+msgid "Supplier"
+msgstr "Proveedor"
+
+#. module: numa_voucher
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+msgid "Supplier Reconcile"
+msgstr "Reconciliación de proveedor"
+
+#. module: numa_voucher
+#: model:ir.actions.act_window,name:numa_voucher.supplier_reconcile_action
+#: model:ir.ui.menu,name:numa_voucher.supplier_reconcile_menu
+msgid "Supplier reconciles"
+msgstr "Reconciliaciones de proveedor"
+
+#. module: numa_voucher
+#: model:ir.actions.act_window,name:numa_voucher.supplier_voucher_action
+#: model:ir.ui.menu,name:numa_voucher.supplier_voucher_menu
+msgid "Supplier vouchers"
+msgstr "Ordenes de pago a proveedores"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Supplier's acceptance"
+msgstr "Recepción del proveedor"
+
+#. module: numa_voucher
+#: field:account.sv_tax,amount:0
+msgid "Tax"
+msgstr "Impuesto"
+
+#. module: numa_voucher
+#: field:account.sv_tax,account:0
+msgid "Tax Account"
+msgstr "Cuenta de impuesto"
+
+#. module: numa_voucher
+#: field:account.sv_tax,tax_amount:0
+msgid "Tax Amount"
+msgstr "Importe de impuesto"
+
+#. module: numa_voucher
+#: field:account.sv_tax,name:0
+msgid "Tax Name"
+msgstr "Nombre de impuesto"
+
+#. module: numa_voucher
+#: field:account.sv_tax,tax:0
+msgid "Tax to apply"
+msgstr "Impuesto a aplicar"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Taxes"
+msgstr "Impuestos"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/supplier_voucher.py:996
+#, python-format
+msgid "Third party document [%s] is not longer in data complete state!. Please check it!"
+msgstr "El documento de terceros [%s] no está en el estado 'datos completos'!. Por favor revisar!"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: field:account.supplier_voucher,tpdoc_entries:0
+#: report:customer_voucher_print:0
+msgid "Third party documents"
+msgstr "Documentos de terceros"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_filter
+#: field:account.customer_reconcile,to_be_checked:0
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_filter
+#: field:account.customer_voucher,to_be_checked:0
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+#: field:account.supplier_reconcile,to_be_checked:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_filter
+#: field:account.supplier_voucher,to_be_checked:0
+msgid "To be checked"
+msgstr "A revisar"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+msgid "Total Amount"
+msgstr "Importe total"
+
+#. module: numa_voucher
+#: report:supplier_voucher_print:0
+msgid "Total amount"
+msgstr "Importe total"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_tree
+#: field:account.customer_voucher,cash_total:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_tree
+#: field:account.supplier_voucher,cash_total:0
+msgid "Total cash"
+msgstr "Efectivo total"
+
+#. module: numa_voucher
+#: field:account.customer_voucher,ccv_total:0
+msgid "Total credit card vouchers"
+msgstr "Total tarjetas"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_tree
+msgid "Total credit cards"
+msgstr "Total tarjetas"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: field:account.customer_voucher,debt_total:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: field:account.supplier_voucher,debt_total:0
+msgid "Total debts"
+msgstr "Total deudas"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_tree
+#: field:account.customer_voucher,doc_total:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Total documents"
+msgstr "Total documentos"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Total efectivo"
+msgstr "Total efectivo"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_tree
+#: field:account.supplier_voucher,odoc_total:0
+msgid "Total own documents"
+msgstr "Total documentos propios"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_tree
+#: field:account.customer_voucher,qm_total:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_tree
+#: field:account.supplier_voucher,qm_total:0
+msgid "Total retentions"
+msgstr "Total retenciones"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_tree
+#: field:account.supplier_voucher,tax_total:0
+msgid "Total taxes"
+msgstr "Total impuestos"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_tree
+#: field:account.supplier_voucher,tpdoc_total:0
+msgid "Total third party documents"
+msgstr "Total documentos de terceros"
+
+#. module: numa_voucher
+#: view:account.customer_reconcile:numa_voucher.view_customer_reconcile_form
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+msgid "Total to apply"
+msgstr "Total a aplicar"
+
+#. module: numa_voucher
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_form
+#: view:account.customer_voucher:numa_voucher.view_customer_voucher_tree
+#: field:account.customer_voucher,bt_total:0
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_tree
+#: field:account.supplier_voucher,bt_total:0
+msgid "Total transfers"
+msgstr "Total transferencias"
+
+#. module: numa_voucher
+#: code:addons/numa_voucher/models/customer_reconcile.py:616
+#: code:addons/numa_voucher/models/customer_reconcile.py:625
+#: code:addons/numa_voucher/models/customer_voucher.py:760
+#: code:addons/numa_voucher/models/supplier_reconcile.py:614
+#: code:addons/numa_voucher/models/supplier_reconcile.py:623
+#: code:addons/numa_voucher/models/supplier_voucher.py:916
+#, python-format
+msgid "Transfer"
+msgstr "Transferencia"
+
+#. module: numa_voucher
+#: field:account.cv_bank_transfer,transfer_date:0
+#: field:account.sv_bank_transfer,transfer_date:0
+#: report:customer_voucher_print:0
+#: report:supplier_voucher_print:0
+msgid "Transfer date"
+msgstr "Fecha de transferencia"
+
+#. module: numa_voucher
+#: field:account.customer_voucher,unassigned_payments:0
+#: field:account.supplier_voucher,unassigned_payments:0
+msgid "Unassigned payments"
+msgstr "Pagos no asignados"
+
+#. module: numa_voucher
+#: help:account.sv_tax,base_code_id:0
+#: help:account.sv_tax,tax_code_id:0
+msgid "Use this code for the tax declaration."
+msgstr "Use este código para la declaración de impuestos."
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+msgid "Values"
+msgstr "Valores a utilizar"
+
+#. module: numa_voucher
+#: report:customer_voucher_print:0
+msgid "Voucher date"
+msgstr "Fecha de recibo"
+
+#. module: numa_voucher
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_filter
+#: field:account.supplier_reconcile,partner:0
+#: field:account.supplier_reconcile_credit,partner:0
+#: field:account.supplier_reconcile_debt,partner:0
+#: field:account.sv_debt,partner:0
+msgid "supplier"
+msgstr "proveedor"
+
+#. module: numa_voucher
+#: field:account.supplier_reconcile_credit,srec:0
+#: field:account.supplier_reconcile_debt,srec:0
+msgid "supplier Reconcile"
+msgstr "Reconciliación de proveedor"
+
+#. module: numa_voucher
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_form
+#: field:account.sv_quick_move,sv:0
+msgid "supplier Voucher"
+msgstr "Orden de pago"
+
+#. module: numa_voucher
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_form
+msgid "supplier reconcile"
+msgstr "Reconciliación de proveedor"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_supplier_reconcile_debt
+msgid "supplier reconcile Debts"
+msgstr "Deudas de reconciliación de proveedor"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_supplier_reconcile_credit
+msgid "supplier reconcile credit"
+msgstr "Créditos de reconciliación de proveedor"
+
+#. module: numa_voucher
+#: view:account.supplier_reconcile:numa_voucher.view_supplier_reconcile_tree
+#: view:account.supplier_voucher:numa_voucher.view_supplier_voucher_tree
+#: field:account.sv_bank_transfer,sv:0
+#: field:account.sv_cash,sv:0
+#: field:account.sv_debt,sv:0
+#: field:account.sv_odoc,sv:0
+#: field:account.sv_tax,sv:0
+#: field:account.sv_tpdoc,sv:0
+msgid "supplier voucher"
+msgstr "orden de pago"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_sv_debt
+msgid "supplier voucher Debts"
+msgstr "Deudas de orden de pago"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_sv_odoc
+msgid "supplier voucher own document"
+msgstr "Documento propio de orden de pago"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_sv_tpdoc
+msgid "supplier voucher third party document"
+msgstr "Documento de terceros de orden de pago"
+
+#. module: numa_voucher
+#: model:ir.model,name:numa_voucher.model_account_supplier_voucher
+msgid "supplier vouchers"
+msgstr "Ordenes de pago"
+
