@@ -79,7 +79,9 @@
             <field name="arch" type="xml">
                 <search string="Search background jobs">
                     <filter string="Borrador" name="initialized" domain="[('state','=','draft')]" />
+                    <filter string="Faltan datos" name="started" domain="[('state','=','sd')]" />
                     <filter string="En ejecución" name="started" domain="[('state','=','running')]" />
+                    <filter string="Por terminar" name="started" domain="[('state','=','to_extend')]" />
                     <field name="name"/>
                     <field name="partners"/>
                     <group expand="0" string="Agrupado por..." colspan="4" col="10">

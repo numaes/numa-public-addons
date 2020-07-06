@@ -54,17 +54,15 @@ class AcumarAcuerdo(models.Model):
         else:
             return 1
 
-    name = fields.Char('Título', required=True,
-                       readonly=True, states={'draft': [('readonly', False)]})
-    sequence = fields.Integer('Nro. orden', default=get_default_sequence, required=True,
-                              readonly=True, states={'draft': [('readonly', False)]})
-    tematica_id = fields.Many2one('acumar.tematica', 'Temática',
-                                  readonly=True, states={'draft': [('readonly', False)]})
+    name = fields.Char('Título', required=True)
+    sequence = fields.Integer('Nro. orden', default=get_default_sequence, required=True)
+    tematica_id = fields.Many2one('acumar.tematica', 'Temática')
 
     state = fields.Selection(
         [('draft', 'Borrador'),
          ('sd', 'S/D'),
          ('running', 'En ejecución'),
+         ('to_extend', 'Por terminar'),
          ('terminated', 'Terminado'),
          ('canceled', 'Cancelado')],
         'Estado',
@@ -73,26 +71,19 @@ class AcumarAcuerdo(models.Model):
         readonly=True,
     )
 
-    suscription_date = fields.Date('Fecha de suscripción',
-                                   readonly=True, states={'draft': [('readonly', False)]})
+    suscription_date = fields.Date('Fecha de suscripción')
     partners = fields.Many2many('acumar.contraparte', 'acuerdo_contraparte', 'acuerdo_id', 'contraparte_id',
-                                string='Contrapartes',
-                               readonly=True, states={'draft': [('readonly', False)]})
-    goal = fields.Text('Objeto',
-                       readonly=True, states={'draft': [('readonly', False)]})
+                                string='Contrapartes')
+    goal = fields.Text('Objeto')
     agreed_amount = fields.Monetary('Monto convenido')
     company_id = fields.Many2one('res.company', 'Ente principal', required=True, default=lambda self: self.env.company)
     currency_id = fields.Many2one('res.currency', 'Moneda', related='company_id.currency_id', readonly=True)
     due_date = fields.Date('Fecha de vencimiento')
     to_be_checked = fields.Boolean('A revisar?')
-    automatic_renovation = fields.Boolean('Renovación automática?',
-                                          readonly=True, states={'draft': [('readonly', False)]})
+    automatic_renovation = fields.Boolean('Renovación automática?')
     current_situation = fields.Char('Estado actual',
                                     compute='get_current_situation')
-    renovation_description = fields.Text('Vigencia',
-                                         readonly=True,
-                                         states={'draft': [('readonly', False)],
-                                                 'running': [('readonly', False)]})
+    renovation_description = fields.Text('Vigencia')
     dc_approval = fields.Text('Aprobación CD')
     order_year = fields.Char('Orden/Año')
     expediente = fields.Char('Expediente')
@@ -128,25 +119,49 @@ class AcumarAcuerdo(models.Model):
 
     @api.onchange('due_date')
     def onchange_due_date(self):
-        if self.suscription_date and self.due_date < self.suscription_date:
+        if self.suscription_date and self.due_date and \
+                self.due_date < self.suscription_date:
             raise UserWarning(
                 _('La fecha de vencimiento no puede ser anterior a la fecha de suscripción.\nPor favor revisar')
             )
 
+    @api.onchange('state', 'suscription_date', 'automatic_renovation', 'due_date')
     def action_recompute_state(self):
         today = fields.Date.context_today(self)
 
         for agreement in self:
-            if agreement.state == 'running' and \
-                agreement.suscription_date and agreement.due_date and not agreement.automatic_renovation and \
-                    agreement.due_date < today:
-                agreement.state = 'terminated'
-            elif agreement.state == 'draft' and \
-                    agreement.suscription_date and agreement.suscription_date >= today:
-                agreement.state = 'running'
+            if agreement.state != 'canceled':
+                if agreement.suscription_date:
+                    if agreement.automatic_renovation:
+                        agreement.state = 'running'
+                    elif not agreement.due_date:
+                        agreement.state = 'sd'
+                    else:
+                        if agreement.suscription_date > today:
+                            agreement.state = 'draft'
+                        else:
+                            days_to_finish = (today - agreement.due_date).days
+                            if days_to_finish > 0:
+                                agreement.state = 'terminated'
+                            elif days_to_finish > -90:
+                                agreement.state = 'to_extend'
+                            else:
+                                agreement.state = 'running'
+                else:
+                    agreement.state = 'draft'
+
+    def write(self, values):
+        ret_value = super().write(values)
+        if 'suscription_state' in values or \
+            'due_date' in values or \
+            'automatic_renovation' in values:
+            self.action_recompute_state()
+        return ret_value
 
     def action_cancel(self):
         for agreement in self:
-            if agreement.state in ('draft', 'running'):
+            if agreement.state != 'canceled':
                 agreement.state = 'canceled'
 
+    def recompute_all(self):
+        self.search([]).action_recompute_state()

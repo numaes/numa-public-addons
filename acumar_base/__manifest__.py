@@ -41,6 +41,7 @@ Demo de Odoo
         'views/acumar_views.xml',
         'views/excel_load_views.xml',
         'views/menu.xml',
+        'data/periodic_recompute.xml',
     ],
     'test': [],
     'qweb': ["static/src/xml/*.xml",],
