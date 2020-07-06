@@ -1,226 +1,1065 @@
 # Translation of Odoo Server.
 # This file contains the translation of the following modules:
-#	* numa_background_job
+# 	* acumar_base
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Odoo Server 8.0\n"
+"Project-Id-Version: Odoo Server 13.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2017-02-28 20:39+0000\n"
-"PO-Revision-Date: 2017-02-28 20:39+0000\n"
-"Last-Translator: <>\n"
+"POT-Creation-Date: 2020-07-06 17:11+0000\n"
+"PO-Revision-Date: 2020-07-06 17:11+0000\n"
+"Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: \n"
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_form
-msgid "Abort"
-msgstr "Abortar"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__meeting_count
+msgid "# Meetings"
+msgstr ""
 
-#. module: numa_background_job
-#: code:addons/numa_background_job/models/background_job.py:147
-#: code:addons/numa_background_job/models/background_job.py:149
-#: view:res.background_job:numa_background_job.background_job_search
-#: selection:res.background_job,state:0
-#, python-format
-msgid "Aborted"
-msgstr "Abortado"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__to_be_checked
+msgid "A revisar?"
+msgstr ""
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_search
-msgid "Aborted jobs"
-msgstr "Tareas abortadas"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_needaction
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_needaction
+msgid "Action Needed"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,aborted_on:0
-msgid "Aborted on"
-msgstr "Abortado el"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__active
+msgid "Active"
+msgstr ""
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_form
-msgid "Background Job"
-msgstr "Tarea en segundo plano"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__active_lang_count
+msgid "Active Lang Count"
+msgstr ""
 
-#. module: numa_background_job
-#: model:ir.ui.menu,name:numa_background_job.background_jobs_submenu
-#: view:res.background_job:numa_background_job.background_job_tree
-msgid "Background Jobs"
-msgstr "Tareas en segundo plano"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__activity_ids
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__activity_ids
+msgid "Activities"
+msgstr ""
 
-#. module: numa_background_job
-#: model:ir.actions.act_window,name:numa_background_job.background_job_action
-#: model:ir.model,name:numa_background_job.model_res_background_job
-#: model:ir.ui.menu,name:numa_background_job.background_job_menu
-msgid "Background job"
-msgstr "Tarea en segundo plano"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__activity_exception_decoration
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__activity_exception_decoration
+msgid "Activity Exception Decoration"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job_test,job_completion_rate:0
-msgid "Completion rate"
-msgstr "Tasa de ejecución"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__activity_state
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__activity_state
+msgid "Activity State"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,completion_rate:0
-msgid "Completion rate [%]"
-msgstr "Tasa de ejecución [%]"
+#. module: acumar_base
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_form
+msgid "Acuerdo"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,create_uid:0
-#: field:res.background_job_test,create_uid:0
+#. module: acumar_base
+#: model:ir.model,name:acumar_base.model_acumar_acuerdo
+msgid "Acuerdo con ACUMAR"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.actions.act_window,name:acumar_base.acuerdos_action
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__acuerdos
+#: model:ir.ui.menu,name:acumar_base.menu_acuerdos
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_tree
+#: model_terms:ir.ui.view,arch_db:acumar_base.contraparte_form
+msgid "Acuerdos"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.ui.menu,name:acumar_base.menu_acumar_master
+msgid "Acumar"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__additional_info
+msgid "Additional info"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__type
+msgid "Address Type"
+msgstr ""
+
+#. module: acumar_base
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_search
+msgid "Agrupado por..."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__alert
+msgid "Alerta"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__lang
+msgid ""
+"All the emails and documents sent to this contact will be translated in this"
+" language."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__dc_approval
+msgid "Aprobación CD"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_excel_load_wizard__filedata
+msgid "Archivo"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_attachment_count
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_attachment_count
+msgid "Attachment Count"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__bank_ids
+msgid "Banks"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__is_blacklisted
+msgid "Blacklist"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields.selection,name:acumar_base.selection__acumar_acuerdo__state__draft
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_search
+msgid "Borrador"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_bounce
+msgid "Bounce"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__campaign_id
+msgid "Campaign"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields.selection,name:acumar_base.selection__acumar_acuerdo__state__canceled
+msgid "Cancelado"
+msgstr ""
+
+#. module: acumar_base
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_form
+msgid "Cancelar"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.actions.act_window,name:acumar_base.cargar_excel_action
+#: model:ir.ui.menu,name:acumar_base.menu_cargar_excel
+msgid "Carga de Excel"
+msgstr ""
+
+#. module: acumar_base
+#: model_terms:ir.ui.view,arch_db:acumar_base.carga_excel_form
+msgid "Carga de excel"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__channel_ids
+msgid "Channels"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__is_company
+msgid "Check if the contact is a company, otherwise it is a person"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__employee
+msgid "Check this box if this contact is an Employee."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__city
+msgid "City"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__color
+msgid "Color Index"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__commercial_partner_id
+msgid "Commercial Entity"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__company_id
+msgid "Company"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__company_name
+msgid "Company Name"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__commercial_company_name
+msgid "Company Name Entity"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__company_type
+msgid "Company Type"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__partner_gid
+msgid "Company database ID"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__contact_address
+msgid "Complete Address"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.ui.menu,name:acumar_base.menu_configuracion
+msgid "Configuración"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__child_ids
+msgid "Contact"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model,name:acumar_base.model_acumar_contraparte
+#: model_terms:ir.ui.view,arch_db:acumar_base.contraparte_form
+msgid "Contraparte"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.actions.act_window,name:acumar_base.contrapartes_action
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__partners
+#: model:ir.ui.menu,name:acumar_base.menu_contrapartes
+#: model_terms:ir.ui.view,arch_db:acumar_base.contrapartes_tree
+msgid "Contrapartes"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__message_bounce
+msgid "Counter of the number of bounced emails for this contact"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__country_id
+msgid "Country"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__create_uid
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__create_uid
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_excel_load_wizard__create_uid
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_tematica__create_uid
 msgid "Created by"
-msgstr "Creado por"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,create_date:0
-#: field:res.background_job_test,create_date:0
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__create_date
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__create_date
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_excel_load_wizard__create_date
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_tematica__create_date
 msgid "Created on"
-msgstr "Creado el"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,current_status:0
-#: field:res.background_job_test,job_current_status:0
-msgid "Current status"
-msgstr "Estado actual"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__credit_limit
+msgid "Credit Limit"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,display_name:0
-#: field:res.background_job_test,display_name:0
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__date
+msgid "Date"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_tematica__description
+msgid "Descripción"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__display_name
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__display_name
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_excel_load_wizard__display_name
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_tematica__display_name
 msgid "Display Name"
-msgstr "Nombre"
+msgstr ""
 
-#. module: numa_background_job
-#: code:addons/numa_background_job/models/background_job.py:128
-#: view:res.background_job:numa_background_job.background_job_search
-#: selection:res.background_job,state:0
-#, python-format
-msgid "Ended"
-msgstr "Terminada"
+#. module: acumar_base
+#: model:ir.model.fields.selection,name:acumar_base.selection__acumar_excel_load_wizard__state__draft
+msgid "Draft"
+msgstr ""
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_search
-msgid "Ended jobs"
-msgstr "Tareas terminadas"
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__partner_share
+msgid ""
+"Either customer (not a user), either shared user. Indicated the current "
+"partner is a customer without access or with a limited access created for "
+"sharing data."
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,ended_on:0
-msgid "Ended on"
-msgstr "Finalizada el"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__email
+msgid "Email"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job_test,job_error:0
-msgid "Error"
-msgstr "Error"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__employee
+msgid "Employee"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,error:0
-msgid "Error msg"
-msgstr "Mensaje de error"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__partner_id
+msgid "Empresa"
+msgstr ""
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_search
-msgid "Grouped by..."
-msgstr "Agrupar por..."
+#. module: acumar_base
+#: model:ir.model.fields.selection,name:acumar_base.selection__acumar_acuerdo__state__running
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_search
+msgid "En ejecución"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,id:0
-#: field:res.background_job_test,id:0
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__company_id
+msgid "Ente principal"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__state
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_excel_load_wizard__state
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_search
+msgid "Estado"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__current_situation
+msgid "Estado actual"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__expediente
+msgid "Expediente"
+msgstr ""
+
+#. module: acumar_base
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_search
+msgid "Faltan datos"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__suscription_date
+msgid "Fecha de suscripción"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__due_date
+msgid "Fecha de vencimiento"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__phone_sanitized
+msgid ""
+"Field used to store sanitized phone number. Helps speeding up searches and "
+"comparisons."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_follower_ids
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_follower_ids
+msgid "Followers"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_channel_ids
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_channel_ids
+msgid "Followers (Channels)"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_partner_ids
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_partner_ids
+msgid "Followers (Partners)"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__email_formatted
+msgid "Format email address \"Name <email@domain>\""
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__email_formatted
+msgid "Formatted Email"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields.selection,name:acumar_base.selection__acumar_excel_load_wizard__state__generated
+msgid "Generated"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__partner_latitude
+msgid "Geo Latitude"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__partner_longitude
+msgid "Geo Longitude"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__id
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__id
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_excel_load_wizard__id
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_tematica__id
 msgid "ID"
-msgstr "ID"
+msgstr ""
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_search
-msgid "Initialized"
-msgstr "Inicializada"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__im_status
+msgid "IM Status"
+msgstr ""
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_search
-msgid "Initialized jobs"
-msgstr "Tareas inicilizadas"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__activity_exception_icon
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__activity_exception_icon
+msgid "Icon"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,initialized_on:0
-msgid "Initialized on"
-msgstr "Iniciado el"
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__activity_exception_icon
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__activity_exception_icon
+msgid "Icon to indicate an exception activity."
+msgstr ""
 
-#. module: numa_background_job
-#: selection:res.background_job,state:0
-msgid "Initializing"
-msgstr "Inicializando"
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__message_needaction
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__message_unread
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__message_needaction
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__message_unread
+msgid "If checked, new messages require your attention."
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job_test,job:0
-msgid "Job"
-msgstr "Tarea"
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__message_has_error
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__message_has_sms_error
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__message_has_error
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__message_has_sms_error
+msgid "If checked, some messages have a delivery error."
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,name:0
-msgid "Job name"
-msgstr "Nombre de la tarea"
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__team_id
+msgid ""
+"If set, this Sales Team will be used for sales and assignations related to "
+"this partner"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,__last_update:0
-#: field:res.background_job_test,__last_update:0
-msgid "Last Modified on"
-msgstr "Última modificación el"
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__is_blacklisted
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__phone_blacklisted
+msgid ""
+"If the email address is on the blacklist, the contact won't receive mass "
+"mailing anymore, from any list"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,write_uid:0
-#: field:res.background_job_test,write_uid:0
-msgid "Last Updated by"
-msgstr "Ultima modificación por"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__image_1920
+msgid "Image"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,write_date:0
-#: field:res.background_job_test,write_date:0
-msgid "Last Updated on"
-msgstr "Ultima actualización el"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__image_1024
+msgid "Image 1024"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,method:0
-msgid "Method to call"
-msgstr "Método a llamar"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__image_128
+msgid "Image 128"
+msgstr ""
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_search
-#: field:res.background_job,model:0
-msgid "Model"
-msgstr "Modelo"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__image_256
+msgid "Image 256"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,res_id:0
-msgid "Resource ID"
-msgstr "ID de Recurso"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__image_512
+msgid "Image 512"
+msgstr ""
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_search
-msgid "Search background jobs"
-msgstr "Buscar tareas en segundo plano"
+#. module: acumar_base
+#: model_terms:ir.ui.view,arch_db:acumar_base.carga_excel_form
+msgid "Importar datos"
+msgstr ""
 
-#. module: numa_background_job
-#: code:addons/numa_background_job/models/background_job.py:109
-#: view:res.background_job:numa_background_job.background_job_search
-#: selection:res.background_job,state:0
+#. module: acumar_base
+#: model:ir.model,name:acumar_base.model_acumar_excel_load_wizard
+msgid "Importar desde planilla de Acumar"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__industry_id
+msgid "Industry"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__type
+msgid ""
+"Invoice & Delivery addresses are used in sales orders. Private addresses are"
+" only visible by authorized users."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_is_follower
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_is_follower
+msgid "Is Follower"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__is_company
+msgid "Is a Company"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__function
+msgid "Job Position"
+msgstr ""
+
+#. module: acumar_base
+#: code:addons/acumar_base/models/acumar.py:0
 #, python-format
-msgid "Started"
-msgstr "Comenzada"
+msgid ""
+"La fecha de vencimiento no puede ser anterior a la fecha de suscripción.\n"
+"Por favor revisar"
+msgstr ""
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_search
-msgid "Started jobs"
-msgstr "Tareas comenzadas"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__lang
+msgid "Language"
+msgstr ""
 
-#. module: numa_background_job
-#: field:res.background_job,started_on:0
-msgid "Started on"
-msgstr "Comenzada el"
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo____last_update
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte____last_update
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_excel_load_wizard____last_update
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_tematica____last_update
+msgid "Last Modified on"
+msgstr ""
 
-#. module: numa_background_job
-#: view:res.background_job:numa_background_job.background_job_search
-#: field:res.background_job,state:0
-#: field:res.background_job_test,job_state:0
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__write_uid
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__write_uid
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_excel_load_wizard__write_uid
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_tematica__write_uid
+msgid "Last Updated by"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__write_date
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__write_date
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_excel_load_wizard__write_date
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_tematica__write_date
+msgid "Last Updated on"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__calendar_last_notif_ack
+msgid "Last notification marked as read from base Calendar"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.ui.menu,name:acumar_base.menu_maestros
+msgid "Maestros"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_main_attachment_id
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_main_attachment_id
+msgid "Main Attachment"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__medium_id
+msgid "Medium"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__meeting_ids
+msgid "Meetings"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_excel_load_wizard__error_msgs
+msgid "Mensajes de error"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_has_error
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_has_error
+msgid "Message Delivery error"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_ids
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_ids
+msgid "Messages"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__mobile
+msgid "Mobile"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__currency_id
+msgid "Moneda"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__agreed_amount
+msgid "Monto convenido"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__name
+msgid "Name"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__activity_date_deadline
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__activity_date_deadline
+msgid "Next Activity Deadline"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__activity_summary
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__activity_summary
+msgid "Next Activity Summary"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__activity_type_id
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__activity_type_id
+msgid "Next Activity Type"
+msgstr ""
+
+#. module: acumar_base
+#: code:addons/acumar_base/models/excel_load_wizard.py:0
+#, python-format
+msgid "No es una fecha"
+msgstr ""
+
+#. module: acumar_base
+#: code:addons/acumar_base/models/excel_load_wizard.py:0
+#, python-format
+msgid "No se han encontrado los siguientes títulos %s"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_tematica__name
+msgid "Nombre"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__email_normalized
+msgid "Normalized Email"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__comment
+msgid "Notes"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__sequence
+msgid "Nro. orden"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_needaction_counter
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_needaction_counter
+msgid "Number of Actions"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_has_error_counter
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_has_error_counter
+msgid "Number of errors"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__message_needaction_counter
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__message_needaction_counter
+msgid "Number of messages which requires an action"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__message_has_error_counter
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__message_has_error_counter
+msgid "Number of messages with delivery error"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__message_unread_counter
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__message_unread_counter
+msgid "Number of unread messages"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__goal
+msgid "Objeto"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__notes_1
+msgid "Obs1"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__notes_2
+msgid "Obs2"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__opportunity_ids
+msgid "Opportunities"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__opportunity_count
+msgid "Opportunity"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__order_year
+msgid "Orden/Año"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__parent_name
+msgid "Parent name"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__same_vat_partner_id
+msgid "Partner with same Tax ID"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__phone
+msgid "Phone"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__phone_blacklisted
+msgid "Phone Blacklisted"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields.selection,name:acumar_base.selection__acumar_acuerdo__state__to_extend
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_search
+msgid "Por terminar"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.actions.server,name:acumar_base.cron_periodic_compute_ir_actions_server
+#: model:ir.cron,cron_name:acumar_base.cron_periodic_compute
+#: model:ir.cron,name:acumar_base.cron_periodic_compute
+msgid "Recalcular estado de acuerdos"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__ref
+msgid "Reference"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__parent_id
+msgid "Related Company"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__automatic_renovation
+msgid "Renovación automática?"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__activity_user_id
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__activity_user_id
+msgid "Responsible User"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields.selection,name:acumar_base.selection__acumar_acuerdo__state__sd
+msgid "S/D"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_has_sms_error
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_has_sms_error
+msgid "SMS Delivery error"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__team_id
+msgid "Sales Team"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__user_id
+msgid "Salesperson"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__phone_sanitized
+msgid "Sanitized Number"
+msgstr ""
+
+#. module: acumar_base
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_search
+msgid "Search background jobs"
+msgstr ""
+
+#. module: acumar_base
+#: model_terms:ir.ui.view,arch_db:acumar_base.contrapartes_search
+msgid "Search contrapartes"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__self
+msgid "Self"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__partner_share
+msgid "Share Partner"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__signup_expiration
+msgid "Signup Expiration"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__signup_token
+msgid "Signup Token"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__signup_type
+msgid "Signup Token Type"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__signup_valid
+msgid "Signup Token is Valid"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__signup_url
+msgid "Signup URL"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__source_id
+msgid "Source"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__state_id
 msgid "State"
-msgstr "Estado"
+msgstr ""
 
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__activity_state
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__activity_state
+msgid ""
+"Status based on activities\n"
+"Overdue: Due date is already passed\n"
+"Today: Activity date is today\n"
+"Planned: Future activities."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__street
+msgid "Street"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__street2
+msgid "Street2"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__category_id
+msgid "Tags"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__vat
+msgid "Tax ID"
+msgstr ""
+
+#. module: acumar_base
+#: model_terms:ir.ui.view,arch_db:acumar_base.acuerdos_search
+msgid "Tematica"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.ui.menu,name:acumar_base.menu_tematicas
+msgid "Tematicas"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model,name:acumar_base.model_acumar_tematica
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__tematica_id
+msgid "Temática"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.actions.act_window,name:acumar_base.tematicas_action
+#: model_terms:ir.ui.view,arch_db:acumar_base.tematicas_tree
+msgid "Temáticas"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields.selection,name:acumar_base.selection__acumar_acuerdo__state__terminated
+msgid "Terminado"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__vat
+msgid ""
+"The Tax Identification Number. Complete it if the contact is subjected to "
+"government taxes. Used in some legal statements."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__user_id
+msgid "The internal user in charge of this contact."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__email_normalized
+msgid ""
+"This field is used to search on email address as the primary email field can"
+" contain more than strictly an email address."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__campaign_id
+msgid ""
+"This is a name that helps you keep track of your different campaign efforts,"
+" e.g. Fall_Drive, Christmas_Special"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__medium_id
+msgid "This is the method of delivery, e.g. Postcard, Email, or Banner Ad"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__source_id
+msgid ""
+"This is the source of the link, e.g. Search Engine, another domain, or name "
+"of email list"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__tz
+msgid "Timezone"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__tz_offset
+msgid "Timezone offset"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__title
+msgid "Title"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__activity_exception_decoration
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__activity_exception_decoration
+msgid "Type of the exception activity on record."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__name
+msgid "Título"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_unread
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_unread
+msgid "Unread Messages"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__message_unread_counter
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__message_unread_counter
+msgid "Unread Messages Counter"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__user_ids
+msgid "Users"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__renovation_description
+msgid "Vigencia"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__website
+msgid "Website Link"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_acuerdo__website_message_ids
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__website_message_ids
+msgid "Website Messages"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_acuerdo__website_message_ids
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__website_message_ids
+msgid "Website communication history"
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,help:acumar_base.field_acumar_contraparte__tz
+msgid ""
+"When printing documents and exporting/importing data, time values are computed according to this timezone.\n"
+"If the timezone is not set, UTC (Coordinated Universal Time) is used.\n"
+"Anywhere else, time values are computed according to the time offset of your web client."
+msgstr ""
+
+#. module: acumar_base
+#: model:ir.model.fields,field_description:acumar_base.field_acumar_contraparte__zip
+msgid "Zip"
+msgstr ""
