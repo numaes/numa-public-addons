@@ -3,7 +3,7 @@
     <data>
 
         <menuitem id="menu_acumar_master" name="Acumar"
-            groups="group_basic_access"
+            web_icon="acumar_base,static/description/icon.png"
             sequence="5" />
 
             <menuitem id="menu_maestros" name="Maestros"
@@ -24,13 +24,13 @@
                 parent="menu_acumar_master"
                 sequence="20"/>
 
-                <menuitem id="menu_condominios" name="Acuerdos"
-                    parent="menu_maestros"
+                <menuitem id="menu_tematicas" name="Tematicas"
+                    parent="menu_configuracion"
                     sequence="10"
                     action="tematicas_action"/>
 
-                <menuitem id="menu_condominios" name="Acuerdos"
-                    parent="menu_maestros"
+                <menuitem id="menu_cargar_excel" name="Carga de Excel"
+                    parent="menu_configuracion"
                     sequence="90"
                     action="cargar_excel_action"/>
 

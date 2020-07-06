@@ -11,7 +11,7 @@
                 <tree string="Acuerdos">
                     <field name="sequence"/>
                     <field name="name"/>
-                    <field name="partners"/>
+                    <field name="partners" widget="many2many_tags"/>
                     <field name="agreed_amount"/>
                     <field name="due_date"/>
                     <field name="automatic_renovation"/>
@@ -33,32 +33,35 @@
                     <sheet width="90%">
                       <h1>
                           <field name="name" class="oe_inline" />
-                          <newline/>
-                          <label for="sequence"/>
-                          <field name="secuence"/>
+                          <br/>
+                          <label for="sequence"/>:
+                          <field name="sequence"/>
                       </h1>
-                      <group name="main_info">
-                        <field name="tematica_id"/>
-                        <field name="goal"/>
-                        <field name="partners" widget="many2many_tags"/>
-                        <field name="current_situation"/>
-                      </group>
-                      <group name="dates">
-                        <field name="suscription_date"/>
-                        <field name="due_date"/>
-                        <field name="automatic_renovation"/>
-                        <field name="to_be_checked"/>
-                        <field name="renovation_description"/>
-                      </group>
-                      <group name="approval">
-                        <field name="dc_approval"/>
-                        <field name="order_year"/>
-                        <field name="expediente"/>
-                      </group>
-                      <group name="notes">
-                        <field name="alert"/>
-                        <field name="obs1"/>
-                        <field name="obs2"/>
+                      <group>
+                          <group name="main_info">
+                            <field name="tematica_id"/>
+                            <field name="goal"/>
+                            <field name="partners" widget="many2many_tags"/>
+                            <field name="agreed_amount"/>
+                            <field name="current_situation"/>
+                          </group>
+                          <group name="dates">
+                            <field name="suscription_date"/>
+                            <field name="due_date"/>
+                            <field name="automatic_renovation"/>
+                            <field name="to_be_checked"/>
+                            <field name="renovation_description"/>
+                          </group>
+                          <group name="approval">
+                            <field name="dc_approval"/>
+                            <field name="order_year"/>
+                            <field name="expediente"/>
+                          </group>
+                          <group name="notes">
+                            <field name="alert"/>
+                            <field name="notes_1"/>
+                            <field name="notes_2"/>
+                          </group>
                       </group>
                     </sheet>
                     <div class="oe_chatter">
@@ -76,12 +79,12 @@
             <field name="arch" type="xml">
                 <search string="Search background jobs">
                     <filter string="Borrador" name="initialized" domain="[('state','=','draft')]" />
-                    <filter string="Corriendo" name="started" domain="[('state','=','running')]" />
+                    <filter string="En ejecución" name="started" domain="[('state','=','running')]" />
                     <field name="name"/>
                     <field name="partners"/>
                     <group expand="0" string="Agrupado por..." colspan="4" col="10">
                         <filter string="Estado" name="group_by_state" domain="[]" context="{'group_by':'state'}"/>
-                        <filter string="Contraparte" name="group_by_partner" domain="[]" context="{'group_by':'partners'}"/>
+                        <filter string="Tematica" name="group_by_tematica" domain="[]" context="{'group_by':'tematica_id'}"/>
                     </group>
                 </search>
             </field>
@@ -110,10 +113,18 @@
             <field name="name">ACUMAR Contrapartes form</field>
             <field name="model">acumar.contraparte</field>
             <field name="inherit_id" ref="base.view_partner_form" />
+            <field name="mode">primary</field>
             <field name="arch" type="xml">
                 <form position="attributes">
-                    <attribute name="string">Contrapartes</attribute>
+                    <attribute name="string">Contraparte</attribute>
                 </form>
+                <notebook position="inside">
+                    <page name="acuerdos" string="Acuerdos">
+                        <group>
+                            <field name="acuerdos" nolabel="1"/>
+                        </group>
+                    </page>
+                </notebook>
             </field>
         </record>
 

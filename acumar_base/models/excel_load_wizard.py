@@ -2,7 +2,6 @@ from odoo import models, fields, api
 from odoo import exceptions, _
 from datetime import datetime, timedelta, date
 import base64
-import io
 import openpyxl
 import tempfile
 import logging
@@ -88,7 +87,7 @@ class ExcelLoadWizard(models.TransientModel):
     def get_rows(self, sheet, titles, double_titles=False):
         rows = []
         row_number = 4 if double_titles else 5
-        for current_row in sheet.iter_rows(min_row=5 if double_titles else 3,
+        for current_row in sheet.iter_rows(min_row=5 if double_titles else 4,
                                            values_only=True):
             row_data = {}
             for column_name, column_definition in titles.items():
@@ -205,13 +204,15 @@ class ExcelLoadWizard(models.TransientModel):
 
         error_msgs = []
 
-        row_count = 0
+        row_count = 3
         for row in self.get_rows(sheet, titles):
             row_count += 1
             if not row['N° orden']:
                 continue
 
             try:
+                _logger.info('Leyendo %s' % row['Título'])
+
                 nro_de_orden = row['N° orden']
 
                 tematica_id = tematica_model.search(
@@ -227,8 +228,12 @@ class ExcelLoadWizard(models.TransientModel):
                 fecha_de_suscripcion = row['Fecha de Suscripción']
 
                 contrapartes = contraparte_model
-                for nombre in (contrapartes or '').split('-'):
+                for nombre in (row['Identificación de la/s contrapartes'] or '').split('-'):
                     nombre = nombre.strip()
+                    if not nombre:
+                        continue
+                    if nombre == 'ACUMAR':
+                        continue
                     contraparte = contraparte_model.search(
                         [('name', '=', nombre)],
                         limit=1,
@@ -243,30 +248,39 @@ class ExcelLoadWizard(models.TransientModel):
                 monto_convenido = row['Monto convenido']
                 obs2 = ''
                 if isinstance(monto_convenido, str):
-                    monto_convenido = 0.0
-                    obs2 = monto_convenido
+                    try:
+                        monto_convenido = float(monto_convenido.upper())
+                    except Exception:
+                        monto_convenido = 0.0
+                        obs2 = f'Monto: {monto_convenido}'
                 renovacion_automatica = row['Renovacion Automatica']
                 fecha_de_vencimiento = row['Fecha de Vencimiento']
                 if isinstance(fecha_de_vencimiento, str):
-                    obs2 += f'/nMonto: {fecha_de_vencimiento}'
-                    fecha_de_vencimiento = False
+                    try:
+                        fecha_de_vencimiento = datetime.strptime(fecha_de_vencimiento, '%Y-%m-%d %H:%M:%S').date()
+                    except Exception:
+                        obs2 += '\nFecha de vencimiento: %s' % fecha_de_vencimiento
+                        fecha_de_vencimiento = False
                 elif isinstance(fecha_de_vencimiento, date):
                     pass
+                elif isinstance(fecha_de_vencimiento, datetime):
+                    fecha_de_vencimiento = fecha_de_vencimiento.date()
                 else:
                     fecha_de_vencimiento = False
 
                 estado = row['ESTADO']
-                if estado in ('VENCIDO', 'A REVISAR', 'RENOVACION AUTOMAT', 'S/D'):
+                if estado in ('VENCIDO', 'A REVISAR', 'RENOVACION AUTOMATICA', 'S/D'):
                     estado = {
                         'VENCIDO': 'terminated',
                         'A REVISAR': 'draft',
-                        'RENOVACION AUTOMAT': 'running',
+                        'RENOVACION AUTOMATICA': 'running',
                         'S/D': 'sd'
                     }[estado]
                 elif isinstance(estado, float):
                     estado = 'running'
                 else:
-                    raise exceptions.ValidationError(_('No se ha reconocido el estado %s') % estado)
+                    obs2 = obs2 + ('\nEstado: %s' % estado)
+                    estado = 'draft'
 
                 alerta = row['ALERTA']
                 vigencia = row['Vigencia']
@@ -275,7 +289,7 @@ class ExcelLoadWizard(models.TransientModel):
                 expediente = row['Expediente']
                 obs1 = row['Obs1']
                 if row['Obs2']:
-                    obs2 = row['Obs2'] + f'\n{obs2}'
+                    obs2 = row['Obs2'] + ('\n%s' % obs2)
 
                 vals = dict(
                     name=titulo,
@@ -317,11 +331,14 @@ class ExcelLoadWizard(models.TransientModel):
         tmp_file.write(base64.b64decode(self.filedata))
         tmp_file.close()
 
-        wb = openpyxl.load_workbook(tmp_name)
+        wb = openpyxl.load_workbook(tmp_name, data_only=True)
 
         sheet_names = wb.get_sheet_names()
 
         self.get_datos(wb.get_sheet_by_name(sheet_names[0]))
+
+        if not self.error_msgs:
+            return True
 
         return {
             "type": "ir.actions.act_window",

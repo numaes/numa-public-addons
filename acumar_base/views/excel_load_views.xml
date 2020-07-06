@@ -22,8 +22,8 @@
             </field>
         </record>
 
-        <record id="carga_excel_action" model="ir.actions.act_window">
-            <field name="name">Acuerdos</field>
+        <record id="cargar_excel_action" model="ir.actions.act_window">
+            <field name="name">Carga de Excel</field>
             <field name="res_model">acumar.excel_load_wizard</field>
             <field name="view_mode">form</field>
             <field name="target">new</field>

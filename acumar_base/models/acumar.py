@@ -35,10 +35,13 @@ class AcumarContraparte(models.Model):
     }
 
     partner_id = fields.Many2one('res.partner', 'Empresa', required=True, ondelete='cascade')
+    acuerdos = fields.Many2many('acumar.acuerdo', 'acuerdo_contraparte', 'contraparte_id', 'acuerdo_id',
+                                string='Acuerdos')
 
 
 class AcumarAcuerdo(models.Model):
     _name = 'acumar.acuerdo'
+    _inherit = ['mail.thread', 'mail.activity.mixin', 'utm.mixin']
     _description = 'Acuerdo con ACUMAR'
     _order = 'name'
 
@@ -46,7 +49,7 @@ class AcumarAcuerdo(models.Model):
     def get_default_sequence(self):
         self.env.cr.execute('SELECT max(sequence) FROM acumar_acuerdo')
         result = self.env.cr.fetchall()
-        if result:
+        if result and result[0][0]:
             return result[0][0] + 1
         else:
             return 1
@@ -72,7 +75,8 @@ class AcumarAcuerdo(models.Model):
 
     suscription_date = fields.Date('Fecha de suscripción',
                                    readonly=True, states={'draft': [('readonly', False)]})
-    partners = fields.Many2one('acumar.contraparte', string='Contrapartes',
+    partners = fields.Many2many('acumar.contraparte', 'acuerdo_contraparte', 'acuerdo_id', 'contraparte_id',
+                                string='Contrapartes',
                                readonly=True, states={'draft': [('readonly', False)]})
     goal = fields.Text('Objeto',
                        readonly=True, states={'draft': [('readonly', False)]})
@@ -112,14 +116,14 @@ class AcumarAcuerdo(models.Model):
                         self.current_situation = 'No vencido'
                 elif self.to_be_checked:
                     self.current_situation = 'A revisar'
-                elif self.suscription_date > today:
+                elif self.suscription_date and self.suscription_date > today:
                     self.current_situation = 'Todavía no vigente'
                 else:
                     self.current_situation = ''
 
     @api.onchange('suscription_date')
     def onchange_suscription_date(self):
-        if not self.due_date or self.due_date < self.suscription_date:
+        if self.suscription_date and (not self.due_date or self.due_date < self.suscription_date):
             self.due_date = self.suscription_date + timedelta(days=365)
 
     @api.onchange('due_date')
