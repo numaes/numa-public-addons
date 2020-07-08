@@ -326,6 +326,8 @@ class ExcelLoadWizard(models.TransientModel):
         self.state = 'generated'
 
     def action_import(self):
+        agreement_model = self.env['acumar.acuerdo']
+
         os_file, tmp_name = tempfile.mkstemp(suffix=".xlsx")
         tmp_file = open(os_file, 'wb')
         tmp_file.write(base64.b64decode(self.filedata))
@@ -338,6 +340,7 @@ class ExcelLoadWizard(models.TransientModel):
         self.get_datos(wb.get_sheet_by_name(sheet_names[0]))
 
         if not self.error_msgs:
+            agreement_model.recompute_all()
             return True
 
         return {
