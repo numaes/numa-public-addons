@@ -248,7 +248,9 @@ def new_json_dispatch(self):
         return old_json_dispatch(self)
 
     except Exception as e:
-        if not isinstance(e, (UserError, ValidationError)):
+        if not isinstance(e, (
+                odoo.exceptions.Warning, SessionExpiredException,
+                odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
             model = 'JSON %s' % self.params.get('model', 'unknown model')
             method = self.params.get('method', 'unknown method')
             params = self.params.get('args', [])
@@ -276,7 +278,9 @@ old_json_handle_exception = odoo.http.JsonRequest._handle_exception
 def new_json_handle_exception(self, exception):
     global old_json_handle_exception
 
-    if not isinstance(exception, (UserError, ValidationError)):
+    if not isinstance(exception, (
+            odoo.exceptions.Warning, SessionExpiredException,
+            odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
         model = 'JSONE %s' % self.params.get('model', 'unknown model')
         method = self.params.get('method', 'unknown method')
         params = self.params.get('args', [])
