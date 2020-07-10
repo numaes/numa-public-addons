@@ -20,12 +20,14 @@
 #
 ##############################################################################
 
-from odoo import models, fields, api, _
+from odoo import models, fields, api, _, exceptions
 from odoo.exceptions import UserError, ValidationError
 from odoo import SUPERUSER_ID
 from odoo.loglevels import exception_to_unicode, ustr
 
 import odoo
+import werkzeug
+from odoo.http import SessionExpiredException
 
 import datetime
 import sys
