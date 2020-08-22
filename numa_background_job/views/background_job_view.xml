@@ -36,7 +36,7 @@
             <field name="arch" type="xml">
                 <form string="Background Job" version="7.0">
                     <header>
-                        <button name="action_cancel" states="started" type="object" string="Abort" />
+                        <button name="abort" states="started" type="object" string="Abort" />
                         <field name="state" widget="statusbar" 
                                statusbar_visible="init,started,ended,aborted" 
                                statusbar_colors='{"canceled":"red","init":"blue"}'/>
