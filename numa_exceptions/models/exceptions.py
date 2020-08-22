@@ -234,8 +234,8 @@ def new_dispatch_rpc(service_name, method, params):
 
         if not isinstance(e, (
                 odoo.exceptions.Warning, SessionExpiredException,
-                odoo.exceptions.UserError,
-                odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
+                UserError,
+                werkzeug.exceptions.NotFound)):
             if ename:
                 e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
@@ -270,8 +270,7 @@ def new_json_dispatch(self):
 
         if not isinstance(e, (
                 odoo.exceptions.Warning, SessionExpiredException,
-                odoo.exceptions.UserError,
-                odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
+                UserError, ValidationError, werkzeug.exceptions.NotFound)):
             if ename:
                 e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
