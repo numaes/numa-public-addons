@@ -31,12 +31,12 @@ Extended exception processing.
     * Every exception records not only the stack frames, but also parameters and locals values and remote call parameters
     * Exception information purge, unless configured, every month to limit space consuption
     * User is informed of problem with a link that can be copied and emailed to the system administration
-    * Exception information can be consulted online without server access by the system administrator
+    * Exception information can be viewed online without server access by the system administrator
 
 """,
 	'summary': "Exception Information Database",
     'version': '1.0',
-    'depends': ['base'],
+    'depends': ['base', 'mail'],
     'data': ['security/ir.model.access.csv','security/security.xml','views/exceptions_view.xml','data/exceptions_data.xml',],
     'auto_install': True,
     'application': True,

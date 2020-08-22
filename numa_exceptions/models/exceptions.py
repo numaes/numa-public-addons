@@ -78,6 +78,7 @@ class Frame(models.Model):
 
 class GeneralException (models.Model):
     _name = "base.general_exception"
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _description = "Exceptions: exception log"
     _order = "timestamp desc"
 
@@ -103,7 +104,7 @@ class GeneralException (models.Model):
 
         ge = self
         return {
-            'name':_("Frames"),
+            'name': _("Frames"),
             'view_mode': 'tree,form',
             'view_type': 'form',
             'res_model': 'base.frame',
@@ -166,13 +167,13 @@ def register_exception(service_name, method, params, db, uid, e):
                                 lv[2]['sequence'] = seq
                                 seq += 1
                             lines, lineno = inspect.getsourcelines(frame)
-                            for l in lines:
+                            for line in lines:
                                 if (frame.f_lineno - 10) < lineno < (frame.f_lineno + 10):
                                     if frame.f_lineno == lineno:
                                         fmt = '</pre><b><pre>%5d: %s</pre></b><pre>'
                                     else:
                                         fmt = '%5d: %s'
-                                    output += fmt % (lineno, l)
+                                    output += fmt % (lineno, line)
                                 lineno += 1
                     except Exception as process_exception:
                         output += "\nEXCEPTION DURING PROCESSING: %s" % exception_to_unicode(process_exception)
@@ -191,7 +192,7 @@ def register_exception(service_name, method, params, db, uid, e):
                     'service': service_name,
                     'exception': ustr(e),
                     'method': method,
-                    'params' : params or [],
+                    'params': params or [],
                     'do_not_purge': False,
                     'user': uid,
                     'frames': frames,
@@ -222,16 +223,19 @@ def new_dispatch_rpc(service_name, method, params):
     try:
         return old_dispatch_rpc(service_name, method, params)
     except Exception as e:
-        if service_name in ['object', 'report'] and \
-           not isinstance(e, (UserError, ValidationError)):
-            (db, uid, passwd) = params[0:3]
+        if not isinstance(e, (
+                odoo.exceptions.Warning, SessionExpiredException,
+                odoo.exceptions.UserError,
+                odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
+            db, uid, passwd = params[0:3]
             ename = register_exception(
-                        'RPC %s' % service_name,
-                        method,
-                        params,
-                        db,
-                        uid,
-                        e)
+                'RPC %s' % service_name,
+                method,
+                params,
+                db,
+                uid,
+                e)
+
             if ename:
                 e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
@@ -252,6 +256,7 @@ def new_json_dispatch(self):
     except Exception as e:
         if not isinstance(e, (
                 odoo.exceptions.Warning, SessionExpiredException,
+                odoo.exceptions.UserError,
                 odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
             model = 'JSON %s' % self.params.get('model', 'unknown model')
             method = self.params.get('method', 'unknown method')
@@ -260,12 +265,13 @@ def new_json_dispatch(self):
             uid = self.session.uid
 
             ename = register_exception(
-                        model,
-                        method,
-                        params,
-                        db,
-                        uid,
-                        e)
+                model,
+                method,
+                params,
+                db,
+                uid,
+                e)
+
             if ename:
                 e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
@@ -282,6 +288,7 @@ def new_json_handle_exception(self, exception):
 
     if not isinstance(exception, (
             odoo.exceptions.Warning, SessionExpiredException,
+            odoo.exceptions.UserError,
             odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
         model = 'JSONE %s' % self.params.get('model', 'unknown model')
         method = self.params.get('method', 'unknown method')
@@ -290,12 +297,12 @@ def new_json_handle_exception(self, exception):
         uid = self.session.uid
 
         ename = register_exception(
-                    model,
-                    method,
-                    params,
-                    db,
-                    uid,
-                    exception)
+            model,
+            method,
+            params,
+            db,
+            uid,
+            exception)
 
         if ename:
             exception = UserError(_('System error %s. Get in touch with your System Admin') % ename)

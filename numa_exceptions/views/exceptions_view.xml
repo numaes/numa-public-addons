@@ -2,8 +2,6 @@
 <openerp>
     <data>
 
-        <menuitem name="Exceptions" parent="base.menu_custom" id="exceptions_submenu"/>
-
         <record id="exceptions_form_view" model="ir.ui.view">
             <field name="name">Exceptions form</field>
             <field name="model">base.general_exception</field>
@@ -34,6 +32,11 @@
                             <field name="user"/>
                         </group>
                     </sheet>
+                    <div class="oe_chatter">
+                        <field name="message_follower_ids"/>
+                        <field name="activity_ids"/>
+                        <field name="message_ids"/>
+                    </div>
                 </form>
             </field>
         </record>
@@ -82,16 +85,15 @@
 
         <menuitem id="exceptions_menu"
             action="exceptions_action"
-            parent="exceptions_submenu" 
-            sequence="10"/>
+            parent="base.next_id_9"
+            sequence="99"/>
             
         <record id="exc_frame_form_view" model="ir.ui.view">
             <field name="name">Exception frames form</field>
             <field name="model">base.frame</field>
             <field name="arch" type="xml">
                 <form string="Frame" >
-                    <header>
-                    </header>
+                    <header/>
                     <sheet>
                         <div class="oe_title">
                             <label for="file_name" class="oe_edit_only"/>
