@@ -223,19 +223,19 @@ def new_dispatch_rpc(service_name, method, params):
     try:
         return old_dispatch_rpc(service_name, method, params)
     except Exception as e:
+        db, uid, passwd = params[0:3]
+        ename = register_exception(
+            'RPC %s' % service_name,
+            method,
+            params,
+            db,
+            uid,
+            e)
+
         if not isinstance(e, (
                 odoo.exceptions.Warning, SessionExpiredException,
                 odoo.exceptions.UserError,
                 odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
-            db, uid, passwd = params[0:3]
-            ename = register_exception(
-                'RPC %s' % service_name,
-                method,
-                params,
-                db,
-                uid,
-                e)
-
             if ename:
                 e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
@@ -254,43 +254,7 @@ def new_json_dispatch(self):
         return old_json_dispatch(self)
 
     except Exception as e:
-        if not isinstance(e, (
-                odoo.exceptions.Warning, SessionExpiredException,
-                odoo.exceptions.UserError,
-                odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
-            model = 'JSON %s' % self.params.get('model', 'unknown model')
-            method = self.params.get('method', 'unknown method')
-            params = self.params.get('args', [])
-            db = self.session.db
-            uid = self.session.uid
-
-            ename = register_exception(
-                model,
-                method,
-                params,
-                db,
-                uid,
-                e)
-
-            if ename:
-                e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
-
-        raise e
-
-
-odoo.http.JsonRequest.dispatch = new_json_dispatch
-
-old_json_handle_exception = odoo.http.JsonRequest._handle_exception
-
-
-def new_json_handle_exception(self, exception):
-    global old_json_handle_exception
-
-    if not isinstance(exception, (
-            odoo.exceptions.Warning, SessionExpiredException,
-            odoo.exceptions.UserError,
-            odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
-        model = 'JSONE %s' % self.params.get('model', 'unknown model')
+        model = 'JSON %s' % self.params.get('model', 'unknown model')
         method = self.params.get('method', 'unknown method')
         params = self.params.get('args', [])
         db = self.session.db
@@ -302,12 +266,17 @@ def new_json_handle_exception(self, exception):
             params,
             db,
             uid,
-            exception)
+            e)
 
-        if ename:
-            exception = UserError(_('System error %s. Get in touch with your System Admin') % ename)
+        if not isinstance(e, (
+                odoo.exceptions.Warning, SessionExpiredException,
+                odoo.exceptions.UserError,
+                odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
+            if ename:
+                e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
-    return old_json_handle_exception(self, exception)
+        raise e
 
 
-odoo.http.JsonRequest._handle_exception = new_json_handle_exception
+odoo.http.JsonRequest.dispatch = new_json_dispatch
+
