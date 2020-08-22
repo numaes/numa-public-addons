@@ -1,2 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_numa_purchase_extension_numa_purchase_extension,numa_purchase_extension.numa_purchase_extension,model_numa_purchase_extension_numa_purchase_extension,,1,0,0,0

@@ -4,16 +4,46 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Odoo Server 13.0\n"
+"Project-Id-Version: Odoo Server saas~13.4\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2019-11-22 16:02+0000\n"
-"PO-Revision-Date: 2019-11-22 16:02+0000\n"
+"POT-Creation-Date: 2020-08-22 16:43+0000\n"
+"PO-Revision-Date: 2020-08-22 16:43+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: \n"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_needaction
+msgid "Action Needed"
+msgstr "Se requiere acción"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_ids
+msgid "Activities"
+msgstr "Actividades"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_exception_decoration
+msgid "Activity Exception Decoration"
+msgstr "Decorador de actividad"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_state
+msgid "Activity State"
+msgstr "Estado de la actividad"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_type_icon
+msgid "Activity Type Icon"
+msgstr "Tipo de actividad"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_attachment_count
+msgid "Attachment Count"
+msgstr "Cantidad de adjuntos"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__create_uid
@@ -57,7 +87,6 @@ msgstr "Excepción"
 #. module: numa_exceptions
 #: model:ir.actions.act_window,name:numa_exceptions.exceptions_action
 #: model:ir.ui.menu,name:numa_exceptions.exceptions_menu
-#: model:ir.ui.menu,name:numa_exceptions.exceptions_submenu
 #: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_search_view
 msgid "Exceptions"
 msgstr "Excepciones"
@@ -95,6 +124,26 @@ msgid "File name"
 msgstr "Nombre de archivo"
 
 #. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_follower_ids
+msgid "Followers"
+msgstr "Seguidores"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_channel_ids
+msgid "Followers (Channels)"
+msgstr "Seguidores (Canales)"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_partner_ids
+msgid "Followers (Partners)"
+msgstr "Seguidores (Contactos)"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__activity_type_icon
+msgid "Font awesome icon e.g. fa-tasks"
+msgstr ""
+
+#. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__frame
 #: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_form_view
 msgid "Frame"
@@ -107,25 +156,51 @@ msgstr ""
 #: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_form_view
 #, python-format
 msgid "Frames"
-msgstr "Frame"
+msgstr "Frames"
 
 #. module: numa_exceptions
 #: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_form_view
 #: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_form_view
 msgid "General"
-msgstr "General"
+msgstr ""
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__id
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__id
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__id
 msgid "ID"
-msgstr "ID"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_exception_icon
+msgid "Icon"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__activity_exception_icon
+msgid "Icon to indicate an exception activity."
+msgstr ""
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__name
 msgid "Identification"
 msgstr "Identificación"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_needaction
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_unread
+msgid "If checked, new messages require your attention."
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_has_error
+msgid "If checked, some messages have a delivery error."
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_is_follower
+msgid "Is Follower"
+msgstr ""
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_frame____last_update
@@ -164,6 +239,21 @@ msgid "Locals"
 msgstr "Locales"
 
 #. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_main_attachment_id
+msgid "Main Attachment"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_has_error
+msgid "Message Delivery error"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_ids
+msgid "Messages"
+msgstr ""
+
+#. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__method
 msgid "Method"
 msgstr "Método"
@@ -174,9 +264,54 @@ msgid "Name"
 msgstr "Nombre"
 
 #. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_date_deadline
+msgid "Next Activity Deadline"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_summary
+msgid "Next Activity Summary"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_type_id
+msgid "Next Activity Type"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_needaction_counter
+msgid "Number of Actions"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_has_error_counter
+msgid "Number of errors"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_needaction_counter
+msgid "Number of messages which requires an action"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_has_error_counter
+msgid "Number of messages with delivery error"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_unread_counter
+msgid "Number of unread messages"
+msgstr ""
+
+#. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__params
 msgid "Params"
 msgstr "Parámetros"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_user_id
+msgid "Responsible User"
+msgstr ""
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__sequence
@@ -194,17 +329,41 @@ msgid "Source code"
 msgstr "Código fuente"
 
 #. module: numa_exceptions
-#: code:addons/numa_exceptions/models/exceptions.py:0
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__activity_state
+msgid ""
+"Status based on activities\n"
+"Overdue: Due date is already passed\n"
+"Today: Activity date is today\n"
+"Planned: Future activities."
+msgstr ""
+
+#. module: numa_exceptions
 #: code:addons/numa_exceptions/models/exceptions.py:0
 #: code:addons/numa_exceptions/models/exceptions.py:0
 #, python-format
 msgid "System error %s. Get in touch with your System Admin"
-msgstr "Error de sistema %s. Póngase en contacto con su Administrador de sistema"
+msgstr ""
+"Error de sistema %s. Póngase en contacto con su Administrador de sistema"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__timestamp
 msgid "Timestamp"
-msgstr "Timestamp"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__activity_exception_decoration
+msgid "Type of the exception activity on record."
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_unread
+msgid "Unread Messages"
+msgstr ""
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_unread_counter
+msgid "Unread Messages Counter"
+msgstr ""
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__user

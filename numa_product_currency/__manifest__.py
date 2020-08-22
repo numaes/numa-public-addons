@@ -32,10 +32,11 @@ This module allows to express list and standard price in currencies different fr
     'depends': [
         'base',
         'product',
-        'stock_account',
     ],
     'data': [
-        'product_view.xml',
+        'security/ir.model.access.csv',
+        'security/security.xml',
+        'views/product_view.xml',
     ],
     'demo_xml': [
     ],
