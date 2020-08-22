@@ -280,3 +280,25 @@ def new_json_dispatch(self):
 
 odoo.http.JsonRequest.dispatch = new_json_dispatch
 
+
+class IrCron(models.Model):
+    _inherit = 'ir.cron'
+
+    @api.model
+    def _handle_callback_exception(self, cron_name, server_action_id, job_id, job_exception):
+        model = 'CRON %s' % (cron_name or '<unknown>')
+        method = None
+        params = [server_action_id, job_id]
+        db = self.env.cr.dbname
+        uid = self.env.user.id
+
+        register_exception(
+            model,
+            method,
+            params,
+            db,
+            uid,
+            job_exception)
+
+        return super()._handle_callback_exception(cron_name, server_action_id, job_id, job_exception)
+
