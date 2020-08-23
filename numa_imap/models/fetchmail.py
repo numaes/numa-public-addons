@@ -22,7 +22,6 @@ class FetchmailServer(models.Model):
     last_uid = fields.Integer('Last received UID')
     initially_from = fields.Date('Initial load, from date')
 
-    #@api.multi
     def fetch_mail(self):
         """ WARNING: meant for cron usage only - will commit() after each email! """
         additionnal_context = {
@@ -158,7 +157,7 @@ class MailThread(models.AbstractModel):
             message = bytes(message.data)
         if isinstance(message, str):
             message = message.encode('utf-8')
-        message = email.message_from_bytes(message)
+        message = email.message_from_bytes(message, policy=email.policy.SMTP)
 
         # parse the message, verify we are not in a loop by checking message_id is not duplicated
         msg_dict = self.message_parse(message, save_original=save_original)
