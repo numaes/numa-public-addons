@@ -33,7 +33,7 @@ class FetchmailServer(models.Model):
             if fetchmail_server.initially_from:
                 from_day = fetchmail_server.initially_from
             else:
-                from_day = datetime.now().date()
+                from_day = fields.Date.today()
 
             monthNames = {
                 1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr",
