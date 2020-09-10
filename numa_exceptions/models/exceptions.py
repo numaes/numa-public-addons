@@ -23,6 +23,7 @@
 from odoo import models, fields, api, _, exceptions
 from odoo.exceptions import UserError, ValidationError
 from odoo import SUPERUSER_ID
+from odoo.http import request
 from odoo.loglevels import exception_to_unicode, ustr
 
 import odoo
@@ -103,7 +104,7 @@ class GeneralException (models.Model):
 
         ge = self
         return {
-            'name':_("Frames"),
+            'name': _("Frames"),
             'view_mode': 'tree,form',
             'view_type': 'form',
             'res_model': 'base.frame',
@@ -166,13 +167,13 @@ def register_exception(service_name, method, params, db, uid, e):
                                 lv[2]['sequence'] = seq
                                 seq += 1
                             lines, lineno = inspect.getsourcelines(frame)
-                            for l in lines:
+                            for line in lines:
                                 if (frame.f_lineno - 10) < lineno < (frame.f_lineno + 10):
                                     if frame.f_lineno == lineno:
                                         fmt = '</pre><b><pre>%5d: %s</pre></b><pre>'
                                     else:
                                         fmt = '%5d: %s'
-                                    output += fmt % (lineno, l)
+                                    output += fmt % (lineno, line)
                                 lineno += 1
                     except Exception as process_exception:
                         output += "\nEXCEPTION DURING PROCESSING: %s" % exception_to_unicode(process_exception)
@@ -191,7 +192,7 @@ def register_exception(service_name, method, params, db, uid, e):
                     'service': service_name,
                     'exception': ustr(e),
                     'method': method,
-                    'params' : params or [],
+                    'params': params or [],
                     'do_not_purge': False,
                     'user': uid,
                     'frames': frames,
@@ -213,94 +214,60 @@ def register_exception(service_name, method, params, db, uid, e):
     return None
 
 
-old_dispatch_rpc = odoo.http.dispatch_rpc
+class IrHttp(models.AbstractModel):
+    _inherit = 'ir.http'
 
+    @classmethod
+    def _dispatch(cls):
+        rule = None
+        func = None
+        arguments = None
+        user = None
+        db = None
 
-def new_dispatch_rpc(service_name, method, params):
-    global old_dispatch_rpc
+        try:
+            rule, arguments = cls._match(request.httprequest.path)
+            func = rule.endpoint
+            user = cls.env.user.id
+            db = cls.env.cr.dbname
+        except Exception:
+            pass
 
-    try:
-        return old_dispatch_rpc(service_name, method, params)
-    except Exception as e:
-        if service_name in ['object', 'report'] and \
-           not isinstance(e, (UserError, ValidationError)):
-            (db, uid, passwd) = params[0:3]
+        try:
+            return super()._dispatch()
+        except Exception as e:
             ename = register_exception(
-                        'RPC %s' % service_name,
-                        method,
-                        params,
-                        db,
-                        uid,
-                        e)
-            if ename:
+                rule,
+                func,
+                arguments,
+                db,
+                (user.name, user.id) if user else '',
+                e
+            )
+
+            if not isinstance(e, (UserError, ValidationError)) and ename:
                 e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
-        raise e
+            raise e
 
 
-odoo.http.dispatch_rpc = new_dispatch_rpc
+class IrCron(models.Model):
+    _inherit = 'ir.cron'
 
-old_json_dispatch = odoo.http.JsonRequest.dispatch
+    @api.model
+    def _handle_callback_exception(self, cron_name, server_action_id, job_id, job_exception):
+        model = 'CRON %s' % (cron_name or '<unknown>')
+        method = None
+        params = [server_action_id, job_id]
+        db = self.env.cr.dbname
+        uid = self.env.user.id
 
+        register_exception(
+            model,
+            method,
+            params,
+            db,
+            uid,
+            job_exception)
 
-def new_json_dispatch(self):
-    global old_json_dispatch
-
-    try:
-        return old_json_dispatch(self)
-
-    except Exception as e:
-        if not isinstance(e, (
-                odoo.exceptions.Warning, SessionExpiredException,
-                odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
-            model = 'JSON %s' % self.params.get('model', 'unknown model')
-            method = self.params.get('method', 'unknown method')
-            params = self.params.get('args', [])
-            db = self.session.db
-            uid = self.session.uid
-
-            ename = register_exception(
-                        model,
-                        method,
-                        params,
-                        db,
-                        uid,
-                        e)
-            if ename:
-                e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
-
-        raise e
-
-
-odoo.http.JsonRequest.dispatch = new_json_dispatch
-
-old_json_handle_exception = odoo.http.JsonRequest._handle_exception
-
-
-def new_json_handle_exception(self, exception):
-    global old_json_handle_exception
-
-    if not isinstance(exception, (
-            odoo.exceptions.Warning, SessionExpiredException,
-            odoo.exceptions.except_orm, werkzeug.exceptions.NotFound)):
-        model = 'JSONE %s' % self.params.get('model', 'unknown model')
-        method = self.params.get('method', 'unknown method')
-        params = self.params.get('args', [])
-        db = self.session.db
-        uid = self.session.uid
-
-        ename = register_exception(
-                    model,
-                    method,
-                    params,
-                    db,
-                    uid,
-                    exception)
-
-        if ename:
-            exception = UserError(_('System error %s. Get in touch with your System Admin') % ename)
-
-    return old_json_handle_exception(self, exception)
-
-
-odoo.http.JsonRequest._handle_exception = new_json_handle_exception
+        return super()._handle_callback_exception(cron_name, server_action_id, job_id, job_exception)
