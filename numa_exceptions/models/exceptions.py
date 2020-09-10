@@ -214,41 +214,26 @@ def register_exception(service_name, method, params, db, uid, e):
     return None
 
 
-class IrHttp(models.AbstractModel):
-    _inherit = 'ir.http'
+old_webrequest_handle_exception = odoo.http.WebRequest._handle_exception
 
-    @classmethod
-    def _dispatch(cls):
-        rule = None
-        func = None
-        arguments = None
-        user = None
-        db = None
 
-        try:
-            rule, arguments = cls._match(request.httprequest.path)
-            func = rule.endpoint
-            user = cls.env.user.id
-            db = cls.env.cr.dbname
-        except Exception:
-            pass
+def new_handle_exception(self, exception):
+    ename = register_exception(
+        str(self.session),
+        str(self.jsonrequest) if isinstance(self, odoo.http.JsonRequest) else 'Not Json',
+        str(self.env),
+        self.db,
+        self.uid,
+        exception
+    )
 
-        try:
-            return super()._dispatch()
-        except Exception as e:
-            ename = register_exception(
-                rule,
-                func,
-                arguments,
-                db,
-                (user.name, user.id) if user else '',
-                e
-            )
+    if not isinstance(exception, (UserError, ValidationError)) and ename:
+        exception = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
-            if not isinstance(e, (UserError, ValidationError)) and ename:
-                e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
+    return old_webrequest_handle_exception(self, exception)
 
-            raise e
+
+odoo.http.WebRequest._handle_exception = new_handle_exception
 
 
 class IrCron(models.Model):
