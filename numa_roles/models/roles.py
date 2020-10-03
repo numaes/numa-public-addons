@@ -1,43 +1,69 @@
-#-*- coding: utf-8 -*-
-
-from odoo import fields, models, api,_
-from lxml import etree
-from lxml.builder import E
+from odoo import fields, models, api, tools, _, SUPERUSER_ID
+from odoo.exceptions import ValidationError
 
 import logging
 _logger = logging.getLogger(__name__)
 
 
-class Group(models.Model):
-	_inherit = 'res.groups'
+class GroupRoleCategory(models.Model):
+	_name = 'res.group_role_category'
+	_description = 'Group Role Category'
+	_parent_name = "parent_category_id"
+	_parent_store = True
+	_rec_name = 'complete_name'
+	_order = 'complete_name'
 
-	is_role = fields.Boolean('Is role?')
-	type_ids = fields.Many2many('res.groups_type', 'res_groups_type_rel', 'type_id', 'group_id', string='Types')
+	name = fields.Char('Name', required=True)
+	complete_name = fields.Char(
+		'Complete Name', compute='_compute_complete_name',
+		store=True)
+	description = fields.Html('Description')
+	active = fields.Boolean('Active', default=True)
+	parent_category_id = fields.Many2many('res.group_category', 'Parent category')
 
+	@api.depends('name', 'parent_id.complete_name')
+	def _compute_complete_name(self):
+		for category in self:
+			if category.parent_id:
+				category.complete_name = '%s / %s' % (category.parent_id.complete_name, category.name)
+			else:
+				category.complete_name = category.name
+
+	@api.constrains('parent_id')
+	def _check_category_recursion(self):
+		if not self._check_recursion():
+			raise ValidationError(_('You cannot create recursive role categories.'))
+		return True
 
 	@api.model
-	def _update_user_groups_view(self):
-		""" Modify the view with xmlid ``base.user_groups_view``, which inherits
-			the user form view, and show just the roles.
-		"""
-		if self._context.get('install_mode'):
-			# use installation/admin language for translatable names in the view
-			user_context = self.env['res.users'].context_get()
-			self = self.with_context(**user_context)
+	def name_create(self, name):
+		return self.create({'name': name}).name_get()[0]
 
-		# We have to try-catch this, because at first init the view does not
-		# exist but we are already creating some basic groups.
-		view = self.env.ref('base.user_groups_view', raise_if_not_found=False)
-		if view and view.exists() and view._name == 'ir.ui.view':
-			xml = E.field(E.group(*([]), col="2"), E.group(*([]), col="4"), name="groups_id", position="after")
-			xml.addprevious(etree.Comment("GENERATED AUTOMATICALLY BY GROUPS"))
-			xml_content = etree.tostring(xml, pretty_print=True, xml_declaration=True, encoding="utf-8")
-			if not view.check_access_rights('write', raise_exception=False):
-				# erp manager has the rights to update groups/users but not
-				# to modify ir.ui.view
-				if self.env.user.has_group('base.group_erp_manager'):
-					view = view.sudo()
-			view.with_context(lang=None).write({'arch': xml_content, 'arch_fs': False})
+	_sql_constraints = [('name_uniq', 'unique (name, parent_category_id)',
+						 'Category name should be unique!')]
+
+
+class Groups(models.Model):
+	_inherit = 'res.groups'
+
+	@tools.ormcache()
+	def _get_default_role_category_id(self):
+		# Deletion forbidden (at least through unlink)
+		return self.env.ref('numa_role.group_category_all')
+
+	def _read_group_role_category_id(self, categories, domain, order):
+		category_model = self.env['res.group_role_category']
+
+		role_category_ids = self.env.context.get('default_role_category_id')
+		if not role_category_ids and self.env.context.get('group_expand'):
+			role_category_ids = category_model._search([], order=order, access_rights_uid=SUPERUSER_ID)
+		return category_model.browse(role_category_ids)
+
+	is_role = fields.Boolean('Is a role?')
+	role_category_id = fields.Many2one(
+		'res.group_role_category', 'Category',
+		change_default=True, default=_get_default_role_category_id, group_expand='_read_group_role_category_id',
+		required=True, help="Select role category for the current role group")
 
 
 class Users(models.Model):
@@ -47,15 +73,19 @@ class Users(models.Model):
 		default_user = self.env.ref('base.default_user', raise_if_not_found=False)
 		return (default_user or self.env['res.users']).sudo().groups_id
 
+	role_ids = fields.Many2many(
+		'res.groups', 'res_groups_users_rel', 'uid', 'gid',
+		string='Roles',
+		compute='get_role_ids',
+		inverse='set_role_ids',
+		domain=[('is_role', '=', True), ('active', '=', True)])
 
-	groups_id = fields.Many2many('res.groups', 'res_groups_users_rel', 'uid', 'gid', string='Groups', default=_default_groups)
+	def get_role_ids(self):
+		group_model = self.env['res.group']
 
+		for user in self:
+			user.role_ids = group_model.browse([g.id for g in user.group_ids if g.is_role])
 
-class ResGroupsType(models.Model):
-	_name = 'res.groups_type'
-
-	name = fields.Char('Type', required=True)
-	description = fields.Char('Description')
-	active = fields.Boolean('Active', default=True)
-
-	_sql_constraints = [('name_uniq', 'unique (name)', 'El Tipo de Grupo no debe Repetirse!')]
+	def set_role_ids(self):
+		for user in self:
+			user.group_ids = user.role_ids
