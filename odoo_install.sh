@@ -1,6 +1,6 @@
 #!/bin/bash
 ################################################################################
-# Script for installing Odoo on Ubuntu 18.04 an 20.04 (could be used for other version too)
+# Script for installing Odoo on Ubuntu 18.04 an 20.04 could be used for other version too
 # Author: Yenthe Van Ginneken
 # Modified by NUMA for specific use
 #
@@ -16,13 +16,13 @@
 # ./odoo-install
 ################################################################################
 
-OE_USER="$(user)"
-OE_HOME=$(pwd)
-# The default port where this Odoo instance will run under (provided you use the command -c in the terminal)
+OE_USER="$user"
+OE_HOME=$pwd
+# The default port where this Odoo instance will run under provided you use the command -c in the terminal
 # Set to true if you want to install it, false if you don't need it or have it already installed.
 read -r -e -p "Install WkmhtmlToPdf: " -i "True" INSTALL_WKHTMLTOPDF
 
-# Set the default Odoo port (you still have to use -c /etc/odoo-server.conf for example to use this.)
+# Set the default Odoo port you still have to use -c /etc/odoo-server.conf for example to use this.
 read -r -e -p "Odoo port number: " -i "8069" OE_PORT
 
 # Choose the Odoo version which you want to install. For example: 13.0, 12.0, 11.0 or saas-18. When using 'master' the master version will be installed.
@@ -44,7 +44,7 @@ read -r -e -p "Generate random password for admin? [True/False]: " -i "False" GE
 # Set the website name
 read -r -e -p "Website name: " -i "_" WEBSITE_NAME
 
-# Set the default Odoo longpolling port (you still have to use -c /etc/odoo-server.conf for example to use this.)
+# Set the default Odoo longpolling port you still have to use -c /etc/odoo-server.conf for example to use this.
 read -r -e -p "Odoo longpolling port: " -i "8072" LONGPOLLING_PORT
 
 # Set to "True" to install certbot and have ssl enabled, "False" to use http
@@ -71,7 +71,7 @@ sudo apt-get install postgresql postgresql-server-dev-all -y
 
 echo -e "\n---- Creating the ODOO PostgreSQL User  ----"
 sudo su - postgres -c "createuser -s $OE_USER" 2> /dev/null || true
-createuser -s "pg-$(PROJECT)-$(OE_VERSION)"
+createuser -s "pg-$PROJECT-$OE_VERSION"
 #--------------------------------------------------
 # Install Dependencies
 #--------------------------------------------------
@@ -96,16 +96,16 @@ fi
 #--------------------------------------------------
 ##
 ###  WKHTMLTOPDF download links
-## === Ubuntu Trusty x64 & x32 === (for other distributions please replace these two links,
+## === Ubuntu Trusty x64 & x32 === for other distributions please replace these two links,
 ## in order to have correct version of wkhtmltopdf installed, for a danger note refer to
-## https://github.com/odoo/odoo/wiki/Wkhtmltopdf ):
+## https://github.com/odoo/odoo/wiki/Wkhtmltopdf :
 ## https://www.odoo.com/documentation/13.0/setup/install.html#debian-ubuntu
 
 WKHTMLTOX_X64=https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.5/wkhtmltox_0.12.5-1.trusty_amd64.deb
 WKHTMLTOX_X32=https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.5/wkhtmltox_0.12.5-1.trusty_i386.deb
 
 if [ "$INSTALL_WKHTMLTOPDF" = "True" ]; then
-  echo -e "\n---- Install wkhtml and place shortcuts on correct place for ODOO $(OE_VERSION) ----"
+  echo -e "\n---- Install wkhtml and place shortcuts on correct place for ODOO $OE_VERSION ----"
   #pick up correct one from x64 & x32 versions:
   if [ "`getconf LONG_BIT`" == "64" ];then
       _url=$WKHTMLTOX_X64
@@ -124,25 +124,25 @@ fi
 # Install ODOO
 #--------------------------------------------------
 echo -e "\n==== Installing numa-public-odoo Server ===="
-if [ ! -d "odoo-$(OE_VERSION)-numa" ]; then
-  git clone https://github.com/numaes/numa-public-odoo -b "$(OE_VERSION)-numa" "odoo-$(OE_VERSION)-numa"
+if [ ! -d "odoo-$OE_VERSION-numa" ]; then
+  git clone https://github.com/numaes/numa-public-odoo -b "$OE_VERSION-numa" "odoo-$OE_VERSION-numa"
 fi
 
 echo -e "\n==== Installing numa-public-addons ===="
-if [ ! -d "numa-public-addons-$(OE_VERSION)" ]; then
-  git clone https://github.com/numaes/numa-public-addons -b "$(OE_VERSION)" "numa-public-addons-$(OE_VERSION)"
+if [ ! -d "numa-public-addons-$OE_VERSION" ]; then
+  git clone https://github.com/numaes/numa-public-addons -b "$OE_VERSION" "numa-public-addons-$OE_VERSION"
 fi
 
 echo -e "\n==== Installing extra-addons ===="
-if [ ! -d "extra-addons-$(OE_VERSION)" ]; then
-  git clone https://github.com/numaes/extra-addons -b "$(OE_VERSION)" "extra-addons-$(OE_VERSION)"
+if [ ! -d "extra-addons-$OE_VERSION" ]; then
+  git clone https://github.com/numaes/extra-addons -b "$OE_VERSION" "extra-addons-$OE_VERSION"
 fi
 
 #--------------------------------------------------
 # Install NUMA private addons
 #--------------------------------------------------
 echo -e "\n==== Installing numa-addons Server ===="
-if [ ! -d "numa-addons-$(OE_VERSION)" ]; then
+if [ ! -d "numa-addons-$OE_VERSION" ]; then
   GITHUB_RESPONSE="Authentication"
   while [[ $GITHUB_RESPONSE == *"Authentication"* ]]; do
       echo "------------------------WARNING------------------------------"
@@ -150,14 +150,14 @@ if [ ! -d "numa-addons-$(OE_VERSION)" ]; then
       echo "TIP: Press ctrl+c to stop this script."
       echo "-------------------------------------------------------------"
       echo " "
-      GITHUB_RESPONSE=$(git clone https://github.com/numaes/numa-addons -b "$(OE_VERSION)" "numa-addons-$(OE_VERSION)" 2>&1)
+      GITHUB_RESPONSE=$(git clone https://github.com/numaes/numa-addons -b "$OE_VERSION" "numa-addons-$OE_VERSION" 2>&1)
   done
 fi
 
 if [ "$IS_ENTERPRISE" = "True" ]; then
     # Odoo Enterprise install!
 
-    GITHUB_RESPONSE=$(sudo git clone --depth 1 --branch "$OE_VERSION" https://www.github.com/odoo/enterprise "enterprise-$(OE_VERSION)" 2>&1)
+    GITHUB_RESPONSE=$(git clone --depth 1 --branch "$OE_VERSION" https://www.github.com/odoo/enterprise "enterprise-$OE_VERSION" 2>&1)
     while [[ $GITHUB_RESPONSE == *"Authentication"* ]]; do
         echo "------------------------WARNING------------------------------"
         echo "Your authentication with Github has failed! Please try again."
@@ -165,7 +165,7 @@ if [ "$IS_ENTERPRISE" = "True" ]; then
         echo "TIP: Press ctrl+c to stop this script."
         echo "-------------------------------------------------------------"
         echo " "
-        GITHUB_RESPONSE=$(sudo git clone --depth 1 --branch "$OE_VERSION" https://www.github.com/odoo/enterprise "$OE_HOME/enterprise/addons" 2>&1)
+        GITHUB_RESPONSE=$(git clone --depth 1 --branch "$OE_VERSION" https://www.github.com/odoo/enterprise "$OE_HOME/enterprise/addons" 2>&1)
     done
 
     sudo -H pip3 install num2words ofxparse dbfread ebaysdk firebase_admin pyOpenSSL
@@ -173,17 +173,17 @@ if [ "$IS_ENTERPRISE" = "True" ]; then
     sudo npm install -g less-plugin-clean-css
 fi
 
-if [ ! -z "$(PROJECT)" ]; then
+if [ -n "$PROJECT" ]; then
   # Create project environment
   echo -e "\n==== Installing project-addons ===="
-  if [ ! -d "$(PROJECT)-$(OE_VERSION)" ]; then
-    mkdir "$(PROJECT)-$(OE_VERSION)"
+  if [ ! -d "$PROJECT-$OE_VERSION" ]; then
+    mkdir "$PROJECT-$OE_VERSION"
   fi
 
-  cd "$(PROJECT)-$(OE_VERSION)"
+  cd "$PROJECT-$OE_VERSION" || exit
 
-  if [ ! -d "$(PROJECT)-addons-$(OE_VERSION)" ]; then
-    git clone "https://github.com/numaes/$(PROJECT)-addons" -b "$(OE_VERSION)" "$(PROJECT)-addons-$(OE_VERSION)"
+  if [ ! -d "$PROJECT-addons-$OE_VERSION" ]; then
+    git clone "https://github.com/numaes/$PROJECT-addons" -b "$OE_VERSION" "$PROJECT-addons-$OE_VERSION"
   fi
 
   mkdir -p log
@@ -198,51 +198,51 @@ if [ ! -z "$(PROJECT)" ]; then
   source venv/bin/activate
 
   if [ ! -f 'odoo.config' ]; then
-    sudo touch odoo.config
+    touch odoo.config
     echo -e "* Creating server config file"
     printf "[options] \n; This is the password that allows database operations:\n" >> odoo.config
     if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then
         echo -e "* Generating random admin password"
-        OE_SUPERADMIN=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
+        OE_SUPERADMIN=$cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1
     fi
     printf "admin_passwd = ${OE_SUPERADMIN}\n" >> odoo.config
-    if [ $OE_VERSION \> "11.0" ]; then
+    if [ "$OE_VERSION" \> "11.0 " ]; then
         printf "http_port = ${OE_PORT}\n" >> odoo.config
     else
         printf "xmlrpc_port = ${OE_PORT}\n" >> odoo.config
     fi
     printf "data_dir = data\n" >> odoo.config
-    printf "db_user = pg-$(PROJECT)\n" >> odoo.config
+    printf "db_user = pg-$PROJECT\n" >> odoo.config
     printf "limit_time_cpu = 3600\n" >> odoo.config
     printf "limit_time_real = 7200\n" >> odoo.config
-    printf "db_user = pg-$(PROJECT)-$(OE_VERSION)\n" >>odoo.config
+    printf "db_user = pg-$PROJECT-$OE_VERSION\n" >>odoo.config
 
     if [ "$IS_ENTERPRISE" = "True" ]; then
-        printf "addons_path=$(PROJECT)-addons-$(OE_VERSION),../enterprise-$(OE_VERSION)" >> odoo.config
+        printf "addons_path=$PROJECT-addons-$OE_VERSION,../enterprise-$OE_VERSION" >> odoo.config
     else
-        printf "addons_path=$(PROJECT)-addons-$(OE_VERSION)" >> odoo.config
+        printf "addons_path=$PROJECT-addons-$OE_VERSION" >> odoo.config
     fi
-    printf ",../extra-addons-$(OE_VERSION),../odoo-$(OE_VERSION)-numa/addons,../odoo-$(OE_VERSION)-numa/odoo/addons\n" >>odoo.config
+    printf ",../extra-addons-$OE_VERSION,../odoo-$OE_VERSION-numa/addons,../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
 
   fi
 
   cat <<EOF > ./start.sh
-../odoo-$(OE_VERSION)-numa/odoo-bin -c odoo.config $1 $2 $3 $4 $5 $6 $7 $8 $9
+../odoo-$OE_VERSION-numa/odoo-bin -c odoo.config $1 $2 $3 $4 $5 $6 $7 $8 $9
 EOF
   if [ ! -f ./onboot.sh ]; then
   cat <<EOF > ./onboot.sh
-cd $(pwd)
+cd $pwd
 source venv/bin/activate
 ./start.sh --logfile=log/odoo-server.log &
 EOF
   fi
 
   echo -e "\n---- Install python packages/requirements ----"
-  pip install -r "../odoo-$(OE_VERSION)-numa/requirements.txt"
-  pip install -r "../numa-public-addons-$(OE_VERSION)/requirements.txt"
-  pip install -r "../numa-addons-$(OE_VERSION)/requirements.txt"
+  pip install -r "../odoo-$OE_VERSION-numa/requirements.txt"
+  pip install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
+  pip install -r "../numa-addons-$OE_VERSION/requirements.txt"
 
-  "../odoo-$(OE_VERSION)-numa/odoo-bin" -c odoo.config -s --stop-after-init
+  "../odoo-$OE_VERSION-numa/odoo-bin" -c odoo.config -s --stop-after-init
 
   cd ..
 fi
@@ -310,7 +310,7 @@ proxy_redirect off;
 location /longpolling {
 proxy_pass http://127.0.0.1:$LONGPOLLING_PORT;
 }
-location ~* .(js|css|png|jpg|jpeg|gif|ico)$ {
+location ~* .js|css|png|jpg|jpeg|gif|ico$ {
 expires 2d;
 proxy_pass http://127.0.0.1:$OE_PORT;
 add_header Cache-Control "public, no-transform";
@@ -354,11 +354,11 @@ echo "-----------------------------------------------------------"
 echo "Done!. Specifications:"
 echo "Port: $OE_PORT"
 echo "Project: $PROJECT"
-echo "Project directory: $(pwd)/$PROJECT-$OE_VERSION"
-echo "Configuraton file location: $(pwd)/$PROJECT-$OE_VERSION/odoo.config"
-echo "Logfile location: $(pwd)/$PROJECT-$OE_VERSION/log"
+echo "Project directory: $pwd/$PROJECT-$OE_VERSION"
+echo "Configuraton file location: $pwd/$PROJECT-$OE_VERSION/odoo.config"
+echo "Logfile location: $pwd/$PROJECT-$OE_VERSION/log"
 echo "User PostgreSQL: pg-$PROJECT-$OE_VERSION"
-echo "Password superadmin (database): $OE_SUPERADMIN"
+echo "Password superadmin database: $OE_SUPERADMIN"
 if [ "$INSTALL_NGINX" = "True" ]; then
   echo "Nginx configuration file: /etc/nginx/sites-available/odoo"
 fi
