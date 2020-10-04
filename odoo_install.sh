@@ -212,7 +212,6 @@ if [ -n "$PROJECT" ]; then
         printf "xmlrpc_port = ${OE_PORT}\n" >> odoo.config
     fi
     printf "data_dir = data\n" >> odoo.config
-    printf "db_user = pg-$PROJECT\n" >> odoo.config
     printf "limit_time_cpu = 3600\n" >> odoo.config
     printf "limit_time_real = 7200\n" >> odoo.config
     printf "db_user = pg-$PROJECT-$OE_VERSION\n" >>odoo.config
