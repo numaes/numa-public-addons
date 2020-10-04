@@ -20,7 +20,7 @@ OE_USER="$user"
 OE_HOME=$pwd
 # The default port where this Odoo instance will run under provided you use the command -c in the terminal
 # Set to true if you want to install it, false if you don't need it or have it already installed.
-read -r -e -p "Install WkmhtmlToPdf: " -i "True" INSTALL_WKHTMLTOPDF
+read -r -e -p "Install WkmhtmlToPdf [True/False]: " -i "False" INSTALL_WKHTMLTOPDF
 
 # Set the default Odoo port you still have to use -c /etc/odoo-server.conf for example to use this.
 read -r -e -p "Odoo port number: " -i "8069" OE_PORT
@@ -238,6 +238,7 @@ EOF
   fi
 
   echo -e "\n---- Install python packages/requirements ----"
+  pip install wheel
   pip install -r "../odoo-$OE_VERSION-numa/requirements.txt"
   pip install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
   pip install -r "../numa-addons-$OE_VERSION/requirements.txt"
