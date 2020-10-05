@@ -221,7 +221,7 @@ if [ -n "$PROJECT" ]; then
     else
         printf "addons_path=$PROJECT-addons-$OE_VERSION" >> odoo.config
     fi
-    printf ",../extra-addons-$OE_VERSION,../odoo-$OE_VERSION-numa/addons,../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
+    printf "../extra-addons-$OE_VERSION,../numa-addons-$OE_VERSION,../numa-public-addons-$OE_VERSION,../extra-addons-$OE_VERSION,../odoo-$OE_VERSION-numa/addons,../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
 
   fi
 
