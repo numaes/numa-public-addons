@@ -77,7 +77,7 @@ createuser -s "pg-$PROJECT-$OE_VERSION"
 #--------------------------------------------------
 echo -e "\n--- Installing Python 3 + pip3 --"
 sudo apt-get install git python3 python3-pip build-essential wget python3-dev python3-venv python3-wheel libxslt-dev libzip-dev libldap2-dev libsasl2-dev python3-setuptools node-less libpng12-0 libjpeg-dev gdebi -y
-sudo apt-get install libxml2-dev libxnlsec1-dev
+sudo apt-get install libxml2-dev libxnlsec1-dev -y
 
 echo -e "\n---- Install virtual env in current directory ----"
 
