@@ -77,10 +77,9 @@ createuser -s "pg-$PROJECT-$OE_VERSION"
 #--------------------------------------------------
 echo -e "\n--- Installing Python 3 + pip3 --"
 sudo apt-get install git python3 python3-pip build-essential wget python3-dev python3-venv python3-wheel libxslt-dev libzip-dev libldap2-dev libsasl2-dev python3-setuptools node-less libpng12-0 libjpeg-dev gdebi -y
+sudo apt-get install libxml2-dev libxnlsec1-dev
 
 echo -e "\n---- Install virtual env in current directory ----"
-python3 -m venv venv
-source venv/bin/activate
 
 echo -e "\n---- Installing nodeJS NPM and rtlcss for LTR support ----"
 sudo apt-get install nodejs npm -y
@@ -221,19 +220,21 @@ if [ -n "$PROJECT" ]; then
     else
         printf "addons_path=$PROJECT-addons-$OE_VERSION" >> odoo.config
     fi
-    printf "../extra-addons-$OE_VERSION,../numa-addons-$OE_VERSION,../numa-public-addons-$OE_VERSION,../extra-addons-$OE_VERSION,../odoo-$OE_VERSION-numa/addons,../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
+    printf ",../extra-addons-$OE_VERSION,../numa-addons-$OE_VERSION,../numa-public-addons-$OE_VERSION,../odoo-$OE_VERSION-numa/addons,../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
 
   fi
 
   cat <<EOF > ./start.sh
+  chmod +x start.sh
 ../odoo-$OE_VERSION-numa/odoo-bin -c odoo.config $1 $2 $3 $4 $5 $6 $7 $8 $9
 EOF
   if [ ! -f ./onboot.sh ]; then
-  cat <<EOF > ./onboot.sh
+    cat <<EOF > ./onboot.sh
 cd $pwd
 source venv/bin/activate
 ./start.sh --logfile=log/odoo-server.log &
 EOF
+    chmod +x onboot.sh
   fi
 
   echo -e "\n---- Install python packages/requirements ----"
