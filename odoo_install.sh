@@ -76,8 +76,10 @@ createuser -s "pg-$PROJECT-$OE_VERSION"
 # Install Dependencies
 #--------------------------------------------------
 echo -e "\n--- Installing Python 3 + pip3 --"
-sudo apt-get install git python3 python3-pip build-essential wget python3-dev python3-venv python3-wheel libxslt-dev libzip-dev libldap2-dev libsasl2-dev python3-setuptools node-less libpng12-0 libjpeg-dev gdebi -y
-sudo apt-get install libxml2-dev libxnlsec1-dev -y
+sudo apt-get install git python3 python3-pip build-essential wget python3-dev python3-venv python3-wheel -y
+sudo apt-get install libxslt-dev libzip-dev libldap2-dev libsasl2-dev python3-setuptools -y
+sudo apt-get install node-less libjpeg-dev -y
+sudo apt-get install libxml2-dev libxmlsec1-dev -y
 
 echo -e "\n---- Install virtual env in current directory ----"
 
@@ -105,16 +107,7 @@ WKHTMLTOX_X32=https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/0.12.
 
 if [ "$INSTALL_WKHTMLTOPDF" = "True" ]; then
   echo -e "\n---- Install wkhtml and place shortcuts on correct place for ODOO $OE_VERSION ----"
-  #pick up correct one from x64 & x32 versions:
-  if [ "`getconf LONG_BIT`" == "64" ];then
-      _url=$WKHTMLTOX_X64
-  else
-      _url=$WKHTMLTOX_X32
-  fi
-  sudo wget $_url
-  sudo gdebi --n `basename $_url`
-  sudo ln -s /usr/local/bin/wkhtmltopdf /usr/bin
-  sudo ln -s /usr/local/bin/wkhtmltoimage /usr/bin
+  sudo apt-get install wkhtmltopdf -y
 else
   echo "Wkhtmltopdf isn't installed due to the choice of the user!"
 fi
