@@ -231,7 +231,8 @@ if [ "$PROJECT" != "" ]; then
 
     cat <<EOF > ./start.sh
 cd $pwd
-../odoo-$OE_VERSION-numa/odoo-bin -c odoo.config $1 $2 $3 $4 $5 $6 $7 $8 $9
+source venv/bin/activate
+../odoo-$OE_VERSION-numa/odoo-bin -c odoo.config \$1 \$2 \$3 \$4 \$5 \$6 \$7 \$8 \$9
 EOF
     chmod +x start.sh
 
@@ -239,7 +240,20 @@ EOF
       cat <<EOF > ./onboot.sh
 cd $pwd
 source venv/bin/activate
-./start.sh --logfile=log/odoo-server.log &
+CWD=$(PWD)
+./start.sh --pidfile=$CWD/running-odoo.pid --logfile=log/odoo-server.log &
+EOF
+      chmod +x onboot.sh
+    fi
+
+    if [ ! -f ./stop.sh ]; then
+      cat <<EOF > ./onboot.sh
+cd $pwd
+if [ -f running-odoo.pid ]; then
+    CWO=$(cat running-odoo-pid)
+    kill -9 $CWO
+    rm running-odoo.pid
+fi
 EOF
       chmod +x onboot.sh
     fi
