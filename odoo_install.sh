@@ -38,7 +38,7 @@ read -r -e -p "Install NUMA's private repository? [True/False]: " -i "False" INS
 # Set this to True if you want to install Nginx!
 read -r -e -p "Install Nginx? [True/False]: " -i "False" INSTALL_NGINX
 
-WEBSITE_NAME='_'
+WEBSITE_NAME='site@domain'
 ENABLE_SSL='False'
 ADMIN_EMAIL='odoo@example.com'
 
