@@ -52,7 +52,7 @@ if [ "$INSTALL_NGNIX" = "True" ]; then
   # Provide Email to register ssl certificate
   read -r -e -p "Email for ssl certificate: " -i "odoo@example.com ADMIN_EMAIL"
 
-endif
+fi
 
 # Set the superadmin password - if GENERATE_RANDOM_PASSWORD is set to "True" we will automatically generate a random password, otherwise we use this one
 read -r -e -p "Superadmin name: " -i "admin" OE_SUPERADMIN
@@ -230,7 +230,6 @@ if [ "$PROJECT" != "" ]; then
     fi
 
     cat <<EOF > ./start.sh
-cd $pwd
 source venv/bin/activate
 ../odoo-$OE_VERSION-numa/odoo-bin -c odoo.config \$1 \$2 \$3 \$4 \$5 \$6 \$7 \$8 \$9
 EOF
@@ -238,16 +237,17 @@ EOF
 
     if [ ! -f ./onboot.sh ]; then
       cat <<EOF > ./onboot.sh
-cd $pwd
-source venv/bin/activate
 CWD=$(PWD)
+cd $CWD
+source venv/bin/activate
 ./start.sh --pidfile=$CWD/running-odoo.pid --logfile=log/odoo-server.log &
 EOF
       chmod +x onboot.sh
     fi
 
     if [ ! -f ./stop.sh ]; then
-      cat <<EOF > ./onboot.sh
+      cat <<EOF > ./stop.sh
+CWD=$(PWD)
 cd $pwd
 if [ -f running-odoo.pid ]; then
     CWO=$(cat running-odoo-pid)
@@ -255,7 +255,7 @@ if [ -f running-odoo.pid ]; then
     rm running-odoo.pid
 fi
 EOF
-      chmod +x onboot.sh
+      chmod +x .stop.sh
     fi
 
     echo -e "\n---- Install python packages/requirements ----"
@@ -289,13 +289,13 @@ upstream backend-odoo-im {
 server {
    listen 80;
    add_header Strict-Transport-Security max-age=2592000;
-   rewrite ^/.*$ https://$host$request_uri? permanent;
+   rewrite ^/.*\$ https://\$host\$request_uri? permanent;
 }
 
 server {
   listen 443 ssl;
-  server_name erp.cerramientosmoviles.com;
-  proxy_read_timeout 900s;
+  server_name $WEBSITE_NAME;
+  proxy_read_timeout 900s;WEBSITE_NAME
   proxy_connect_timeout 900s;
   proxy_send_timeout 900s;
 
@@ -305,14 +305,14 @@ server {
 
 
   # Add Headers for odoo proxy mode
-  proxy_set_header X-Forwarded-Host $host;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto $scheme;
-  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-Host \$host;
+  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto \$scheme;
+  proxy_set_header X-Real-IP \$remote_addr;
   add_header X-Frame-Options "SAMEORIGIN";
   add_header X-XSS-Protection "1; mode=block";
-  proxy_set_header X-Client-IP $remote_addr;
-  proxy_set_header HTTP_X_FORWARDED_HOST $remote_addr;
+  proxy_set_header X-Client-IP \$remote_addr;
+  proxy_set_header HTTP_X_FORWARDED_HOST \$remote_addr;
 
   #   odoo    log files
   access_log  /var/log/nginx/$OE_USER-access.log;
@@ -321,10 +321,6 @@ server {
   #   increase    proxy   buffer  size
   proxy_buffers   16  64k;
   proxy_buffer_size   128k;
-
-  proxy_read_timeout 900s;
-  proxy_connect_timeout 900s;
-  proxy_send_timeout 900s;
 
   #   force   timeouts    if  the backend dies
   proxy_next_upstream error   timeout invalid_header  http_500    http_502
