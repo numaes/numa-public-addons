@@ -293,7 +293,7 @@ fi
 #--------------------------------------------------
 # Install Nginx if needed
 #--------------------------------------------------
-if [ $INSTALL_NGINX = "True" ]; then
+if [ "$INSTALL_NGINX" = "True" ]; then
   echo -e "\n---- Installing and setting up Nginx ----"
   sudo apt install nginx -y
   cat <<EOF > ~/odoo
@@ -315,7 +315,7 @@ server {
 server {
   listen 443 ssl;
   server_name $WEBSITE_NAME;
-  proxy_read_timeout 900s;WEBSITE_NAME
+  proxy_read_timeout 900s;
   proxy_connect_timeout 900s;
   proxy_send_timeout 900s;
 
