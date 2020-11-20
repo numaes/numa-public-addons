@@ -66,6 +66,12 @@ read -r -e -p "Odoo longpolling port: " -i "8072" LONGPOLLING_PORT
 # Project name
 read -r -e -p "Project name (blank if no project): " PROJECT
 
+PROJECT_REPO='False'
+if [ "$PROJECT" != "" ]; then
+  # Project repo
+  read -r -e -p "Use a project repository? [True/False]: " -i "True" PROJECT_REPO
+fi
+
 #--------------------------------------------------
 # Update Server
 #--------------------------------------------------
@@ -183,7 +189,9 @@ if [ "$PROJECT" != "" ]; then
     cd "$PROJECT-$OE_VERSION" || exit
 
     if [ ! -d "$PROJECT-addons-$OE_VERSION" ]; then
-      git clone "https://github.com/numaes/$PROJECT-addons" -b "$OE_VERSION" "$PROJECT-addons-$OE_VERSION"
+      if [ "$PROJECT_REPO" = "True" ]; then
+        git clone "https://github.com/numaes/$PROJECT-addons" -b "$OE_VERSION" "$PROJECT-addons-$OE_VERSION"
+      fi
     fi
 
     mkdir -p log
@@ -200,32 +208,44 @@ if [ "$PROJECT" != "" ]; then
     if [ ! -f 'odoo.config' ]; then
       touch odoo.config
       echo -e "* Creating server config file"
+
       printf "[options] \n; This is the password that allows database operations:\n" >> odoo.config
       if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then
           echo -e "* Generating random admin password"
           OE_SUPERADMIN=$cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1
       fi
       printf "admin_passwd = ${OE_SUPERADMIN}\n" >> odoo.config
+
       if [ "$OE_VERSION" \> "11.0 " ]; then
           printf "http_port = ${OE_PORT}\n" >> odoo.config
       else
           printf "xmlrpc_port = ${OE_PORT}\n" >> odoo.config
       fi
+
       printf "data_dir = data\n" >> odoo.config
       printf "limit_time_cpu = 3600\n" >> odoo.config
       printf "limit_time_real = 7200\n" >> odoo.config
       printf "db_user = pg-$PROJECT-$OE_VERSION\n" >>odoo.config
 
-      if [ "$IS_ENTERPRISE" = "True" ]; then
-          printf "addons_path=$PROJECT-addons-$OE_VERSION,../enterprise-$OE_VERSION" >> odoo.config
+      if [ "$PROJECT_REPO" = "True" ]; then
+        printf "addons_path=$PROJECT-addons-$OE_VERSION,"
       else
-          printf "addons_path=$PROJECT-addons-$OE_VERSION" >> odoo.config
+        printf "addons_path="
       fi
-      printf ",../extra-addons-$OE_VERSION,../numa-addons-$OE_VERSION,../numa-public-addons-$OE_VERSION," >>odoo.config
+
+      printf "../extra-addons-$OE_VERSION," >> odoo.config
+
       if [ "$INSTALL_PRIVATE" = "Yes" ]; then
-        printf "../odoo-$OE_VERSION-numa/addons," >>odoo.config
+        printf "../numa-addons-$OE_VERSION," >>odoo.config
       fi
-      printf "../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
+
+      printf "../numa-public-addons-$OE_VERSION," >>odoo.config
+
+      if [ "$IS_ENTERPRISE" = "True" ]; then
+          printf "../enterprise-$OE_VERSION," >> odoo.config
+      fi
+
+      printf "../odoo-$OE_VERSION-numa/addons,../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
 
     fi
 
