@@ -10,6 +10,7 @@
 					<span class="o_bjprogressbar_value"/>
                 </div>
             </div>
+            <div class="o_bjprogressbar_abort" >Cancelar</div>
             <div class="o_bjprogressbar_message" />
             <div class="o_bjprogressbar_error" />
         </div>

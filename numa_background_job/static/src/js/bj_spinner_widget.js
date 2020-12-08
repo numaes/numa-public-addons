@@ -31,6 +31,10 @@ var FieldBJSpinner = AbstractField.extend({
         this.current_status = 'desconocido';
         this.error_msg = '';
         this.widget_state = 'init';
+        this.initialized_on = '';
+        this.started_on = '';
+        this.ended_on = '';
+        this.aborted_on = '';
         this.call('bus_service', 'addChannel', 'res.background_job');
         this.call('bus_service', 'startPolling');
     },
@@ -109,11 +113,11 @@ var FieldBJSpinner = AbstractField.extend({
 
     render_value: function () {
         var state_msg = {
-            init: 'Initializing',
-            started: 'Started',
-            ended: 'Ended',
-            aborting: 'Aborting ...',
-            aborted: 'Aborted'
+            init: _t('Initializing: ') + moment(this.initialized_on).format('DD-MM-YYYY HH:mm:ss'),
+            started: _t('Started: ') + moment(this.started_on).format('DD-MM-YYYY HH:mm:ss'),
+            ended: _t('Started: ') + moment(this.started_on).format('DD-MM-YYYY HH:mm:ss') + _t(' - Ended: ') + moment(this.ended_on).format('DD-MM-YYYY HH:mm:ss') + _t(' - Duración: ') + moment.utc(moment(this.ended_on, 'DD-MM-YYYY HH:mm:ss.SSS').diff(moment(this.started_on, 'DD-MM-YYYY HH:mm:ss.SSS'))).format('HH:mm:ss.SSS'),
+            aborting: _t('Aborting ...'),
+            aborted: _t('Started: ') + moment(this.started_on).format('DD-MM-YYYY HH:mm:ss') + _t(' - Aborted: ') + moment(this.aborted_on).format('DD-MM-YYYY HH:mm:ss') + _t(' - Duración: ') + moment.utc(moment(this.aborted_on, 'DD-MM-YYYY HH:mm:ss.SSS').diff(moment(this.started_on, 'DD-MM-YYYY HH:mm:ss.SSS'))).format('HH:mm:ss.SSS')
         }[this.state];
         if (!state_msg) {
             state_msg = '';
@@ -128,22 +132,26 @@ var FieldBJSpinner = AbstractField.extend({
         if (this.state == 'started') {
             this.$el.find(".o_bjprogressbar").show();
             this.$el.find(".o_bjprogressbar_indicator").css('background-color','#C0C0C0');
+            this.$el.find(".o_bjprogressbar_abort").show();
             this.$el.find(".o_bjprogressbar_message").show();
             this.$el.find(".o_bjprogressbar_error").hide();
         }
         else if (this.state == 'aborted' || this.state == 'aborting') {
             this.$el.find(".o_bjprogressbar").show();
             this.$el.find(".o_bjprogressbar_indicator").css('background-color','#C080C0');
+            this.$el.find(".o_bjprogressbar_abort").hide();
             this.$el.find(".o_bjprogressbar_message").show();
             this.$el.find(".o_bjprogressbar_error").show();
         }
         else if (this.state == 'init') {
             this.$el.find(".o_bjprogressbar").show();
+            this.$el.find(".o_bjprogressbar_abort").show();
             this.$el.find(".o_bjprogressbar_message").show();
             this.$el.find(".o_bjprogressbar_error").hide();
         }
         else if (this.state == 'ended') {
             this.$el.find(".o_bjprogressbar").show();
+            this.$el.find(".o_bjprogressbar_abort").hide();
             this.$el.find(".o_bjprogressbar_indicator").css('background-color','#80C080');
             this.$el.find(".o_bjprogressbar_message").show();
             this.$el.find(".o_bjprogressbar_error").show();
@@ -151,6 +159,7 @@ var FieldBJSpinner = AbstractField.extend({
         else {
 			this.$el.find(".o_bjprogressbar_state").text(state_msg);
             this.$el.find(".o_bjprogressbar").show();
+            this.$el.find(".o_bjprogressbar_abort").hide();
             this.$el.find(".o_bjprogressbar_message").hide();
             this.$el.find(".o_bjprogressbar_error").hide();
         }
