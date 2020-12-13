@@ -44,7 +44,7 @@ class VariableValue(models.Model):
     _description = "Exceptions: variable value"
 
     frame = fields.Many2one('base.frame', 'Frame',
-                            on_delete="cascade")
+                            ondelete="cascade")
     sequence = fields.Integer('Sequence')
     name = fields.Char('Name', readonly=True)
     value = fields.Text('Value', readonly=True)
@@ -55,7 +55,7 @@ class Frame(models.Model):
     _description = "Exceptions: call frame"
 
     gexception = fields.Many2one('base.general_exception', 'Exception',
-                                 on_delete="cascade")
+                                 ondelete="cascade")
     src_code = fields.Text('Source code', readonly=True)
     line_number = fields.Integer('Line number', readonly=True)
     file_name = fields.Char('File name', readonly=True)
@@ -89,7 +89,7 @@ class GeneralException (models.Model):
     params = fields.Text('Params', readonly=True)
     timestamp = fields.Datetime('Timestamp', readonly=True)
     do_not_purge = fields.Boolean('Do not purge?', readonly=True)
-    user = fields.Many2one('res.users', 'User', readonly=True, on_delete='null')
+    user = fields.Many2one('res.users', 'User', readonly=True, ondelete='null')
     frames = fields.One2many('base.frame', 'gexception', 'Frames', readonly=True)
 
     @api.model
