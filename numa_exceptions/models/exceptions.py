@@ -89,7 +89,7 @@ class GeneralException (models.Model):
     params = fields.Text('Params', readonly=True)
     timestamp = fields.Datetime('Timestamp', readonly=True)
     do_not_purge = fields.Boolean('Do not purge?', readonly=True)
-    user = fields.Many2one('res.users', 'User', readonly=True, ondelete='null')
+    user = fields.Many2one('res.users', 'User', readonly=True, ondelete='set null')
     frames = fields.One2many('base.frame', 'gexception', 'Frames', readonly=True)
 
     @api.model
