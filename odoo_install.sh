@@ -221,6 +221,7 @@ if [ "$PROJECT" != "" ]; then
       else
           printf "xmlrpc_port = ${OE_PORT}\n" >> odoo.config
       fi
+      printf "longpolling_port = ${LONGPOLLING_PORT}\n" >> odoo.config
 
       printf "data_dir = data\n" >> odoo.config
       printf "limit_time_cpu = 3600\n" >> odoo.config
