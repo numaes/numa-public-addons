@@ -25,6 +25,9 @@ read -r -e -p "Install WkmhtmlToPdf [True/False]: " -i "False" INSTALL_WKHTMLTOP
 # Set the default Odoo port you still have to use -c /etc/odoo-server.conf for example to use this.
 read -r -e -p "Odoo port number: " -i "8069" OE_PORT
 
+# Set the default Odoo longpolling port you still have to use -c /etc/odoo-server.conf for example to use this.
+read -r -e -p "Odoo longpolling port: " -i "8072" LONGPOLLING_PORT
+
 # Choose the Odoo version which you want to install. For example: 13.0, 12.0, 11.0 or saas-18. When using 'master' the master version will be installed.
 # IMPORTANT! This script contains extra libraries that are specifically needed for Odoo 13.0
 read -r -e -p "Odoo version: " -i "14.0" OE_VERSION
@@ -59,9 +62,6 @@ read -r -e -p "Superadmin name: " -i "admin" OE_SUPERADMIN
 
 # Set to "True" to generate a random password, "False" to use the variable in OE_SUPERADMIN
 read -r -e -p "Generate random password for admin? [True/False]: " -i "False" GENERATE_RANDOM_PASSWORD
-
-# Set the default Odoo longpolling port you still have to use -c /etc/odoo-server.conf for example to use this.
-read -r -e -p "Odoo longpolling port: " -i "8072" LONGPOLLING_PORT
 
 # Project name
 read -r -e -p "Project name (blank if no project): " PROJECT
@@ -228,9 +228,9 @@ if [ "$PROJECT" != "" ]; then
       printf "db_user = pg-$PROJECT-$OE_VERSION\n" >>odoo.config
 
       if [ "$PROJECT_REPO" = "True" ]; then
-        printf "addons_path=$PROJECT-addons-$OE_VERSION,"
+        printf "addons_path=$PROJECT-addons-$OE_VERSION," >> odoo.config
       else
-        printf "addons_path="
+        printf "addons_path=" >> odoo.config
       fi
 
       printf "../extra-addons-$OE_VERSION," >> odoo.config
@@ -257,7 +257,7 @@ EOF
 
     if [ ! -f ./onboot.sh ]; then
       cat <<EOF > ./onboot.sh
-CWD=$(PWD)
+CWD=\$(PWD)
 cd $CWD
 source venv/bin/activate
 ./start.sh --pidfile=$CWD/running-odoo.pid --logfile=log/odoo-server.log &
@@ -267,7 +267,7 @@ EOF
 
     if [ ! -f ./stop.sh ]; then
       cat <<EOF > ./stop.sh
-CWD=$(PWD)
+CWD=\$(PWD)
 cd $pwd
 if [ -f running-odoo.pid ]; then
     CWO=$(cat running-odoo-pid)
@@ -279,10 +279,10 @@ EOF
     fi
 
     echo -e "\n---- Install python packages/requirements ----"
-    pip install wheel
-    pip install -r "../odoo-$OE_VERSION-numa/requirements.txt"
-    pip install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
-    pip install -r "../numa-addons-$OE_VERSION/requirements.txt"
+    pip3 install wheel
+    pip3 install -r "../odoo-$OE_VERSION-numa/requirements.txt"
+    pip3 install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
+    pip3 install -r "../numa-addons-$OE_VERSION/requirements.txt"
 
     "../odoo-$OE_VERSION-numa/odoo-bin" -c odoo.config -s --stop-after-init
 
@@ -299,10 +299,10 @@ if [ "$INSTALL_NGINX" = "True" ]; then
   cat <<EOF > ~/odoo
 #odoo server
 upstream backend-odoo {
- server localhost:8069;
+ server localhost:$OE_PORT;
 }
 upstream backend-odoo-im {
- server localhost:8072;
+ server localhost:$LONGPOLLING_PORT;
 }
 
 # http -> https
