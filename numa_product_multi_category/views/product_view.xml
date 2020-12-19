@@ -8,7 +8,7 @@
             <field name="inherit_id" ref="product.product_template_search_view" />
             <field name="arch" type="xml">
 				<data>
-					<field name="categ_id" position="replace">
+					<field name="categ_id" position="after">
 						<field name="extended_categories"/>
 					</field>
 				</data>
@@ -21,7 +21,7 @@
             <field name="inherit_id" ref="product.product_template_tree_view" />
             <field name="arch" type="xml">
 				<data>
-                    <field name="categ_id" position="replace">
+                    <field name="categ_id" position="after">
 						<field name="extended_categories" widget="many2many_tags"/>
 					</field>
 				</data>
