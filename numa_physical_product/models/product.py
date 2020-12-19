@@ -202,13 +202,22 @@ class ProductPricelistItem(models.Model):
     _inherit = 'product.pricelist.item'
 
     base = fields.Selection(selection_add=[
-        ('volume', 'Volume, price per m3'),
-        ('surface', 'Surface, price per m2'),
-        ('weight', 'Weight, price per kg'),
-        ('length', 'Length, price per m'),
-        ('width', 'Width, price per m'),
-        ('height', 'Height, price per m'),
-    ])
+            ('volume', 'Volume, price per m3'),
+            ('surface', 'Surface, price per m2'),
+            ('weight', 'Weight, price per kg'),
+            ('length', 'Length, price per m'),
+            ('width', 'Width, price per m'),
+            ('height', 'Height, price per m'),
+        ],
+        ondelete={
+            'volume': 'set default',
+            'surface': 'set default',
+            'weight': 'set default',
+            'length': 'set default',
+            'width': 'set default',
+            'height': 'set default',
+        }
+    )
 
     @api.depends('categ_id', 'product_tmpl_id', 'product_id', 'fixed_price',
                  'pricelist_id', 'percent_price', 'price_discount', 'price_surcharge')
