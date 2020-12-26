@@ -45,7 +45,7 @@ WEBSITE_NAME='site@domain'
 ENABLE_SSL='False'
 ADMIN_EMAIL='odoo@example.com'
 
-if [ "$INSTALL_NGNIX" = "True" ]; then
+if [ "$INSTALL_NGINX" = "True" ]; then
   # Set the website name
   read -r -e -p "Website name: " -i "www.odoo_website.com" WEBSITE_NAME
 
@@ -117,9 +117,8 @@ fi
 
 if [ "$INSTALL_WKHTMLTOPDF" = "True" ]; then
   echo -e "\n---- Install wkhtml and place shortcuts on correct place for ODOO $OE_VERSION ----"
-  sudo apt-get install wkhtmltopdf -y
-else
-  echo "Wkhtmltopdf isn't installed due to the choice of the user!"
+  wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.focal_amd64.deb
+  sudo apt install ./wkhtmltox_0.12.6-1.focal_amd64
 fi
 
 #--------------------------------------------------
@@ -256,10 +255,11 @@ source venv/bin/activate
 EOF
     chmod +x start.sh
 
+    CWD=\$(pwd)
+
     if [ ! -f ./onboot.sh ]; then
       cat <<EOF > ./onboot.sh
-CWD=\$(PWD)
-cd $CWD
+cd $(CWD)
 source venv/bin/activate
 ./start.sh --pidfile=$CWD/running-odoo.pid --logfile=log/odoo-server.log &
 EOF
@@ -268,10 +268,8 @@ EOF
 
     if [ ! -f ./stop.sh ]; then
       cat <<EOF > ./stop.sh
-CWD=\$(PWD)
-cd $pwd
 if [ -f running-odoo.pid ]; then
-    CWO=$(cat running-odoo-pid)
+    CWO=\$(cat running-odoo-pid)
     kill -9 $CWO
     rm running-odoo.pid
 fi
@@ -296,7 +294,8 @@ fi
 #--------------------------------------------------
 if [ "$INSTALL_NGINX" = "True" ]; then
   echo -e "\n---- Installing and setting up Nginx ----"
-  sudo apt install nginx -y
+  sudo apt install nginx certbot -y
+
   cat <<EOF > ~/odoo
 #odoo server
 upstream backend-odoo {
