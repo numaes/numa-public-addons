@@ -26,12 +26,12 @@ class ProductTemplate(models.Model):
     product_length = fields.Float('Length [m]', digits='Stock Length')
     surface = fields.Float('Surface [m2]', digits='Stock Surface')
 
-    @api.onchange('width', 'height', 'length')
+    @api.onchange('product_width', 'product_height', 'product_length')
     def onchange_dimensions(self):
         self.surface = self.product_length * self.product_width
         self.volume = self.product_length * self.product_width * self.product_height
 
-    @api.onchange('weight_kind', 'surface', 'width', 'height', 'length', 'volume')
+    @api.onchange('weight_kind', 'surface', 'product_width', 'product_height', 'product_length', 'volume')
     def onchange_weight(self):
         p = self
 
