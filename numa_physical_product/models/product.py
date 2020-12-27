@@ -21,30 +21,26 @@ class ProductTemplate(models.Model):
     weight_factor = fields.Float('Weight per unit [kg/unit]', 
                                  digits='Stock Weight',
                                  help="Weight factor to apply")
-    width = fields.Float('Width [m]',
-                         digits='Stock Length')
-    height = fields.Float('Height [m]', 
-                          digits='Stock Length')
-    length = fields.Float('Length [m]', 
-                          digits='Stock Length')
-    surface = fields.Float('Surface [m2]',
-                           digits='Stock Surface')
+    product_width = fields.Float('Width [m]', digits='Stock Length')
+    product_height = fields.Float('Height [m]', digits='Stock Length')
+    product_length = fields.Float('Length [m]', digits='Stock Length')
+    surface = fields.Float('Surface [m2]', digits='Stock Surface')
 
     @api.onchange('width', 'height', 'length')
     def onchange_dimensions(self):
-        self.surface = self.length * self.width
-        self.volume = self.length * self.width * self.height
+        self.surface = self.product_length * self.product_width
+        self.volume = self.product_length * self.product_width * self.product_height
 
     @api.onchange('weight_kind', 'surface', 'width', 'height', 'length', 'volume')
     def onchange_weight(self):
         p = self
 
         if p.weight_kind == 'length':
-            p.weight = p.weight_factor * p.length
+            p.weight = p.weight_factor * p.product_length
         elif p.weight_kind == 'width':
-            p.weight = p.weight_factor * p.width
+            p.weight = p.weight_factor * p.product_width
         elif p.weight_kind == 'height':
-            p.weight = p.weight_factor * p.height
+            p.weight = p.weight_factor * p.product_height
         elif p.weight_kind == 'surface':
             p.weight = p.weight_factor * p.surface
         elif p.weight_kind == 'volume':
@@ -66,12 +62,9 @@ class ProductProduct(models.Model):
                           compute="get_volume", inverse="set_volume", digits='Stock Volume')
     surface = fields.Float('Surface [m2]',
                            compute="get_surface", inverse="set_surface", digits='Stock Surface')
-    width = fields.Float('Width [m]',
-                         compute="get_width", inverse="set_width", digits='Stock Length')
-    height = fields.Float('Height [m]',
-                          compute="get_height", inverse="set_height", digits='Stock Length')
-    length = fields.Float('Length [m]',
-                          compute="get_length", inverse="set_length", digits='Stock Length')
+    product_width = fields.Float('Width [m]', compute="get_width", inverse="set_width", digits='Stock Length')
+    product_height = fields.Float('Height [m]', compute="get_height", inverse="set_height", digits='Stock Length')
+    product_length = fields.Float('Length [m]', compute="get_length", inverse="set_length", digits='Stock Length')
 
     variant_weight_factor = fields.Float('Variant Weight Factor [kg/unit]')
     variant_weight = fields.Float('Variant Weight [kg]')
@@ -119,30 +112,30 @@ class ProductProduct(models.Model):
 
     def get_length(self):
         for product in self:
-            product.length = product.variant_length if product.variant_length != 0 else \
-                             product.product_tmpl_id.length
+            product.product_length = product.variant_length if product.variant_length != 0 else \
+                                     product.product_tmpl_id.product_length
 
     def set_length(self):
         for product in self:
-            product.variant_length = product.length
+            product.variant_length = product.product_length
 
     def get_width(self):
         for product in self:
-            product.width = product.variant_width if product.variant_width != 0 else \
-                            product.product_tmpl_id.width
+            product.product_width = product.variant_width if product.variant_width != 0 else \
+                                    product.product_tmpl_id.product_width
 
     def set_width(self):
         for product in self:
-            product.variant_width = product.width
+            product.variant_width = product.product_width
 
     def get_height(self):
         for product in self:
-            product.height = product.variant_height if product.variant_height != 0 else \
-                            product.product_tmpl_id.height
+            product.product_height = product.variant_height if product.variant_height != 0 else \
+                                     product.product_tmpl_id.product_height
 
     def set_height(self):
         for product in self:
-            product.variant_height = product.height
+            product.variant_height = product.product_height
 
     @api.onchange('width', 'height', 'length')
     def onchange_variant_dimensions(self):
@@ -158,11 +151,11 @@ class ProductProduct(models.Model):
         p = self
         
         if p.weight_kind == 'length':
-            p.variant_weight = p.weight_factor * p.length
+            p.variant_weight = p.weight_factor * p.product_length
         elif p.weight_kind == 'width':
-            p.variant_weight = p.weight_factor * p.width
+            p.variant_weight = p.weight_factor * p.product_width
         elif p.weight_kind == 'height':
-            p.variant_weight = p.weight_factor * p.height
+            p.variant_weight = p.weight_factor * p.product_height
         elif p.weight_kind == 'surface':
             p.variant_weight = p.weight_factor * p.surface
         elif p.weight_kind == 'volume':

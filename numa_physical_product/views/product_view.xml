@@ -10,9 +10,9 @@
                 <xpath expr="//group[@name='inventory']/group[@name='group_lots_and_weight']" position="after">
                     <group name="physical_characteristics" string="Physical characteristics"
                            attrs="{'invisible':[('type', 'not in', ['product', 'consu'])]}" >
-                        <field name="width" />
-                        <field name="length" />
-                        <field name="height" />
+                        <field name="product_width" />
+                        <field name="product_length" />
+                        <field name="product_height" />
                         <field name="surface" />
                     </group>
                     <group name="weight_computation" string="Weight computation">
