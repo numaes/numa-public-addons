@@ -137,16 +137,17 @@ class ProductProduct(models.Model):
         for product in self:
             product.variant_height = product.product_height
 
-    @api.onchange('width', 'height', 'length')
+    @api.onchange('product_width', 'product_height', 'product_length')
     def onchange_variant_dimensions(self):
-        self.variant_surface = self.length * self.width
-        self.variant_volume = self.length * self.width * self.height
+        self.variant_surface = self.product_length * self.product_width
+        self.variant_volume = self.product_length * self.product_width * self.product_height
         self.get_volume()
         self.get_weight()
         self.get_surface()
         self.onchange_variant_weight()
 
-    @api.onchange('weight_kind', 'weight_factor', 'surface', 'width', 'height', 'length', 'volume')
+    @api.onchange('weight_kind', 'weight_factor', 'surface', 'product_width',
+                  'product_height', 'product_length', 'volume')
     def onchange_variant_weight(self):
         p = self
         
