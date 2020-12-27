@@ -1,26 +1,4 @@
-# -*- coding: utf-8 -*-
-##############################################################################
-#
-#    NUMA Extreme Systems (www.numaes.com)
-#    Copyright (C) 2017
-#
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU Affero General Public License as
-#    published by the Free Software Foundation, either version 3 of the
-#    License, or (at your option) any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU Affero General Public License for more details.
-#
-#    You should have received a copy of the GNU Affero General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-##############################################################################
-
-from odoo import models, fields, api, tools, _
-
+from odoo import models, fields, api, _
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -56,12 +34,11 @@ class ProductTemplate(models.Model):
     def onchange_dimensions(self):
         self.surface = self.length * self.width
         self.volume = self.length * self.width * self.height
-        return False
 
     @api.onchange('weight_kind', 'surface', 'width', 'height', 'length', 'volume')
     def onchange_weight(self):
         p = self
-        
+
         if p.weight_kind == 'length':
             p.weight = p.weight_factor * p.length
         elif p.weight_kind == 'width':
@@ -72,20 +49,19 @@ class ProductTemplate(models.Model):
             p.weight = p.weight_factor * p.surface
         elif p.weight_kind == 'volume':
             p.weight = p.weight_factor * p.volume
-        return False
 
 
 class ProductProduct(models.Model):
     _inherit = 'product.product'
 
     weight_factor = fields.Float('Weight Factor [kg/unit]',
-                           compute="get_weight_factor", inverse="set_weight_factor",
-                           digits='Stock Weight',
-                           help="The weight factor")
+                                 compute="get_weight_factor", inverse="set_weight_factor",
+                                 digits='Stock Weight',
+                                 help="The weight factor")
     weight = fields.Float('Weight [kg]',
-                           compute="get_weight", inverse="set_weight",
-                           digits='Stock Weight',
-                           help="The weight of the contents in Kg, not including any packaging, etc.")
+                          compute="get_weight", inverse="set_weight",
+                          digits='Stock Weight',
+                          help="The weight of the contents in Kg, not including any packaging, etc.")
     volume = fields.Float('Volume [m3]',
                           compute="get_volume", inverse="set_volume", digits='Stock Volume')
     surface = fields.Float('Surface [m2]',
@@ -108,7 +84,7 @@ class ProductProduct(models.Model):
     def get_weight_factor(self):
         for product in self:
             product.weight_factor = product.variant_weight_factor if product.variant_weight_factor != 0 else \
-                             product.product_tmpl_id.weight_factor
+                                    product.product_tmpl_id.weight_factor
 
     def set_weight_factor(self):
         for product in self:
@@ -131,7 +107,6 @@ class ProductProduct(models.Model):
     def set_volume(self):
         for product in self:
             product.variant_volume = product.volume
-
 
     def get_surface(self):
         for product in self:
@@ -170,18 +145,15 @@ class ProductProduct(models.Model):
             product.variant_height = product.height
 
     @api.onchange('width', 'height', 'length')
-    @api.depends('width', 'height', 'length')
     def onchange_variant_dimensions(self):
         self.variant_surface = self.length * self.width
         self.variant_volume = self.length * self.width * self.height
-        self.onchange_variant_weight()
         self.get_volume()
         self.get_weight()
         self.get_surface()
-        return False
+        self.onchange_variant_weight()
 
     @api.onchange('weight_kind', 'weight_factor', 'surface', 'width', 'height', 'length', 'volume')
-    @api.depends('weight_kind', 'weight_factor', 'surface', 'width', 'height', 'length', 'volume')
     def onchange_variant_weight(self):
         p = self
         
@@ -195,7 +167,6 @@ class ProductProduct(models.Model):
             p.variant_weight = p.weight_factor * p.surface
         elif p.weight_kind == 'volume':
             p.variant_weight = p.weight_factor * p.volume
-        return False
 
 
 class ProductPricelistItem(models.Model):

@@ -1,57 +1,35 @@
 <?xml version="1.0"?>
 <odoo>
     <data>
-    
         <!-- Products template Form View -->
-        <record model="ir.ui.view" id="physical_product_template_form_view">
+        <record model="ir.ui.view" id="product_template_form_view">
             <field name="name">Product Template Physical</field>
             <field name="model">product.template</field>
-            <field name="mode">extension</field>
             <field name="inherit_id" ref="product.product_template_form_view" />
             <field name="arch" type="xml">
-                <xpath expr="//group[@name='inventory']/group[@name='group_lots_and_weight']/label[@for='weight']" position="attributes">
-                    <attribute name="attrs">{'invisible':True}</attribute>
-                </xpath>
-                <xpath expr="//group[@name='inventory']/group[@name='group_lots_and_weight']/label[@for='volume']" position="attributes">
-                    <attribute name="attrs">{'invisible':True}</attribute>
-                </xpath>
-                <xpath expr="//group[@name='inventory']/group[@name='group_lots_and_weight']/div[@name='weight']" position="attributes">
-                    <attribute name="attrs">{'invisible':True}</attribute>
-                </xpath>
-                <xpath expr="//group[@name='inventory']/group[@name='group_lots_and_weight']/div[@name='volume']" position="attributes">
-                    <attribute name="attrs">{'invisible':True}</attribute>
-                </xpath>
                 <xpath expr="//group[@name='inventory']/group[@name='group_lots_and_weight']" position="after">
-                    <group name="physical"
-                           colspan="4" col="4">
-                        <group name="physical" string="Physical characteristics"
-                               colspan="2"
-                               attrs="{'invisible':[('type', 'not in', ['product', 'consu'])]}" >
-                            <field name="volume"/>
-                            <field name="weight"/>
-                            <field name="width" />
-                            <field name="length" />
-                            <field name="height" />
-                            <field name="surface" />
-                        </group>
-                        <group name="weight_computation" string="Weight computation"
-                               colspan="2">
-                            <field name="weight_kind" />
-                            <field name="weight_factor" attrs="{'invisible':[('weight_kind','=','normal')]}"/>
-                        </group>
+                    <group name="physical_characteristics" string="Physical characteristics"
+                           attrs="{'invisible':[('type', 'not in', ['product', 'consu'])]}" >
+                        <field name="width" />
+                        <field name="length" />
+                        <field name="height" />
+                        <field name="surface" />
+                    </group>
+                    <group name="weight_computation" string="Weight computation">
+                        <field name="weight_kind" />
+                        <field name="weight_factor" attrs="{'invisible':[('weight_kind','=','normal')]}"/>
                     </group>
                 </xpath>
             </field>
         </record>
 
-        <!-- Products variat Form View -->
-        <record model="ir.ui.view" id="physical_product_normal_form_view">
+        <!-- Products variant Form View -->
+        <record model="ir.ui.view" id="product_normal_form_view">
             <field name="name">Product Variant Physical</field>
             <field name="model">product.product</field>
-            <field name="mode">extension</field>
             <field name="inherit_id" ref="product.product_normal_form_view" />
             <field name="arch" type="xml">
-                <xpath expr="//field[@name='weight_kind']" position="after" >
+                <xpath expr="//group[@name='inventory']/group[@name='weight_computation']" position="inside">
                     <field name="variant_width" invisible="True"/>
                     <field name="variant_length" invisible="True" />
                     <field name="variant_height" invisible="True" />
