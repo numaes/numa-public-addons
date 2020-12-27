@@ -100,6 +100,10 @@ class ProductTemplate(models.Model):
         else:
             super().write(vals)
 
+    @api.model
+    def default_get(self, fields_list):
+        return super().default_get(fields_list)
+
     def build_default_code(self, attribute_values: List):
         self.ensure_one()
         attribute_value_model = self.env['product.template.attribute.value']
