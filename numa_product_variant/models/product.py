@@ -1,6 +1,6 @@
 from typing import List
 
-from odoo import models, fields
+from odoo import models, fields, api
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -52,6 +52,7 @@ class ProductTemplate(models.Model):
 
         return res
 
+    @api.model
     def name_search(self, name='', args=None, operator='ilike', limit=100):
         name_args = [
             '|',
@@ -61,8 +62,9 @@ class ProductTemplate(models.Model):
         return self.search(
             name_args + (args or []),
             limit=limit
-        )
+        ).name_get()
 
+    @api.model_create_multi
     def create(self, vals_list: list):
         ptal_model = self.env['product.template.attribute.line']
 
@@ -100,16 +102,16 @@ class ProductTemplate(models.Model):
 
     def build_default_code(self, attribute_values: List):
         self.ensure_one()
-        attribute_value_model = self.env['product.template.attribute.line']
+        attribute_value_model = self.env['product.template.attribute.value']
 
-        av_ids = []
+        atv_ids = []
         for element in attribute_values:
             if isinstance(element, tuple) and element[0] == 4:
-                av_ids.append(element[1])
+                atv_ids.append(element[1])
             elif isinstance(element, int):
-                av_ids.append(element)
+                atv_ids.append(element)
 
-        avs = attribute_value_model.browse(av_ids)
+        avs = attribute_value_model.browse(atv_ids)
 
         default_code = self.base_code
         if avs:
@@ -126,6 +128,7 @@ class ProductTemplate(models.Model):
 class ProductProduct(models.Model):
     _inherit = 'product.product'
 
+    @api.model_create_multi
     def create(self, vals_list: dict):
         template_model = self.env['product.template']
 
@@ -135,6 +138,15 @@ class ProductProduct(models.Model):
         for vals in vals_list:
             if 'default_code' not in vals and 'product_tmpl_id' in vals:
                 template = template_model.browse(vals['product_tmpl_id'])
-                vals['default_code'] = template.build_default_code(
-                    [command[2] for command in vals.get('product_template_attribute_value_ids')]
-                )
+                commands = vals.get('product_template_attribute_value_ids')
+                ptav_ids = []
+                for command in commands:
+                    if command[0] == 4:
+                        ptav_ids.append(command[1])
+                    elif command[0] == 6:
+                        ptav_ids.extend(command[2])
+
+                vals['default_code'] = template.build_default_code(ptav_ids)
+
+        return super().create(vals_list)
+
