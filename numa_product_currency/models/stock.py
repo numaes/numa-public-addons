@@ -47,3 +47,27 @@ class StockMove(models.Model):
 
         return new_res
 
+    def get_price_unit(self):
+        """ Returns the unit price to store on the quant """
+        if self.purchase_line_id:
+            order = self.purchase_line_id.order_id
+            #if the currency of the PO is different than the company one, the price_unit on the move must be reevaluated
+            #(was created at the rate of the PO confirmation, but must be valuated at the rate of stock move execution)
+            #we don't pass the move.date in the compute() for the currency rate on purpose because
+            # 1) get_price_unit() is supposed to be called only through move.action_done(),
+            # 2) the move hasn't yet the correct date (currently it is the expected date, after
+            #    completion of action_done() it will be now() )
+            price_unit = self.company_id.currency_id.compute(
+                self.purchase_line_id._get_stock_move_price_unit(),
+                self.product_id.cost_currency,
+                round=False,
+            )
+            self.write({'price_unit': price_unit})
+            return price_unit
+
+        return self.company_id.currency_id.compute(
+            super(StockMove, self).get_price_unit(),
+            self.product_id.cost_currency,
+            round=False,
+        )
+
