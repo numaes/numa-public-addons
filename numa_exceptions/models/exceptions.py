@@ -190,7 +190,8 @@ def register_exception(service_name, method, params, db, uid, e):
 
                 vals = {
                     'service': service_name,
-                    'exception': ustr(e),
+                    'exception': ustr(e) if not e.__cause__ else
+                                 "%s\nCaused by:\n%s" % (ustr(e), ustr(e.__cause__)),
                     'method': method,
                     'params': params or [],
                     'do_not_purge': False,
