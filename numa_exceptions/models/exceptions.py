@@ -188,10 +188,19 @@ def register_exception(service_name, method, params, db, uid, e):
                     tb = tb.tb_next
                 frames.reverse()
 
+                def get_exception_chain(exc):
+                    if not exc.__cause__ and not exc.__context__:
+                        return ustr(e)
+                    elif not exc.__cause__:
+                        return "%s\n\nCaused by:\n%s" % (ustr(e), get_exception_chain(e.__context__))
+                    else:
+                        return "%s\n\nCaused by:\n%s" % (ustr(e), get_exception_chain(e.__cause__))
+
+                exc_description = get_exception_chain(e)
+
                 vals = {
                     'service': service_name,
-                    'exception': ustr(e) if not e.__cause__ else
-                                 "%s\nCaused by:\n%s" % (ustr(e), ustr(e.__cause__)),
+                    'exception': exc_description,
                     'method': method,
                     'params': params or [],
                     'do_not_purge': False,
@@ -199,8 +208,7 @@ def register_exception(service_name, method, params, db, uid, e):
                     'frames': frames,
                 }
                 _logger.error("About to log exception [%s], on service [%s, %s, %s]" %
-                              (exception_to_unicode(e),
-                               service_name, method, params))
+                              (exc_description, service_name, method, params))
                 try:
                     ge = ge_obj.sudo().create(vals)
                     ename = ge.name
@@ -208,8 +216,7 @@ def register_exception(service_name, method, params, db, uid, e):
                     cr.close()
                     return ename
                 except Exception as loggingException:
-                    _logger.error("Error logging exception, exception [%s]" %
-                                  exception_to_unicode(loggingException))
+                    _logger.error("Error logging exception, exception [%s]" % exc_description)
 
     cr.close()
     return None
