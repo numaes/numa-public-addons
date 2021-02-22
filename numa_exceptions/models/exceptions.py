@@ -189,12 +189,9 @@ def register_exception(service_name, method, params, db, uid, e):
                 frames.reverse()
 
                 def get_exception_chain(exc):
-                    if not exc.__cause__ and not exc.__context__:
-                        return ustr(e)
-                    elif not exc.__cause__:
-                        return "%s\n\nCaused by:\n%s" % (ustr(e), get_exception_chain(e.__context__))
-                    else:
+                    if exc.__cause__:
                         return "%s\n\nCaused by:\n%s" % (ustr(e), get_exception_chain(e.__cause__))
+                    return ustr(e)
 
                 exc_description = get_exception_chain(e)
 
