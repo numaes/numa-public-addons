@@ -20,7 +20,7 @@
 #
 ##############################################################################
 
-from odoo import models, fields, api, _, exceptions
+from odoo import models, fields, api, _, registry, exceptions
 from odoo.exceptions import UserError, ValidationError
 from odoo import SUPERUSER_ID
 from odoo.loglevels import exception_to_unicode, ustr
@@ -137,15 +137,13 @@ def register_exception(service_name, method, params, db, uid, e):
     if not db:
         return None
 
-    registry = odoo.registry(db)
+    db_registry = registry(db)
 
-    if not registry:
+    if not db_registry:
         return None
 
-    cr = registry.cursor()
-
-    if "base.general_exception" in registry:
-        with api.Environment.manage():
+    if "base.general_exception" in db_registry:
+        with api.Environment.manage(), db_registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
             ge_obj = env["base.general_exception"]
 
@@ -209,11 +207,9 @@ def register_exception(service_name, method, params, db, uid, e):
                 try:
                     ge = ge_obj.sudo().create(vals)
                     ename = ge.name
-                    cr.commit()
-                    cr.close()
                     return ename
                 except Exception as loggingException:
-                    _logger.error("Error logging exception, exception [%s]" % exc_description)
+                    _logger.error("Error logging exception, exception [%s]" % loggingException)
 
     cr.close()
     return None
