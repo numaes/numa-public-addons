@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<odoo>
+    <data>
+        <record model="ir.ui.view" id="sale_order_physical_form_view">
+            <field name="name">sale.order.physical.form</field>
+            <field name="model">sale.order</field>
+            <field name="mode">extension</field>
+            <field name="inherit_id" ref="sale.view_order_form" />
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='order_line']/form/field[@name='name']" position="after">
+                    <group>
+                        <group>
+                            <field name="product_width_rel"/>
+                            <field name="product_length_rel"/>
+                            <field name="product_height_rel"/>
+                        </group>
+                        <group>
+                            <field name="product_surface_rel"/>
+                            <field name="product_weight_rel"/>
+                            <field name="product_volume_rel"/>
+                        </group>
+                    </group>
+                </xpath>
+                <xpath expr="//field[@name='order_line']/form//field[@name='price_unit']" position="after">
+                    <field name="unit_price_display"/>
+                </xpath>
+                <xpath expr="//field[@name='order_line']/tree/field[@name='price_unit']" position="after">
+                    <field name="unit_price_display"/>
+                </xpath>
+                <xpath expr="//group[@name='sales_person']" position="before">
+                    <group string="Package Information" name="package_information">
+                        <field name="so_weight"/>
+                        <field name="so_volume"/>
+                    </group>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>
