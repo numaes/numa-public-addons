@@ -1,6 +1,4 @@
-# -*- coding: utf-8 -*-
-
-from odoo import fields, models, api, exceptions, _
+from odoo import fields, models, api
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -19,8 +17,8 @@ class PhysicalSaleOrder(models.Model):
             so.so_volume = 0.0
             for line in so.order_line:
                 so.so_weight += line.product_uom_qty * line.product_id.weight
-                so.so_volume += line.product_uom_qty * line.product_id.width * \
-                                line.product_id.length * line.product_id.height
+                so.so_volume += line.product_uom_qty * line.product_id.product_width * \
+                                line.product_id.product_length * line.product_id.product_height
 
         return
 
@@ -28,9 +26,9 @@ class PhysicalSaleOrder(models.Model):
 class PhysicalSaleOrderLine(models.Model):
     _inherit = 'sale.order.line'
 
-    product_width_rel = fields.Float(string='Width', related='product_id.width', readonly=True)
-    product_length_rel = fields.Float(string='Length', related='product_id.length', readonly=True)
-    product_height_rel = fields.Float(string='Height', related='product_id.height', readonly=True)
+    product_width_rel = fields.Float(string='Width', related='product_id.product_width', readonly=True)
+    product_length_rel = fields.Float(string='Length', related='product_id.product_length', readonly=True)
+    product_height_rel = fields.Float(string='Height', related='product_id.product_height', readonly=True)
     product_surface_rel = fields.Float(string='Surface', related='product_id.surface', readonly=True)
     product_weight_rel = fields.Float(string='Weight', related='product_id.weight', readonly=True)
     product_volume_rel = fields.Float(string='Volume', related='product_id.volume', readonly=True)

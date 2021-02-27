@@ -20,7 +20,7 @@
 #
 ##############################################################################
 
-from odoo import models, fields, api, _, exceptions
+from odoo import models, fields, api, _, registry, exceptions
 from odoo.exceptions import UserError, ValidationError
 from odoo import SUPERUSER_ID
 from odoo.loglevels import exception_to_unicode, ustr
@@ -44,7 +44,7 @@ class VariableValue(models.Model):
     _description = "Exceptions: variable value"
 
     frame = fields.Many2one('base.frame', 'Frame',
-                            on_delete="cascade")
+                            ondelete="cascade")
     sequence = fields.Integer('Sequence')
     name = fields.Char('Name', readonly=True)
     value = fields.Text('Value', readonly=True)
@@ -55,7 +55,7 @@ class Frame(models.Model):
     _description = "Exceptions: call frame"
 
     gexception = fields.Many2one('base.general_exception', 'Exception',
-                                 on_delete="cascade")
+                                 ondelete="cascade")
     src_code = fields.Text('Source code', readonly=True)
     line_number = fields.Integer('Line number', readonly=True)
     file_name = fields.Char('File name', readonly=True)
@@ -89,7 +89,7 @@ class GeneralException (models.Model):
     params = fields.Text('Params', readonly=True)
     timestamp = fields.Datetime('Timestamp', readonly=True)
     do_not_purge = fields.Boolean('Do not purge?', readonly=True)
-    user = fields.Many2one('res.users', 'User', readonly=True, on_delete='null')
+    user = fields.Many2one('res.users', 'User', readonly=True, ondelete='set null')
     frames = fields.One2many('base.frame', 'gexception', 'Frames', readonly=True)
 
     @api.model
@@ -137,15 +137,13 @@ def register_exception(service_name, method, params, db, uid, e):
     if not db:
         return None
 
-    registry = odoo.registry(db)
+    db_registry = registry(db)
 
-    if not registry:
+    if not db_registry:
         return None
 
-    cr = registry.cursor()
-
-    if "base.general_exception" in registry:
-        with api.Environment.manage():
+    if "base.general_exception" in db_registry:
+        with api.Environment.manage(), db_registry.cursor() as cr:
             env = api.Environment(cr, SUPERUSER_ID, {})
             ge_obj = env["base.general_exception"]
 
@@ -188,9 +186,16 @@ def register_exception(service_name, method, params, db, uid, e):
                     tb = tb.tb_next
                 frames.reverse()
 
+                def get_exception_chain(exc):
+                    if exc.__cause__:
+                        return "%s\n\nCaused by:\n%s" % (ustr(e), get_exception_chain(e.__cause__))
+                    return ustr(e)
+
+                exc_description = get_exception_chain(e)
+
                 vals = {
                     'service': service_name,
-                    'exception': ustr(e),
+                    'exception': exc_description,
                     'method': method,
                     'params': params or [],
                     'do_not_purge': False,
@@ -198,17 +203,13 @@ def register_exception(service_name, method, params, db, uid, e):
                     'frames': frames,
                 }
                 _logger.error("About to log exception [%s], on service [%s, %s, %s]" %
-                              (exception_to_unicode(e),
-                               service_name, method, params))
+                              (exc_description, service_name, method, params))
                 try:
                     ge = ge_obj.sudo().create(vals)
                     ename = ge.name
-                    cr.commit()
-                    cr.close()
                     return ename
                 except Exception as loggingException:
-                    _logger.error("Error logging exception, exception [%s]" %
-                                  exception_to_unicode(loggingException))
+                    _logger.error("Error logging exception, exception [%s]" % loggingException)
 
     cr.close()
     return None

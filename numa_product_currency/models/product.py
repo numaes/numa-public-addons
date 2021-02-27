@@ -14,11 +14,11 @@ class ProductTemplate(models.Model):
 
     currency_id = fields.Many2one(
         'res.currency', 'Currency',
-        required=True, readonly=False,
+        required=True, readonly=False, compute=None,
         default=_get_default_currency)
     cost_currency_id = fields.Many2one(
         'res.currency', 'Cost Currency',
-        required=True, readonly=False,
+        required=True, readonly=False, compute=None,
         default=_get_default_currency)
 
     def price_compute(self, price_type, uom=False, currency=False, company=False):

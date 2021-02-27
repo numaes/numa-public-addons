@@ -6,7 +6,7 @@
             <field name="name">Stock Moves</field>
             <field name="model">stock.move</field>
             <field name="mode">extension</field>
-            <field name="inherit_id" ref="stock.stock_move_tree" />
+            <field name="inherit_id" ref="stock.view_move_tree" />
             <field name="arch" type="xml">
                 <data>
                     <field name="product_uom_qty" position="after">
@@ -32,10 +32,10 @@
         </record>
 
         <record id="view_move_picking_tree" model="ir.ui.view">
-            <field name="name">stock.move.tree</field>
+            <field name="name">stock.move.picking.tree</field>
             <field name="model">stock.move</field>
             <field name="mode">extension</field>
-            <field name="inherit_id" ref="stock.view_move_picking_tree" />
+            <field name="inherit_id" ref="stock.view_picking_move_tree" />
             <field name="arch" type="xml">
                 <data>
                     <field name="product_uom_qty" position="after">
@@ -73,21 +73,6 @@
                          <field name="unit_weight" />
                          <field name="total_volume" />
                          <field name="total_weight" />
-                    </field>
-                </data>
-            </field>
-        </record>
-
-        <record id="view_picking_form" model="ir.ui.view">
-            <field name="name">stock.picking.form</field>
-            <field name="model">stock.picking</field>
-            <field name="mode">extension</field>
-            <field name="inherit_id" ref="stock.view_picking_form" />
-            <field name="arch" type="xml">
-                <data>
-                    <field name="backorder_id" position="after" >
-                        <field name="total_volume"/>
-                        <field name="total_weight"/>
                     </field>
                 </data>
             </field>

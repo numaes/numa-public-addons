@@ -25,6 +25,9 @@ read -r -e -p "Install WkmhtmlToPdf [True/False]: " -i "False" INSTALL_WKHTMLTOP
 # Set the default Odoo port you still have to use -c /etc/odoo-server.conf for example to use this.
 read -r -e -p "Odoo port number: " -i "8069" OE_PORT
 
+# Set the default Odoo longpolling port you still have to use -c /etc/odoo-server.conf for example to use this.
+read -r -e -p "Odoo longpolling port: " -i "8072" LONGPOLLING_PORT
+
 # Choose the Odoo version which you want to install. For example: 13.0, 12.0, 11.0 or saas-18. When using 'master' the master version will be installed.
 # IMPORTANT! This script contains extra libraries that are specifically needed for Odoo 13.0
 read -r -e -p "Odoo version: " -i "14.0" OE_VERSION
@@ -38,11 +41,11 @@ read -r -e -p "Install NUMA's private repository? [True/False]: " -i "False" INS
 # Set this to True if you want to install Nginx!
 read -r -e -p "Install Nginx? [True/False]: " -i "False" INSTALL_NGINX
 
-WEBSITE_NAME='_'
+WEBSITE_NAME='site@domain'
 ENABLE_SSL='False'
 ADMIN_EMAIL='odoo@example.com'
 
-if [ "$INSTALL_NGNIX" = "True" ]; then
+if [ "$INSTALL_NGINX" = "True" ]; then
   # Set the website name
   read -r -e -p "Website name: " -i "www.odoo_website.com" WEBSITE_NAME
 
@@ -52,7 +55,7 @@ if [ "$INSTALL_NGNIX" = "True" ]; then
   # Provide Email to register ssl certificate
   read -r -e -p "Email for ssl certificate: " -i "odoo@example.com ADMIN_EMAIL"
 
-endif
+fi
 
 # Set the superadmin password - if GENERATE_RANDOM_PASSWORD is set to "True" we will automatically generate a random password, otherwise we use this one
 read -r -e -p "Superadmin name: " -i "admin" OE_SUPERADMIN
@@ -60,11 +63,14 @@ read -r -e -p "Superadmin name: " -i "admin" OE_SUPERADMIN
 # Set to "True" to generate a random password, "False" to use the variable in OE_SUPERADMIN
 read -r -e -p "Generate random password for admin? [True/False]: " -i "False" GENERATE_RANDOM_PASSWORD
 
-# Set the default Odoo longpolling port you still have to use -c /etc/odoo-server.conf for example to use this.
-read -r -e -p "Odoo longpolling port: " -i "8072" LONGPOLLING_PORT
-
 # Project name
 read -r -e -p "Project name (blank if no project): " PROJECT
+
+PROJECT_REPO='False'
+if [ "$PROJECT" != "" ]; then
+  # Project repo
+  read -r -e -p "Use a project repository? [True/False]: " -i "True" PROJECT_REPO
+fi
 
 #--------------------------------------------------
 # Update Server
@@ -111,9 +117,8 @@ fi
 
 if [ "$INSTALL_WKHTMLTOPDF" = "True" ]; then
   echo -e "\n---- Install wkhtml and place shortcuts on correct place for ODOO $OE_VERSION ----"
-  sudo apt-get install wkhtmltopdf -y
-else
-  echo "Wkhtmltopdf isn't installed due to the choice of the user!"
+  wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.focal_amd64.deb
+  sudo apt install ./wkhtmltox_0.12.6-1.focal_amd64
 fi
 
 #--------------------------------------------------
@@ -183,7 +188,9 @@ if [ "$PROJECT" != "" ]; then
     cd "$PROJECT-$OE_VERSION" || exit
 
     if [ ! -d "$PROJECT-addons-$OE_VERSION" ]; then
-      git clone "https://github.com/numaes/$PROJECT-addons" -b "$OE_VERSION" "$PROJECT-addons-$OE_VERSION"
+      if [ "$PROJECT_REPO" = "True" ]; then
+        git clone "https://github.com/numaes/$PROJECT-addons" -b "$OE_VERSION" "$PROJECT-addons-$OE_VERSION"
+      fi
     fi
 
     mkdir -p log
@@ -200,55 +207,81 @@ if [ "$PROJECT" != "" ]; then
     if [ ! -f 'odoo.config' ]; then
       touch odoo.config
       echo -e "* Creating server config file"
+
       printf "[options] \n; This is the password that allows database operations:\n" >> odoo.config
       if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then
           echo -e "* Generating random admin password"
           OE_SUPERADMIN=$cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1
       fi
       printf "admin_passwd = ${OE_SUPERADMIN}\n" >> odoo.config
+
       if [ "$OE_VERSION" \> "11.0 " ]; then
           printf "http_port = ${OE_PORT}\n" >> odoo.config
       else
           printf "xmlrpc_port = ${OE_PORT}\n" >> odoo.config
       fi
+      printf "longpolling_port = ${LONGPOLLING_PORT}\n" >> odoo.config
+
       printf "data_dir = data\n" >> odoo.config
       printf "limit_time_cpu = 3600\n" >> odoo.config
       printf "limit_time_real = 7200\n" >> odoo.config
       printf "db_user = pg-$PROJECT-$OE_VERSION\n" >>odoo.config
 
-      if [ "$IS_ENTERPRISE" = "True" ]; then
-          printf "addons_path=$PROJECT-addons-$OE_VERSION,../enterprise-$OE_VERSION" >> odoo.config
+      if [ "$PROJECT_REPO" = "True" ]; then
+        printf "addons_path=$PROJECT-addons-$OE_VERSION," >> odoo.config
       else
-          printf "addons_path=$PROJECT-addons-$OE_VERSION" >> odoo.config
+        printf "addons_path=" >> odoo.config
       fi
-      printf ",../extra-addons-$OE_VERSION,../numa-addons-$OE_VERSION,../numa-public-addons-$OE_VERSION," >>odoo.config
+
+      printf "../extra-addons-$OE_VERSION," >> odoo.config
+
       if [ "$INSTALL_PRIVATE" = "Yes" ]; then
-        printf "../odoo-$OE_VERSION-numa/addons," >>odoo.config
+        printf "../numa-addons-$OE_VERSION," >>odoo.config
       fi
-      printf "../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
+
+      printf "../numa-public-addons-$OE_VERSION," >>odoo.config
+
+      if [ "$IS_ENTERPRISE" = "True" ]; then
+          printf "../enterprise-$OE_VERSION," >> odoo.config
+      fi
+
+      printf "../odoo-$OE_VERSION-numa/addons,../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
 
     fi
 
     cat <<EOF > ./start.sh
-cd $pwd
-../odoo-$OE_VERSION-numa/odoo-bin -c odoo.config $1 $2 $3 $4 $5 $6 $7 $8 $9
+source venv/bin/activate
+../odoo-$OE_VERSION-numa/odoo-bin -c odoo.config \$1 \$2 \$3 \$4 \$5 \$6 \$7 \$8 \$9
 EOF
     chmod +x start.sh
 
+    CWD=\$(pwd)
+
     if [ ! -f ./onboot.sh ]; then
       cat <<EOF > ./onboot.sh
-cd $pwd
+cd $(CWD)
 source venv/bin/activate
-./start.sh --logfile=log/odoo-server.log &
+./start.sh --pidfile=$CWD/running-odoo.pid --logfile=log/odoo-server.log &
 EOF
       chmod +x onboot.sh
     fi
 
+    if [ ! -f ./stop.sh ]; then
+      cat <<EOF > ./stop.sh
+if [ -f running-odoo.pid ]; then
+    CWO=\$(cat running-odoo-pid)
+    kill -9 $CWO
+    rm running-odoo.pid
+fi
+EOF
+      chmod +x .stop.sh
+    fi
+
     echo -e "\n---- Install python packages/requirements ----"
-    pip install wheel
-    pip install -r "../odoo-$OE_VERSION-numa/requirements.txt"
-    pip install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
-    pip install -r "../numa-addons-$OE_VERSION/requirements.txt"
+    pip3 install wheel
+    pip3 install -r "../odoo-$OE_VERSION-numa/requirements.txt"
+    pip3 install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
+    pip3 install -r "../numa-addons-$OE_VERSION/requirements.txt"
 
     "../odoo-$OE_VERSION-numa/odoo-bin" -c odoo.config -s --stop-after-init
 
@@ -259,28 +292,29 @@ fi
 #--------------------------------------------------
 # Install Nginx if needed
 #--------------------------------------------------
-if [ $INSTALL_NGINX = "True" ]; then
+if [ "$INSTALL_NGINX" = "True" ]; then
   echo -e "\n---- Installing and setting up Nginx ----"
-  sudo apt install nginx -y
+  sudo apt install nginx certbot -y
+
   cat <<EOF > ~/odoo
 #odoo server
 upstream backend-odoo {
- server localhost:8069;
+ server localhost:$OE_PORT;
 }
 upstream backend-odoo-im {
- server localhost:8072;
+ server localhost:$LONGPOLLING_PORT;
 }
 
 # http -> https
 server {
    listen 80;
    add_header Strict-Transport-Security max-age=2592000;
-   rewrite ^/.*$ https://$host$request_uri? permanent;
+   rewrite ^/.*\$ https://\$host\$request_uri? permanent;
 }
 
 server {
   listen 443 ssl;
-  server_name erp.cerramientosmoviles.com;
+  server_name $WEBSITE_NAME;
   proxy_read_timeout 900s;
   proxy_connect_timeout 900s;
   proxy_send_timeout 900s;
@@ -291,14 +325,14 @@ server {
 
 
   # Add Headers for odoo proxy mode
-  proxy_set_header X-Forwarded-Host $host;
-  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto $scheme;
-  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-Host \$host;
+  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto \$scheme;
+  proxy_set_header X-Real-IP \$remote_addr;
   add_header X-Frame-Options "SAMEORIGIN";
   add_header X-XSS-Protection "1; mode=block";
-  proxy_set_header X-Client-IP $remote_addr;
-  proxy_set_header HTTP_X_FORWARDED_HOST $remote_addr;
+  proxy_set_header X-Client-IP \$remote_addr;
+  proxy_set_header HTTP_X_FORWARDED_HOST \$remote_addr;
 
   #   odoo    log files
   access_log  /var/log/nginx/$OE_USER-access.log;
@@ -307,10 +341,6 @@ server {
   #   increase    proxy   buffer  size
   proxy_buffers   16  64k;
   proxy_buffer_size   128k;
-
-  proxy_read_timeout 900s;
-  proxy_connect_timeout 900s;
-  proxy_send_timeout 900s;
 
   #   force   timeouts    if  the backend dies
   proxy_next_upstream error   timeout invalid_header  http_500    http_502

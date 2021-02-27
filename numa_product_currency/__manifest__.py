@@ -32,6 +32,7 @@ This module allows to express list and standard price in currencies different fr
     'depends': [
         'base',
         'product',
+        'stock_account',
     ],
     'data': [
         'security/ir.model.access.csv',

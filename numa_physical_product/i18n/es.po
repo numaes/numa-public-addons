@@ -1,14 +1,14 @@
 # Translation of Odoo Server.
 # This file contains the translation of the following modules:
-#	* numa_physical_product
+# 	* numa_physical_product
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Odoo Server 10.0\n"
+"Project-Id-Version: Odoo Server 14.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2017-11-16 19:31+0000\n"
-"PO-Revision-Date: 2017-11-16 19:31+0000\n"
-"Last-Translator: <>\n"
+"POT-Creation-Date: 2020-12-27 04:16+0000\n"
+"PO-Revision-Date: 2020-12-27 04:16+0000\n"
+"Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -16,165 +16,339 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_height
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_variant_height
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_height
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_variant_height
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_template_height
+#: code:addons/numa_physical_product/models/product.py:0
+#, python-format
+msgid "All Products"
+msgstr "Todos los productos"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,help:numa_physical_product.field_product_pricelist_item__base
+msgid ""
+"Base price for computation.\n"
+"Sales Price: The base price will be the Sales Price.\n"
+"Cost Price : The base price will be the cost price.\n"
+"Other Pricelist : Computation of the base price based on another Pricelist."
+msgstr ""
+"Precio base para el cálculo.\n"
+"Precio de venta: El precio base será el precio de venta.\n"
+"Precio de coste El precio base será el precio de coste.\n"
+"Otra lista de precios: Cálculo del precio base en base a otra lista de precios."
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_pricelist_item__base
+msgid "Based on"
+msgstr "Basado en"
+
+#. module: numa_physical_product
+#: code:addons/numa_physical_product/models/product.py:0
+#, python-format
+msgid "Category: %s"
+msgstr ""
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_pricelist_item__display_name
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__display_name
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template__display_name
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order__display_name
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order_line__display_name
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move__display_name
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_picking__display_name
+msgid "Display Name"
+msgstr "Nombre mostrado"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order_line__product_height_rel
+msgid "Height"
+msgstr "Altura"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__height
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template__height
 msgid "Height [m]"
 msgstr "Altura [m]"
 
 #. module: numa_physical_product
-#: selection:product.template,weight_kind:0
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_template__weight_kind__height
 msgid "Height based"
 msgstr "Basado en altura"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,help:numa_physical_product.field_delivery_carrier_weight_kind
-#: model:ir.model.fields,help:numa_physical_product.field_product_product_weight_kind
-#: model:ir.model.fields,help:numa_physical_product.field_product_template_weight_kind
-msgid "It computes weight automatically based on length, width, surface, volume, etc"
-msgstr "Calcula el peso automaticamente basado en la longitud, el ancho, la superficie, el volumen, etc"
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_pricelist_item__base__height
+msgid "Height, price per m"
+msgstr "Altura, precio por m"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_length
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_variant_length
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_length
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_variant_length
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_template_length
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_pricelist_item__id
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__id
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template__id
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order__id
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order_line__id
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move__id
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_picking__id
+msgid "ID"
+msgstr ""
+
+#. module: numa_physical_product
+#: model:ir.model.fields,help:numa_physical_product.field_product_product__weight_kind
+#: model:ir.model.fields,help:numa_physical_product.field_product_template__weight_kind
+msgid ""
+"It computes weight automatically based on length, width, surface, volume, "
+"etc"
+msgstr ""
+"Calcula el peso automaticamente basado en la longitud, ancho, superficie, "
+"volumen, etc"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_pricelist_item____last_update
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product____last_update
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template____last_update
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order____last_update
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order_line____last_update
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move____last_update
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_picking____last_update
+msgid "Last Modified on"
+msgstr "Última modificación el"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order_line__product_length_rel
+msgid "Length"
+msgstr "Longitud"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__length
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template__length
 msgid "Length [m]"
 msgstr "Longitud [m]"
 
 #. module: numa_physical_product
-#: selection:product.template,weight_kind:0
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_template__weight_kind__length
 msgid "Length based"
-msgstr "Basado en la longitud"
+msgstr "Basado en longitud"
 
 #. module: numa_physical_product
-#: selection:product.template,weight_kind:0
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_pricelist_item__base__length
+msgid "Length, price per m"
+msgstr "Longitud, precio por [m]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_template__weight_kind__normal
 msgid "Normal"
 msgstr "Normal"
 
 #. module: numa_physical_product
-#: model:ir.ui.view,arch_db:numa_physical_product.product_template_form_view
+#: model_terms:ir.ui.view,arch_db:numa_physical_product.numa_sale_order_physical_form_view
+msgid "Package Information"
+msgstr "Información de Paquete"
+
+#. module: numa_physical_product
+#: model_terms:ir.ui.view,arch_db:numa_physical_product.product_template_form_view
 msgid "Physical characteristics"
 msgstr "Características físicas"
 
 #. module: numa_physical_product
 #: model:ir.model,name:numa_physical_product.model_product_pricelist_item
-msgid "Pricelist item"
-msgstr "Elemento de la lista de precios"
+msgid "Pricelist Rule"
+msgstr "Regla de Tarifa"
 
 #. module: numa_physical_product
 #: model:ir.model,name:numa_physical_product.model_product_product
 msgid "Product"
-msgstr "Variante"
+msgstr "Producto"
 
 #. module: numa_physical_product
 #: model:ir.model,name:numa_physical_product.model_product_template
 msgid "Product Template"
-msgstr "Producto"
+msgstr "Plantilla de producto"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_weight_kind
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_weight_kind
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_template_weight_kind
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__weight_kind
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template__weight_kind
 msgid "Product weight computation"
-msgstr "Cálculo de peso del producto"
+msgstr "Cálculo del peso del producto"
+
+#. module: numa_physical_product
+#: model:ir.model,name:numa_physical_product.model_sale_order
+msgid "Sales Order"
+msgstr "Pedido de venta"
+
+#. module: numa_physical_product
+#: model:ir.model,name:numa_physical_product.model_sale_order_line
+msgid "Sales Order Line"
+msgstr "Línea de pedido de venta"
 
 #. module: numa_physical_product
 #: model:ir.model,name:numa_physical_product.model_stock_move
 msgid "Stock Move"
-msgstr "Movimiento de Stock"
+msgstr "Movimiento de existencias"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_surface
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_variant_surface
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_surface
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_variant_surface
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_template_surface
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order_line__product_surface_rel
+msgid "Surface"
+msgstr "Superficie"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__surface
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template__surface
 msgid "Surface [m2]"
 msgstr "Superficie [m2]"
 
 #. module: numa_physical_product
-#: selection:product.template,weight_kind:0
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_template__weight_kind__surface
 msgid "Surface based"
-msgstr "Basado en la superficie"
+msgstr "Basado en superficie"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move_total_volume
-#: model:ir.model.fields,field_description:numa_physical_product.field_stock_picking_total_volume
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_pricelist_item__base__surface
+msgid "Surface, price per m2"
+msgstr "Superficie, precio por [m2]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,help:numa_physical_product.field_product_product__weight_factor
+msgid "The weight factor"
+msgstr "Factor de peso"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,help:numa_physical_product.field_product_product__weight
+#: model:ir.model.fields,help:numa_physical_product.field_sale_order_line__product_weight_rel
+msgid "The weight of the contents in Kg, not including any packaging, etc."
+msgstr "El peso del contenido en [Kg], sin incluir empaquetado"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move__total_volume
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_picking__total_volume
 msgid "Total items volume"
-msgstr "Volumen total items"
+msgstr "Volumen total de items"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move_total_weight
-#: model:ir.model.fields,field_description:numa_physical_product.field_stock_picking_total_weight
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move__total_weight
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_picking__total_weight
 msgid "Total items weight"
-msgstr "Peso total items"
+msgstr "Peso total de items"
 
 #. module: numa_physical_product
 #: model:ir.model,name:numa_physical_product.model_stock_picking
 msgid "Transfer"
-msgstr "Transferir"
+msgstr "Movimiento de stock"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move_unit_volume
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move__unit_volume
 msgid "Unit item volume"
 msgstr "Volumen unitario"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move_unit_weight
+#: model:ir.model.fields,field_description:numa_physical_product.field_stock_move__unit_weight
 msgid "Unit item weight"
 msgstr "Peso unitario"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_variant_volume
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_variant_volume
-msgid "Volume [m3]"
-msgstr "Volume [m3]"
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_height
+msgid "Variant Height [m]"
+msgstr "Altura variante [m]"
 
 #. module: numa_physical_product
-#: selection:product.template,weight_kind:0
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_length
+msgid "Variant Length [m]"
+msgstr "Largo variante [m]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_surface
+msgid "Variant Surface [m2]"
+msgstr "Superficie variante [m2]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_volume
+msgid "Variant Volume [m3]"
+msgstr "Volumen variante [m3]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_weight_factor
+msgid "Variant Weight Factor [kg/unit]"
+msgstr "Factor de peso variante [Kg/unidad]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_weight
+msgid "Variant Weight [kg]"
+msgstr "Peso variante [Kg]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_width
+msgid "Variant Width [m]"
+msgstr "Ancho variante [m]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order__so_volume
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order_line__product_volume_rel
+msgid "Volume"
+msgstr "Volumen"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__volume
+msgid "Volume [m3]"
+msgstr "Volumen [m3]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_template__weight_kind__volume
 msgid "Volume based"
 msgstr "Basado en volumen"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_website_price_difference
-msgid "Website price difference"
-msgstr "Diferencia de precio Website"
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_pricelist_item__base__volume
+msgid "Volume, price per m3"
+msgstr "Volumen, precio por [m3]"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_variant_weight
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_variant_weight
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order__so_weight
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order_line__product_weight_rel
+msgid "Weight"
+msgstr "Peso"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__weight_factor
+msgid "Weight Factor [kg/unit]"
+msgstr "Factor de peso [Kg/Unidad]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__weight
 msgid "Weight [kg]"
 msgstr "Peso [kg]"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,help:numa_physical_product.field_delivery_carrier_weight_factor
-#: model:ir.model.fields,help:numa_physical_product.field_product_product_weight_factor
-#: model:ir.model.fields,help:numa_physical_product.field_product_template_weight_factor
+#: model_terms:ir.ui.view,arch_db:numa_physical_product.product_template_form_view
+msgid "Weight computation"
+msgstr "Cálculo de peso"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,help:numa_physical_product.field_product_template__weight_factor
 msgid "Weight factor to apply"
 msgstr "Factor de peso a aplicar"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_weight_factor
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_weight_factor
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_template_weight_factor
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template__weight_factor
 msgid "Weight per unit [kg/unit]"
-msgstr "Factor de peso por unidad [kg/unit]"
+msgstr "Peso por unidad [Kg/Unidad]"
 
 #. module: numa_physical_product
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_variant_width
-#: model:ir.model.fields,field_description:numa_physical_product.field_delivery_carrier_width
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_variant_width
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_product_width
-#: model:ir.model.fields,field_description:numa_physical_product.field_product_template_width
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_pricelist_item__base__weight
+msgid "Weight, price per kg"
+msgstr "Peso, precio por [Kg]"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_sale_order_line__product_width_rel
+msgid "Width"
+msgstr "Ancho"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__width
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template__width
 msgid "Width [m]"
 msgstr "Ancho [m]"
 
 #. module: numa_physical_product
-#: selection:product.template,weight_kind:0
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_template__weight_kind__width
 msgid "Width based"
 msgstr "Basado en el ancho"
 
+#. module: numa_physical_product
+#: model:ir.model.fields.selection,name:numa_physical_product.selection__product_pricelist_item__base__width
+msgid "Width, price per m"
+msgstr "Ancho, precio por [m]"
