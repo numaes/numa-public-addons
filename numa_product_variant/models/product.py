@@ -9,7 +9,9 @@ _logger = logging.getLogger(__name__)
 class ProductAttribute(models.Model):
     _inherit = "product.attribute"
 
-    code_identifier = fields.Char('Code Identifier', required=True)
+    code_identifier = fields.Char('Code Identifier')
+    default_value = fields.Many2one('product.attribute.value',
+                                    domain="[('id', 'in', value_ids)]")
 
 
 class ProductAttributeValue(models.Model):
@@ -119,12 +121,16 @@ class ProductTemplate(models.Model):
 
         default_code = self.base_code
         if avs:
-            default_code += '.'
+            suffix = ''
             for av in avs:
-                default_code += '%s%s' % (
-                    av.attribute_id.code_identifier,
-                    av.product_attribute_value_id.code_value
-                )
+                if not(av.attribute_id.default_value) or \
+                   av.product_attribute_value_id != av.attribute_id.default_value:
+                    suffix += '%s%s' % (
+                        av.attribute_id.code_identifier or '',
+                        av.product_attribute_value_id.code_value
+                    )
+            if suffix:
+                default_code += '.' + suffix
 
         return default_code
 
