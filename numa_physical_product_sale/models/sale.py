@@ -54,6 +54,7 @@ class SaleOrderLine(models.Model):
         for sol in self:
             product = sol.product_id
             if not product:
+                sol.unit_price_display = ''
                 continue
 
             sol.unit_price_display = ('%%.%df %s/%s' % (
