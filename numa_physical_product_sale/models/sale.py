@@ -53,6 +53,9 @@ class SaleOrderLine(models.Model):
     def _compute_unit_price_display(self):
         for sol in self:
             product = sol.product_id
+            if not product:
+                continue
+
             sol.unit_price_display = ('%%.%df %s/%s' % (
                 sol.order_id.currency_id.decimal_places,
                 sol.order_id.currency_id.symbol,
@@ -69,6 +72,9 @@ class SaleOrderLine(models.Model):
 
         # Correct values
         for line in self:
+            if not product:
+                continue
+
             if line.product_id.type in ('product', 'consu') and line.product_id.price_base != 'normal':
                 unit_price = line.product_id[FIELD_NAME_PER_TYPE[line.product_id.price_base]] * line.price_unit
             else:
