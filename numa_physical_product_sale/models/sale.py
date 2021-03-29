@@ -72,7 +72,7 @@ class SaleOrderLine(models.Model):
 
         # Correct values
         for line in self:
-            if not product:
+            if not line.product:
                 continue
 
             if line.product_id.type in ('product', 'consu') and line.product_id.price_base != 'normal':
