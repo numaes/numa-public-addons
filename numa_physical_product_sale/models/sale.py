@@ -73,6 +73,9 @@ class SaleOrderLine(models.Model):
         # Correct values
         for line in self:
             if not line.product_id:
+                line.price_tax = 0.0
+                line.price_total = 0.0
+                line.price_subtotal = 0.0
                 continue
 
             if line.product_id.type in ('product', 'consu') and line.product_id.price_base != 'normal':
