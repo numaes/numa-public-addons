@@ -255,7 +255,7 @@ source venv/bin/activate
 EOF
     chmod +x start.sh
 
-    CWD=\$(pwd)
+    CWD=$(pwd)
 
     if [ ! -f ./onboot.sh ]; then
       cat <<EOF > ./onboot.sh

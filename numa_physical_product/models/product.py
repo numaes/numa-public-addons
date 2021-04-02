@@ -183,16 +183,3 @@ class ProductPricelistItem(models.Model):
             'height': 'set default',
         }
     )
-
-    @api.depends('categ_id', 'product_tmpl_id', 'product_id', 'fixed_price',
-                 'pricelist_id', 'percent_price', 'price_discount', 'price_surcharge')
-    def _get_pricelist_item_name_price(self):
-        if self.categ_id:
-            self.name = _("Category: %s") % (self.categ_id.display_name)
-        elif self.product_tmpl_id:
-            self.name = self.product_tmpl_id.name
-        elif self.product_id:
-            self.name = self.product_id.display_name.replace('[%s]' % self.product_id.code, '')
-        else:
-            self.name = _("All Products")
-

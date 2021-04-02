@@ -14,6 +14,8 @@
                         <field name="product_length" />
                         <field name="product_height" />
                         <field name="surface" />
+                        <field name="volume" />
+                        <field name="weight" />
                     </group>
                     <group name="weight_computation" string="Weight computation">
                         <field name="weight_kind" />
