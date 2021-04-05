@@ -205,7 +205,7 @@ msgstr "Buscar tareas en segundo plano"
 #: selection:res.background_job,state:0
 #, python-format
 msgid "Started"
-msgstr "Comenzada"
+msgstr "Iniciado"
 
 #. module: numa_background_job
 #: view:res.background_job:numa_background_job.background_job_search
@@ -215,7 +215,7 @@ msgstr "Tareas comenzadas"
 #. module: numa_background_job
 #: field:res.background_job,started_on:0
 msgid "Started on"
-msgstr "Comenzada el"
+msgstr "Iniciado"
 
 #. module: numa_background_job
 #: view:res.background_job:numa_background_job.background_job_search

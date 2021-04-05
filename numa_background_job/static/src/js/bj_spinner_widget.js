@@ -4,7 +4,7 @@ odoo.define('numa_backgroud_job.bj_spinner_widget', function (require) {
 var bus_service = require('bus.BusService');
 var core = require('web.core');
 var Widget = require('web.Widget');
-var fieldRegistry = require('web.field_registry')
+var fieldRegistry = require('web.field_registry');
 var AbstractField = require('web.AbstractField');
 
 var _t = core._t;
@@ -92,7 +92,11 @@ var FieldBJSpinner = AbstractField.extend({
                         'state',
                         'completion_rate',
                         'current_status',
-                        'error'
+                        'error',
+                        'initialized_on',
+                        'started_on',
+                        'ended_on',
+                        'aborted_on'
                     ],
                 ],
             }).then(function (values) {
@@ -106,18 +110,27 @@ var FieldBJSpinner = AbstractField.extend({
                 self.completion_rate = values[0]['completion_rate'];
                 self.current_status = values[0]['current_status'];
                 self.error_msg = values[0]['error'];
+                self.initialized_on = values[0]['initialized_on'];
+                self.started_on = values[0]['started_on'];
+                self.ended_on = values[0]['ended_on'];
+                self.aborted_on = values[0]['aborted_on'];
                 self.render_value();
             });
         };
     },
 
     render_value: function () {
+        var tz = this.getSession().user_context.tz;
+        var offset = 0;
+        if (tz === 'America/Argentina/Buenos_Aires' ) {
+            offset = -180;
+        }
         var state_msg = {
-            init: _t('Initializing: ') + moment(this.initialized_on).format('DD-MM-YYYY HH:mm:ss'),
-            started: _t('Started: ') + moment(this.started_on).format('DD-MM-YYYY HH:mm:ss'),
-            ended: _t('Started: ') + moment(this.started_on).format('DD-MM-YYYY HH:mm:ss') + _t(' - Ended: ') + moment(this.ended_on).format('DD-MM-YYYY HH:mm:ss') + _t(' - Duración: ') + moment.utc(moment(this.ended_on, 'DD-MM-YYYY HH:mm:ss.SSS').diff(moment(this.started_on, 'DD-MM-YYYY HH:mm:ss.SSS'))).format('HH:mm:ss.SSS'),
+            init: _t('Initializing: ') + moment.utc(this.initialized_on).utcOffset(offset).format('DD-MM-YYYY HH:mm:ss'),
+            started: _t('Started: ') + moment.utc(this.started_on).utcOffset(offset).format('DD-MM-YYYY HH:mm:ss'),
+            ended: _t('Started: ') + moment.utc(this.started_on).utcOffset(offset).format('DD-MM-YYYY HH:mm:ss') + _t(' - Ended: ') + moment.utc(this.ended_on).utcOffset(offset).format('DD-MM-YYYY HH:mm:ss') + _t(' - Duración: ') + moment.utc(moment(this.ended_on, 'DD-MM-YYYY HH:mm:ss.SSS').diff(moment(this.started_on, 'DD-MM-YYYY HH:mm:ss.SSS'))).format('HH:mm:ss.SSS'),
             aborting: _t('Aborting ...'),
-            aborted: _t('Started: ') + moment(this.started_on).format('DD-MM-YYYY HH:mm:ss') + _t(' - Aborted: ') + moment(this.aborted_on).format('DD-MM-YYYY HH:mm:ss') + _t(' - Duración: ') + moment.utc(moment(this.aborted_on, 'DD-MM-YYYY HH:mm:ss.SSS').diff(moment(this.started_on, 'DD-MM-YYYY HH:mm:ss.SSS'))).format('HH:mm:ss.SSS')
+            aborted: _t('Started: ') + moment.utc(this.started_on).utcOffset(offset).format('DD-MM-YYYY HH:mm:ss') + _t(' - Aborted: ') + moment.utc(this.aborted_on).utcOffset(offset).format('DD-MM-YYYY HH:mm:ss') + _t(' - Duración: ') + moment.utc(moment(this.aborted_on, 'DD-MM-YYYY HH:mm:ss.SSS').diff(moment(this.started_on, 'DD-MM-YYYY HH:mm:ss.SSS'))).format('HH:mm:ss.SSS')
         }[this.state];
         if (!state_msg) {
             state_msg = '';
@@ -180,6 +193,10 @@ var FieldBJSpinner = AbstractField.extend({
                 this.completion_rate = current_state['completion_rate'];
                 this.current_status = current_state['current_status'];
                 this.error_msg = current_state['error'];
+                this.initialized_on = current_state['initialized_on'];
+                this.started_on = current_state['started_on'];
+                this.ended_on = current_state['ended_on'];
+                this.aborted_on = current_state['aborted_on'];
                 this.render_value();
             };
         }

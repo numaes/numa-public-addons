@@ -275,15 +275,15 @@ class BackgroundJob(models.Model):
         return state, completionRate
 
     def prune(self):
-        _logger.info("Cleaning up background jobs")
+        _logger.info(_("Cleaning up background jobs"))
 
         now = datetime.datetime.now()
         lastWeek_dt = now - datetime.timedelta(seconds=3600 * 24 * 8)
         lastWeek = lastWeek_dt.strftime("%Y-%m-%d 00:00:00")
-        _logger.info("Cleaning up background jobs before %s" % lastWeek)
+        _logger.info(_("Cleaning up background jobs before %s") % lastWeek)
         jobsToUnlink = self.search(['|', ('initialized_on', '=', False), ('initialized_on', '<', lastWeek)])
         if jobsToUnlink:
-            _logger.info("Cleaning up %d background jobs" % len(jobsToUnlink))
+            _logger.info(_("Cleaning up %d background jobs") % len(jobsToUnlink))
             jobsToUnlink.unlink()
 
 
@@ -319,14 +319,14 @@ class BackgroundThread(threading.Thread):
                             if method:
                                 method(bkJob)
                                 state, completionRate = bkJob.get_current_state()
-                                _logger.info("Ending with completion_rate: %d, state=%s" %
+                                _logger.info(_("Ending with completion_rate: %d, state=%s") %
                                              (completionRate, state))
 
                                 if state == 'started' and completionRate >= 100:
                                     bkJob.end()
                             else:
                                 bkJob.abort(
-                                    statusMsg="No method defined!")
+                                    statusMsg=_("No method defined!"))
                         except Exception as e:
                             exc_type, exc_value, exc_traceback = sys.exc_info()
                             exceptionLines = traceback.format_exception(exc_type, exc_value, exc_traceback)
@@ -335,7 +335,7 @@ class BackgroundThread(threading.Thread):
 
                             bkJob = bkJobObj.browse(self.jobId)
                             bkJob.abort(
-                                statusMsg=u'Unexpected exception!',
+                                statusMsg=_(u'Unexpected exception!'),
                                 errorMsg='\n'.join(exceptionLines))
 
                         cr.commit()
