@@ -10,7 +10,7 @@ class SynchRemote(models.Model):
     _description = 'Servidor remoto'
 
     name = fields.Char('Name')
-    type = fields.Selection([], 'Type', required=True)
+    type = fields.Selection([('undetermined', 'Indeterminado')], 'Type', required=True, default='undetermined')
     log_messages = fields.One2many('synch.log', 'remote', 'Log')
 
     def getRemoteId(self, local_obj):
