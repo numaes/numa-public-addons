@@ -188,8 +188,8 @@ def register_exception(service_name, method, params, db, uid, e):
 
                 def get_exception_chain(exc):
                     if exc.__cause__:
-                        return "%s\n\nCaused by:\n%s" % (ustr(e), get_exception_chain(e.__cause__))
-                    return ustr(e)
+                        return "%s\n\nCaused by:\n%s" % (ustr(exc), get_exception_chain(exc.__cause__))
+                    return ustr(exc)
 
                 exc_description = get_exception_chain(e)
 
