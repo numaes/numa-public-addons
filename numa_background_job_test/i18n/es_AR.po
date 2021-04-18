@@ -1,0 +1,178 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* numa_background_job_test
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 14.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2021-04-17 17:42+0000\n"
+"PO-Revision-Date: 2021-04-17 17:42+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: numa_background_job_test
+#: model_terms:ir.ui.view,arch_db:numa_background_job_test.background_job_testform
+msgid "Abort"
+msgstr "Abortar"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields.selection,name:numa_background_job_test.selection__res_background_job_test__state__aborted
+msgid "Aborted"
+msgstr "Abortado"
+
+#. module: numa_background_job_test
+#: code:addons/numa_background_job_test/models/background_job_test.py:0
+#, python-format
+msgid "Aborting test"
+msgstr "Abortando Test"
+
+#. module: numa_background_job_test
+#: model_terms:ir.ui.view,arch_db:numa_background_job_test.background_job_testform
+msgid "Background Job Test"
+msgstr "Test Tarea en Segundo Plano"
+
+#. module: numa_background_job_test
+#: model:ir.actions.act_window,name:numa_background_job_test.background_job_test_action
+#: model:ir.ui.menu,name:numa_background_job_test.background_job_test_menu
+msgid "Background job Test"
+msgstr "Test Tarea en Segundo Plano"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__create_uid
+msgid "Created by"
+msgstr "Creado por"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__create_date
+msgid "Created on"
+msgstr "Creado"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__job_current_status
+msgid "Current status"
+msgstr "Estado actual"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__display_name
+msgid "Display Name"
+msgstr "Nombre"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__job_error
+msgid "Error"
+msgstr "Error"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__id
+msgid "ID"
+msgstr "ID"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields.selection,name:numa_background_job_test.selection__res_background_job_test__state__init
+msgid "Initializing"
+msgstr "Inicializando"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__job
+msgid "Job"
+msgstr "Tarea"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test____last_update
+msgid "Last Modified on"
+msgstr "Modificado"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__write_uid
+msgid "Last Updated by"
+msgstr "Actualizado por"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__write_date
+msgid "Last Updated on"
+msgstr "Actualizado"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields.selection,name:numa_background_job_test.selection__res_background_job_test__run_type__normal
+msgid "Normal"
+msgstr "Normal"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__job_completion_rate
+msgid "Rate"
+msgstr ""
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__run_type
+msgid "Run type"
+msgstr "Tipo Ejecución"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields.selection,name:numa_background_job_test.selection__res_background_job_test__state__running
+msgid "Running"
+msgstr "Corriendo"
+
+#. module: numa_background_job_test
+#: code:addons/numa_background_job_test/models/background_job_test.py:0
+#, python-format
+msgid "Running test"
+msgstr "Corriendo Test"
+
+#. module: numa_background_job_test
+#: code:addons/numa_background_job_test/models/background_job_test.py:0
+#, python-format
+msgid "Running test with error"
+msgstr "Corriendo Test con Error"
+
+#. module: numa_background_job_test
+#: code:addons/numa_background_job_test/models/background_job_test.py:0
+#, python-format
+msgid "Running test with exception"
+msgstr "Corriendo Test con Excepción"
+
+#. module: numa_background_job_test
+#: model_terms:ir.ui.view,arch_db:numa_background_job_test.background_job_testform
+msgid "Start with error"
+msgstr "Iniciar con error"
+
+#. module: numa_background_job_test
+#: model_terms:ir.ui.view,arch_db:numa_background_job_test.background_job_testform
+msgid "Start with exception"
+msgstr "Iniciar con excepción"
+
+#. module: numa_background_job_test
+#: model_terms:ir.ui.view,arch_db:numa_background_job_test.background_job_testform
+msgid "Start/Restart"
+msgstr "Iniciar/Reiniciar"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__job_state
+#: model:ir.model.fields,field_description:numa_background_job_test.field_res_background_job_test__state
+msgid "State"
+msgstr "Estado"
+
+#. module: numa_background_job_test
+#: code:addons/numa_background_job_test/models/background_job_test.py:0
+#, python-format
+msgid "Test"
+msgstr "Test"
+
+#. module: numa_background_job_test
+#: model:ir.model,name:numa_background_job_test.model_res_background_job_test
+msgid "Test class for background jobs"
+msgstr "Clase de Test para Tarea en Segundo Plano"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields.selection,name:numa_background_job_test.selection__res_background_job_test__run_type__with_error
+msgid "With error"
+msgstr "Con Error"
+
+#. module: numa_background_job_test
+#: model:ir.model.fields.selection,name:numa_background_job_test.selection__res_background_job_test__run_type__with_exception
+msgid "With exception"
+msgstr "Con Excepción"

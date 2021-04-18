@@ -22,26 +22,20 @@ class BackgroundJobTest(models.TransientModel):
     _description = 'Test class for background jobs'
 
     job = fields.Many2one("res.background_job", "Job")
-    job_completion_rate = fields.Integer(u'Rate', related="job.completion_rate")
-    job_current_status = fields.Html(u'Current status', related="job.current_status")
-    job_error = fields.Text(u'Error', related="job.error")
-    job_state = fields.Selection([
-        ('init', 'Initializing'),
-        ('started', 'Started'),
-        ('ended', 'Ended'),
-        ('aborting', 'Aborting ...'),
-        ('aborted', 'Aborted'),
-    ], u'Job State', related="job.state")
+    job_completion_rate = fields.Integer('Rate', related="job.completion_rate")
+    job_current_status = fields.Html('Current status', related="job.current_status")
+    job_error = fields.Text('Error', related="job.error")
+    job_state = fields.Selection('Job State', related="job.state")
     state = fields.Selection([
         ('init', 'Initializing'),
         ('running', 'Running'),
         ('aborted', 'Aborted'),
-    ], u'State', default='init')
+    ], 'State', default='init')
     run_type = fields.Selection([
         ('normal', 'Normal'),
         ('with_error', 'With error'),
         ('with_exception', 'With exception'),
-    ], u'Run type', default='normal')
+    ], 'Run type', default='normal')
 
     def action_refresh(self):
         return {

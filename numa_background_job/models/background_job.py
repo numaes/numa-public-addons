@@ -335,7 +335,7 @@ class BackgroundThread(threading.Thread):
 
                             bkJob = bkJobObj.browse(self.jobId)
                             bkJob.abort(
-                                statusMsg=_(u'Unexpected exception!'),
+                                statusMsg=_('Unexpected exception!'),
                                 errorMsg='\n'.join(exceptionLines))
 
                         cr.commit()
