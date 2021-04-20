@@ -50,7 +50,10 @@ class ProductTemplate(models.Model):
     def name_get(self):
         res = []
         for product in self:
-            res.append((product.id, '[%s] %s' % (product.base_code, product.name)))
+            if product.base_code:
+                res.append((product.id, '[%s] %s' % (product.base_code, product.name)))
+            else:
+                res.append((product.id, '%s' % product.name))
 
         return res
 
