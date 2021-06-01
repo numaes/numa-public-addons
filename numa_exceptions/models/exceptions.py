@@ -34,7 +34,7 @@ import sys
 import inspect
 
 import logging
-_logger=logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 DT_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -235,7 +235,7 @@ def new_dispatch_rpc(service_name, method, params):
 
         if not isinstance(e, (
                 odoo.exceptions.Warning, SessionExpiredException,
-                UserError,
+                UserError, ValidationError,
                 werkzeug.exceptions.NotFound)):
             if ename:
                 e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
