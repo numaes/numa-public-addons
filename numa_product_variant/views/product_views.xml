@@ -25,9 +25,11 @@
                 <group name="main_fields" position="inside">
                     <field name="code_identifier" />
                     <field name="default_value" />
+                    <field name="change_on_create" />
                 </group>
                 <xpath expr="//page/field[@name='value_ids']/tree/field[@name='name']" position="before">
                     <field name="code_value"/>
+                    <field name="value_on_create"/>
                 </xpath>
             </field>
         </record>

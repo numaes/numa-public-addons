@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 14.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2020-12-26 23:07+0000\n"
-"PO-Revision-Date: 2020-12-26 23:07+0000\n"
+"POT-Creation-Date: 2021-06-05 21:55+0000\n"
+"PO-Revision-Date: 2021-06-05 21:55+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -21,6 +21,7 @@ msgid "Attribute Value"
 msgstr "Valor del Atributo"
 
 #. module: numa_product_variant
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_template_kanban_view
 #: model_terms:ir.ui.view,arch_db:numa_product_variant.product_template_tree_view
 msgid "Base Code"
 msgstr "Código base"
@@ -43,6 +44,11 @@ msgid "Code Value"
 msgstr "Valor de código"
 
 #. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__default_value
+msgid "Default Value"
+msgstr "Por defecto"
+
+#. module: numa_product_variant
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_category__product_attribute_ids
 msgid "Default attributes"
 msgstr "Attributos por defecto"
@@ -56,6 +62,11 @@ msgstr "Attributos por defecto"
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__display_name
 msgid "Display Name"
 msgstr "Nombre mostrado"
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__height
+msgid "Height"
+msgstr "Altura"
 
 #. module: numa_product_variant
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__id
@@ -76,6 +87,11 @@ msgstr ""
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value____last_update
 msgid "Last Modified on"
 msgstr "Última modificación el"
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__length
+msgid "Length"
+msgstr "Longitud"
 
 #. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_product
@@ -102,3 +118,18 @@ msgstr "Plantilla de producto"
 #: model:ir.model,name:numa_product_variant.model_product_template_attribute_value
 msgid "Product Template Attribute Value"
 msgstr "Valor de Atributo del Modelo de Producto"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__change_on_create
+msgid "Set on variant creation"
+msgstr "Fijar al crear variante"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__value_on_create
+msgid "Value to set on variant creation"
+msgstr "Valor al crear variante"
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__width
+msgid "Width"
+msgstr "Ancho"

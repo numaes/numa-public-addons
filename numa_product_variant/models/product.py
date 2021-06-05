@@ -12,12 +12,17 @@ class ProductAttribute(models.Model):
     code_identifier = fields.Char('Code Identifier')
     default_value = fields.Many2one('product.attribute.value',
                                     domain="[('id', 'in', value_ids)]")
+    change_on_create = fields.Selection(
+        [('length', 'Length'), ('width', 'Width'), ('height', 'Height')],
+        'Set on variant creation',
+    )
 
 
 class ProductAttributeValue(models.Model):
     _inherit = "product.attribute.value"
 
     code_value = fields.Char('Code Value', required=True)
+    value_on_create = fields.Float('Value to set on variant creation')
 
 
 class ProductTemplateAttributeValue(models.Model):
@@ -126,7 +131,7 @@ class ProductTemplate(models.Model):
         if avs:
             suffix = ''
             for av in avs:
-                if not(av.attribute_id.default_value) or \
+                if not av.attribute_id.default_value or \
                    av.product_attribute_value_id != av.attribute_id.default_value:
                     suffix += '%s%s' % (
                         av.attribute_id.code_identifier or '',
@@ -161,5 +166,12 @@ class ProductProduct(models.Model):
 
                 vals['default_code'] = template.build_default_code(ptav_ids)
 
-        return super().create(vals_list)
+        new_variants = super().create(vals_list)
 
+        for variant in new_variants:
+            for ptav in variant.product_template_attribute_value_ids:
+                if ptav.attribute_id.change_on_create:
+                    if ptav.attribute_value_id.value_on_create:
+                        variant[ptav.attribute_id.change_on_create] = ptav.attribute_value_id.value_on_create
+
+        return new_variants
