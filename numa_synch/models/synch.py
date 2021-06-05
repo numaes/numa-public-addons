@@ -8,10 +8,10 @@ _logger = logging.getLogger(__name__)
 class SynchRemote(models.Model):
     _name = 'synch.remote'
     _description = 'Servidor remoto'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
 
     name = fields.Char('Name')
     type = fields.Selection([('undetermined', 'Indeterminado')], 'Type', required=True, default='undetermined')
-    log_messages = fields.One2many('synch.log', 'remote', 'Log')
 
     def getRemoteId(self, local_obj):
         self.ensure_one()
