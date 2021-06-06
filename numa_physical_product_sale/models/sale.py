@@ -34,8 +34,8 @@ class SaleOrder(models.Model):
             so.so_weight = 0.0
             so.so_volume = 0.0
             for line in so.order_line:
-                so.so_weight += line.product_uom_qty * line.product_id.weight
-                so.so_volume += line.product_uom_qty * line.product_id.volume
+                so.so_weight += line.total_weight
+                so.so_volume += line.total_volume
 
 
 class SaleOrderLine(models.Model):

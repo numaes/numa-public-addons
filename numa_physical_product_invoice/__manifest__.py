@@ -11,7 +11,7 @@ Technical module to expand invoices by physical products
     'website': 'http://www.numaes.com',
     'depends': [
         'base',
-        'numa_physical_product_sale',
+        'numa_physical_product',
         'account'
     ],
     'data': [

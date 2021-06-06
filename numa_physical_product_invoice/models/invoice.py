@@ -34,8 +34,8 @@ class Invoice(models.Model):
             invoice.invoice_weight = 0.0
             invoice.invoice_volume = 0.0
             for line in invoice.invoice_line_ids:
-                invoice.invoice_weight += line.quantity * line.product_id.weight
-                invoice.invoice_volume += line.quantity * line.product_id.volume
+                invoice.invoice_weight += line.total_weight
+                invoice.invoice_volume += line.total_volume
 
 
 class InvoiceLine(models.Model):

@@ -34,8 +34,8 @@ class PurchaseOrder(models.Model):
             po.po_weight = 0.0
             po.po_volume = 0.0
             for line in po.order_line:
-                po.po_weight += line.product_uom_qty * line.product_id.weight
-                po.po_volume += line.product_uom_qty * line.product_id.volume
+                po.po_weight += line.total_weight
+                po.po_volume += line.total_volume
 
 
 class PurchaseOrderLine(models.Model):

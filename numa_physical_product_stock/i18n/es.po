@@ -1,13 +1,13 @@
 # Translation of Odoo Server.
 # This file contains the translation of the following modules:
-# 	* numa_physical_product_purchase
+# 	* numa_physical_product_stock
 #
 msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 14.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2021-02-27 20:23+0000\n"
-"PO-Revision-Date: 2021-02-27 20:23+0000\n"
+"POT-Creation-Date: 2021-06-06 22:40+0000\n"
+"PO-Revision-Date: 2021-06-06 22:40+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -15,77 +15,90 @@ msgstr ""
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: \n"
 
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order__display_name
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order_line__display_name
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__display_name
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_picking__display_name
 msgid "Display Name"
 msgstr "Nombre mostrado"
 
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order_line__product_height_rel
-msgid "Height"
-msgstr "Altura"
-
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order__id
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order_line__id
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__id
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_picking__id
 msgid "ID"
 msgstr ""
 
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order____last_update
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order_line____last_update
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move____last_update
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_picking____last_update
 msgid "Last Modified on"
 msgstr "Última modificación el"
 
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order_line__product_length_rel
-msgid "Length"
-msgstr "Longitud"
+#. module: numa_physical_product_stock
+#: model:ir.model,name:numa_physical_product_stock.model_stock_move
+msgid "Stock Move"
+msgstr "Movimiento de existencias"
 
-#. module: numa_physical_product_purchase
-#: model_terms:ir.ui.view,arch_db:numa_physical_product_purchase.purchase_order_physical_form_view
-msgid "Package Information"
-msgstr ""
-
-#. module: numa_physical_product_purchase
-#: model:ir.model,name:numa_physical_product_purchase.model_purchase_order
-msgid "Purchase Order"
-msgstr "Pedido de compra"
-
-#. module: numa_physical_product_purchase
-#: model:ir.model,name:numa_physical_product_purchase.model_purchase_order_line
-msgid "Purchase Order Line"
-msgstr "Línea de pedido de compra"
-
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order_line__product_surface_rel
-msgid "Surface"
-msgstr "Superficie"
-
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,help:numa_physical_product_purchase.field_purchase_order_line__product_weight_rel
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,help:numa_physical_product_stock.field_stock_move__unit_weight
 msgid "The weight of the contents in Kg, not including any packaging, etc."
-msgstr "El peso del contenido en [Kg], sin incluir packaging"
+msgstr "El peso del contenido en Kg, sin incluir packaging"
 
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order_line__unit_price_display
-msgid "Unit price"
-msgstr "Precio unitario"
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__total_surface
+msgid "Total Surface"
+msgstr "Superficie Total"
 
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order__po_volume
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order_line__product_volume_rel
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__total_volume
+msgid "Total Volume"
+msgstr "Volumen total"
+
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__total_weight
+msgid "Total Weight"
+msgstr "Peso total"
+
+#. module: numa_physical_product_stock
+#: model:ir.model,name:numa_physical_product_stock.model_stock_picking
+msgid "Transfer"
+msgstr "Movimiento de stock"
+
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__unit_height
+msgid "Unit Height"
+msgstr "Altura unitaria"
+
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__unit_length
+msgid "Unit Length"
+msgstr "Longitud unitaria"
+
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__unit_surface
+msgid "Unit Surface"
+msgstr "Sup. unitaria"
+
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__unit_volume
+msgid "Unit Volume"
+msgstr "Volumen unitario"
+
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__unit_weight
+msgid "Unit Weight"
+msgstr "Peso unitario"
+
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_move__unit_width
+msgid "Unit Width"
+msgstr "Ancho unitario"
+
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_picking__picking_volume
 msgid "Volume"
 msgstr "Volumen"
 
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order__po_weight
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order_line__product_weight_rel
+#. module: numa_physical_product_stock
+#: model:ir.model.fields,field_description:numa_physical_product_stock.field_stock_picking__picking_weight
 msgid "Weight"
-msgstr "Altura"
-
-#. module: numa_physical_product_purchase
-#: model:ir.model.fields,field_description:numa_physical_product_purchase.field_purchase_order_line__product_width_rel
-msgid "Width"
-msgstr "Ancho"
+msgstr "Peso"

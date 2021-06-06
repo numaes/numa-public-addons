@@ -9,7 +9,7 @@ Technical module to expand purchase by physical products
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'numa_physical_product_sale', 'purchase'],
+    'depends': ['base', 'numa_physical_product', 'purchase'],
     'data': ['views/purchase_views.xml'],
     'demo_xml': [],
     'test': [],

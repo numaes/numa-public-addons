@@ -9,8 +9,14 @@ Technical module to expand stock by physical products
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'numa_physical_product_sale', 'stock'],
-    'data': ['views/purchase_views.xml'],
+    'depends': [
+        'base',
+        'numa_physical_product',
+        'stock'
+    ],
+    'data': [
+        'views/stock_views.xml'
+    ],
     'demo_xml': [],
     'test': [],
     'installable': True,

@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<odoo>
+    <data>
+
+        <record id="view_picking_form" model="ir.ui.view">
+            <field name="name">stock.picking.form</field>
+            <field name="model">stock.picking</field>
+            <field name="inherit_id" ref="stock.view_picking_form"/>
+            <field name="arch" type="xml">
+                <field name="backorder_id" position="after">
+                    <field name="picking_weight"/>
+                    <field name="picking_volume"/>
+                </field>
+
+                <xpath expr="//page[@name='operations']//tree//field[@name='lot_ids']" position="after">
+                    <field name="total_weight"/>
+                    <field name="total_volume"/>
+                </xpath>
+
+                <xpath expr="//page[@name='operations']//form//field[@name='description_picking']" position="after">
+                    <field name="total_weight"/>
+                    <field name="total_volume"/>
+                </xpath>
+
+            </field>
+        </record>
+
+    </data>
+</odoo>
