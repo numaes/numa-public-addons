@@ -1,8 +1,8 @@
+import logging
 from typing import List
 
 from odoo import models, fields, api
 
-import logging
 _logger = logging.getLogger(__name__)
 
 
@@ -171,7 +171,9 @@ class ProductProduct(models.Model):
         for variant in new_variants:
             for ptav in variant.product_template_attribute_value_ids:
                 if ptav.attribute_id.change_on_create:
-                    if ptav.attribute_value_id.value_on_create:
-                        variant[ptav.attribute_id.change_on_create] = ptav.attribute_value_id.value_on_create
+                    att_value = ptav.product_attribute_value_id
+                    if att_value.value_on_create:
+                        variant['variant_' + ptav.attribute_line_id.attribute_id.change_on_create] = \
+                            att_value.value_on_create
 
         return new_variants
