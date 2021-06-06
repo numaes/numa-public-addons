@@ -175,5 +175,7 @@ class ProductProduct(models.Model):
                     if att_value.value_on_create:
                         variant['variant_' + ptav.attribute_line_id.attribute_id.change_on_create] = \
                             att_value.value_on_create
+                        variant.onchange_variant_weight()
+                        variant.onchange_variant_dimensions()
 
         return new_variants

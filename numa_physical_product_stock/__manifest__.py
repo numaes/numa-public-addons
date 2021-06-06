@@ -1,18 +1,16 @@
 # -*- coding: utf-8 -*-
 
 {
-    'name': 'NUMA Physical Product - Sale',
+    'name': 'NUMA Physical Product - Stock',
     'version': '1.0',
     'category': 'Product',
     'description': """
-Technical module to expand sales by physical products
+Technical module to expand stock by physical products
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'uom', 'numa_physical_product', 'sale'],
-    'data': [
-        'views/sale_views.xml',
-    ],
+    'depends': ['base', 'numa_physical_product_sale', 'stock'],
+    'data': ['views/purchase_views.xml'],
     'demo_xml': [],
     'test': [],
     'installable': True,

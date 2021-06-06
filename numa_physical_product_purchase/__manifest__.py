@@ -5,7 +5,7 @@
     'version': '1.0',
     'category': 'Product',
     'description': """
-Technical module to expande purchase by physical products
+Technical module to expand purchase by physical products
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',

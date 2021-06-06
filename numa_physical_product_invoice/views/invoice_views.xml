@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<odoo>
+    <data>
+
+        <record id="view_move_form" model="ir.ui.view">
+            <field name="name">account.move.form</field>
+            <field name="model">account.move</field>
+            <field name="inherit_id" ref="account.view_move_form" />
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='invoice_line_ids']/form/sheet" position="inside">
+                    <group>
+                        <group>
+                            <field name="unit_width"/>
+                            <field name="unit_length"/>
+                            <field name="unit_height"/>
+                        </group>
+                        <group>
+                            <field name="unit_surface"/>
+                            <field name="unit_weight"/>
+                            <field name="unit_volume"/>
+                        </group>
+                        <group>
+                            <field name="total_surface"/>
+                            <field name="total_weight"/>
+                            <field name="total_volume"/>
+                        </group>
+                    </group>
+                </xpath>
+                <xpath expr="//field[@name='invoice_line_ids']/form//field[@name='price_unit']" position="after">
+                    <field name="unit_price_uom_id"/>
+                    <field name="price_qty"/>
+                </xpath>
+                <xpath expr="//field[@name='invoice_line_ids']/tree/field[@name='price_unit']" position="after">
+                    <field name="unit_price_uom_id"/>
+                    <field name="price_qty"/>
+                </xpath>
+                <xpath expr="//field[@name='date']" position="after">
+                    <group string="Logistic Information" name="logistic_information">
+                        <field name="invoice_weight"/>
+                        <field name="invoice_volume"/>
+                    </group>
+                </xpath>
+
+            </field>
+        </record>
+    </data>
+</odoo>

@@ -1,17 +1,21 @@
 # -*- coding: utf-8 -*-
 
 {
-    'name': 'NUMA Physical Product - Sale',
+    'name': 'NUMA Physical Product - Invoice',
     'version': '1.0',
     'category': 'Product',
     'description': """
-Technical module to expand sales by physical products
+Technical module to expand invoices by physical products
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'uom', 'numa_physical_product', 'sale'],
+    'depends': [
+        'base',
+        'numa_physical_product_sale',
+        'account'
+    ],
     'data': [
-        'views/sale_views.xml',
+        'views/invoice_views.xml'
     ],
     'demo_xml': [],
     'test': [],

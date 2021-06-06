@@ -10,24 +10,29 @@
                 <xpath expr="//field[@name='order_line']/form/field[@name='name']" position="after">
                     <group>
                         <group>
-                            <field name="product_width_rel"/>
-                            <field name="product_length_rel"/>
-                            <field name="product_height_rel"/>
+                            <field name="unit_width"/>
+                            <field name="unit_length"/>
+                            <field name="unit_height"/>
                         </group>
                         <group>
-                            <field name="product_surface_rel"/>
-                            <field name="product_weight_rel"/>
-                            <field name="product_volume_rel"/>
+                            <field name="unit_surface"/>
+                            <field name="unit_weight"/>
+                            <field name="unit_volume"/>
+                        </group>
+                        <group>
+                            <field name="total_surface" readonly="True" force_save="True"/>
+                            <field name="total_weight" readonly="True" force_save="True"/>
+                            <field name="total_volume" readonly="True" force_save="True"/>
                         </group>
                     </group>
                 </xpath>
                 <xpath expr="//field[@name='order_line']/form//field[@name='price_unit']" position="after">
-                    <field name="unit_price_uom_display"/>
-                    <field name="total_price_base"/>
+                    <field name="unit_price_uom_id"/>
+                    <field name="price_qty" readonly="True" force_save="True"/>
                 </xpath>
                 <xpath expr="//field[@name='order_line']/tree/field[@name='price_unit']" position="after">
-                    <field name="unit_price_uom_display"/>
-                    <field name="total_price_base"/>
+                    <field name="unit_price_uom_id"/>
+                    <field name="price_qty" readonly="True" force_save="True"/>
                 </xpath>
                 <xpath expr="//group[@name='sales_person']" position="before">
                     <group string="Package Information" name="package_information">
