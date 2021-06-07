@@ -37,7 +37,7 @@ class ProductTemplate(models.Model):
                 )
         else:
             for template in self:
-                if template.cost_currency:
+                if template.cost_currency_id:
                     prices[template.id] = template.cost_currency_id.compute(
                         prices[template.id],
                         currency or template.currency_id or self.env.company.currency_id
