@@ -52,7 +52,7 @@ class StockMove(models.Model):
     total_weight = fields.Float(string='Total Weight')
     total_volume = fields.Float(string='Total Volume')
 
-    @api.onchange('product_id', 'prooduct_qty', 'product_uom_qty')
+    @api.onchange('product_id', 'product_qty', 'product_uom_qty')
     def onchange_qty(self):
         for move in self:
             normalized_qty = move.product_uom._compute_quantity(move.product_uom_qty, move.product_id.uom_id) \
