@@ -69,7 +69,7 @@ class ProductProduct(models.Model):
                 )
         else:
             for product in self:
-                if product.cost_currency_id:
+                if product.cost_currency_id: # forzar grabación
                     prices[product.id] = product.cost_currency_id.compute(
                         prices[product.id],
                         currency or product.currency_id or self.env.company.currency_id
