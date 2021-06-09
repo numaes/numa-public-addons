@@ -1,0 +1,135 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* numa_product_variant
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 14.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2021-06-05 21:55+0000\n"
+"PO-Revision-Date: 2021-06-05 21:55+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_product_attribute_value
+msgid "Attribute Value"
+msgstr "Valor del Atributo"
+
+#. module: numa_product_variant
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_template_kanban_view
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_template_tree_view
+msgid "Base Code"
+msgstr "Código base"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_product__base_code
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template__base_code
+msgid "Base code"
+msgstr "Código base"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__code_identifier
+msgid "Code Identifier"
+msgstr "Identificador de código"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__code_value
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__code_value
+msgid "Code Value"
+msgstr "Valor de código"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__default_value
+msgid "Default Value"
+msgstr "Por defecto"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_category__product_attribute_ids
+msgid "Default attributes"
+msgstr "Attributos por defecto"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__display_name
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__display_name
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_category__display_name
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_product__display_name
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template__display_name
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__display_name
+msgid "Display Name"
+msgstr "Nombre mostrado"
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__height
+msgid "Height"
+msgstr "Altura"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_category__id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_product__id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template__id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__id
+msgid "ID"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute____last_update
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value____last_update
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_category____last_update
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_product____last_update
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template____last_update
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value____last_update
+msgid "Last Modified on"
+msgstr "Última modificación el"
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__length
+msgid "Length"
+msgstr "Longitud"
+
+#. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_product_product
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_template_search_view
+msgid "Product"
+msgstr "Producto"
+
+#. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_product_attribute
+msgid "Product Attribute"
+msgstr "Atributo de producto"
+
+#. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_product_category
+msgid "Product Category"
+msgstr "Categoría de producto"
+
+#. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_product_template
+msgid "Product Template"
+msgstr "Plantilla de producto"
+
+#. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_product_template_attribute_value
+msgid "Product Template Attribute Value"
+msgstr "Valor de Atributo del Modelo de Producto"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__change_on_create
+msgid "Set on variant creation"
+msgstr "Fijar al crear variante"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__value_on_create
+msgid "Value to set on variant creation"
+msgstr "Valor al crear variante"
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__width
+msgid "Width"
+msgstr "Ancho"
