@@ -84,6 +84,8 @@
             <field name="arch" type="xml">
                 <group name="pricelist_rule_target" position="replace">
                     <group name="pricelist_rule_target">
+                        <field name="description" invisible="True"/>
+                        <field name="price" invisible="True"/>
                         <field name="category_ids" widget="many2many_tags" options="{'no_create':1}"/>
                         <field name="product_tmpl_ids" widget="many2many_tags" options="{'no_create':1}"/>
                         <field name="product_ids" widget="many2many_tags" options="{'no_create':1}"/>

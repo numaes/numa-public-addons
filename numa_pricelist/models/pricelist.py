@@ -93,15 +93,8 @@ class PricelistItem(models.Model):
     sequence = fields.Integer('Sequence')
     name = fields.Char('Name', compute=None,
                        default=_("<not defined>"), help="Explicit rule name for this pricelist line.")
-    description = fields.Text(
-        'Description', compute='_get_pricelist_item_description_price',
-        store=True,
-        help="Explicit rule description for this pricelist line."
-    )
-    price = fields.Char(
-        'Price', compute='_get_pricelist_item_description_price',
-        store=True,
-        help="Explicit rule name for this pricelist line.")
+    description = fields.Text('Description', help="Explicit rule description for this pricelist line.")
+    price = fields.Char('Price', help="Explicit rule name for this pricelist line.")
 
     # To avoid raises for unknown uses of the original update function
     def _get_pricelist_item_name_price(self):
@@ -114,11 +107,11 @@ class PricelistItem(models.Model):
         'product.product', string='Product Variants', ondelete='cascade', check_company=True,
         help="Specify a set of products if this rule only applies to one of them. Keep it empty otherwise.")
     category_ids = fields.Many2many(
-        'product.category', string='Product Categories', ondelete='cascade', check_company=True,
+        'product.category', string='Product Categories', ondelete='cascade',
         help="Specify some product categories if this rule only applies to products belonging to this category or "
              "its children categories. Keep it empty otherwise.")
     attribute_value_ids = fields.Many2many(
-        'product.attribute.value', string='Product Attribute Values', ondelete='cascade', check_company=True,
+        'product.attribute.value', string='Product Attribute Values', ondelete='cascade',
         help="Specify some product attribute values if this rule only applies to products having any of them. "
              "Keep it empty otherwise.")
 
@@ -144,11 +137,8 @@ class PricelistItem(models.Model):
     fixed_price = fields.Monetary('Fixed Price')
 
     @api.onchange('applied_on', 'category_ids', 'product_tmpl_ids', 'product_ids', 'attribute_value_ids',
-                  'compute_price', 'fixed_price',
+                  'compute_price', 'fixed_price', 'base_pricelist_id',
                   'pricelist_id', 'percent_price', 'price_discount', 'price_surcharge')
-    @api.depends('applied_on', 'category_ids', 'product_tmpl_ids', 'product_ids', 'attribute_value_ids',
-                 'compute_price', 'fixed_price',
-                 'pricelist_id', 'percent_price', 'price_discount', 'price_surcharge')
     def _get_pricelist_item_description_price(self):
         for item in self:
             names = []
