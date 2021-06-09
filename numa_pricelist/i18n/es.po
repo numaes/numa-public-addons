@@ -31,7 +31,7 @@ msgstr "Descuento %s %%"
 #: code:addons/numa_pricelist/models/pricelist.py:0
 #, python-format
 msgid "<not defined>"
-msgstr "<no definido"
+msgstr "<no definido>"
 
 #. module: numa_pricelist
 #: code:addons/numa_pricelist/models/pricelist.py:0

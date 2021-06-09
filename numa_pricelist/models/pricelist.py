@@ -94,7 +94,7 @@ class PricelistItem(models.Model):
     name = fields.Char('Name', compute=None,
                        default=_("<not defined>"), help="Explicit rule name for this pricelist line.")
     description = fields.Text('Description', help="Explicit rule description for this pricelist line.")
-    price = fields.Char('Price', help="Explicit rule name for this pricelist line.")
+    price = fields.Char('Price', compute=None, help="Explicit rule name for this pricelist line.")
 
     # To avoid raises for unknown uses of the original update function
     def _get_pricelist_item_name_price(self):
@@ -181,12 +181,7 @@ class PricelistItem(models.Model):
                 price_description = _("%s %% discount", item.percent_price)
             else:
                 # It's a formula
-                fields = self.fields_get([])
-
-                selection_name = _('<undefined>')
-                for selection_description in fields['base']['selection']:
-                    if selection_description[0] == item.base:
-                        selection_name = selection_description[1]
+                selection_name = dict(self._fields['base']._description_selection(self.env)).get(self.base)
                 price_description = _('Based on %s') % selection_name
                 if item.base == 'pricelist':
                     price_description += ' (%s)' % \
@@ -195,7 +190,7 @@ class PricelistItem(models.Model):
 
                 price_description += ', ' + _("%(percentage)s %% discount and %(price)s surcharge",
                                               percentage=item.price_discount, price=item.price_surcharge)
-            item.price = price_description
+            item.price = price_description or False
 
     def check_if_triggered(self, product, variants, qty, partner, categories, date, uom_id):
         if not self.product_tmpl_ids and all([product != v for v in self.product_ids]):
