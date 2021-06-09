@@ -103,6 +103,7 @@ class PricelistItem(models.Model):
         store=True,
         help="Explicit rule name for this pricelist line.")
 
+    # To avoid raises for unknown uses of the original update function
     def _get_pricelist_item_name_price(self):
         self._get_pricelist_item_description_price()
 
@@ -113,11 +114,11 @@ class PricelistItem(models.Model):
         'product.product', string='Product Variants', ondelete='cascade', check_company=True,
         help="Specify a set of products if this rule only applies to one of them. Keep it empty otherwise.")
     category_ids = fields.Many2many(
-        'product.category', string='Product Categories', ondelete='cascade',
+        'product.category', string='Product Categories', ondelete='cascade', check_company=True,
         help="Specify some product categories if this rule only applies to products belonging to this category or "
              "its children categories. Keep it empty otherwise.")
     attribute_value_ids = fields.Many2many(
-        'product.attribute.value', string='Product Attribute Values', ondelete='cascade',
+        'product.attribute.value', string='Product Attribute Values', ondelete='cascade', check_company=True,
         help="Specify some product attribute values if this rule only applies to products having any of them. "
              "Keep it empty otherwise.")
 
