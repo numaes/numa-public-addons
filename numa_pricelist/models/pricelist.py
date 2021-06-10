@@ -42,12 +42,13 @@ class Pricelist(models.Model):
         parameters = []
 
         for product, quantity, partner in products_qty_partner:
+            index = product.id
             product = product.with_context(uom=uom_id)
             if product._name == "product.template":
                 variants = [p.id for p in
                             list(chain.from_iterable(product.product_variant_ids))]
             else:
-                variants = [product.id]
+                variants = [product]
                 product = product.product_tmpl_id
 
             categories = []
@@ -57,6 +58,7 @@ class Pricelist(models.Model):
                 next_category = next_category.parent_id
 
             parameters.append((
+                index,
                 product,
                 variants,
                 quantity,
@@ -65,7 +67,7 @@ class Pricelist(models.Model):
             ))
 
         result = {}
-        for product, variants, quantity, partner, categories in parameters:
+        for index, product, variants, quantity, partner, categories in parameters:
             price = 0.0
             suitable_rule = None
             for rule in self.item_ids.sorted(key=lambda r: r.sequence):
@@ -81,7 +83,7 @@ class Pricelist(models.Model):
                         suitable_rule = rule
                         break
 
-            result[product.id] = (price, suitable_rule.id if suitable_rule else False)
+            result[index] = (price, suitable_rule.id if suitable_rule else False)
 
         return result
 
@@ -193,29 +195,31 @@ class PricelistItem(models.Model):
             item.price = price_description or False
 
     def check_if_triggered(self, product, variants, qty, partner, categories, date, uom_id):
-        if not self.product_tmpl_ids and all([product != v for v in self.product_ids]):
+        if self.product_tmpl_ids and all([product != v for v in self.product_ids]):
             return False
-        if not self.product_ids and all([all([pv for pv in variants]) for v in self.variant_ids]):
+        if self.product_ids and all([all([pv for pv in variants]) for v in self.variant_ids]):
             return False
-        if not self.min_quantity and self.min_quantity > qty:
+        if self.min_quantity and self.min_quantity > qty:
             return False
-        if not self.partner_id and all([partner != p for p in self.partner_ids]):
+        #if self.partner_id and all([partner != p for p in self.partner_ids]):
+        #    return False
+        if self.category_ids and all([all([pc != c for pc in categories]) for c in self.category_ids]):
             return False
-        if not self.category_ids and all([all([pc != c for pc in categories]) for c in self.category_ids]):
-            return False
-        if not self.attribute_value_ids and \
-                all([all([av != pav.product_attribute_value_id for pav in variants.attribute_value_ids])
+        if self.attribute_value_ids and \
+                all([all([av != pav.product_attribute_value_id
+                          for pv in variants
+                          for pav in pv.product_template_attribute_value_ids])
                      for av in self.attribute_value_ids]):
             return False
 
         return True
 
     def compute_base(self, product, variants, qty, partner, categories, date, uom_id):
-        variant = variants[0]
+        variant = variants[0] if variants else product
         price = 0.0
         if self.base == 'list_price':
             price = variant.list_price
-            source_currency = variant.price_currency_id
+            source_currency = variant.currency_id
         elif self.base == 'standard_price':
             price = variant.standard_price
             source_currency = variant.cost_currency_id
@@ -224,8 +228,8 @@ class PricelistItem(models.Model):
                 raise UserError(_('A rule says price should be base on another pricelist, '
                                   'but none is defined (%s)') % self.display_name)
 
-            price = self.base_pricelist_id._compute_price_rule(
-                [(variant, qty, partner)], date, uom_id)[variant.id][0]
+            price, rule = self.base_pricelist_id._compute_price_rule(
+                [(variant, qty, partner)], date, uom_id)[variant.id]
             source_currency = self.base_pricelist_id.currency_id or \
                               self.base_pricelist_id.company_id.currency_id
         elif self.base == 'supplier':
@@ -239,7 +243,7 @@ class PricelistItem(models.Model):
         return source_currency._convert(
             price,
             self.pricelist_id.currency_id,
-            self.pricelist_id.company_id,
+            self.pricelist_id.company_id or self.env.company,
             date,
             round=False
         )

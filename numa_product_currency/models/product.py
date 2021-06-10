@@ -31,16 +31,22 @@ class ProductTemplate(models.Model):
 
         if price_type == 'list_price':
             for template in self:
-                prices[template.id] = template.currency_id.compute(
+                prices[template.id] = template.currency_id._convert(
                     prices[template.id],
-                    currency or template.currency_id or self.env.company.currency_id
+                    currency or template.currency_id or self.env.company.currency_id,
+                    company,
+                    fields.Date.context_today(self),
+                    round=False
                 )
         else:
             for template in self:
                 if template.cost_currency_id:
-                    prices[template.id] = template.cost_currency_id.compute(
+                    prices[template.id] = template.cost_currency_id._convert(
                         prices[template.id],
-                        currency or template.currency_id or self.env.company.currency_id
+                        currency or template.currency_id or self.env.company.currency_id,
+                        company,
+                        fields.Date.context_today(self),
+                        round=False
                     )
 
         return prices
