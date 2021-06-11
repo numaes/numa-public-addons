@@ -41,11 +41,15 @@ class Pricelist(models.Model):
         # Prepare analysis parameters
         parameters = []
 
-        for product, quantity, partner in products_qty_partner:
+        for product_id, quantity, partner in products_qty_partner:
+            if isinstance(product_id, (int)):
+                product = self.env['product.product'].browse(product_id)
+            else:
+                product = product_id
             index = product.id
             product = product.with_context(uom=uom_id)
             if product._name == "product.template":
-                variants = [p.id for p in
+                variants = [p for p in
                             list(chain.from_iterable(product.product_variant_ids))]
             else:
                 variants = [product]
