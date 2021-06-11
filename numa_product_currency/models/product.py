@@ -34,7 +34,7 @@ class ProductTemplate(models.Model):
                 prices[template.id] = template.currency_id._convert(
                     prices[template.id],
                     currency or template.currency_id or self.env.company.currency_id,
-                    company,
+                    company or self.env.company,
                     fields.Date.context_today(self),
                     round=False
                 )
@@ -44,7 +44,7 @@ class ProductTemplate(models.Model):
                     prices[template.id] = template.cost_currency_id._convert(
                         prices[template.id],
                         currency or template.currency_id or self.env.company.currency_id,
-                        company,
+                        company or self.env.company,
                         fields.Date.context_today(self),
                         round=False
                     )
