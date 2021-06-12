@@ -69,16 +69,22 @@ class ProductProduct(models.Model):
 
         if price_type == 'list_price':
             for product in self:
-                prices[product.id] = product.currency_id.compute(
+                prices[product.id] = product.currency_id._convert(
                     prices[product.id],
-                    currency or product.currency_id or self.env.company.currency_id
+                    currency or product.currency_id or self.env.company.currency_id,
+                    company or self.env.company,
+                    fields.Date.context_today(self),
+                    round=False
                 )
         else:
             for product in self:
                 if product.cost_currency_id: # forzar grabación
-                    prices[product.id] = product.cost_currency_id.compute(
+                    prices[product.id] = product.cost_currency_id._convert(
                         prices[product.id],
-                        currency or product.currency_id or self.env.company.currency_id
+                        currency or product.currency_id or self.env.company.currency_id,
+                        company or self.env.company,
+                        fields.Date.context_today(self),
+                        round=False
                     )
 
         return prices

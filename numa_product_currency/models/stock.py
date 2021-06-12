@@ -37,11 +37,15 @@ class StockMove(models.Model):
             if not self.company_id.currency_id.id == product_id.cost_currency.id:
                 tuple[2]['amount_currency'] = tuple[2]['debit'] - tuple[2]['credit']
                 tuple[2]['currency_id'] = product_id.cost_currency.id
-                tuple[2]['debit'] = product_id.cost_currency.compute(
-                    tuple[2]['debit'], self.company_id.currency_id, round=False
+                tuple[2]['debit'] = product_id.cost_currency._convert(
+                    tuple[2]['debit'], self.company_id.currency_id,
+                    self.company_id, fields.Date.context_today(self),
+                    round=False
                 )
-                tuple[2]['credit'] = product_id.cost_currency.compute(
-                    tuple[2]['credit'], self.company_id.currency_id, round=False
+                tuple[2]['credit'] = product_id.cost_currency._convert(
+                    tuple[2]['credit'], self.company_id.currency_id,
+                    self.company_id, fields.Date.context_today(self),
+                    round=False
                 )
             new_res.append(tuple)
 
@@ -57,17 +61,21 @@ class StockMove(models.Model):
             # 1) get_price_unit() is supposed to be called only through move.action_done(),
             # 2) the move hasn't yet the correct date (currently it is the expected date, after
             #    completion of action_done() it will be now() )
-            price_unit = self.company_id.currency_id.compute(
+            price_unit = self.company_id.currency_id._convert(
                 self.purchase_line_id._get_stock_move_price_unit(),
                 self.product_id.cost_currency,
+                self.company_id,
+                fields.Date.context_today(self),
                 round=False,
             )
             self.write({'price_unit': price_unit})
             return price_unit
 
-        return self.company_id.currency_id.compute(
+        return self.company_id.currency_id._convert(
             super(StockMove, self).get_price_unit(),
             self.product_id.cost_currency,
+            self.company_id,
+            fields.Date.context_today(self),
             round=False,
         )
 
