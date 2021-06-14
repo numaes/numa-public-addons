@@ -17,11 +17,11 @@
                         <button name="trigger"
                                 type="object"
                                 string="Manual trigger"
-                                states="testing"/>
+                                states="testing,maintenance"/>
                         <button name="action_into_operation"
                                 type="object"
                                 string="Set normal operation"
-                                states="draft,running,maintenance"/>
+                                states="draft,testing,maintenance"/>
                         <button name="action_into_maintenance"
                                 type="object"
                                 string="Go into maintenance mode"
