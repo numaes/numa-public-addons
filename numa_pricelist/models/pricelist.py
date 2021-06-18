@@ -118,12 +118,13 @@ class PricelistItem(models.Model):
              "Keep it empty otherwise.")
 
     base = fields.Selection(
-        selection_add=[('supplier', "Prefered supplier's cost")],
+        selection_add=[('supplier', "Prefered supplier's cost"), ('context', 'Context price')],
         help="Base price for computation.\n"
              "Sales Price: The base price will be the Sales Price.\n"
              "Cost Price : The base price will be the cost price.\n"
              "Prefered Supplier's price : The vendor's price.'\n"
-             "Other Pricelist : Computation of the base price based on another Pricelist.",
+             "Other Pricelist : Computation of the base price based on another Pricelist.\n"
+             "Context price: Price dependant on context, for example other factor in Sale Order line.\n",
         ondelete={'supplier': 'set default'}
     )
 
@@ -239,6 +240,11 @@ class PricelistItem(models.Model):
             else:
                 price = variant.standard_price
                 source_currency = variant.cost_currency_id
+        elif self.base == 'context':
+            price = self.env.context.get('default_price', 0.0)
+            currency_id = self.env.context.get('default_currency_id')
+            source_currency = self.env['res.currency'].browse(currency_id) if currency_id else \
+                self.pricelist_id.currency_id
 
         return source_currency._convert(
             price,
