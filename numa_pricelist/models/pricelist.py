@@ -125,7 +125,7 @@ class PricelistItem(models.Model):
              "Prefered Supplier's price : The vendor's price.'\n"
              "Other Pricelist : Computation of the base price based on another Pricelist.\n"
              "Context price: Price dependant on context, for example other factor in Sale Order line.\n",
-        ondelete={'supplier': 'set default'}
+        ondelete={'supplier': 'set default', 'context': 'set default'}
     )
 
     price_surcharge = fields.Monetary(
