@@ -8,7 +8,7 @@
             <field name="inherit_id" ref="sale.view_order_form" />
             <field name="arch" type="xml">
                 <xpath expr="//field[@name='order_line']/form/field[@name='name']" position="after">
-                    <group>
+                    <group attrs="{'invisible': [('display_type', '=', False)]}">
                         <group>
                             <field name="unit_width"/>
                             <field name="unit_length"/>
