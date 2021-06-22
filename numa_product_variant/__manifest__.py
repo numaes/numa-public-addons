@@ -12,7 +12,7 @@ It adds:
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'product'],
+    'depends': ['base', 'product', 'numa_physical_product'],
     'data': [
         'views/product_views.xml',
     ],

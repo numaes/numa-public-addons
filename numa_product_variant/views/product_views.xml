@@ -30,6 +30,7 @@
                 <xpath expr="//page/field[@name='value_ids']/tree/field[@name='name']" position="before">
                     <field name="code_value"/>
                     <field name="value_on_create"/>
+                    <field name="weight_factor"/>
                 </xpath>
             </field>
         </record>

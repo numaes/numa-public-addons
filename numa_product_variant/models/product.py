@@ -23,6 +23,7 @@ class ProductAttributeValue(models.Model):
 
     code_value = fields.Char('Code Value', required=True)
     value_on_create = fields.Float('Value to set on variant creation')
+    weight_factor = fields.Float('Weight factor', default=1.0)
 
 
 class ProductTemplateAttributeValue(models.Model):
@@ -179,3 +180,24 @@ class ProductProduct(models.Model):
                         variant.onchange_variant_dimensions()
 
         return new_variants
+
+    @api.onchange('weight_kind', 'weight_factor', 'surface', 'product_width',
+                  'product_height', 'product_length', 'volume')
+    def onchange_variant_weight(self):
+        for p in self:
+            weight = 0.0
+            if p.weight_kind == 'length':
+                weight = p.weight_factor * p.product_length
+            elif p.weight_kind == 'width':
+                weight = p.weight_factor * p.product_width
+            elif p.weight_kind == 'height':
+                weight = p.weight_factor * p.product_height
+            elif p.weight_kind == 'surface':
+                weight = p.weight_factor * p.surface
+            elif p.weight_kind == 'volume':
+                weight = p.weight_factor * p.volume
+
+            for ptav in p.product_template_attribute_value_ids:
+                weight *= ptav.weight_factor
+
+            p.variant_weight = weight
