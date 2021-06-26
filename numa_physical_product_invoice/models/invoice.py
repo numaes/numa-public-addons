@@ -40,8 +40,6 @@ class Invoice(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         new_invoices = super().create(vals_list)
-        new_invoices._recompute_dynamic_lines(recompute_all_taxes=True)
-        new_invoices._compute_amount()
         return new_invoices
 
     def _recompute_tax_lines(self, recompute_tax_base_amount=False):
@@ -244,6 +242,12 @@ class InvoiceLine(models.Model):
 
     price_qty = fields.Float(string='Price Qty')
     unit_price_uom_id = fields.Many2one('uom.uom', 'Price UoM')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        new_records = super().create(vals_list)
+        new_records.compute_totals()
+        return new_records
 
     @api.onchange('product_id')
     def product_id_change(self):
