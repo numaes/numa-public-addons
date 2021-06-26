@@ -1,6 +1,7 @@
+import logging
+
 from odoo import fields, models, api
 
-import logging
 _logger = logging.getLogger(__name__)
 
 UNIT_PER_TYPE = {
@@ -134,3 +135,101 @@ class SaleOrderLine(models.Model):
                 'price_total': taxes['total_included'],
                 'price_subtotal': taxes['total_excluded'],
             })
+
+    def _prepare_invoice_line(self, **optional_values):
+        """
+        Prepare the dict of values to create the new invoice line for a sales order line.
+
+        """
+        self.ensure_one()
+
+        new_optional_values = dict(optional_values.items())
+        product = self.product_id
+        if product.price_base != 'normal':
+            new_optional_values['quantity'], new_optional_values['price_qty'] = self._get_qty_to_invoice()
+            new_optional_values['unit_price_uom_id'] = self._get_price_uom_id()
+
+        return super()._prepare_invoice_line(**new_optional_values)
+
+    def _get_price_uom_id(self):
+        uom_model = self.env['uom.uom']
+
+        self.ensure_one()
+
+        if not self.display_type and self.product_id:
+            if self.product_id.price_base == 'normal':
+                return self.product_id.uom_id
+            else:
+                return uom_model.search(
+                    [('name', '=', UNIT_PER_TYPE[self.product_id.price_base])],
+                    limit=1
+                )
+
+    def _get_qty_to_invoice(self):
+        self.ensure_one()
+
+        if not self.display_type and self.product_id.price_base != 'normal':
+            if self.product_id.price_base in ['weight', 'volume']:
+                return self._get_qty_to_invoice_weight_or_volume()
+            elif self.product_id.price_base == 'length':
+                return self.unit_length * self.qty_to_invoice, \
+                       self.unit_length * self.qty_to_invoice
+            elif self.product_id.price_base == 'width':
+                return self.unit_width * self.qty_to_invoice, \
+                       self.unit_width * self.qty_to_invoice
+            elif self.product_id.price_base == 'height':
+                return self.unit_height * self.qty_to_invoice, \
+                       self.unit_height * self.qty_to_invoice
+
+        return self.qty_to_invoice, self.qty_to_invoice
+
+    def _get_qty_to_invoice_weight_or_volume(self):
+        self.ensure_one()
+
+        if self.qty_delivered_method == 'stock_move':
+            outgoing_moves, incoming_moves = self._get_outgoing_incoming_moves()
+
+            valid_moves = (outgoing_moves | incoming_moves).filtered(lambda m: m.state == 'done')
+
+            time_line_moves = sorted(valid_moves, key=lambda x: x.picking_id and x.picking_id.date)
+            qty_offset = self.qty_invoiced
+            move_list = []
+            for move in time_line_moves:
+                qty = move.product_uom._compute_quantity(move.product_uom_qty, self.product_id.uom_id,
+                                                         rounding_method='HALF-UP')
+                if move.location_dest_id.usage == "customer":
+                    if not move.origin_returned_move_id or (move.origin_returned_move_id and move.to_refund):
+                        if qty_offset <= qty:
+                            if qty - qty_offset >= 0.0:
+                                move_list.append((qty - qty_offset, move))
+                        qty_offset -= qty
+                elif move.location_dest_id.usage != "customer" and move.to_refund:
+                    qty_offset += qty
+
+            qty_price = 0.0
+            qty_to_add = self.qty_to_invoice
+
+            for qty, move in move_list:
+                full_move_qty = move.product_uom._compute_quantity(
+                    move.product_uom_qty, self.product_id.uom_id,
+                    rounding_method='HALF-UP'
+                )
+                if move.location_dest_id.usage == "customer":
+                    if not move.origin_returned_move_id or (move.origin_returned_move_id and move.to_refund):
+                        if qty_to_add > 0.0:
+                            if move.product_id.price_base == 'weight':
+                                qty_price += min(qty_to_add, qty) * (move.total_weight / full_move_qty)
+                            elif move.product_id.price_base == 'volume':
+                                qty_price += min(qty_to_add, qty) * (move.total_volume / full_move_qty)
+                        qty_to_add -= qty
+                elif move.location_dest_id.usage != "customer" and move.to_refund:
+                    if move.product_id.price_base == 'weight':
+                        qty_price -= qty * (move.total_weight / full_move_qty)
+                    elif move.product_id.price_base == 'volume':
+                        qty_price -= qty * (move.total_volume / full_move_qty)
+                    qty_to_add += qty
+
+            return max(qty_to_add, self.qty_to_invoice), qty_price
+        else:
+            return self.qty_to_invoice, self.qty_to_invoice
+

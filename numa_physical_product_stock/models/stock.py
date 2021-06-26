@@ -28,6 +28,7 @@ class StockPicking(models.Model):
     picking_weight = fields.Float('Weight', compute='_compute_weight_volume')
     picking_volume = fields.Float('Volume', compute='_compute_weight_volume')
 
+    @api.onchange('move_lines')
     @api.depends('move_lines')
     def _compute_weight_volume(self):
         for picking in self:
@@ -53,6 +54,7 @@ class StockMove(models.Model):
     total_volume = fields.Float(string='Total Volume')
 
     @api.onchange('product_id', 'product_qty', 'product_uom_qty')
+    @api.depends('product_id', 'product_qty', 'product_uom_qty')
     def onchange_qty(self):
         for move in self:
             normalized_qty = move.product_uom._compute_quantity(move.product_uom_qty, move.product_id.uom_id) \
@@ -60,4 +62,11 @@ class StockMove(models.Model):
             move.total_surface = normalized_qty * move.unit_surface
             move.total_weight = normalized_qty * move.unit_weight
             move.total_volume = normalized_qty * move.unit_volume
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        new_moves = super().create(vals_list)
+        new_moves.onchange_qty()
+        return new_moves
+
 

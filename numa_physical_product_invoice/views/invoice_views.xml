@@ -27,12 +27,12 @@
                     </group>
                 </xpath>
                 <xpath expr="//field[@name='invoice_line_ids']/form//field[@name='price_unit']" position="after">
-                    <field name="unit_price_uom_id"/>
                     <field name="price_qty"/>
+                    <field name="unit_price_uom_id"/>
                 </xpath>
                 <xpath expr="//field[@name='invoice_line_ids']/tree/field[@name='price_unit']" position="after">
-                    <field name="unit_price_uom_id"/>
                     <field name="price_qty"/>
+                    <field name="unit_price_uom_id"/>
                 </xpath>
                 <xpath expr="//field[@name='date']" position="after">
                     <group string="Logistic Information" name="logistic_information">
