@@ -43,6 +43,9 @@ class Invoice(models.Model):
         new_invoices._compute_amount()
         return new_invoices
 
+    def write(self, vals):
+        return super().write(vals)
+
     def _recompute_tax_lines(self, recompute_tax_base_amount=False):
         ''' Compute the dynamic tax lines of the journal entry.
 
@@ -255,6 +258,7 @@ class InvoiceLine(models.Model):
         for il in self:
             if not il.move_id.is_invoice(include_receipts=True):
                 continue
+            il.compute_price()
             il.compute_unit_price_uom()
             il.compute_totals()
 
@@ -289,7 +293,6 @@ class InvoiceLine(models.Model):
                 il.unit_price_uom_id = False
 
     @api.onchange('quantity', 'product_uom_id')
-    @api.depends('quantity', 'product_uom_id')
     def compute_totals(self):
         for il in self:
             if not il.move_id.is_invoice(include_receipts=True):
@@ -303,10 +306,9 @@ class InvoiceLine(models.Model):
             il.total_weight = normalized_qty * il.unit_weight
             il.total_volume = normalized_qty * il.unit_volume
 
-            il.compute_price()
+            il._compute_amount()
 
     @api.onchange('total_surface', 'total_weight', 'total_volume', 'quantity', 'product_uom_id')
-    @api.depends('total_surface', 'total_weight', 'total_volume', 'quantity', 'product_uom_id')
     def compute_price(self):
         for il in self:
             if not il.move_id.is_invoice(include_receipts=True):
@@ -329,8 +331,6 @@ class InvoiceLine(models.Model):
             else:
                 price_qty = normalized_qty
             il.price_qty = price_qty
-            il.flush()
-
             il._compute_amount()
 
     @api.onchange('price_qty', 'price_unit', 'tax_ids')
@@ -365,16 +365,18 @@ class InvoiceLine(models.Model):
         )
 
     @api.model
-    def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes, price_subtotal, force_computation=False):
+    def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes,
+                                           price_subtotal, force_computation=False):
         ''' Disable quantity, discount and price_unit recomputation'''
 
         return {}
 
     @api.onchange('quantity', 'discount', 'price_unit', 'tax_ids')
     def _onchange_price_subtotal(self):
-        self.compute_price()
+        self._compute_amount()
 
-    def _get_price_total_and_subtotal(self, price_unit=None, quantity=None, discount=None, currency=None, product=None, partner=None, taxes=None, move_type=None):
+    def _get_price_total_and_subtotal(self, price_unit=None, quantity=None, discount=None, currency=None, product=None,
+                                      partner=None, taxes=None, move_type=None):
         self.ensure_one()
         return self._get_price_total_and_subtotal_model(
             price_unit=price_unit or self.price_unit,
