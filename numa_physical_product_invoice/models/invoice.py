@@ -313,6 +313,12 @@ class InvoiceLine(models.Model):
         for il in self:
             if not il.move_id.is_invoice(include_receipts=True):
                 continue
+
+            if not il.product_id:
+                il.price_qyt = il.quantity
+                il._compute_amount()
+                continue
+
             normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id) \
                              if il.product_uom_id else il.quantity
             price_type = il.product_id.price_base
