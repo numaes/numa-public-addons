@@ -315,7 +315,7 @@ class InvoiceLine(models.Model):
                 continue
 
             if not il.product_id:
-                il.price_qyt = il.quantity
+                il.price_qty = il.quantity
                 il._compute_amount()
                 continue
 
@@ -369,13 +369,6 @@ class InvoiceLine(models.Model):
             price_subtotal=price_subtotal or self.price_qty * self.price_unit * (1.0 - self.discount/100.0),
             force_computation=force_computation,
         )
-
-    @api.model
-    def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes,
-                                           price_subtotal, force_computation=False):
-        ''' Disable quantity, discount and price_unit recomputation'''
-
-        return {}
 
     @api.onchange('quantity', 'discount', 'price_unit', 'tax_ids')
     def _onchange_price_subtotal(self):
