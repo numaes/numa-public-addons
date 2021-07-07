@@ -40,9 +40,11 @@ class Invoice(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         new_invoices = super().create(vals_list)
-        new_invoices._recompute_dynamic_lines(recompute_all_taxes=True)
         new_invoices._compute_amount()
         return new_invoices
+
+    def write(self, vals):
+        return super().write(vals)
 
     def _recompute_tax_lines(self, recompute_tax_base_amount=False):
         ''' Compute the dynamic tax lines of the journal entry.
@@ -245,16 +247,28 @@ class InvoiceLine(models.Model):
     price_qty = fields.Float(string='Price Qty', default=1.0)
     unit_price_uom_id = fields.Many2one('uom.uom', 'Price UoM')
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        new_records = super().create(vals_list)
+        new_records._compute_amount()
+        return new_records
+
     @api.onchange('product_id')
     def product_id_change(self):
         for il in self:
+            if not il.move_id.is_invoice(include_receipts=True):
+                continue
+            il.compute_price()
             il.compute_unit_price_uom()
             il.compute_totals()
 
     @api.onchange('product_uom_id', 'quantity')
     def product_uom_id_change(self):
         for il in self:
-            product = il.product_id
+            if not il.move_id.is_invoice(include_receipts=True):
+                continue
+            if not il.product_id or not il.product_uom_id:
+                continue
             il.compute_unit_price_uom()
             il.compute_totals()
 
@@ -262,9 +276,14 @@ class InvoiceLine(models.Model):
         uom_model = self.env['uom.uom']
 
         for il in self:
+            if not il.move_id.is_invoice(include_receipts=True):
+                continue
             if il.product_id:
+                normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id) \
+                    if il.product_uom_id else il.quantity
                 if il.product_id.price_base == 'normal':
                     il.unit_price_uom_id = il.product_id.uom_id
+                    il.price_qty = normalized_qty
                 else:
                     il.unit_price_uom_id = uom_model.search(
                         [('name', '=', UNIT_PER_TYPE[il.product_id.price_base])],
@@ -274,21 +293,26 @@ class InvoiceLine(models.Model):
                 il.unit_price_uom_id = False
 
     @api.onchange('quantity', 'product_uom_id')
-    @api.depends('quantity', 'product_uom_id')
     def compute_totals(self):
         for il in self:
+            if not il.move_id.is_invoice(include_receipts=True):
+                continue
+            if not il.product_id or not il.product_uom_id:
+                continue
+
             normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id) \
                 if il.product_uom_id else il.quantity
             il.total_surface = normalized_qty * il.unit_surface
             il.total_weight = normalized_qty * il.unit_weight
             il.total_volume = normalized_qty * il.unit_volume
 
-            il.compute_price()
+            il._compute_amount()
 
     @api.onchange('total_surface', 'total_weight', 'total_volume', 'quantity', 'product_uom_id')
-    @api.depends('total_surface', 'total_weight', 'total_volume', 'quantity', 'product_uom_id')
     def compute_price(self):
         for il in self:
+            if not il.move_id.is_invoice(include_receipts=True):
+                continue
             normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id) \
                              if il.product_uom_id else il.quantity
             price_type = il.product_id.price_base
@@ -307,21 +331,25 @@ class InvoiceLine(models.Model):
             else:
                 price_qty = normalized_qty
             il.price_qty = price_qty
-            il.flush()
-
             il._compute_amount()
 
     @api.onchange('price_qty', 'price_unit', 'tax_ids')
     @api.depends('price_qty', 'price_unit', 'tax_ids')
     def _compute_amount(self):
         for il in self:
+            if not il.move_id.is_invoice(include_receipts=True):
+                continue
             if il.product_id and il.move_id and il.move_id.partner_id:
-                taxes = il.tax_ids.compute_all(il.price_unit, il.move_id.currency_id, il.price_qty,
-                                               product=il.product_id, partner=il.move_id.partner_id)
+                taxes = il.tax_ids.compute_all(il.price_unit * (1.00 - (il.discount / 100.0)), il.move_id.currency_id,
+                                               il.price_qty, product=il.product_id, partner=il.move_id.partner_id)
                 il.update({
                     'price_total': taxes['total_included'],
                     'price_subtotal': taxes['total_excluded'],
                 })
+                il.flush()
+                il.update(il._get_fields_onchange_subtotal())
+                il._onchange_balance()
+                il._onchange_amount_currency()
 
     def _get_fields_onchange_balance(self, quantity=None, discount=None, amount_currency=None, move_type=None, currency=None, taxes=None, price_subtotal=None, force_computation=False):
         self.ensure_one()
@@ -332,6 +360,32 @@ class InvoiceLine(models.Model):
             move_type=move_type or self.move_id.move_type,
             currency=currency or self.currency_id or self.move_id.currency_id,
             taxes=taxes or self.tax_ids,
-            price_subtotal=price_subtotal or self.price_subtotal,
+            price_subtotal=price_subtotal or self.price_qty * self.price_unit * (1.0 - self.discount/100.0),
             force_computation=force_computation,
         )
+
+    @api.model
+    def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes,
+                                           price_subtotal, force_computation=False):
+        ''' Disable quantity, discount and price_unit recomputation'''
+
+        return {}
+
+    @api.onchange('quantity', 'discount', 'price_unit', 'tax_ids')
+    def _onchange_price_subtotal(self):
+        self._compute_amount()
+
+    def _get_price_total_and_subtotal(self, price_unit=None, quantity=None, discount=None, currency=None, product=None,
+                                      partner=None, taxes=None, move_type=None):
+        self.ensure_one()
+        return self._get_price_total_and_subtotal_model(
+            price_unit=price_unit or self.price_unit,
+            quantity=quantity or self.price_qty,
+            discount=discount or self.discount,
+            currency=currency or self.currency_id,
+            product=product or self.product_id,
+            partner=partner or self.partner_id,
+            taxes=taxes or self.tax_ids,
+            move_type=move_type or self.move_id.move_type,
+        )
+
