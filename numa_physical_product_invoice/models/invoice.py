@@ -242,7 +242,7 @@ class InvoiceLine(models.Model):
     total_weight = fields.Float(string='Total Weight')
     total_volume = fields.Float(string='Total Volume')
 
-    price_qty = fields.Float(string='Price Qty')
+    price_qty = fields.Float(string='Price Qty', default=1.0)
     unit_price_uom_id = fields.Many2one('uom.uom', 'Price UoM')
 
     @api.onchange('product_id')
