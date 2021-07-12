@@ -13,7 +13,7 @@ for products where the weight can be calculated on a factor multiplied by length
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'product', 'stock'],
+    'depends': ['base', 'product', 'stock', 'stock_account', 'purchase_stock'],
     'data': ['views/product_views.xml',
              'data/product_data.xml'],
     'demo_xml': [],
