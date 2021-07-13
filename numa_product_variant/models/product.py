@@ -198,6 +198,6 @@ class ProductProduct(models.Model):
                 weight = p.weight_factor * p.volume
 
             for ptav in p.product_template_attribute_value_ids:
-                weight *= ptav.attribute_id.weight_factor
+                weight *= ptav.product_attribute_value_id.weight_factor
 
             p.variant_weight = weight
