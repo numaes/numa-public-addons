@@ -388,3 +388,9 @@ class InvoiceLine(models.Model):
             move_type=move_type or self.move_id.move_type,
         )
 
+    @api.model
+    def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes, price_subtotal, force_computation=False):
+        return {}
+
+
+

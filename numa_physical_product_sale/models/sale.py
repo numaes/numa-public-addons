@@ -274,8 +274,3 @@ class SaleOrderLine(models.Model):
             res = {k: currency.round(v) for k, v in res.items()}
         return res
 
-    @api.model
-    def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes, price_subtotal, force_computation=False):
-        return {}
-
-
