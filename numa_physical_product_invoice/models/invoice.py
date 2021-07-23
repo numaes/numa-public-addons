@@ -389,8 +389,13 @@ class InvoiceLine(models.Model):
         )
 
     @api.model
-    def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes, price_subtotal, force_computation=False):
-        return {}
-
+    def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes,
+                                           price_subtotal, force_computation=False):
+        if self.product_id:
+            return {}
+        else:
+            super()._get_fields_onchange_balance_model(
+                quantity, discount, amount_currency, move_type, currency, taxes,
+                price_subtotal, force_computation=force_computation)
 
 
