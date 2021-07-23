@@ -394,7 +394,7 @@ class InvoiceLine(models.Model):
         if self.product_id:
             return {}
         else:
-            super()._get_fields_onchange_balance_model(
+            return super()._get_fields_onchange_balance_model(
                 quantity, discount, amount_currency, move_type, currency, taxes,
                 price_subtotal, force_computation=force_computation)
 
