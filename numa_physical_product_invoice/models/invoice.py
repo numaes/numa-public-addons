@@ -30,12 +30,16 @@ class Invoice(models.Model):
 
     @api.depends('line_ids')
     def _compute_weight_volume(self):
-        for invoice in self.filtered(lambda move: move.is_invoice()):
-            invoice.invoice_weight = 0.0
-            invoice.invoice_volume = 0.0
-            for line in invoice.invoice_line_ids:
-                invoice.invoice_weight += line.total_weight
-                invoice.invoice_volume += line.total_volume
+        for invoice in self:
+            if invoice.is_invoice():
+                invoice.invoice_weight = 0.0
+                invoice.invoice_volume = 0.0
+                for line in invoice.invoice_line_ids:
+                    invoice.invoice_weight += line.total_weight
+                    invoice.invoice_volume += line.total_volume
+            else:
+                invoice.invoice_weight = 0.0
+                invoice.invoice_volume = 0.0
 
     @api.model_create_multi
     def create(self, vals_list):
