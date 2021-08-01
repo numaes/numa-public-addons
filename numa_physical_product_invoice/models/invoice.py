@@ -41,15 +41,6 @@ class Invoice(models.Model):
                 invoice.invoice_weight = 0.0
                 invoice.invoice_volume = 0.0
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        new_invoices = super().create(vals_list)
-        new_invoices._compute_amount()
-        return new_invoices
-
-    def write(self, vals):
-        return super().write(vals)
-
     def _recompute_tax_lines(self, recompute_tax_base_amount=False):
         ''' Compute the dynamic tax lines of the journal entry.
 
@@ -251,19 +242,13 @@ class InvoiceLine(models.Model):
     price_qty = fields.Float(string='Price Qty', default=1.0)
     unit_price_uom_id = fields.Many2one('uom.uom', 'Price UoM')
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        new_records = super().create(vals_list)
-        new_records._compute_amount()
-        return new_records
-
     @api.onchange('product_id')
     def product_id_change(self):
         for il in self:
             if not il.move_id.is_invoice(include_receipts=True):
                 continue
-            il.compute_price()
             il.compute_unit_price_uom()
+            il.compute_price()
             il.compute_totals()
 
     @api.onchange('product_uom_id', 'quantity')
@@ -287,7 +272,6 @@ class InvoiceLine(models.Model):
                     if il.product_uom_id else il.quantity
                 if il.product_id.price_base == 'normal':
                     il.unit_price_uom_id = il.product_id.uom_id
-                    il.price_qty = normalized_qty
                 else:
                     il.unit_price_uom_id = uom_model.search(
                         [('name', '=', UNIT_PER_TYPE[il.product_id.price_base])],
@@ -395,7 +379,7 @@ class InvoiceLine(models.Model):
     @api.model
     def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes,
                                            price_subtotal, force_computation=False):
-        if self.product_id:
+        if not self or self.product_id:
             return {}
         else:
             return super()._get_fields_onchange_balance_model(
