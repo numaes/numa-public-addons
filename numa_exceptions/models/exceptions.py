@@ -143,75 +143,75 @@ def register_exception(service_name, method, params, db, uid, e):
         return None
 
     if "base.general_exception" in db_registry:
-        with api.Environment.manage(), db_registry.cursor() as cr:
-            env = api.Environment(cr, SUPERUSER_ID, {})
-            ge_obj = env["base.general_exception"]
+        with api.Environment.manage():
+            with db_registry.cursor() as new_cr:
+                env = api.Environment(new_cr, SUPERUSER_ID, {})
+                ge_obj = env["base.general_exception"]
 
-            tb = sys.exc_info()[2]
-            if tb:
-                frames = []
-                count = 0
-                while tb:
-                    frame = tb.tb_frame
-                    local_vars = []
-                    output = '<pre>\n'
+                tb = sys.exc_info()[2]
+                if tb:
+                    frames = []
+                    count = 0
+                    while tb:
+                        frame = tb.tb_frame
+                        local_vars = []
+                        output = '<pre>\n'
+                        try:
+                            if count >= 0:
+                                local_vars = [(0, 0, {'name': ustr(k), 'value': ustr(v)})
+                                              for k, v in frame.f_locals.items()]
+                                local_vars.sort(key=lambda x: x[2]['name'])
+                                seq = 1
+                                for lv in local_vars:
+                                    lv[2]['sequence'] = seq
+                                    seq += 1
+                                lines, lineno = inspect.getsourcelines(frame)
+                                for line in lines:
+                                    if (frame.f_lineno - 10) < lineno < (frame.f_lineno + 10):
+                                        if frame.f_lineno == lineno:
+                                            fmt = '</pre><b><pre>%5d: %s</pre></b><pre>'
+                                        else:
+                                            fmt = '%5d: %s'
+                                        output += fmt % (lineno, line)
+                                    lineno += 1
+                        except Exception as process_exception:
+                            output += "\nEXCEPTION DURING PROCESSING: %s" % exception_to_unicode(process_exception)
+
+                        output += '</pre>'
+                        frames.append(
+                            (0, 0, {'file_name': frame.f_code.co_filename,
+                                    'line_number': frame.f_lineno,
+                                    'src_code': output,
+                                    'locals': local_vars}))
+                        count += 1
+                        tb = tb.tb_next
+                    frames.reverse()
+
+                    def get_exception_chain(exc):
+                        if exc.__cause__:
+                            return "%s\n\nCaused by:\n%s" % (ustr(exc), get_exception_chain(exc.__cause__))
+                        return ustr(exc)
+
+                    exc_description = get_exception_chain(e)
+
+                    vals = {
+                        'service': service_name,
+                        'exception': exc_description,
+                        'method': method,
+                        'params': params or [],
+                        'do_not_purge': False,
+                        'user': uid,
+                        'frames': frames,
+                    }
+                    _logger.error("About to log exception [%s], on service [%s, %s, %s]" %
+                                  (exc_description, service_name, method, params))
                     try:
-                        if count >= 0:
-                            local_vars = [(0, 0, {'name': ustr(k), 'value': ustr(v)})
-                                          for k, v in frame.f_locals.items()]
-                            local_vars.sort(key=lambda x: x[2]['name'])
-                            seq = 1
-                            for lv in local_vars:
-                                lv[2]['sequence'] = seq
-                                seq += 1
-                            lines, lineno = inspect.getsourcelines(frame)
-                            for line in lines:
-                                if (frame.f_lineno - 10) < lineno < (frame.f_lineno + 10):
-                                    if frame.f_lineno == lineno:
-                                        fmt = '</pre><b><pre>%5d: %s</pre></b><pre>'
-                                    else:
-                                        fmt = '%5d: %s'
-                                    output += fmt % (lineno, line)
-                                lineno += 1
-                    except Exception as process_exception:
-                        output += "\nEXCEPTION DURING PROCESSING: %s" % exception_to_unicode(process_exception)
+                        ge = ge_obj.sudo().create(vals)
+                        ename = ge.name
+                        return ename
+                    except Exception as loggingException:
+                        _logger.error("Error logging exception, exception [%s]" % loggingException)
 
-                    output += '</pre>'
-                    frames.append(
-                        (0, 0, {'file_name': frame.f_code.co_filename,
-                                'line_number': frame.f_lineno,
-                                'src_code': output,
-                                'locals': local_vars}))
-                    count += 1
-                    tb = tb.tb_next
-                frames.reverse()
-
-                def get_exception_chain(exc):
-                    if exc.__cause__:
-                        return "%s\n\nCaused by:\n%s" % (ustr(exc), get_exception_chain(exc.__cause__))
-                    return ustr(exc)
-
-                exc_description = get_exception_chain(e)
-
-                vals = {
-                    'service': service_name,
-                    'exception': exc_description,
-                    'method': method,
-                    'params': params or [],
-                    'do_not_purge': False,
-                    'user': uid,
-                    'frames': frames,
-                }
-                _logger.error("About to log exception [%s], on service [%s, %s, %s]" %
-                              (exc_description, service_name, method, params))
-                try:
-                    ge = ge_obj.sudo().create(vals)
-                    ename = ge.name
-                    return ename
-                except Exception as loggingException:
-                    _logger.error("Error logging exception, exception [%s]" % loggingException)
-
-    cr.close()
     return None
 
 
@@ -260,6 +260,8 @@ def new_json_dispatch(self):
         params = self.params.get('args', [])
         db = self.session.db
         uid = self.session.uid
+
+        self.env['base'].flush()
 
         ename = register_exception(
             model,
