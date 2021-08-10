@@ -38,11 +38,18 @@ class SaleOrder(models.Model):
                 so.so_weight += line.total_weight
                 so.so_volume += line.total_volume
 
+    def _get_real_price_currency(self, product, rule_id, qty, uom, pricelist_id):
+        return 0.0, False
+
     def update_prices(self):
         self.ensure_one()
         lines_to_update = []
         for line in self.order_line.filtered(lambda line: not line.display_type):
+            line_quantity = line.product_uom_qty
             line.product_id_change()
+            line.product_uom_qty = line_quantity
+            line._compute_unit_price_uom()
+            line.compute_totals()
         self.show_update_pricelist = False
         self.message_post(body=_("Product prices have been recomputed according to pricelist <b>%s<b> ",
                                  self.pricelist_id.display_name))
