@@ -1,6 +1,6 @@
 import logging
 
-from odoo import fields, models, api
+from odoo import fields, models, api, _
 
 _logger = logging.getLogger(__name__)
 
@@ -37,6 +37,15 @@ class SaleOrder(models.Model):
             for line in so.order_line:
                 so.so_weight += line.total_weight
                 so.so_volume += line.total_volume
+
+    def update_prices(self):
+        self.ensure_one()
+        lines_to_update = []
+        for line in self.order_line.filtered(lambda line: not line.display_type):
+            line.product_id_change()
+        self.show_update_pricelist = False
+        self.message_post(body=_("Product prices have been recomputed according to pricelist <b>%s<b> ",
+                                 self.pricelist_id.display_name))
 
 
 class SaleOrderLine(models.Model):
