@@ -358,10 +358,6 @@ class InvoiceLine(models.Model):
             force_computation=force_computation,
         )
 
-    @api.onchange('quantity', 'discount', 'price_unit', 'tax_ids')
-    def _onchange_price_subtotal(self):
-        self._compute_amount()
-
     def _get_price_total_and_subtotal(self, price_unit=None, quantity=None, discount=None, currency=None, product=None,
                                       partner=None, taxes=None, move_type=None):
         self.ensure_one()
