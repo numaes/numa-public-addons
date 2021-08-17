@@ -165,7 +165,7 @@ class PeriodicServices(models.Model):
                 service.error_count = 0
                 service.env.cr.commit()
             except Exception as e:
-                service.env.cr.abort()
+                service.env.cr.rollback()
                 _logger.warning(f'Unexpected exception on service {service.name}, exception {e}')
                 numa_exceptions.register_exception(
                     service.name,
