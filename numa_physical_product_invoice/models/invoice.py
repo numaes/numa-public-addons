@@ -241,6 +241,7 @@ class InvoiceLine(models.Model):
 
     price_qty = fields.Float(string='Price Qty', default=1.0)
     unit_price_uom_id = fields.Many2one('uom.uom', 'Price UoM')
+    price_base = fields.Selection(related='product_id.price_base', readonly=True)
 
     @api.onchange('product_id')
     def product_id_change(self):
@@ -258,7 +259,9 @@ class InvoiceLine(models.Model):
                 continue
             if not il.product_id or not il.product_uom_id:
                 continue
-            il.compute_unit_price_uom()
+
+            #il.compute_unit_price_uom()
+            il.compute_price()
             il.compute_totals()
 
     def compute_unit_price_uom(self):
@@ -361,9 +364,15 @@ class InvoiceLine(models.Model):
     def _get_price_total_and_subtotal(self, price_unit=None, quantity=None, discount=None, currency=None, product=None,
                                       partner=None, taxes=None, move_type=None):
         self.ensure_one()
+        if self.product_id.price_base == 'normal':
+            qty = quantity
+        else:
+            qty = self.price_qty
+
         return self._get_price_total_and_subtotal_model(
             price_unit=price_unit or self.price_unit,
-            quantity=quantity or self.price_qty,
+            #quantity=quantity or self.price_qty,
+            quantity=qty,
             discount=discount or self.discount,
             currency=currency or self.currency_id,
             product=product or self.product_id,
