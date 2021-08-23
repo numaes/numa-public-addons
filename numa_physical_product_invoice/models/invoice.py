@@ -364,15 +364,9 @@ class InvoiceLine(models.Model):
     def _get_price_total_and_subtotal(self, price_unit=None, quantity=None, discount=None, currency=None, product=None,
                                       partner=None, taxes=None, move_type=None):
         self.ensure_one()
-        if self.product_id.price_base == 'normal':
-            qty = quantity
-        else:
-            qty = self.price_qty
-
         return self._get_price_total_and_subtotal_model(
             price_unit=price_unit or self.price_unit,
-            #quantity=quantity or self.price_qty,
-            quantity=qty,
+            quantity=quantity or self.price_qty,
             discount=discount or self.discount,
             currency=currency or self.currency_id,
             product=product or self.product_id,
