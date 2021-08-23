@@ -343,8 +343,8 @@ class InvoiceLine(models.Model):
                     'price_total': taxes['total_included'],
                     'price_subtotal': taxes['total_excluded'],
                 })
-                il.flush()
                 il.update(il._get_fields_onchange_subtotal())
+                il.flush()
                 il._onchange_balance()
                 il._onchange_amount_currency()
 
@@ -357,7 +357,7 @@ class InvoiceLine(models.Model):
             move_type=move_type or self.move_id.move_type,
             currency=currency or self.currency_id or self.move_id.currency_id,
             taxes=taxes or self.tax_ids,
-            price_subtotal=price_subtotal or self.price_qty * self.price_unit * (1.0 - self.discount/100.0),
+            price_subtotal=price_subtotal or self.price_subtotal,
             force_computation=force_computation,
         )
 
@@ -366,7 +366,7 @@ class InvoiceLine(models.Model):
         self.ensure_one()
         return self._get_price_total_and_subtotal_model(
             price_unit=price_unit or self.price_unit,
-            quantity=quantity or self.price_qty,
+            quantity=self.price_qty,
             discount=discount or self.discount,
             currency=currency or self.currency_id,
             product=product or self.product_id,
