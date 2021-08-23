@@ -188,13 +188,13 @@ class SaleOrderLine(models.Model):
             if self.product_id.price_base in ['weight', 'volume']:
                 return self._get_qty_to_invoice_weight_or_volume()
             elif self.product_id.price_base == 'length':
-                return self.unit_length * self.qty_to_invoice, \
+                return self.qty_to_invoice, \
                        self.unit_length * self.qty_to_invoice
             elif self.product_id.price_base == 'width':
-                return self.unit_width * self.qty_to_invoice, \
+                return self.qty_to_invoice, \
                        self.unit_width * self.qty_to_invoice
             elif self.product_id.price_base == 'height':
-                return self.unit_height * self.qty_to_invoice, \
+                return self.qty_to_invoice, \
                        self.unit_height * self.qty_to_invoice
 
         return self.qty_to_invoice, self.qty_to_invoice

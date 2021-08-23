@@ -243,6 +243,15 @@ class InvoiceLine(models.Model):
     unit_price_uom_id = fields.Many2one('uom.uom', 'Price UoM')
     price_base = fields.Selection(related='product_id.price_base', readonly=True)
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        # OVERRIDE
+        mls = super().create(vals_list)
+        for line in mls:
+            line._compute_amount()
+
+        return mls
+
     @api.onchange('product_id')
     def product_id_change(self):
         for il in self:
