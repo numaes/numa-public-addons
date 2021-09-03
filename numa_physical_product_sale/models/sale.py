@@ -164,6 +164,10 @@ class SaleOrderLine(models.Model):
         if product.price_base != 'normal':
             new_optional_values['quantity'], new_optional_values['price_qty'] = self._get_qty_to_invoice()
             new_optional_values['unit_price_uom_id'] = self._get_price_uom_id()
+        else:
+            new_optional_values['quantity'] = self.qty_to_invoice
+            new_optional_values['price_qty'] = self.qty_to_invoice
+            new_optional_values['unit_price_uom_id'] = self._get_price_uom_id()
 
         return super()._prepare_invoice_line(**new_optional_values)
 
