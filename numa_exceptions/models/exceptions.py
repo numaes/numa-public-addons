@@ -225,6 +225,7 @@ def new_dispatch_rpc(service_name, method, params):
         return old_dispatch_rpc(service_name, method, params)
     except Exception as e:
         db, uid, passwd = params[0:3]
+
         ename = register_exception(
             'RPC %s' % service_name,
             method,
@@ -261,7 +262,7 @@ def new_json_dispatch(self):
         db = self.session.db
         uid = self.session.uid
 
-        self.env['base'].flush()
+        self.env.clear()
 
         ename = register_exception(
             model,
