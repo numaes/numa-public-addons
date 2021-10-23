@@ -13,11 +13,17 @@
                 </field>
 
                 <xpath expr="//page[@name='operations']//tree//field[@name='lot_ids']" position="after">
+                    <field name="unit_weight" invisible="True"/>
+                    <field name="unit_surface" invisible="True"/>
+                    <field name="unit_volume" invisible="True"/>
                     <field name="total_weight"/>
                     <field name="total_volume"/>
                 </xpath>
 
                 <xpath expr="//page[@name='operations']//form//field[@name='description_picking']" position="after">
+                    <field name="unit_weight" />
+                    <field name="unit_surface" />
+                    <field name="unit_volume" />
                     <field name="total_weight"/>
                     <field name="total_volume"/>
                 </xpath>
@@ -43,6 +49,9 @@
             <field name="inherit_id" ref="stock.view_stock_move_line_operation_tree"/>
             <field name="arch" type="xml">
                 <field name="product_uom_id" position="after">
+                    <field name="unit_weight" invisible="True"/>
+                    <field name="unit_surface" invisible="True"/>
+                    <field name="unit_volume" invisible="True"/>
                     <field name="total_weight"/>
                     <field name="total_volume"/>
                 </field>
@@ -55,6 +64,9 @@
             <field name="inherit_id" ref="stock.view_stock_move_line_detailed_operation_tree"/>
             <field name="arch" type="xml">
                 <field name="product_uom_id" position="after">
+                    <field name="unit_weight" invisible="True"/>
+                    <field name="unit_surface" invisible="True"/>
+                    <field name="unit_volume" invisible="True"/>
                     <field name="total_weight"/>
                     <field name="total_volume"/>
                 </field>
@@ -79,6 +91,9 @@
             <field name="inherit_id" ref="stock.view_move_line_tree"/>
             <field name="arch" type="xml">
                 <field name="product_uom_id" position="after">
+                    <field name="unit_weight" invisible="True"/>
+                    <field name="unit_surface" invisible="True"/>
+                    <field name="unit_volume" invisible="True"/>
                     <field name="total_weight"/>
                     <field name="total_volume"/>
                 </field>
@@ -91,6 +106,9 @@
             <field name="inherit_id" ref="stock.view_move_line_form"/>
             <field name="arch" type="xml">
                 <field name="package_id" position="after">
+                    <field name="unit_weight" />
+                    <field name="unit_surface" />
+                    <field name="unit_volume" />
                     <field name="total_weight"/>
                     <field name="total_volume"/>
                 </field>
