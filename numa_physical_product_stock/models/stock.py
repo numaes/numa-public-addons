@@ -122,11 +122,20 @@ class StockMove(models.Model):
 
         for move in self:
             for move_line in move.move_line_ids:
-                last_ingress = move_line_model.search([
-                    ('product_id', '=', move_line.product_id.id),
-                    ('location_dest_id', '=', move_line.location_id.id),
-                    ('picking_id.state', '=', 'done'),
-                ], order='write_date desc', limit=1)
+                if move.sale_line_id:
+                    last_ingress = move_line_model.search([
+                        ('product_id', '=', move_line.product_id.id),
+                        ('location_dest_id', '=', move_line.location_id.id),
+                        ('picking_id.state', '=', 'done'),
+                        ('move_id.sale_line_id', '=', move.sale_line_id.id),
+                    ], order='write_date desc', limit=1)
+                else:
+                    last_ingress = move_line_model.search([
+                        ('product_id', '=', move_line.product_id.id),
+                        ('location_dest_id', '=', move_line.location_id.id),
+                        ('picking_id.state', '=', 'done'),
+                    ], order='write_date desc', limit=1)
+
                 if last_ingress:
                     move_line.write({
                         'unit_weight': last_ingress.unit_weight,
@@ -150,17 +159,14 @@ class StockMove(models.Model):
         result = super()._action_done()
 
         for move in self:
-            for move_line in move.move_line_ids:
-                all_reserved = move_line_model.search([
-                    ('product_id', '=', move_line.product_id.id),
-                    ('location_id', '=', move_line.location_dest_id.id),
-                    ('picking_id.state', 'in', ['assigned']),
-                ])
-                if all_reserved:
+            last_ingress = move.move_line_ids[0] if move.move_line_ids else None
+            for next_move in move.move_dest_ids:
+                all_reserved = next_move.move_line_ids
+                if all_reserved and last_ingress:
                     all_reserved.write({
-                        'unit_weight': move_line.unit_weight,
-                        'unit_surface': move_line.unit_surface,
-                        'unit_volume': move_line.unit_volume
+                        'unit_weight': last_ingress.unit_weight,
+                        'unit_surface': last_ingress.unit_surface,
+                        'unit_volume': last_ingress.unit_volume
                     })
                     all_reserved.flush()
                     all_reserved.onchange_qty()
