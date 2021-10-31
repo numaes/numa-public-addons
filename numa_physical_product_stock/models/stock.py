@@ -62,8 +62,8 @@ class StockMove(models.Model):
     total_weight = fields.Float(string='Total Weight')
     total_volume = fields.Float(string='Total Volume')
 
-    @api.onchange('move_line_ids', 'move_line_ids_without_package')
-    @api.depends('move_line_ids', 'move_line_ids_without_package')
+    @api.onchange('move_line_ids')
+    @api.depends('move_line_ids')
     def onchange_move_line_ids(self):
         for move in self:
             total_weight = 0.0
