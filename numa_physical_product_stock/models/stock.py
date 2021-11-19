@@ -159,17 +159,18 @@ class StockMove(models.Model):
         result = super()._action_done()
 
         for move in self:
-            last_ingress = move.move_line_ids[0] if move.move_line_ids else None
-            for next_move in move.move_dest_ids:
-                all_reserved = next_move.move_line_ids
-                if all_reserved and last_ingress:
-                    all_reserved.write({
-                        'unit_weight': last_ingress.unit_weight,
-                        'unit_surface': last_ingress.unit_surface,
-                        'unit_volume': last_ingress.unit_volume
-                    })
-                    all_reserved.flush()
-                    all_reserved.onchange_qty()
+            if move.exists():
+                last_ingress = move.move_line_ids[0] if move.move_line_ids else None
+                for next_move in move.move_dest_ids:
+                    all_reserved = next_move.move_line_ids
+                    if all_reserved and last_ingress:
+                        all_reserved.write({
+                            'unit_weight': last_ingress.unit_weight,
+                            'unit_surface': last_ingress.unit_surface,
+                            'unit_volume': last_ingress.unit_volume
+                        })
+                        all_reserved.flush()
+                        all_reserved.onchange_qty()
 
         return result
 
