@@ -1,6 +1,7 @@
 from odoo import fields, models, api
 
 import logging
+
 _logger = logging.getLogger(__name__)
 
 UNIT_PER_TYPE = {
@@ -160,6 +161,7 @@ class StockMove(models.Model):
 
         for move in self:
             if move.exists():
+                move = move.browse(move.id)
                 last_ingress = move.move_line_ids[0] if move.move_line_ids else None
                 for next_move in move.move_dest_ids:
                     all_reserved = next_move.move_line_ids
