@@ -202,8 +202,10 @@ class StockMoveLine(models.Model):
             move_line.total_weight = normalized_qty * move_line.unit_weight
             move_line.total_volume = normalized_qty * move_line.unit_volume
 
-    @api.onchange('total_weight', 'total_surface', 'total_volume', 'qty_done')
-    @api.depends('total_weight', 'total_surface', 'total_volume', 'qty_done')
+    # @api.onchange('total_weight', 'total_surface', 'total_volume', 'qty_done')
+    # @api.depends('total_weight', 'total_surface', 'total_volume', 'qty_done')
+    @api.onchange('total_weight', 'total_surface', 'total_volume')
+    @api.depends('total_weight', 'total_surface', 'total_volume')
     def onchange_total_physicals(self):
         for move_line in self:
             normalized_qty = move_line.product_uom_id._compute_quantity(move_line.qty_done,
@@ -220,6 +222,9 @@ class StockMoveLine(models.Model):
                 move_line.unit_weight = 0
                 move_line.unit_surface = 0
                 move_line.unit_volume = 0
+                move_line.total_weight = 0
+                move_line.total_surface = 0
+                move_line.total_volume = 0
 
     @api.model_create_multi
     def create(self, vals_list):
