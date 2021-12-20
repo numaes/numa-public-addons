@@ -20,11 +20,22 @@
                             <field name="unit_volume"/>
                         </group>
                         <group>
-                            <field name="total_surface" readonly="True" force_save="True"/>
-                            <field name="total_weight" readonly="True" force_save="True"/>
-                            <field name="total_volume" readonly="True" force_save="True"/>
+                            <field name="total_surface"/>
+                            <field name="total_weight"/>
+                            <field name="total_volume"/>
                         </group>
                     </group>
+                </xpath>
+                <xpath expr="//field[@name='order_line']/tree/field[@name='name']" position="after">
+                    <field name="unit_width" invisible="1"/>
+                    <field name="unit_length" invisible="1"/>
+                    <field name="unit_height" invisible="1"/>
+                    <field name="unit_surface" invisible="1"/>
+                    <field name="unit_weight" invisible="1"/>
+                    <field name="unit_volume" invisible="1"/>
+                    <field name="total_surface" invisible="1"/>
+                    <field name="total_weight" invisible="1"/>
+                    <field name="total_volume" invisible="1"/>
                 </xpath>
                 <xpath expr="//field[@name='order_line']/form//field[@name='price_unit']" position="after">
                     <field name="price_qty" readonly="True" force_save="True"/>

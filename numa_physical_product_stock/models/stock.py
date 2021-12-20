@@ -1,6 +1,7 @@
 from odoo import fields, models, api
 
 import logging
+
 _logger = logging.getLogger(__name__)
 
 UNIT_PER_TYPE = {
@@ -159,17 +160,19 @@ class StockMove(models.Model):
         result = super()._action_done()
 
         for move in self:
-            last_ingress = move.move_line_ids[0] if move.move_line_ids else None
-            for next_move in move.move_dest_ids:
-                all_reserved = next_move.move_line_ids
-                if all_reserved and last_ingress:
-                    all_reserved.write({
-                        'unit_weight': last_ingress.unit_weight,
-                        'unit_surface': last_ingress.unit_surface,
-                        'unit_volume': last_ingress.unit_volume
-                    })
-                    all_reserved.flush()
-                    all_reserved.onchange_qty()
+            if move.exists():
+                move = move.browse(move.id)
+                last_ingress = move.move_line_ids[0] if move.move_line_ids else None
+                for next_move in move.move_dest_ids:
+                    all_reserved = next_move.move_line_ids
+                    if all_reserved and last_ingress:
+                        all_reserved.write({
+                            'unit_weight': last_ingress.unit_weight,
+                            'unit_surface': last_ingress.unit_surface,
+                            'unit_volume': last_ingress.unit_volume
+                        })
+                        all_reserved.flush()
+                        all_reserved.onchange_qty()
 
         return result
 
@@ -199,8 +202,8 @@ class StockMoveLine(models.Model):
             move_line.total_weight = normalized_qty * move_line.unit_weight
             move_line.total_volume = normalized_qty * move_line.unit_volume
 
-    @api.onchange('total_weight', 'total_surface', 'total_volume', 'qty_done')
-    @api.depends('total_weight', 'total_surface', 'total_volume', 'qty_done')
+    @api.onchange('total_weight', 'total_surface', 'total_volume')
+    @api.depends('total_weight', 'total_surface', 'total_volume')
     def onchange_total_physicals(self):
         for move_line in self:
             normalized_qty = move_line.product_uom_id._compute_quantity(move_line.qty_done,
@@ -214,12 +217,21 @@ class StockMoveLine(models.Model):
                 if move_line.unit_volume != move_line.total_volume / normalized_qty:
                     move_line.unit_volume = move_line.total_volume / normalized_qty
             else:
-                move_line.unit_weight = 0
-                move_line.unit_surface = 0
-                move_line.unit_volume = 0
+                # move_line.unit_weight = 0
+                # move_line.unit_surface = 0
+                # move_line.unit_volume = 0
+                move_line.total_weight = 0
+                move_line.total_surface = 0
+                move_line.total_volume = 0
 
     @api.model_create_multi
     def create(self, vals_list):
         new_move_lines = super().create(vals_list)
         new_move_lines.onchange_qty()
         return new_move_lines
+
+    def write(self, vals):
+        ret = super().write(vals)
+        if 'qty_done' in vals:
+            self.onchange_qty()
+        return ret
