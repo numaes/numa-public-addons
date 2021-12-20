@@ -163,11 +163,12 @@ class PeriodicServices(models.Model):
                        if service.interval_type == 'days' else zero_delta)
                 service.next_execution = next_trigger
                 service.error_count = 0
+                service.flush()
                 service.env.cr.commit()
             except Exception as e:
                 service.env.cr.rollback()
                 _logger.warning(f'Unexpected exception on service {service.name}, exception {e}')
-                numa_exceptions.models.register_exception(
+                numa_exceptions.models.exceptions.register_exception(
                     service.name,
                     'trigger',
                     [],
