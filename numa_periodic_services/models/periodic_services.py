@@ -172,8 +172,8 @@ class PeriodicServices(models.Model):
                     service.name,
                     'trigger',
                     [],
-                    self.env.db,
-                    self.env.user.id,
+                    self.env.db if self.env else None,
+                    self.env.user.id if self.env else None,
                     e
                 )
 
