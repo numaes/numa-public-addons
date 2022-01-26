@@ -93,7 +93,8 @@ createuser -s "pg-$PROJECT-$OE_VERSION"
 # Install Dependencies
 #--------------------------------------------------
 echo -e "\n--- Installing Python 3 + pip3 --"
-sudo apt-get install git python3 python3-pip build-essential wget python3-dev python3-venv python3-wheel -y
+sudo apt-get install git swig -y
+sudo apt-get install python3 python3-pip build-essential wget python3-dev python3-venv python3-wheel -y
 sudo apt-get install libxslt-dev libzip-dev libldap2-dev libsasl2-dev python3-setuptools -y
 sudo apt-get install node-less libjpeg-dev -y
 sudo apt-get install libxml2-dev libxmlsec1-dev -y
@@ -118,7 +119,8 @@ fi
 if [ "$INSTALL_WKHTMLTOPDF" = "True" ]; then
   echo -e "\n---- Install wkhtml and place shortcuts on correct place for ODOO $OE_VERSION ----"
   wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.focal_amd64.deb
-  sudo apt install ./wkhtmltox_0.12.6-1.focal_amd64
+  sudo dpkg -i ./wkhtmltox_0.12.6-1.focal_amd64
+  rm ./wkhtmltox_0.12.6-1.focal_amd64
 fi
 
 #--------------------------------------------------
@@ -253,35 +255,157 @@ if [ "$PROJECT" != "" ]; then
 source venv/bin/activate
 ../odoo-$OE_VERSION-numa/odoo-bin -c odoo.config \$1 \$2 \$3 \$4 \$5 \$6 \$7 \$8 \$9
 EOF
-    chmod +x start.sh
+    chmod +x ./start.sh
 
     CWD=$(pwd)
 
     if [ ! -f ./onboot.sh ]; then
       cat <<EOF > ./onboot.sh
-cd $(CWD)
+cd $CWD
 source venv/bin/activate
-./start.sh --pidfile=$CWD/running-odoo.pid --logfile=log/odoo-server.log &
+./start.sh --pidfile=running-odoo.pid --logfile=log/odoo-server.log &
 EOF
-      chmod +x onboot.sh
+      chmod +x ./onboot.sh
     fi
 
     if [ ! -f ./stop.sh ]; then
       cat <<EOF > ./stop.sh
 if [ -f running-odoo.pid ]; then
-    CWO=\$(cat running-odoo-pid)
-    kill -9 $CWO
+    CWO=\$(cat running-odoo.pid)
+    kill -9 \$CWO
     rm running-odoo.pid
 fi
 EOF
-      chmod +x .stop.sh
+      chmod +x ./stop.sh
     fi
 
+    if [ ! -f ./dbbackup.sh ]; then
+      cat <<EOF > ./dbbackup.sh
+# !/bin/bash
+# This script is public domain. Feel free to use or modify as you like.
+if [ $# -ne 2 ]; then
+    echo "Usage:"
+    echo "     $0 <database>  <role>]"
+else
+	BZIP2="/bin/bzip2"
+	GREP="/bin/grep"
+	ROLE="$2"
+	DUMPALL="pg_dumpall"
+	PGDUMP="pg_dump"
+	PSQL="psql"
+	DATE="$(date +%Y-%m-%d-%H-%M-%S)"
+	FILESTOREDIR="./data"
+
+	# directory to save backups in, must be rwx by postgres user
+	BACKUPDIR="./database"
+	[ -d $BACKUPDIR ] || mkdir -p $BACKUPDIR
+
+	if [ ! -d $FILESTOREDIR ]; then
+	   echo "You have no access to Odoo filestore. Run dbbackup with sudo!"
+	   exit
+	fi
+
+	# get list of databases in system for current user
+	# command inspired on SISalp suggestion on odoo mail list
+	# https://www.odoo.com/groups/community-59/community-15954813
+	DBS=`$PSQL -l -U $ROLE | grep $ROLE | cut -d '|' -f1`
+	DBS="$1"
+
+	# now backup the tables
+	CWD="$(pwd)"
+	# cd /tmp
+	for DB in $DBS; do
+		# It would have been nice to do the next using pipe
+		# but pipe didnt now allow me to redirect pg_dump output to input tar
+		# at least I couldn't ;(
+		echo "Performing backup of $DB..."
+		[ -d $BACKUPDIR/$DB ] || mkdir -p $BACKUPDIR/$DB
+
+		if [ -d "$FILESTOREDIR/filestore/$DB" ]; then
+			$PGDUMP $DB -U -O $ROLE > dump.sql && tar cjf $BACKUPDIR/$DB/$DB-$DATE.tar.bz2 --transform "s,^filestore/$DB,filestore," dump.sql -C $FILESTOREDIR filestore/$DB && rm -rf dump.sql
+		else
+			$PGDUMP $DB -U -O $ROLE > dump.sql && tar cjf $BACKUPDIR/$DB/$DB-$DATE.tar.bz2 dump.sql && rm -rf dump.sql
+		fi
+	done
+	# cd $CWD
+fi
+EOF
+      chmod +x ./dbbackup.sh
+    fi
+
+    if [ ! -f ./dbrestore.sh ]; then
+      cat <<EOF > ./dbrestore.sh
+if [ $# -ne 3 ]; then
+    echo "Usage:"
+    echo "     $0 <database>  <backup-file>  <role>]"
+else
+    DB="$1"
+    BACKUP_FILE="$2"
+    ROLE="$3"
+    DATA_PATH="./data"
+    UNTARDIR="/tmp/untardir"
+    TODAY="$(date '+%Y-%m-%d %H:%M:%S')"
+    TODAY_PLUS_ONE_MONTH="$(date -d '+1 month' '+%Y-%m-%d %H:%M:%S')"
+    UUID=$(cat /proc/sys/kernel/random/uuid)
+    PSQL="psql"
+
+    if [ ! -d $DATA_PATH ]; then
+        echo "You have no access to Odoo filestore. Run command with sudo"
+    else
+        # echo "Droping database $DB if exists"
+        # dropdb $DB -U $ROLE
+
+		DBS=`$PSQL -l -U $ROLE | grep $ROLE | cut -d '|' -f1`
+
+
+		if echo $DBS | grep -w $DB > /dev/null; then
+			echo "Existing database, aborting..."
+			exit 1
+		fi
+
+        echo "Creating empty database"
+        createdb -O $ROLE -U $ROLE $DB --encoding=UNICODE -T template0
+
+        echo "Restoring database $DB with file $BACKUP_FILE"
+        test -d $UNTARDIR && rm -r $UNTARDIR
+        mkdir $UNTARDIR
+        tar -xjf $BACKUP_FILE -C $UNTARDIR
+
+        echo "Regenerating database ..."
+        psql -d $DB -U $ROLE >/dev/null < $UNTARDIR/dump.sql
+
+        echo "Creating a new id for the new database"
+        # psql -d $DB -U $ROLE -c "UPDATE ir_config_parameter set value='$UUID' where key='database.uuid'"
+        # psql -d $DB -U $ROLE -c "UPDATE ir_config_parameter set value='$TODAY' where key='database.create_date'"
+        # psql -d $DB -U $ROLE -c "UPDATE ir_config_parameter set value='$TODAY_PLUS_ONE_MONTH' where key='database.expiration_date'"
+
+		echo "Cleaning filestore"
+        test -d $DATA_PATH/filestore || mkdir -p $DATA_PATH/filestore
+        test -d $DATA_PATH/filestore/$DB || mkdir -p $DATA_PATH/filestore/$DB
+        # rm -r $DATA_PATH/filestore/$DB/*
+        if [ -d $UNTARDIR/filestore ]; then
+        	echo "Restoring filestore"
+            mv $UNTARDIR/filestore/* -t $DATA_PATH/filestore/$DB
+        fi
+
+        # chown -R odoo:odoo $DATA_PATH/filestore/$DB
+
+        rm -r $UNTARDIR
+    fi
+fi
+EOF
+      chmod +x ./dbrestore.sh
+    fi
+
+
     echo -e "\n---- Install python packages/requirements ----"
-    pip3 install wheel
-    pip3 install -r "../odoo-$OE_VERSION-numa/requirements.txt"
-    pip3 install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
-    pip3 install -r "../numa-addons-$OE_VERSION/requirements.txt"
+    pip install --upgrade pip
+    pip install wheel
+    pip install -r "../odoo-$OE_VERSION-numa/requirements.txt"
+    pip install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
+    if [ "$INSTALL_PRIVATE" = "Yes" ]; then
+      pip install -r "../numa-addons-$OE_VERSION/requirements.txt"
+    fi
 
     "../odoo-$OE_VERSION-numa/odoo-bin" -c odoo.config -s --stop-after-init
 
@@ -362,15 +486,15 @@ server {
   client_max_body_size 0;
 
   location / {
-    proxy_pass    http://localhost:$OE_PORT;
+    proxy_pass    http://backend-odoo;
   }
 
   location /longpolling {
-    proxy_pass http://localhost:$LONGPOLLING_PORT;
+    proxy_pass http://backend-odoo-im;
   }
   location ~* .js|css|png|jpg|jpeg|gif|ico$ {
     expires 2d;
-    proxy_pass http://localhost:$OE_PORT;
+    proxy_pass http://backend-odoo;
     add_header Cache-Control "public, no-transform";
   }
   # cache some static data in memory for 60mins.
@@ -379,7 +503,7 @@ server {
     proxy_cache_valid 404      1m;
     proxy_buffering    on;
     expires 864000;
-    proxy_pass    http://localhost:$OE_PORT;
+    proxy_pass    http://backend-odoo;
   }
 }
 EOF
