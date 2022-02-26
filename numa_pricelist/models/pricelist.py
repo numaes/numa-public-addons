@@ -218,7 +218,13 @@ class PricelistItem(models.Model):
     def compute_base(self, product, variants, qty, partner, categories, date, uom_id):
         variant = variants[0] if variants else product
         price = 0.0
-        if self.base == 'list_price':
+        if self.compute_price == 'fixed':
+            price = self.fixed_price
+            source_currency = self.pricelist_id.currency_id
+        elif self.compute_price == 'percentage':
+            price = variant.list_price * (1.0 - (self.percent_price / 100.0))
+            source_currency = variant.currency_id
+        elif self.base == 'list_price':
             price = variant.list_price
             source_currency = variant.currency_id
         elif self.base == 'standard_price':
@@ -245,6 +251,8 @@ class PricelistItem(models.Model):
             currency_id = self.env.context.get('default_currency_id')
             source_currency = self.env['res.currency'].browse(currency_id) if currency_id else \
                 self.pricelist_id.currency_id
+        else:
+            raise UserError(_('Error interno'))
 
         return source_currency._convert(
             price,
