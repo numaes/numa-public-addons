@@ -128,7 +128,7 @@ class ProductTemplate(models.Model):
 
         avs = attribute_value_model.browse(atv_ids)
 
-        default_code = self.base_code
+        default_code = self.base_code or ''
         if avs:
             suffix = ''
             for av in avs:
