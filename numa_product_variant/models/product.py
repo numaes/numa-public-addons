@@ -138,7 +138,7 @@ class ProductTemplate(models.Model):
                         av.attribute_id.code_identifier or '',
                         av.product_attribute_value_id.code_value
                     )
-            if suffix:
+            if suffix and default_code:
                 default_code += '.' + suffix
 
         return default_code

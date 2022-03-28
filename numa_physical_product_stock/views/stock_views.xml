@@ -125,7 +125,6 @@
                     <field name="location_dest_id" groups="stock.group_stock_multi_locations" type="row"/>
                     <field name="qty_done" type="measure"/>
                     <field name="product_uom_qty" type="measure"/>
-                    <field name="unit_weight" type="measure"/>
                     <field name="total_weight" type="measure"/>
                 </pivot>
             </field>
