@@ -1,5 +1,6 @@
 import email
 import base64
+
 try:
     from xmlrpc import client as xmlrpclib
 except ImportError:
@@ -9,7 +10,8 @@ from odoo import models, fields, api, _
 from datetime import datetime, date, timedelta
 
 import logging
-_logger=logging.getLogger(__name__)
+
+_logger = logging.getLogger(__name__)
 
 DT_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -19,6 +21,7 @@ class FetchmailServer(models.Model):
 
     _inherit = 'fetchmail.server'
 
+    last_uid_validity = fields.Integer('Last validity identifier', default=1)
     last_uid = fields.Integer('Last received UID')
     initially_from = fields.Date('Initial load, from date')
 
@@ -57,12 +60,18 @@ class FetchmailServer(models.Model):
                         for entry in data:
                             flags, folder_name = entry.decode().split(' "/" ')
                             if '\\All' in flags:
-                                imap_server.select(folder_name)
+                                folder_data = imap_server.select(folder_name)
+                                current_uid_valitidy = folder_data.get('uidValidity')
+
                                 selected = True
+                                first_uid = ((server.last_uid or 0) \
+                                                 if current_uid_valitidy == server.last_uid_validity else 0) + 1
                                 result, data = imap_server.search(
                                     None,
-                                    f'(UID {(server.last_uid or 0) + 1}:* SENTSINCE {initial_date(server)})'
+                                    f'(UID '
+                                    f'{first_uid}:{first_uid + 500} SENTSINCE {initial_date(server)})'
                                 )
+
                                 newMsgs = sorted([int(m) for m in data[0].split() if int(m) > server.last_uid])
                                 for num in newMsgs:
                                     _logger.info(f'Getting mail with UID {num} from server {server.name}')
@@ -75,17 +84,23 @@ class FetchmailServer(models.Model):
                                             save_original=server.original,
                                             strip_attachments=(not server.attach))
                                         _logger.info(f'Mail with UID {num} from server {server.name} was processed')
+
                                     except Exception:
                                         _logger.info('Failed to process mail from %s server %s.',
                                                      server.server_type,
                                                      server.name,
                                                      exc_info=True)
                                         failed += 1
+
                                     this_uid = int(num)
                                     if this_uid > (server.last_uid or 0):
                                         server.last_uid = int(num)
+                                    if current_uid_valitidy != server.last_uid_validity:
+                                        server.last_uid_validity = current_uid_valitidy
+
                                     self._cr.commit()
                                     count += 1
+
                                 _logger.info("Fetched %d email(s) on %s server %s; %d succeeded, %d failed.",
                                              count,
                                              server.server_type,
@@ -189,7 +204,7 @@ class MailThread(models.AbstractModel):
                 new_mail.attachment_ids = [
                     (0, 0, {'name': a.fname,
                             'datas': base64.b64encode(a.content) if isinstance(a.content, bytes) else
-                                     a.content}) for a in msg_dict['attachments']
+                            a.content}) for a in msg_dict['attachments']
                 ]
             self.env.cr.commit()
 
@@ -197,4 +212,3 @@ class MailThread(models.AbstractModel):
         routes = self.message_route(message, msg_dict, model, thread_id, custom_values)
         thread_id = self._message_route_process(message, msg_dict, routes)
         return thread_id
-
