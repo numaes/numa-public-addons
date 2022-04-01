@@ -21,7 +21,7 @@ class FetchmailServer(models.Model):
 
     _inherit = 'fetchmail.server'
 
-    last_uid_validity = fields.Integer('Last validity identifier', default=1)
+    last_uid_validity = fields.Integer('Last validity identifier')
     last_uid = fields.Integer('Last received UID')
     initially_from = fields.Date('Initial load, from date')
 
@@ -61,11 +61,12 @@ class FetchmailServer(models.Model):
                             flags, folder_name = entry.decode().split(' "/" ')
                             if '\\All' in flags:
                                 folder_data = imap_server.select(folder_name)
-                                current_uid_valitidy = folder_data.get('uidValidity')
+                                current_uid_validity = folder_data.get('uidValidity')
 
                                 selected = True
                                 first_uid = ((server.last_uid or 0) \
-                                                 if current_uid_valitidy == server.last_uid_validity else 0) + 1
+                                                 if not server.last_uid_validity or
+                                                    current_uid_validity == server.last_uid_validity else 0) + 1
                                 result, data = imap_server.search(
                                     None,
                                     f'(UID '
@@ -95,8 +96,8 @@ class FetchmailServer(models.Model):
                                     this_uid = int(num)
                                     if this_uid > (server.last_uid or 0):
                                         server.last_uid = int(num)
-                                    if current_uid_valitidy != server.last_uid_validity:
-                                        server.last_uid_validity = current_uid_valitidy
+                                    if current_uid_validity != server.last_uid_validity:
+                                        server.last_uid_validity = current_uid_validity
 
                                     self._cr.commit()
                                     count += 1
