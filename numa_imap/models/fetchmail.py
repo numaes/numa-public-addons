@@ -60,8 +60,8 @@ class FetchmailServer(models.Model):
                         for entry in data:
                             flags, folder_name = entry.decode().split(' "/" ')
                             if '\\All' in flags:
-                                folder_data = imap_server.select(folder_name)
-                                current_uid_validity = folder_data.get('uidValidity')
+                                response, folder_data = imap_server.select(folder_name)
+                                current_uid_validity = int(folder_data[0].decode('utf-8'))
 
                                 selected = True
                                 first_uid = ((server.last_uid or 0) \
