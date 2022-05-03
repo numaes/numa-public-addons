@@ -164,6 +164,9 @@ class StockMoveLine(models.Model):
     total_weight = fields.Float(string='Total Weight')
     total_volume = fields.Float(string='Total Volume')
 
+    partner_id = fields.Many2one('res.partner', string='Empresa', related='picking_id.partner_id', readonly=True, store=True)
+    sale_order_id = fields.Many2one('sale.order', string='Pedido', related='picking_id.sale_id', readonly=True, store=True)
+
     @api.onchange('product_id', 'qty_done')
     @api.depends('product_id', 'qty_done')
     def onchange_qty(self):
