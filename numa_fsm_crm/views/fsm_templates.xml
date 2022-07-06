@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="mail_layout">
+        <t t-raw="body_view_html or body_view_arch" />
+    </template>
+
+    <record model="mail.template" id="basic_mail_template">
+        <field name="name" >Basic workflow mail template</field>
+        <field name="model" >fsm.wf.mail_template</field>
+        <field name="body_type" >qweb</field>
+        <field name="body_view_id" ref="mail_layout"/>
+    </record>
+
+    <template id="page_template" name="Page for Workflow">
+        <t name="Workflow" t-name="numa_fsm_crm.page_template">
+            <t t-call="website.layout">
+                <div>
+                    <div class="oe_structure">
+                        <section class="s_title parallax s_parallax_is_fixed bg-black-50 pt24 pb24" data-vcss="001" data-snippet="s_title" data-scroll-background-ratio="1">
+                            <span class="s_parallax_bg oe_img_bg" style="background-image: url('/web/image/website.s_banner_default_image'); background-position: 50% 0;"/>
+                            <div class="o_we_bg_filter bg-black-50"/>
+                            <div class="container">
+                                <h1 t-esc="page.name"/>
+                            </div>
+                        </section>
+                    </div>
+                    <div class="container mt-4 mb-5">
+                        <t t-raw="processed_body"/>
+                    </div>
+                </div>
+            </t>
+        </t>
+    </template>
+
+    <template id="page_edit_template" name="Edit Workflow Page">
+        <t name="Edit page" t-name="numa_fsm_crm.page_edit_template">
+            <t t-call="website.layout">
+                <div>
+                    <div class="oe_structure">
+                        <section class="s_title parallax s_parallax_is_fixed bg-black-50 pt24 pb24" data-vcss="001" data-snippet="s_title" data-scroll-background-ratio="1">
+                            <span class="s_parallax_bg oe_img_bg" style="background-image: url('/web/image/website.s_banner_default_image'); background-position: 50% 0;"/>
+                            <div class="o_we_bg_filter bg-black-50"/>
+                            <div class="container">
+                                <h1 t-field="page.name"/>
+                            </div>
+                        </section>
+                    </div>
+                    <div class="container mt-4 mb-5">
+                        <span t-field="page.body"/>
+                    </div>
+                </div>
+            </t>
+        </t>
+    </template>
+
+    <template id="error_page" name="Page Not Found">
+        <t name="Workflow" t-name="numa_fsm_crm.error_page">
+            <t t-call="website.layout">
+                <div>
+                    <div class="oe_structure">
+                        <section class="s_title parallax s_parallax_is_fixed bg-black-50 pt24 pb24" data-vcss="001" data-snippet="s_title" data-scroll-background-ratio="1">
+                            <span class="s_parallax_bg oe_img_bg" style="background-image: url('/web/image/website.s_banner_default_image'); background-position: 50% 0;"/>
+                            <div class="o_we_bg_filter bg-black-50"/>
+                            <div class="container">
+                                <h1>Error</h1>
+                            </div>
+                        </section>
+                    </div>
+                    <div class="container mt-4 mb-5">
+                        <div itemprop="description"
+                            t-esc="message"
+                            class="oe_structure oe_empty mt16"
+                            id="page_body"/>
+                    </div>
+                </div>
+            </t>
+        </t>
+    </template>
+
+</odoo>

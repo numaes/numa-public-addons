@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_fsm_definition,General accees FSM Definition,model_fsm_definition,,1,1,1,1
+access_fsm_timer,General accees FSM Timer,model_fsm_timer,,1,1,1,1
+access_fsm_event_entry,General accees FSM Event Entry,model_fsm_event_entry,,1,1,1,1
+access_fsm_instance,General accees FSM Instance,model_fsm_instance,,1,1,1,1

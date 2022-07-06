@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_workflow_page,General accees Workflow Page template,model_fsm_wf_page_template,,1,1,1,1
+access_workflow_mail,General accees Workflow Mail template,model_fsm_wf_mail_template,,1,1,1,1

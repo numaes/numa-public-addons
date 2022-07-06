@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+
+        <!-- FSM Definition -->
+
+        <record model="ir.ui.view" id="definition_form_view">
+            <field name="name">FSM Definition form</field>
+            <field name="model">fsm.definition</field>
+            <field name="arch" type="xml">
+                <form string="FSM Definition">
+                    <sheet>
+                        <header >
+                        </header>
+                        <group name="top">
+                            <field name="name" />
+                        </group>
+                        <notebook >
+                            <page name="pages" string="Pages">
+                                <field name="pages" mode="tree">
+                                    <tree string="Pages">
+                                        <field name="name"/>
+                                        <button name="open_page_template" type="object"
+                                                string="View"/>
+                                    </tree>
+                                </field>
+                            </page>
+                            <page name="mail_templates" string="Mail templates">
+                                <field name="mail_templates" mode="tree">
+                                    <tree string="Mail Templates">
+                                        <field name="name"/>
+                                        <button name="open_mail_template" type="object"
+                                                string="Edit"/>
+                                    </tree>
+                                </field>
+                            </page>
+                            <page name="definition" string="Definition">
+                                <field name="type" invisible="True"/>
+                                <newline />
+                                <field name="text_definition"
+                                       widget="ace" options="{'mode': 'python'}" />
+                                <field name="json_compiled_definition" invisible="True"/>
+                                <field name="parent_id" invisible="True"/>
+                            </page>
+                        </notebook>
+                    </sheet>
+                    <div class="oe_chatter">
+                        <field name="message_follower_ids"/>
+                        <field name="activity_ids"/>
+                        <field name="message_ids"/>
+                    </div>
+                </form>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="definition_tree_view">
+            <field name="name">FSM Definition tree view</field>
+            <field name="model">fsm.definition</field>
+            <field name="arch" type="xml">
+                <tree string="FSM Definitions">
+                    <field name="name" />
+                    <field name="type" />
+                </tree>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="definition_search_view">
+            <field name="name">FSM Definition search view</field>
+            <field name="model">fsm.definition</field>
+            <field name="arch" type="xml">
+                <search string="FSM Definition search">
+                    <field name="name" />
+                    <field name="type" />
+                    <field name="text_definition" />
+                    <group expand="0" string="Group By">
+                        <filter string="type" name="group_type" context="{'group_by': 'type'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="definition_action">
+            <field name="name">Workflows</field>
+            <field name="res_model">fsm.definition</field>
+            <field name="view_mode">tree,form</field>
+            <field name="domain">[('type', '=', 'CRM_Workflow')]</field>
+            <field name="context">{'default_type': 'CRM_Workflow'}</field>
+        </record>
+
+        <!-- FSM Instance -->
+
+        <record model="ir.ui.view" id="instance_form_view">
+            <field name="name">FSM Instance form</field>
+            <field name="model">fsm.instance</field>
+            <field name="arch" type="xml">
+                <form string="FSM Instance">
+                    <sheet>
+                        <header >
+                            <button name="start" type="object"
+                                    string="Arrancar"
+                                    states="init"/>
+                            <button name="end" type="object"
+                                    string="Parar instancia"
+                                    states="running"/>
+                            <button name="start_logging" type="object"
+                                    string="Activar logging"
+                                    states="running"/>
+                            <button name="stop_logging" type="object"
+                                    string="Desactivar logging"
+                                    states="running"/>
+                            <field name="state" widget="statusbar" />
+                        </header>
+                        <group name="top">
+                            <field name="name" />
+                        </group>
+                        <notebook >
+                            <page name="relations" string="Relations">
+                                <group>
+                                    <field name="partner_id" />
+                                </group>
+                            </page>
+                            <page name="status" string="Status">
+                                <group>
+                                    <field name="definition_id" />
+                                    <newline />
+                                    <field name="current_state" readonly="True"/>
+                                    <field name="json_instance_values"
+                                           widget="ace" options="{'mode': 'json'}" />
+                                    <field name="logging" />
+                                </group>
+                            </page>
+                        </notebook>
+                    </sheet>
+                    <div class="oe_chatter">
+                        <field name="message_follower_ids"/>
+                        <field name="activity_ids"/>
+                        <field name="message_ids"/>
+                    </div>
+                </form>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="instance_tree_view">
+            <field name="name">FSM Instance tree view</field>
+            <field name="model">fsm.instance</field>
+            <field name="arch" type="xml">
+                <tree string="FSM Instances">
+                    <field name="name" />
+                    <field name="definition_id" />
+                    <field name="partner_id" />
+                    <field name="state" />
+                    <field name="current_state" />
+                </tree>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="instance_search_view">
+            <field name="name">FSM Instance search view</field>
+            <field name="model">fsm.instance</field>
+            <field name="arch" type="xml">
+                <search string="FSM Instance search">
+                    <field name="name" />
+                    <field name="definition_id" />
+                    <field name="partner_id" />
+                    <field name="state" />
+                    <field name="current_state" />
+                    <group expand="0" string="Filtered By">
+                        <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
+                        <filter string="Logging" name="logging" domain="[('logging', '=', True)]"/>
+                    </group>
+                    <group expand="0" string="Group By">
+                        <filter string="Definition" name="group_definition" context="{'group_by': 'definition_id'}"/>
+                        <filter string="Instance State" name="group_state" context="{'group_by': 'state'}"/>
+                        <filter string="Current state" name="group_current_state" context="{'group_by': 'current_state'}"/>
+                        <filter string="Partner" name="group_partner_id" context="{'group_by': 'partner_id'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="instance_action">
+            <field name="name">Instances</field>
+            <field name="res_model">fsm.instance</field>
+            <field name="view_mode">tree,form</field>
+            <field name="domain">[('definition_id.type', '=', 'CRM_Workflow')]</field>
+            <field name="context">{'default_type': 'CRM_Workflow'}</field>
+        </record>
+
+        <!-- FSM Mail template -->
+
+        <record model="ir.ui.view" id="mail_template_form_view">
+            <field name="name">FSM Template form</field>
+            <field name="model">fsm.wf.mail_template</field>
+            <field name="arch" type="xml">
+                <form string="Mail template">
+                    <sheet>
+                        <header >
+                        </header>
+                        <group name="definition" string="Definition">
+                            <field name="name" />
+                            <field name="body_view_html"
+                                   widget="ace"/>
+                            <field name="body_view_arch" invisible="True"/>
+                            <field name="template_id"/>
+                        </group>
+                        <group name="attachments" string="Attachments">
+                            <field name="attachment_ids" />
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- FSM Page template -->
+
+        <record model="ir.ui.view" id="page_template_form_view">
+            <field name="name">FSM Template form</field>
+            <field name="model">fsm.wf.page_template</field>
+            <field name="arch" type="xml">
+                <form string="Mail template">
+                    <sheet>
+                        <header >
+                        </header>
+                        <group name="definition" string="Definition">
+                            <field name="name" />
+                            <field name="body"
+                                   widget="ace"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+    </data>
+</odoo>
