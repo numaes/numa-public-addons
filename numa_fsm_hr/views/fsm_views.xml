@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+
+       <!-- FSM Instances -->
+
+        <record model="ir.ui.view" id="instance_form_view">
+            <field name="name">FSM Instance form</field>
+            <field name="model">fsm.instance</field>
+            <field name="inherit_id" ref="numa_fsm_crm.instance_form_view"/>
+            <field name="arch" type="xml">
+                <field name="partner_id" position="after">
+                    <field name="employee_id" />
+                </field>
+                <field name="logging" position="after">
+                    <field name="manual_operation_needed" />
+                </field>
+                <header position="inside">
+                    <button name="action_confirm_manual_operation" type="object"
+                            string="Confirmar operación manual" />
+                </header>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="instance_tree_view">
+            <field name="name">FSM Instance tree view</field>
+            <field name="model">fsm.instance</field>
+            <field name="inherit_id" ref="numa_fsm_crm.instance_tree_view"/>
+            <field name="arch" type="xml">
+                <field name="partner_id" position="after">
+                    <field name="employee_id" />
+                </field>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="instance_search_view">
+            <field name="name">FSM Instance search view</field>
+            <field name="model">fsm.instance</field>
+            <field name="inherit_id" ref="numa_fsm_crm.instance_search_view"/>
+            <field name="arch" type="xml">
+                <field name="partner_id" position="after">
+                    <field name="employee_id" />
+                    <filter name="group_partner_id" position="after">
+                        <filter string="Employee" name="group_employee_id" context="{'group_by': 'employee_id'}"/>
+                    </filter>
+                </field>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="definition_action">
+            <field name="name">Workflows</field>
+            <field name="res_model">fsm.definition</field>
+            <field name="view_mode">tree,form</field>
+            <field name="domain">[('type', '=', 'HR_Workflow')]</field>
+            <field name="context">{'default_type': 'HR_Workflow'}</field>
+        </record>
+
+        <record model="ir.actions.act_window" id="instance_action">
+            <field name="name">Instances</field>
+            <field name="res_model">fsm.instance</field>
+            <field name="view_mode">tree,form</field>
+            <field name="domain">[('definition_id.type', '=', 'HR_Workflow')]</field>
+            <field name="context">{'default_type': 'HR_Workflow'}</field>
+        </record>
+
+    </data>
+</odoo>

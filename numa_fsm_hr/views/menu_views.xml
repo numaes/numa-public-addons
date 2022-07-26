@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+
+        <menuitem id="menu_workflow" name="Workflows"
+            parent="hr.menu_hr_root"
+            sequence="20" >
+
+            <menuitem id="menu_definitions" name="Definitions"
+                      action="definition_action"/>
+            <menuitem id="menu_instances" name="Instances"
+                      action="instance_action"/>
+
+        </menuitem>
+
+    </data>
+</odoo>
