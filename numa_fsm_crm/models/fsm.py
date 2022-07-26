@@ -41,6 +41,7 @@ class FSMInstance(models.Model):
     partner_id = fields.Many2one('res.partner', 'Contact')
 
     current_page = fields.Many2one('fsm.wf.page_template', 'Current Page template')
+    manual_operation_needed = fields.Boolean('Manual operation required?')
 
     def set_page(self, page_name):
         self.ensure_one()
@@ -114,6 +115,12 @@ class FSMInstance(models.Model):
                 body=_("<span>Error trying to send mail template with invalid name %s or no partner</span>") % mail_template_name,
             )
 
+    def action_confirm_manual_operation(self):
+        for instance in self:
+            if instance.manual_operation_needed:
+                instance.manual_operation_needed = False
+                instance.consume_event(dict(name='manualOperationCheck'))
+
 
 class WorkFlowMailTemplate(models.Model):
     _name = 'fsm.wf.mail_template'
@@ -146,11 +153,15 @@ class WorkFlowMailTemplate(models.Model):
     def open_mail_template(self):
         self.ensure_one()
 
+        compose_form = self.env.ref('numa_fsm_crm.mail_template_html_edit')
+
         return {
             'type': 'ir.actions.act_window',
             'name': self.name,
             'view_mode': 'form',
             'res_model': 'fsm.wf.mail_template',
+            'views': [(compose_form.id, 'form')],
+            'view_id': compose_form.id,
             'res_id': self.id,
         }
 
