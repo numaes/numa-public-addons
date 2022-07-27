@@ -9,6 +9,7 @@
     'depends': [
         'base',
         'numa_fsm',
+        'crm',
         'mail',
         'mass_mailing',
         'email_template_qweb',
