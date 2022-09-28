@@ -121,6 +121,7 @@
                             <page name="relations" string="Relations">
                                 <group>
                                     <field name="partner_id" />
+                                    <field name="reply_to" />
                                 </group>
                             </page>
                             <page name="status" string="Status">

@@ -42,6 +42,7 @@ class FSMInstance(models.Model):
 
     current_page = fields.Many2one('fsm.wf.page_template', 'Current Page template')
     manual_operation_needed = fields.Boolean('Manual operation required?')
+    reply_to = fields.Char('Reply_to')
 
     def set_page(self, page_name):
         self.ensure_one()
@@ -92,6 +93,7 @@ class FSMInstance(models.Model):
         if mail_template and len(mail_template) == 1 and self.partner_id:
             mcm_model = self.env['mail.compose.message']
             mcm = mcm_model.create(dict(
+                reply_to=self.reply_to,
                 subject=subject if subject else _('Workflow automatic mail'),
                 body=self.render_dynamic_html(f'<div>{mail_template.body_view_html}</div>'),
                 attachment_ids=mail_template.attachment_ids.ids,
