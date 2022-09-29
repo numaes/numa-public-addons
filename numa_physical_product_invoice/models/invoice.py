@@ -52,7 +52,6 @@ class Invoice(models.Model):
         '''
         self.ensure_one()
         in_draft_mode = self != self._origin
-        forced_rate = self.invoice_currency_rate if self.invoice_currency_rate else False
 
         def _serialize_tax_grouping_key(grouping_dict):
             ''' Serialize the dictionary values to be used in the taxes_map.
@@ -179,7 +178,7 @@ class Invoice(models.Model):
                 continue
 
             # tax_base_amount field is expressed using the company currency.
-            tax_base_amount = currency.with_context(forced_rate=forced_rate)._convert(taxes_map_entry['tax_base_amount'], self.company_currency_id, self.company_id, self.date or fields.Date.context_today(self))
+            tax_base_amount = currency._convert(taxes_map_entry['tax_base_amount'], self.company_currency_id, self.company_id, self.date or fields.Date.context_today(self))
 
             # Recompute only the tax_base_amount.
             if recompute_tax_base_amount:
