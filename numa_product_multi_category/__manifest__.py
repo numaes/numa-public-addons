@@ -16,7 +16,7 @@ according to multiple categories.
     'data': ['views/product_view.xml',],
     'demo': [],
     'test': [],
-    'installable': True,
+    'installable': False,
     'application': True,
     'active': False,
 }

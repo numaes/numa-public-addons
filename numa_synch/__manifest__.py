@@ -13,4 +13,5 @@
         "views/synch_view.xml",
         "views/menu.xml",
     ],
+    'installable': False,
 }

@@ -21,4 +21,5 @@
         "views/menu_views.xml",
         "views/fsm_templates.xml",
     ],
+    'installabe': False,
 }

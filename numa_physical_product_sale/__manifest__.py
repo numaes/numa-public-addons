@@ -15,7 +15,7 @@ Technical module to expand sales by physical products
     ],
     'demo_xml': [],
     'test': [],
-    'installable': True,
+    'installable': False,
     'active': False,
     'auto_install': True,
 }

@@ -13,7 +13,7 @@ Technical module to expand purchase by physical products
     'data': ['views/purchase_views.xml'],
     'demo_xml': [],
     'test': [],
-    'installable': True,
+    'installable': False,
     'active': False,
     'auto_install': True,
 }

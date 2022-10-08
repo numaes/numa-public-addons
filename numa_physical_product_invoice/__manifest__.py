@@ -19,7 +19,7 @@ Technical module to expand invoices by physical products
     ],
     'demo_xml': [],
     'test': [],
-    'installable': True,
+    'installable': False,
     'active': False,
     'auto_install': True,
 }

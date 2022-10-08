@@ -16,7 +16,7 @@
     'summary': 'Roles and Permitions',
     'css': [],
     'auto_install': False,
-    'installable': True,
+    'installable': False,
     'application': True,
 }
 

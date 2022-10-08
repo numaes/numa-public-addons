@@ -18,6 +18,6 @@ It adds:
     ],
     'demo_xml': [],
     'test': [],
-    'installable': True,
+    'installable': False,
     'active': False,
 }

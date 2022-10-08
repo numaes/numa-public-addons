@@ -17,4 +17,5 @@
         "views/fsm_views.xml",
         "views/menu_views.xml",
     ],
+    'installable': False,
 }
