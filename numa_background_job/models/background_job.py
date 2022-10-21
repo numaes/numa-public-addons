@@ -108,19 +108,19 @@ class BackgroundJob(models.Model):
                 aborted_on=str(job.aborted_on),
             )
             self.env.cr.commit()
-            busModel.sendone(channel, message)
+            busModel._sendone(channel, 'background_job', message)
             self.env.cr.commit()
 
     def start(self, statusMsg=None):
         ids = [o.id for o in self]
-        self.flush()
+        self.env.flush_all()
 
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
             bkJobObj = env['res.background_job']
-            bkJobObj.invalidate_cache()
+            bkJobObj.env.invalidate_all()
             for job in bkJobObj.browse(ids):
                 if job.state == 'init':
                     job.write({
@@ -130,21 +130,21 @@ class BackgroundJob(models.Model):
                         'error': False,
                         'completion_rate': 0,
                     })
-                    job.flush()
+                    job.flush_recordset()
                 cr.commit()
                 job.refresh_state()
             cr.close()
 
     def end(self, statusMsg=None, errorMsg=None):
         ids = [o.id for o in self]
-        self.flush()
+        self.env.flush_all()
 
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
             bkJobObj = env['res.background_job']
-            bkJobObj.invalidate_cache()
+            bkJobObj.env.flush_all()
             for job in bkJobObj.browse(ids):
                 if job.state not in ['ended', 'aborted']:
                     if errorMsg is not None:
@@ -155,21 +155,21 @@ class BackgroundJob(models.Model):
                         'current_status': statusMsg or '',
                         'state': 'ended',
                     })
-                    job.flush()
+                    job.flush_recordset()
                 cr.commit()
                 job.refresh_state()
             cr.close()
 
     def abort(self, statusMsg=None, errorMsg=None):
         ids = [o.id for o in self]
-        self.flush()
+        self.env.flush_all()
 
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
             bkJobObj = env['res.background_job']
-            bkJobObj.invalidate_cache()
+            bkJobObj.env.invalidate_all()
             for job in bkJobObj.browse(ids):
                 if job.state in ('started', 'aborting'):
                     if statusMsg is not None:
@@ -181,21 +181,21 @@ class BackgroundJob(models.Model):
                         'aborted_on': fields.Datetime.now(),
                         'state': 'aborted',
                     })
-                    job.flush()
+                    job.flush_recordset()
                 cr.commit()
                 job.refresh_state()
             cr.close()
 
     def try_to_abort(self, statusMsg=None):
         ids = [o.id for o in self]
-        self.flush()
+        self.env.flush_all()
 
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
             bkJobObj = env['res.background_job']
-            bkJobObj.invalidate_cache()
+            bkJobObj.env.flush_all()
             for job in bkJobObj.browse(ids):
                 if job.state == 'started':
                     job.write({
@@ -204,14 +204,14 @@ class BackgroundJob(models.Model):
                         'state': 'aborting',
                         'error': False,
                     })
-                    job.flush()
+                    job.flush_recordset()
                 cr.commit()
                 job.refresh_state()
             cr.close()
 
     def was_aborted(self):
         self.ensure_one()
-        self.flush()
+        self.env.flush_all()
 
         bkjId = self.id
 
@@ -221,7 +221,7 @@ class BackgroundJob(models.Model):
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
             bkJobObj = env['res.background_job']
-            bkJobObj.invalidate_cache()
+            bkJobObj.env.invalidate_all()
             job = bkJobObj.browse(bkjId)
             wasAborted = job.state not in ['started']
             cr.commit()
@@ -231,14 +231,14 @@ class BackgroundJob(models.Model):
 
     def update_status(self, rate=None, statusMsg=None, errorMsg=None):
         ids = [o.id for o in self]
-        self.flush()
+        self.env.flush_all()
 
         db = odoo.modules.registry.Registry(self.env.cr.dbname)
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
             bkJobObj = env['res.background_job']
-            bkJobObj.invalidate_cache()
+            bkJobObj.env.invalidate_all()
             for job in bkJobObj.browse(ids):
                 if job.state == 'started':
                     if statusMsg is not None:
@@ -247,14 +247,14 @@ class BackgroundJob(models.Model):
                         job.error = errorMsg
                     if rate is not None:
                         job.completion_rate = rate
-                    job.flush()
+                    job.flush_recordset()
                 cr.commit()
                 job.refresh_state()
             cr.close()
 
     def get_current_state(self):
         self.ensure_one()
-        self.flush()
+        self.env.flush_all()
 
         bjId = self.id
         state = None
@@ -265,7 +265,7 @@ class BackgroundJob(models.Model):
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
             bkJobObj = env['res.background_job']
-            bkJobObj.invalidate_cache()
+            bkJobObj.env.flush_all()
             job = bkJobObj.browse(bjId)
             state = job.state
             completionRate = job.completion_rate
@@ -301,48 +301,47 @@ class BackgroundThread(threading.Thread):
         self.start()
 
     def run(self):
-        with api.Environment.manage():
-            attemptCount = 0
-            while attemptCount < 10:
-                db = odoo.modules.registry.Registry(self.dbName)
-                if db:
-                    cr = db.cursor()
-                    env = api.Environment(cr, self.uid, self.context)
-                    bkJobObj = env['res.background_job']
-                    bkJob = bkJobObj.browse(self.jobId)
-                    if bkJob.exists():
-                        bkJob.start()
-                        try:
-                            modelObj = env[bkJob.model]
-                            modelInstance = modelObj.browse(bkJob.res_id)
-                            method = getattr(modelInstance, bkJob.method)
-                            if method:
-                                method(bkJob)
-                                state, completionRate = bkJob.get_current_state()
-                                _logger.info(_("Ending with completion_rate: %d, state=%s") %
-                                             (completionRate, state))
+        attemptCount = 0
+        while attemptCount < 10:
+            db = odoo.modules.registry.Registry(self.dbName)
+            if db:
+                cr = db.cursor()
+                env = api.Environment(cr, self.uid, self.context)
+                bkJobObj = env['res.background_job']
+                bkJob = bkJobObj.browse(self.jobId)
+                if bkJob.exists():
+                    bkJob.start()
+                    try:
+                        modelObj = env[bkJob.model]
+                        modelInstance = modelObj.browse(bkJob.res_id)
+                        method = getattr(modelInstance, bkJob.method)
+                        if method:
+                            method(bkJob)
+                            state, completionRate = bkJob.get_current_state()
+                            _logger.info(_("Ending with completion_rate: %d, state=%s") %
+                                         (completionRate, state))
 
-                                if state == 'started' and completionRate >= 100:
-                                    bkJob.end()
-                            else:
-                                bkJob.abort(
-                                    statusMsg=_("No method defined!"))
-                        except Exception as e:
-                            exc_type, exc_value, exc_traceback = sys.exc_info()
-                            exceptionLines = traceback.format_exception(exc_type, exc_value, exc_traceback)
-
-                            cr.rollback()
-
-                            bkJob = bkJobObj.browse(self.jobId)
+                            if state == 'started' and completionRate >= 100:
+                                bkJob.end()
+                        else:
                             bkJob.abort(
-                                statusMsg=_('Unexpected exception!'),
-                                errorMsg='\n'.join(exceptionLines))
+                                statusMsg=_("No method defined!"))
+                    except Exception as e:
+                        exc_type, exc_value, exc_traceback = sys.exc_info()
+                        exceptionLines = traceback.format_exception(exc_type, exc_value, exc_traceback)
 
-                        cr.commit()
-                        cr.close()
-                        break
-                    else:
                         cr.rollback()
-                        cr.close()
-                        attemptCount += 1
-                        time.sleep(1)
+
+                        bkJob = bkJobObj.browse(self.jobId)
+                        bkJob.abort(
+                            statusMsg=_('Unexpected exception!'),
+                            errorMsg='\n'.join(exceptionLines))
+
+                    cr.commit()
+                    cr.close()
+                    break
+                else:
+                    cr.rollback()
+                    cr.close()
+                    attemptCount += 1
+                    time.sleep(1)

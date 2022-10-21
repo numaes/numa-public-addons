@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates id="template" xml:space="preserve">
+
+    <t t-name="bj_spinner">
+        <div class="bj_spinner">
+            <div class="o_bjprogressbar_state">
+                <span t-att-text="state_msg"/>
+            </div>
+            <t t-if="state == 'aborted' || this.state == 'aborting'" >
+                <div class="o_bjprogressbar">
+                    <div class="o_bjprogressbar_indicator" style="background-color: #C080C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_frame">
+                        <span class="o_bjprogressbar_value" t-att-text="message + ' %'"/>
+                    </div>
+                </div>
+            </t>
+            <t t-if="state == 'init'">
+                <div class="o_bjprogressbar">
+                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_frame">
+                        <span class="o_bjprogressbar_value" t-att-text="message + ' %'"/>
+                    </div>
+                </div>
+                <div class="o_bjprogressbar_abort" >
+                    <button t-on-click="() => state.value = state.value + props.increment">
+                        Cancel
+                    </button>
+                </div>
+                <div class="o_bjprogressbar_message" >
+                    <span t-esc="message"/>
+                </div>
+            </t>
+            <t t-if="state == 'ended'">
+                <div class="o_bjprogressbar">
+                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_frame">
+                        <span class="o_bjprogressbar_value" t-att-text="message + ' %'"/>
+                    </div>
+                </div>
+                <div class="o_bjprogressbar_message" >
+                    <span t-esc="message"/>
+                </div>
+                <div class="o_bjprogressbar_error" >
+                    <span t-esc="error"/>
+                </div>
+            </t>
+            <t t-if="state == 'ended'">
+                <div class="o_bjprogressbar">
+                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_frame">
+                        <span class="o_bjprogressbar_value" t-att-text="message + ' %'"/>
+                    </div>
+                </div>
+                <div class="o_bjprogressbar_message" >
+                    <span t-esc="message"/>
+                </div>
+                <div class="o_bjprogressbar_error" >
+                    <span t-esc="error"/>
+                </div>
+            </t>
+            <t t-if="state == 'started'">
+                <div class="o_bjprogressbar">
+                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_frame">
+                        <span class="o_bjprogressbar_value" t-att-text="message + ' %'"/>
+                    </div>
+                </div>
+                <div class="o_bjprogressbar_abort" >
+                    <button t-on-click="() => field._click_abort()">
+                        Cancel
+                    </button>
+                </div>
+                <div class="o_bjprogressbar_message" >
+                    <span t-esc="message"/>
+                </div>
+            </t>
+        </div>
+    </t>
+
+</templates>

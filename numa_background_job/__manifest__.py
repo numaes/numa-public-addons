@@ -35,16 +35,20 @@ to process long processes without blocking the UI.
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'bus'],
+    'depends': ['base', 'bus', 'web'],
     'data': [
         'security/security.xml',
         'security/ir.model.access.csv',
-        'views/background_job.xml',
-        'views/background_job_view.xml',
+        'views/background_job_views.xml',
         'data/autocleanup.xml',
     ],
     'test': [],
-    'qweb': ["static/src/xml/*.xml",],
-    'installable': False,
+    'assets': {
+        'web.assets_backend': [
+            'numa_background_job/static/src/**/*',
+        ]
+    },
+    'installable': True,
+    'license': 'LGPL-3',
 }
 # vim:expandtab:smartindent:tabstop=4:softtabstop=4:shiftwidth=4:

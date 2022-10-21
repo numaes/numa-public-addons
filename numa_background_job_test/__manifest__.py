@@ -43,6 +43,7 @@ an example of usage.
     ],
     'test': [],
     'qweb': [],
-    'installable': False,
+    'installable': True,
+    'license': 'LGPL-3',
 }
 # vim:expandtab:smartindent:tabstop=4:softtabstop=4:shiftwidth=4:

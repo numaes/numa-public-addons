@@ -12,7 +12,6 @@
         'crm',
         'mail',
         'mass_mailing',
-        'email_template_qweb',
     ],
     'data': [
         "security/security.xml",
@@ -21,5 +20,5 @@
         "views/menu_views.xml",
         "views/fsm_templates.xml",
     ],
-    'installabe': False,
+    'installable': False,
 }

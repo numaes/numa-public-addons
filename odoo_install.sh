@@ -83,10 +83,10 @@ sudo apt-get upgrade -y
 # Install PostgreSQL Server
 #--------------------------------------------------
 echo -e "\n---- Install PostgreSQL Server ----"
-sudo apt-get install postgresql postgresql-server-dev-all -y
+sudo apt-get install postgresql postgres-client postgresql-server-dev-all -y
+sudo -u postgres createuser $USER
 
 echo -e "\n---- Creating the ODOO PostgreSQL User  ----"
-sudo su - postgres -c "createuser -s $OE_USER" 2> /dev/null || true
 createuser -s "pg-$PROJECT-$OE_VERSION"
 
 #--------------------------------------------------
@@ -118,9 +118,7 @@ fi
 
 if [ "$INSTALL_WKHTMLTOPDF" = "True" ]; then
   echo -e "\n---- Install wkhtml and place shortcuts on correct place for ODOO $OE_VERSION ----"
-  wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6.1-2.bullseye_amd64.deb
-  sudo dpkg -i ./wkhtmltox_0.12.6.1-2.bullseye_amd64.deb
-  rm ./wkhtmltox_0.12.6.1-2.bullseye_amd64.deb
+  sudo apt install wkhtmltopdf
 fi
 
 #--------------------------------------------------
@@ -435,7 +433,7 @@ upstream backend-odoo {
 upstream backend-odoo-im {
  server localhost:$LONGPOLLING_PORT;
 }
-map $http_upgrade $connection_upgrade {
+map \$http_upgrade \$connection_upgrade {
   default upgrade;
   ''      close;
 }
@@ -502,19 +500,18 @@ server {
   }
   location /longpolling {
     proxy_pass http://backend-odoo-im;
-    proxy_set_header X-Forwarded-Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-Host \$host;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Real-IP \$remote_addr;
   }
   location /websocket {
     proxy_pass http://backend-odoo-im;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_set_header X-Forwarded-Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection \$connection_upgrade;
+    proxy_set_header X-Forwarded-Host \$host;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
   }
   location ~* .js|css|png|jpg|jpeg|gif|ico$ {
     expires 2d;
