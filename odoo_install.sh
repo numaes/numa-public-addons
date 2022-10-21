@@ -222,8 +222,15 @@ if [ "$PROJECT" != "" ]; then
       else
           printf "xmlrpc_port = ${OE_PORT}\n" >> odoo.config
       fi
-      printf "longpolling_port = ${LONGPOLLING_PORT}\n" >> odoo.config
-
+      if [ "$OE_VERSION" \>= "16.0" ]; then
+          printf "gevent_port = ${LONGPOLLING_PORT}\n" >> odoo.config
+          printf "longpolling_port = False\n" >> odoo.config
+      else
+          printf "longpolling_port = ${LONGPOLLING_PORT}\n" >> odoo.config
+      fi
+      if [ "$INSTALL_NGINX" = "True" ]; then
+          printf "proxy_mode = True\n" >> odoo.config
+      fi
       printf "data_dir = data\n" >> odoo.config
       printf "limit_time_cpu = 3600\n" >> odoo.config
       printf "limit_time_real = 7200\n" >> odoo.config
@@ -493,7 +500,13 @@ server {
     proxy_redirect off;
     proxy_pass    http://backend-odoo;
   }
-
+  location /longpolling {
+    proxy_pass http://backend-odoo-im;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Real-IP $remote_addr;
+  }
   location /websocket {
     proxy_pass http://backend-odoo-im;
     proxy_set_header Upgrade $http_upgrade;
