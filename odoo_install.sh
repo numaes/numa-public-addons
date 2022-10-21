@@ -118,9 +118,9 @@ fi
 
 if [ "$INSTALL_WKHTMLTOPDF" = "True" ]; then
   echo -e "\n---- Install wkhtml and place shortcuts on correct place for ODOO $OE_VERSION ----"
-  wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.focal_amd64.deb
-  sudo dpkg -i ./wkhtmltox_0.12.6-1.focal_amd64
-  rm ./wkhtmltox_0.12.6-1.focal_amd64
+  wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6.1-2.bullseye_amd64.deb
+  sudo dpkg -i ./wkhtmltox_0.12.6.1-2.bullseye_amd64
+  rm ./wkhtmltox_0.12.6.1-2.bullseye_amd64
 fi
 
 #--------------------------------------------------
