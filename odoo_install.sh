@@ -428,6 +428,10 @@ upstream backend-odoo {
 upstream backend-odoo-im {
  server localhost:$LONGPOLLING_PORT;
 }
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
 
 # http -> https
 server {
@@ -479,18 +483,25 @@ server {
   gzip    on;
   gzip_min_length 1100;
   gzip_buffers    4   32k;
-  gzip_types  text/css text/less text/plain text/xml application/xml application/json application/javascript application/pdf image/jpeg image/png;
+  gzip_types  text/css text/scss text/plain text/xml application/xml application/json application/javascript;
   gzip_vary   on;
   client_header_buffer_size 4k;
   large_client_header_buffers 4 64k;
   client_max_body_size 0;
 
   location / {
+    proxy_redirect off;
     proxy_pass    http://backend-odoo;
   }
 
-  location /longpolling {
+  location /websocket {
     proxy_pass http://backend-odoo-im;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Real-IP $remote_addr;
   }
   location ~* .js|css|png|jpg|jpeg|gif|ico$ {
     expires 2d;
