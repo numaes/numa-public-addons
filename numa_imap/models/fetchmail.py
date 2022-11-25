@@ -67,6 +67,12 @@ class FetchmailServer(models.Model):
                                 first_uid = ((server.last_uid or 0) \
                                                  if server.last_uid_validity and \
                                                     current_uid_validity == server.last_uid_validity else 0) + 1
+
+                                _logger.info(f'IMAP Server: '
+                                             f'current_uid_validity: {current_uid_validity}, '
+                                             f'server.uid_validity: {server.last_uid_validity}, '
+                                             f'first_uid: {first_uid}, server.last_uid: {server.last_uid}')
+
                                 result, data = imap_server.search(
                                     None,
                                     f'(UID '
@@ -99,7 +105,10 @@ class FetchmailServer(models.Model):
                                     if current_uid_validity != server.last_uid_validity:
                                         server.last_uid_validity = current_uid_validity
 
-                                    self._cr.commit()
+                                    _logger.info(f'IMAP Server: last_uid: {server.last_uid}, '
+                                                 f'last_uid_validity:{server.last_uid_validity}')
+
+                                    self.env.cr.commit()
                                     count += 1
 
                                 _logger.info("Fetched %d email(s) on %s server %s; %d succeeded, %d failed.",
