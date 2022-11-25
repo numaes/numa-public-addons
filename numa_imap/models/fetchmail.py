@@ -76,8 +76,7 @@ class FetchmailServer(models.Model):
                                 if server.last_uid:
                                     result, data = imap_server.search(
                                         None,
-                                        f'(UID '
-                                        f'{first_uid}:*)'
+                                        f'(UID {first_uid}:*)'
                                     )
                                 else:
                                     result, data = imap_server.search(
@@ -85,7 +84,11 @@ class FetchmailServer(models.Model):
                                         f'(SINCE {initial_date(server)})'
                                     )
 
-                                newMsgs = sorted([int(m) for m in data[0].split()])
+                                if server.last_uid:
+                                    newMsgs = sorted([int(m) for m in data[0].split() if int(m) > server.last_uid])
+                                else:
+                                    newMsgs = sorted([int(m) for m in data[0].split()])
+
                                 for num in newMsgs:
                                     _logger.info(f'Getting mail with UID {num} from server {server.name}')
                                     res_id = None
