@@ -119,6 +119,11 @@ class SaleOrderLine(models.Model):
     @api.depends('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'product_uom')
     def compute_price(self):
         for sol in self:
+            sol._compute_amount()
+
+    @api.depends('price_qty', 'discount', 'price_unit', 'tax_id')
+    def _compute_amount(self):
+        for sol in self:
             normalized_qty = sol.product_uom._compute_quantity(sol.product_uom_qty, sol.product_id.uom_id) \
                              if sol.product_uom else sol.product_uom_qty
             price_type = sol.product_id.price_base
@@ -138,11 +143,6 @@ class SaleOrderLine(models.Model):
                 price_qty = normalized_qty
             sol.price_qty = price_qty
 
-            sol._compute_amount()
-
-    @api.depends('price_qty', 'discount', 'price_unit', 'tax_id')
-    def _compute_amount(self):
-        for sol in self:
             price = sol.price_unit * (1 - (sol.discount or 0.0) / 100.0)
             taxes = sol.tax_id.compute_all(price, sol.order_id.currency_id, sol.price_qty,
                                            product=sol.product_id, partner=sol.order_id.partner_id)
