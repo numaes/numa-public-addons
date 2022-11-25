@@ -61,19 +61,19 @@ class FetchmailServer(models.Model):
                             flags, folder_name = entry.decode().split(' "/" ')
                             if '\\All' in flags:
                                 response, folder_data = imap_server.select(folder_name)
-                                current_uid_validity = int(folder_data[0].decode('utf-8'))
+                                current_uid_validity = int(imap_server.response('UIDVALIDITY')[1][0])
 
                                 selected = True
                                 first_uid = ((server.last_uid or 0) \
-                                                 if not server.last_uid_validity or
+                                                 if server.last_uid_validity and \
                                                     current_uid_validity == server.last_uid_validity else 0) + 1
                                 result, data = imap_server.search(
                                     None,
                                     f'(UID '
-                                    f'{first_uid}:{first_uid + 500} SENTSINCE {initial_date(server)})'
+                                    f'{first_uid}:* SENTSINCE {initial_date(server)})'
                                 )
 
-                                newMsgs = sorted([int(m) for m in data[0].split() if int(m) > server.last_uid])
+                                newMsgs = sorted([int(m) for m in data[0].split()])
                                 for num in newMsgs:
                                     _logger.info(f'Getting mail with UID {num} from server {server.name}')
                                     res_id = None
