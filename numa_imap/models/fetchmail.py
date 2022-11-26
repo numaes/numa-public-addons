@@ -73,20 +73,17 @@ class FetchmailServer(models.Model):
                                              f'server.uid_validity: {server.last_uid_validity}, '
                                              f'first_uid: {first_uid}, server.last_uid: {server.last_uid}')
 
-                                if server.last_uid:
+                                if server.last_uid and current_uid_validity == server.last_uid_validity:
                                     result, data = imap_server.search(
                                         None,
                                         f'(UID {first_uid}:*)'
                                     )
+                                    newMsgs = sorted([int(m) for m in data[0].split() if int(m) > server.last_uid])
                                 else:
                                     result, data = imap_server.search(
                                         None,
                                         f'(SINCE {initial_date(server)})'
                                     )
-
-                                if server.last_uid:
-                                    newMsgs = sorted([int(m) for m in data[0].split() if int(m) > server.last_uid])
-                                else:
                                     newMsgs = sorted([int(m) for m in data[0].split()])
 
                                 for num in newMsgs:
