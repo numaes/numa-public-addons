@@ -322,9 +322,9 @@ else
 		[ -d $BACKUPDIR/$DB ] || mkdir -p $BACKUPDIR/$DB
 
 		if [ -d "$FILESTOREDIR/filestore/$DB" ]; then
-			$PGDUMP $DB -U -O $ROLE > dump.sql && tar cjf $BACKUPDIR/$DB/$DB-$DATE.tar.bz2 --transform "s,^filestore/$DB,filestore," dump.sql -C $FILESTOREDIR filestore/$DB && rm -rf dump.sql
+			$PGDUMP $DB -O -U $ROLE > dump.sql && tar cjf $BACKUPDIR/$DB/$DB-$DATE.tar.bz2 --transform "s,^filestore/$DB,filestore," dump.sql -C $FILESTOREDIR filestore/$DB && rm -rf dump.sql
 		else
-			$PGDUMP $DB -U -O $ROLE > dump.sql && tar cjf $BACKUPDIR/$DB/$DB-$DATE.tar.bz2 dump.sql && rm -rf dump.sql
+			$PGDUMP $DB -O -U $ROLE > dump.sql && tar cjf $BACKUPDIR/$DB/$DB-$DATE.tar.bz2 dump.sql && rm -rf dump.sql
 		fi
 	done
 	# cd $CWD
