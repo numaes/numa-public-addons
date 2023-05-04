@@ -94,8 +94,9 @@ createuser -s "pg-$PROJECT-$OE_VERSION"
 #--------------------------------------------------
 echo -e "\n--- Installing Python 3 + pip3 --"
 sudo apt-get install git swig -y
-sudo apt-get install python3 python3-pip build-essential wget python3-dev python3-venv python3-wheel -y
-sudo apt-get install libxslt-dev libzip-dev libldap2-dev libsasl2-dev python3-setuptools -y
+sudo apt install libssl-dev libffi-dev libmysqlclient-dev libblas-dev libatlas-base-dev -y
+sudo apt-get install python3 python3-pip build-essential wget python3-dev python3-venv python3-wheel liblcms2-dev -y
+sudo apt-get install libxslt1-dev zlib1g-dev libzip-dev libldap2-dev libsasl2-dev python3-setuptools -y
 sudo apt-get install node-less libjpeg-dev -y
 sudo apt-get install libxml2-dev libxmlsec1-dev -y
 
