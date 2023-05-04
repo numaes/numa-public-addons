@@ -119,7 +119,6 @@ fi
 
 if [ "$INSTALL_WKHTMLTOPDF" = "True" ]; then
   echo -e "\n---- Install wkhtml and place shortcuts on correct place for ODOO $OE_VERSION ----"
-  sudo dpkg -i wkhtmltox_0.12.6.1-2.jammy_amd64.deb
   wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.jammy_amd64.deb
   sudo apt install xfonts-75dpi -y
   sudo dpkg -i wkhtmltox_0.12.6.1-2.jammy_amd64.deb
