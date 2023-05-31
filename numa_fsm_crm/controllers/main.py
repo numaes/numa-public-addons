@@ -1,6 +1,7 @@
 import datetime
 import json
 import logging
+import time
 
 from odoo import http
 from odoo.http import request
@@ -65,6 +66,9 @@ class WorkflowController(http.Controller):
                 'message': 'Nothing to show for this workflow'
             })
 
+        wkf.flush()
+        wkf.env.cr.commit()
+
         return request.render('numa_fsm_crm.page_template', dict(
             page=wkf.current_page,
             processed_body=wkf.render_dynamic_html(
@@ -98,6 +102,9 @@ class WorkflowController(http.Controller):
             return request.render('numa_fsm_crm.error_page', {
                 'message': 'Nothing to show for this workflow'
             })
+
+        wkf.flush()
+        wkf.env.cr.commit()
 
         return request.render('numa_fsm_crm.page_template', dict(
             page=wkf.current_page,
