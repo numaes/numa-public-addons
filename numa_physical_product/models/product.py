@@ -80,12 +80,12 @@ class ProductProduct(models.Model):
     product_length = fields.Float('Length [m]', compute="get_length", inverse="set_length", digits='Stock Length')
 
     variant_weight_factor = fields.Float('Variant Weight Factor [kg/unit]')
-    variant_weight = fields.Float('Variant Weight [kg]')
-    variant_volume = fields.Float('Variant Volume [m3]')
-    variant_surface = fields.Float('Variant Surface [m2]')
-    variant_width = fields.Float('Variant Width [m]')
-    variant_height = fields.Float('Variant Height [m]')
-    variant_length = fields.Float('Variant Length [m]')
+    variant_weight = fields.Float('Variant Weight [kg]', digits='Stock Weight')
+    variant_volume = fields.Float('Variant Volume [m3]', digits='Stock Volume')
+    variant_surface = fields.Float('Variant Surface [m2]', digits='Stock Surface')
+    variant_width = fields.Float('Variant Width [m]', digits='Stock Length')
+    variant_height = fields.Float('Variant Height [m]', digits='Stock Length')
+    variant_length = fields.Float('Variant Length [m]', digits='Stock Length')
 
     def get_weight_factor(self):
         for product in self:
