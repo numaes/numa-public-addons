@@ -30,7 +30,7 @@ read -r -e -p "Odoo longpolling port: " -i "8072" LONGPOLLING_PORT
 
 # Choose the Odoo version which you want to install. For example: 13.0, 12.0, 11.0 or saas-18. When using 'master' the master version will be installed.
 # IMPORTANT! This script contains extra libraries that are specifically needed for Odoo 13.0
-read -r -e -p "Odoo version: " -i "14.0" OE_VERSION
+read -r -e -p "Odoo version: " -i "16.0" OE_VERSION
 
 # Set this to True if you want to install the Odoo enterprise version!
 read -r -e -p "Is enterprise? [True/False]: " -i "False" IS_ENTERPRISE
@@ -83,7 +83,7 @@ sudo apt-get upgrade -y
 # Install PostgreSQL Server
 #--------------------------------------------------
 echo -e "\n---- Install PostgreSQL Server ----"
-sudo apt-get install postgresql postgres-client postgresql-server-dev-all -y
+sudo apt-get install postgresql postgres-client postgres-client-common postgresql-server-dev-all libpq-dev -y
 sudo -u postgres createuser $USER
 
 echo -e "\n---- Creating the ODOO PostgreSQL User  ----"
@@ -120,7 +120,7 @@ fi
 if [ "$INSTALL_WKHTMLTOPDF" = "True" ]; then
   echo -e "\n---- Install wkhtml and place shortcuts on correct place for ODOO $OE_VERSION ----"
   wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.jammy_amd64.deb
-  sudo apt install xfonts-75dpi -y
+  sudo apt install xfonts-75dpi xfonts-base -y
   sudo dpkg -i wkhtmltox_0.12.6.1-2.jammy_amd64.deb
   sudo cp /usr/local/bin/wkhtmltoimage /usr/bin/wkhtmltoimage
   sudo cp /usr/local/bin/wkhtmltopdf /usr/bin/wkhtmltopdf
@@ -459,6 +459,10 @@ server {
 
   ssl_certificate /etc/letsencrypt/live/$WEBSITE_NAME/fullchain.pem; # managed by Certbot
   ssl_certificate_key /etc/letsencrypt/live/$WEBSITE_NAME/privkey.pem; # managed by Certbot
+  ssl_session_timeout 30m;
+  ssl_protocols TLSv1.2;
+  ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+  ssl_prefer_server_ciphers off;
   keepalive_timeout 60;
 
 
@@ -517,6 +521,7 @@ server {
     proxy_set_header X-Forwarded-Host \$host;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Real-IP \$remote_addr;
   }
   location ~* .js|css|png|jpg|jpeg|gif|ico$ {
     expires 2d;
