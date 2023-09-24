@@ -59,6 +59,24 @@ class ProductTemplate(models.Model):
         elif p.weight_kind == 'volume':
             p.weight = p.weight_factor * p.volume
 
+    @api.model_create_single
+    def create(self, vals):
+        new_product_template = super().create(vals)
+        new_product_template.onchange_weight()
+        new_product_template.onchange_dimensions()
+        return new_product_template
+
+    def write(self, vals):
+        super().write(vals)
+        for pt in self:
+            if 'product_width' in vals or \
+               'product_length' in vals or \
+               'product_height' in vals:
+                pt.onchange_dimensions()
+                pt.onchange_weight()
+            elif 'weight_factor' in vals:
+                pt.onchange_weight()
+
 
 class ProductProduct(models.Model):
     _inherit = 'product.product'
@@ -174,6 +192,24 @@ class ProductProduct(models.Model):
             p.variant_weight = p.weight_factor * p.surface
         elif p.weight_kind == 'volume':
             p.variant_weight = p.weight_factor * p.volume
+
+    @api.model_create_single
+    def create(self, vals):
+        new_product = super().create(vals)
+        new_product.onchange_weight()
+        new_product.onchange_dimensions()
+        return new_product
+
+    def write(self, vals):
+        super().write(vals)
+        for pt in self:
+            if 'product_width' in vals or \
+               'product_length' in vals or \
+               'product_height' in vals:
+                pt.onchange_dimensions()
+                pt.onchange_weight()
+            elif 'weight_factor' in vals:
+                pt.onchange_weight()
 
 
 class ProductPricelistItem(models.Model):
