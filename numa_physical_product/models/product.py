@@ -44,7 +44,7 @@ class ProductTemplate(models.Model):
         self.surface = self.product_length * self.product_width
         self.volume = self.product_length * self.product_width * self.product_height
 
-    @api.onchange('weight_kind', 'surface', 'product_width', 'product_height', 'product_length', 'volume')
+    @api.onchange('weight_kind', 'weight_factor','surface', 'product_width', 'product_height', 'product_length', 'volume')
     def onchange_weight(self):
         p = self
 
@@ -62,8 +62,8 @@ class ProductTemplate(models.Model):
     @api.model_create_single
     def create(self, vals):
         new_product_template = super().create(vals)
-        new_product_template.onchange_weight()
         new_product_template.onchange_dimensions()
+        new_product_template.onchange_weight()
         return new_product_template
 
     def write(self, vals):
@@ -196,8 +196,8 @@ class ProductProduct(models.Model):
     @api.model_create_single
     def create(self, vals):
         new_product = super().create(vals)
-        new_product.onchange_weight()
-        new_product.onchange_dimensions()
+        new_product.onchange_variant_dimensions()
+        new_product.onchange_variant_weight()
         return new_product
 
     def write(self, vals):
@@ -206,10 +206,10 @@ class ProductProduct(models.Model):
             if 'product_width' in vals or \
                'product_length' in vals or \
                'product_height' in vals:
-                pt.onchange_dimensions()
-                pt.onchange_weight()
+                pt.onchange_variant_dimensions()
+                pt.onchange_variant_weight()
             elif 'weight_factor' in vals:
-                pt.onchange_weight()
+                pt.onchange_variant_weight()
 
 
 class ProductPricelistItem(models.Model):
