@@ -156,15 +156,25 @@ class ProductTemplate(models.Model):
                 _('All attributes are automatically created. Nothing left to be done!')
             )
 
+        vals = dict(
+            template_id=self.id,
+        )
+
+        for n in range(0, 10):
+            if n >= len(self.attribute_line_ids):
+                break
+            vals[f'attribute{n}'] = self.attribute_line_ids[n].id
+            vals[f'required{n}'] = self.attribute_line_ids[n].attribute_id.create_variant == 'allways'
+
+        wizard = self.env['product.cmvariant'].create(vals)
+
         return {
             'name': _('Manually create variant'),
             'view_mode': 'form',
             'res_model': 'product.cmvariant',
+            'res_id': wizard.id,
             'type': 'ir.actions.act_window',
             'target': 'new',
-            'context': {
-                'default_template_id': self.id,
-            }
         }
 
 
@@ -173,20 +183,46 @@ class CreateManualVariantWizard(models.Model):
     _description = 'Create Manual Variant'
 
     template_id = fields.Many2one('product.template', 'Template')
-    attribute_value_ids = fields.Many2many('product.template.attribute.value', string='Attribute values',
-                                           domain="[('id', 'in', attribute_domain_ids)]")
-    attribute_domain_ids = fields.One2many('product.template.attribute.value', string='Value domain',
-                                           compute=lambda s: s.compute_attribute_domain_ids())
 
-    @api.onchange('template_id')
-    def compute_attribute_domain_ids(self):
-        for wizard in self:
-            product = self.env['product.template'].browse(self.env.context['default_template_id'])
+    attribute0 = fields.Many2one('product.template.attribute.line', 'Attribute 0')
+    value0 = fields.Many2one('product.template.attribute.value', 'Value 0')
+    required0 = fields.Boolean('Required 0')
 
-            attribute_values = [pav
-                                for pa in product.attribute_line_ids
-                                for pav in pa.product_template_value_ids]
-            wizard.attribute_domain_ids = [pav.id for pav in attribute_values]
+    attribute1 = fields.Many2one('product.template.attribute.line', 'Attribute 1')
+    value1 = fields.Many2one('product.template.attribute.value', 'Value 1')
+    required1 = fields.Boolean('Required 1')
+
+    attribute2 = fields.Many2one('product.template.attribute.line', 'Attribute 2')
+    value2 = fields.Many2one('product.template.attribute.value', 'Value 2')
+    required2 = fields.Boolean('Required 2')
+
+    attribute3 = fields.Many2one('product.template.attribute.line', 'Attribute 3')
+    value3 = fields.Many2one('product.template.attribute.value', 'Value 3')
+    required3 = fields.Boolean('Required 3')
+
+    attribute4 = fields.Many2one('product.template.attribute.line', 'Attribute 4')
+    value4 = fields.Many2one('product.template.attribute.value', 'Value 4')
+    required4 = fields.Boolean('Required 4')
+
+    attribute5 = fields.Many2one('product.template.attribute.line', 'Attribute 5')
+    value5 = fields.Many2one('product.template.attribute.value', 'Value 5')
+    required5 = fields.Boolean('Required 5')
+
+    attribute6 = fields.Many2one('product.template.attribute.line', 'Attribute 6')
+    value6 = fields.Many2one('product.template.attribute.value', 'Value 6')
+    required6 = fields.Boolean('Required 6')
+
+    attribute7 = fields.Many2one('product.template.attribute.line', 'Attribute 7')
+    value7 = fields.Many2one('product.template.attribute.value', 'Value 7')
+    required7 = fields.Boolean('Required 7')
+
+    attribute8 = fields.Many2one('product.template.attribute.line', 'Attribute 8')
+    value8 = fields.Many2one('product.template.attribute.value', 'Value 8')
+    required8 = fields.Boolean('Required 8')
+
+    attribute9 = fields.Many2one('product.template.attribute.line', 'Attribute 9')
+    value9 = fields.Many2one('product.template.attribute.value', 'Value 9')
+    required9 = fields.Boolean('Required 9')
 
     def action_create_new_variant(self):
         product_model = self.env['product.product']
@@ -194,21 +230,28 @@ class CreateManualVariantWizard(models.Model):
 
         wizard = self
 
-        all_auto_pas = wizard.template_id.attribute_line_ids.filtered(
-            lambda pa: pa.attribute_id.create_variant == 'allways'
-        )
+        attribute_value_ids = []
+        if wizard.value0:
+            attribute_value_ids.append(wizard.value0.id)
+        if wizard.value1:
+            attribute_value_ids.append(wizard.value1.id)
+        if wizard.value2:
+            attribute_value_ids.append(wizard.value2.id)
+        if wizard.value3:
+            attribute_value_ids.append(wizard.value3.id)
+        if wizard.value4:
+            attribute_value_ids.append(wizard.value4.id)
+        if wizard.value5:
+            attribute_value_ids.append(wizard.value5.id)
+        if wizard.value6:
+            attribute_value_ids.append(wizard.value6.id)
+        if wizard.value7:
+            attribute_value_ids.append(wizard.value7.id)
+        if wizard.value8:
+            attribute_value_ids.append(wizard.value8.id)
+        if wizard.value9:
+            attribute_value_ids.append(wizard.value9.id)
 
-        missing_auto_pas = all_auto_pas.filtered(
-            lambda pa: any([pav.attribute_id in [pa.attribute_id for pa in all_auto_pas]
-                            for pav in wizard.attribute_value_ids]))
-
-        if missing_auto_pas:
-            raise exceptions.UserError(
-                _('Some automatic attributes were not indicated in the attribute value list (%s). Please check it!') %
-                [map.attribute_id.name for map in missing_auto_pas]
-            )
-
-        attribute_value_ids = [pav.id for pav in wizard.attribute_value_ids]
         product_filter = [('product_template_attribute_value_ids.id', '=', avid) for avid in attribute_value_ids]
         existing_product = product_model.search(
             [('product_tmpl_id', '=', wizard.template_id.id)] + product_filter,
@@ -225,6 +268,15 @@ class CreateManualVariantWizard(models.Model):
         ))
 
         new_product.default_code = wizard.template_id.build_default_code(attribute_value_ids)
+
+        return {
+            'name': _('New variant'),
+            'view_mode': 'form',
+            'res_model': 'product.product',
+            'res_id': new_product.id,
+            'type': 'ir.actions.act_window',
+            'target': 'current',
+        }
 
 
 class ProductProduct(models.Model):

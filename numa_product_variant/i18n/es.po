@@ -6,14 +6,70 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 14.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2021-06-05 21:55+0000\n"
-"PO-Revision-Date: 2021-06-05 21:55+0000\n"
+"POT-Creation-Date: 2023-09-25 13:56+0000\n"
+"PO-Revision-Date: 2023-09-25 13:56+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: \n"
+
+#. module: numa_product_variant
+#: code:addons/numa_product_variant/models/product.py:0
+#, python-format
+msgid "All attributes are automatically created. Nothing left to be done!"
+msgstr "Todos los atributos son creados automaticamente. No hay nada que agregar!"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__attribute0
+msgid "Attribute 0"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__attribute1
+msgid "Attribute 1"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__attribute2
+msgid "Attribute 2"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__attribute3
+msgid "Attribute 3"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__attribute4
+msgid "Attribute 4"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__attribute5
+msgid "Attribute 5"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__attribute6
+msgid "Attribute 6"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__attribute7
+msgid "Attribute 7"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__attribute8
+msgid "Attribute 8"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__attribute9
+msgid "Attribute 9"
+msgstr ""
 
 #. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_attribute_value
@@ -44,6 +100,21 @@ msgid "Code Value"
 msgstr "Valor de código"
 
 #. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_product_cmvariant
+msgid "Create Manual Variant"
+msgstr "Crear variante manualmente"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__create_uid
+msgid "Created by"
+msgstr "Creado por"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__create_date
+msgid "Created on"
+msgstr "Creado el"
+
+#. module: numa_product_variant
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__default_value
 msgid "Default Value"
 msgstr "Por defecto"
@@ -57,6 +128,7 @@ msgstr "Attributos por defecto"
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__display_name
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__display_name
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_category__display_name
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__display_name
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_product__display_name
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_template__display_name
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__display_name
@@ -72,6 +144,7 @@ msgstr "Altura"
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__id
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__id
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_category__id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__id
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_product__id
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_template__id
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__id
@@ -82,6 +155,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute____last_update
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value____last_update
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_category____last_update
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant____last_update
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_product____last_update
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_template____last_update
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value____last_update
@@ -89,9 +163,33 @@ msgid "Last Modified on"
 msgstr "Última modificación el"
 
 #. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__write_uid
+msgid "Last Updated by"
+msgstr "Última modificación por"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__write_date
+msgid "Last Updated on"
+msgstr "Última modificación el"
+
+#. module: numa_product_variant
 #: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__length
 msgid "Length"
 msgstr "Longitud"
+
+#. module: numa_product_variant
+#: code:addons/numa_product_variant/models/product.py:0
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_cmvariant_form_view
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_template_only_form_view
+#, python-format
+msgid "Manually create variant"
+msgstr "Crear variante manualmente"
+
+#. module: numa_product_variant
+#: code:addons/numa_product_variant/models/product.py:0
+#, python-format
+msgid "New variant"
+msgstr "Nueva variante"
 
 #. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_product
@@ -107,12 +205,12 @@ msgstr "Atributo de producto"
 #. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_category
 msgid "Product Category"
-msgstr "Categoría de producto"
+msgstr "Categoría de Producto"
 
 #. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_template
 msgid "Product Template"
-msgstr "Plantilla de producto"
+msgstr "Plantilla del Producto"
 
 #. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_template_attribute_value
@@ -120,14 +218,138 @@ msgid "Product Template Attribute Value"
 msgstr "Valor de Atributo del Modelo de Producto"
 
 #. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__required0
+msgid "Required 0"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__required1
+msgid "Required 1"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__required2
+msgid "Required 2"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__required3
+msgid "Required 3"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__required4
+msgid "Required 4"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__required5
+msgid "Required 5"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__required6
+msgid "Required 6"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__required7
+msgid "Required 7"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__required8
+msgid "Required 8"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__required9
+msgid "Required 9"
+msgstr ""
+
+#. module: numa_product_variant
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__change_on_create
 msgid "Set on variant creation"
 msgstr "Fijar al crear variante"
 
 #. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__template_id
+msgid "Template"
+msgstr ""
+
+#. module: numa_product_variant
+#: code:addons/numa_product_variant/models/product.py:0
+#, python-format
+msgid ""
+"There is already a variant with this attribute values!. Please check it!"
+msgstr ""
+"Ya hay una variante con estos valores de atributo! Por favor revisar"
+
+#. module: numa_product_variant
+#: code:addons/numa_product_variant/models/product.py:0
+#, python-format
+msgid "This product has no variants!!"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__value0
+msgid "Value 0"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__value1
+msgid "Value 1"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__value2
+msgid "Value 2"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__value3
+msgid "Value 3"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__value4
+msgid "Value 4"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__value5
+msgid "Value 5"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__value6
+msgid "Value 6"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__value7
+msgid "Value 7"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__value8
+msgid "Value 8"
+msgstr ""
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_cmvariant__value9
+msgid "Value 9"
+msgstr ""
+
+#. module: numa_product_variant
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__value_on_create
 msgid "Value to set on variant creation"
 msgstr "Valor al crear variante"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__weight_factor
+msgid "Weight factor"
+msgstr "Factor de peso"
 
 #. module: numa_product_variant
 #: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__width

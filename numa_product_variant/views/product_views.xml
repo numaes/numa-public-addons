@@ -138,8 +138,79 @@
 
                     </header>
                         <field name="template_id" invisible="True"/>
-                        <field name="attribute_domain_ids" invisible="True"/>
-                        <field name="attribute_value_ids" nolabel="True"/>
+
+                        <group col="1">
+                            <group attrs="{'invisible': [('attribute0','=',False)]}">
+                                <field name="attribute0" nolabel="1" readonly="True"/>
+                                <field name="value0" nolabel="1"
+                                       domain="[('attribute_line_id','=',attribute0)]"
+                                       attrs="{'required': [('required0','=',True)]}"/>
+                                <field name="required0" invisible="True"/>
+                            </group>
+                            <group attrs="{'invisible': [('attribute1','=',False)]}">
+                                <field name="attribute1" nolabel="1" readonly="True"/>
+                                <field name="value1" nolabel="1"
+                                       domain="[('attribute_line_id','=',attribute1)]"
+                                       attrs="{'required': [('required1','=',True)]}"/>
+                                <field name="required1" invisible="True"/>
+                            </group>
+                            <group attrs="{'invisible': [('attribute2','=',False)]}">
+                                <field name="attribute2" nolabel="1" readonly="True"/>
+                                <field name="value2" nolabel="1"
+                                       domain="[('attribute_line_id','=',attribute2)]"
+                                       attrs="{'required': [('required2','=',True)]}"/>
+                                <field name="required2" invisible="True"/>
+                            </group>
+                            <group attrs="{'invisible': [('attribute3','=',False)]}">
+                                <field name="attribute3" nolabel="1" readonly="True"/>
+                                <field name="value3" nolabel="1"
+                                       domain="[('attribute_line_id','=',attribute3)]"
+                                       attrs="{'required': [('required3','=',True)]}"/>
+                                <field name="required3" invisible="True"/>
+                            </group>
+                            <group attrs="{'invisible': [('attribute4','=',False)]}">
+                                <field name="attribute4" nolabel="1" readonly="True"/>
+                                <field name="value4" nolabel="1"
+                                       domain="[('attribute_line_id','=',attribute4)]"
+                                       attrs="{'required': [('required4','=',True)]}"/>
+                                <field name="required4" invisible="True"/>
+                            </group>
+                            <group attrs="{'invisible': [('attribute5','=',False)]}">
+                                <field name="attribute5" nolabel="1" readonly="True"/>
+                                <field name="value5" nolabel="1"
+                                       domain="[('attribute_line_id','=',attribute5)]"
+                                       attrs="{'required': [('required5','=',True)]}"/>
+                                <field name="required5" invisible="1"/>
+                            </group>
+                            <group attrs="{'invisible': [('attribute6','=',False)]}">
+                                <field name="attribute6" nolabel="1" readonly="True"/>
+                                <field name="value6" nolabel="1"
+                                       domain="[('attribute_line_id','=',attribute6)]"
+                                       attrs="{'required': [('required6','=',True)]}"/>
+                                <field name="required6" invisible="True"/>
+                            </group>
+                            <group attrs="{'invisible': [('attribute7','=',False)]}">
+                                <field name="attribute7" nolabel="1" readonly="True"/>
+                                <field name="value7" nolabel="1"
+                                       domain="[('attribute_line_id','=',attribute7)]"
+                                       attrs="{'required': [('required7','=',True)]}"/>
+                                <field name="required7" invisible="True"/>
+                            </group>
+                            <group attrs="{'invisible': [('attribute8','=',False)]}">
+                                <field name="attribute8" nolabel="1" readonly="True"/>
+                                <field name="value8" nolabel="1"
+                                       domain="[('attribute_line_id','=',attribute8)]"
+                                       attrs="{'required': [('required8','=',True)]}"/>
+                                <field name="required8" invisible="True"/>
+                            </group>
+                            <group attrs="{'invisible': [('attribute9','=',False)]}">
+                                <field name="attribute9" nolabel="1" readonly="True"/>
+                                <field name="value9" nolabel="1"
+                                       domain="[('attribute_line_id','=',attribute9)]"
+                                       attrs="{'required': [('required9','=',True)]}"/>
+                                <field name="required9" invisible="True"/>
+                            </group>
+                        </group>
 
                     <footer>
                         <button name="action_create_new_variant" type="object"
