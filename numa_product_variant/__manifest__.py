@@ -14,6 +14,8 @@ It adds:
     'website': 'http://www.numaes.com',
     'depends': ['base', 'product', 'numa_physical_product'],
     'data': [
+        'security/ir.model.access.csv',
+        'security/security.xml',
         'views/product_views.xml',
     ],
     'demo_xml': [],

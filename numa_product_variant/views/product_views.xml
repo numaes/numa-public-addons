@@ -65,7 +65,7 @@
             </field>
         </record>
 
-        <!-- Product Category -->
+        <!-- Product Template -->
 
         <record model="ir.ui.view" id="product_template_only_form_view">
             <field name="name">Product Template Form</field>
@@ -79,6 +79,12 @@
                 <field name="default_code" position="after">
                     <field name="base_code" />
                 </field>
+                <header position="inside">
+                    <button name="action_manual_variant_creation" type="object"
+                        icon="fa-sitemap" class="oe_stat_button"
+                        groups="product.group_product_variant"
+                        string="Manually create variant"/>
+                </header>
             </field>
         </record>
 
@@ -120,6 +126,29 @@
                 </field>
             </field>
         </record>
+
+
+        <record model="ir.ui.view" id="product_cmvariant_form_view">
+            <field name="name">Product Template Form</field>
+            <field name="model">product.cmvariant</field>
+            <field name="mode">primary</field>
+            <field name="arch" type="xml">
+                <form>
+                    <header>
+
+                    </header>
+                        <field name="template_id" invisible="True"/>
+                        <field name="attribute_domain_ids" invisible="True"/>
+                        <field name="attribute_value_ids" nolabel="True"/>
+
+                    <footer>
+                        <button name="action_create_new_variant" type="object"
+                                string="Manually create variant"/>
+                    </footer>
+                </form>
+            </field>
+        </record>
+
 
     </data>
 </odoo>

@@ -1,7 +1,7 @@
 import logging
 from typing import List
 
-from odoo import models, fields, api
+from odoo import models, fields, api, _, exceptions
 
 _logger = logging.getLogger(__name__)
 
@@ -143,6 +143,89 @@ class ProductTemplate(models.Model):
 
         return default_code
 
+    def action_manual_variant_creation(self):
+        self.ensure_one()
+
+        if not self.attribute_line_ids:
+            raise exceptions.UserError(
+                _('This product has no variants!!')
+            )
+
+        if all([pa.attribute_id.create_variant == 'always' for pa in self.attribute_line_ids]):
+            raise exceptions.UserError(
+                _('All attributes are automatically created. Nothing left to be done!')
+            )
+
+        return {
+            'name': _('Manually create variant'),
+            'view_mode': 'form',
+            'res_model': 'product.cmvariant',
+            'type': 'ir.actions.act_window',
+            'target': 'new',
+            'context': {
+                'default_template_id': self.id,
+            }
+        }
+
+
+class CreateManualVariantWizard(models.Model):
+    _name = 'product.cmvariant'
+    _description = 'Create Manual Variant'
+
+    template_id = fields.Many2one('product.template', 'Template')
+    attribute_value_ids = fields.Many2many('product.template.attribute.value', string='Attribute values',
+                                           domain="[('id', 'in', attribute_domain_ids)]")
+    attribute_domain_ids = fields.One2many('product.template.attribute.value', string='Value domain',
+                                           compute=lambda s: s.compute_attribute_domain_ids())
+
+    @api.onchange('template_id')
+    def compute_attribute_domain_ids(self):
+        for wizard in self:
+            product = self.env['product.template'].browse(self.env.context['default_template_id'])
+
+            attribute_values = [pav
+                                for pa in product.attribute_line_ids
+                                for pav in pa.product_template_value_ids]
+            wizard.attribute_domain_ids = [pav.id for pav in attribute_values]
+
+    def action_create_new_variant(self):
+        product_model = self.env['product.product']
+        self.ensure_one()
+
+        wizard = self
+
+        all_auto_pas = wizard.template_id.attribute_line_ids.filtered(
+            lambda pa: pa.attribute_id.create_variant == 'allways'
+        )
+
+        missing_auto_pas = all_auto_pas.filtered(
+            lambda pa: any([pav.attribute_id in [pa.attribute_id for pa in all_auto_pas]
+                            for pav in wizard.attribute_value_ids]))
+
+        if missing_auto_pas:
+            raise exceptions.UserError(
+                _('Some automatic attributes were not indicated in the attribute value list (%s). Please check it!') %
+                [map.attribute_id.name for map in missing_auto_pas]
+            )
+
+        attribute_value_ids = [pav.id for pav in wizard.attribute_value_ids]
+        product_filter = [('product_template_attribute_value_ids.id', '=', avid) for avid in attribute_value_ids]
+        existing_product = product_model.search(
+            [('product_tmpl_id', '=', wizard.template_id.id)] + product_filter,
+            limit=1
+        )
+        if existing_product:
+            raise exceptions.UserError(
+                _('There is already a variant with this attribute values!. Please check it!')
+            )
+
+        new_product = product_model.create(dict(
+            product_tmpl_id=wizard.template_id.id,
+            product_template_attribute_value_ids=[(4, pav_id) for pav_id in attribute_value_ids]
+        ))
+
+        new_product.default_code = wizard.template_id.build_default_code(attribute_value_ids)
+
 
 class ProductProduct(models.Model):
     _inherit = 'product.product'
@@ -176,8 +259,9 @@ class ProductProduct(models.Model):
                     if att_value.value_on_create:
                         variant['variant_' + ptav.attribute_line_id.attribute_id.change_on_create] = \
                             att_value.value_on_create
-                        variant.onchange_variant_weight()
-                        variant.onchange_variant_dimensions()
+
+            variant.onchange_variant_dimensions()
+            variant.onchange_variant_weight()
 
         return new_variants
 
