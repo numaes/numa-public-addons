@@ -97,12 +97,13 @@ class GeneralException (models.Model):
     user = fields.Many2one('res.users', 'User', readonly=True, ondelete='set null')
     frames = fields.One2many('base.frame', 'gexception', 'Frames', readonly=True)
 
-    @api.model_create_single
-    def create(self, vals):
-        vals = vals or {}
-        vals['name'] = self.env['ir.sequence'].next_by_code('base.general_exception') or '/'
-        vals['timestamp'] = fields.Datetime.now()
-        return super(GeneralException, self).create(vals)
+    @api.model_create_multi
+    def create(self, vals_list):
+        for vals in vals_list:
+            vals = vals or {}
+            vals['name'] = self.env['ir.sequence'].next_by_code('base.general_exception') or '/'
+            vals['timestamp'] = fields.Datetime.now()
+        return super(GeneralException, self).create(vals_list)
         
     def action_frames(self):
         self.ensure_one()
