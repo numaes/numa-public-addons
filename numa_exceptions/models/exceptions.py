@@ -97,7 +97,7 @@ class GeneralException (models.Model):
     user = fields.Many2one('res.users', 'User', readonly=True, ondelete='set null')
     frames = fields.One2many('base.frame', 'gexception', 'Frames', readonly=True)
 
-    @api.model
+    @api.model_create_single
     def create(self, vals):
         vals = vals or {}
         vals['name'] = self.env['ir.sequence'].next_by_code('base.general_exception') or '/'
