@@ -17,6 +17,7 @@ according to multiple categories.
     'demo': [],
     'test': [],
     'installable': False,
+    'license': 'LGPL-3',
     'application': True,
     'active': False,
 }

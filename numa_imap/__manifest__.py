@@ -18,4 +18,5 @@ NUMA IMAP extension
     'auto_install': False,
     'application': False,
     'installable': False,
+    'license': 'LGPL-3',
 }

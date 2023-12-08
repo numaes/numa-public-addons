@@ -23,5 +23,6 @@ It adds:
     'demo_xml': [],
     'test': [],
     'installable': False,
+    'license': 'LGPL-3',
     'active': False,
 }

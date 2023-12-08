@@ -19,6 +19,7 @@ for products where the weight can be calculated on a factor multiplied by length
     'demo_xml': [],
     'test': [],
     'installable': False,
+    'license': 'LGPL-3',
     'active': False,
 }
 # vim:expandtab:smartindent:tabstop=4:softtabstop=4:shiftwidth=4:

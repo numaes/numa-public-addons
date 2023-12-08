@@ -20,6 +20,7 @@ Technical module to expand invoices by physical products
     'demo_xml': [],
     'test': [],
     'installable': False,
+    'license': 'LGPL-3',
     'active': False,
     'auto_install': True,
 }

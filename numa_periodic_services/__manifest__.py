@@ -61,4 +61,5 @@ checked to run the ones wich its next run is already happened.
     'auto_install': False,
     'application': True,
     'installable': False,
+    'license': 'LGPL-3',
 }

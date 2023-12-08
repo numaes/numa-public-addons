@@ -18,4 +18,5 @@
         "views/menu_views.xml",
     ],
     'installable': False,
+    'license': 'LGPL-3',
 }

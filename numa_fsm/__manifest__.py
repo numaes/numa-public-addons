@@ -17,4 +17,5 @@
         "data/fsm_data.xml",
     ],
     'installable': False,
+    'license': 'LGPL-3',
 }

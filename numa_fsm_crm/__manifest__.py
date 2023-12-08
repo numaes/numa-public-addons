@@ -21,4 +21,5 @@
         "views/fsm_templates.xml",
     ],
     'installable': False,
+    'license': 'LGPL-3',
 }
