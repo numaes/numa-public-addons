@@ -16,7 +16,7 @@
     'summary': 'Roles and Permitions',
     'css': [],
     'auto_install': False,
-    'installable': False,
+    'installable': True,
     'license': 'LGPL-3',
     'application': True,
 }

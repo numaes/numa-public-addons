@@ -60,6 +60,6 @@ checked to run the ones wich its next run is already happened.
         'data/periodic_services_data.xml',],
     'auto_install': False,
     'application': True,
-    'installable': False,
+    'installable': True,
     'license': 'LGPL-3',
 }

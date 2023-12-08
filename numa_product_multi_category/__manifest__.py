@@ -16,7 +16,7 @@ according to multiple categories.
     'data': ['views/product_view.xml',],
     'demo': [],
     'test': [],
-    'installable': False,
+    'installable': True,
     'license': 'LGPL-3',
     'application': True,
     'active': False,

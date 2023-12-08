@@ -20,6 +20,6 @@
         "views/menu_views.xml",
         "views/fsm_templates.xml",
     ],
-    'installable': False,
+    'installable': True,
     'license': 'LGPL-3',
 }

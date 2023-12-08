@@ -13,6 +13,6 @@
         "views/synch_view.xml",
         "views/menu.xml",
     ],
-    'installable': False,
+    'installable': True,
     'license': 'LGPL-3',
 }

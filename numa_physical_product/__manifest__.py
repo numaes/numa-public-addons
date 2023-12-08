@@ -18,7 +18,7 @@ for products where the weight can be calculated on a factor multiplied by length
              'data/product_data.xml'],
     'demo_xml': [],
     'test': [],
-    'installable': False,
+    'installable': True,
     'license': 'LGPL-3',
     'active': False,
 }

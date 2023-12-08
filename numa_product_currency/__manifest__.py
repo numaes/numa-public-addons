@@ -43,7 +43,7 @@ This module allows to express list and standard price in currencies different fr
     ],
     'test': [
     ],
-    'installable': False,
+    'installable': True,
     'license': 'LGPL-3',
     'active': False,
 }

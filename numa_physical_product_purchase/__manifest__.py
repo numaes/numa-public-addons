@@ -13,7 +13,7 @@ Technical module to expand purchase by physical products
     'data': ['views/purchase_views.xml'],
     'demo_xml': [],
     'test': [],
-    'installable': False,
+    'installable': True,
     'license': 'LGPL-3',
     'active': False,
     'auto_install': True,
