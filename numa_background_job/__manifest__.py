@@ -45,7 +45,7 @@ to process long processes without blocking the UI.
     'test': [],
     'assets': {
         'web.assets_backend': [
-            'numa_background_job/static/src/**/*',
+            '/numa_background_job/static/src/**/*',
         ]
     },
     'installable': True,

@@ -16,6 +16,7 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+
 class BackgroundJob(models.Model):
     _name = "res.background_job"
     _description = '''
@@ -95,7 +96,7 @@ class BackgroundJob(models.Model):
         busModel = self.env['bus.bus']
 
         for job in self:
-            channel = f'res.background_job'
+            channel = job
             message = dict(
                 id=job.id,
                 completion_rate=job.completion_rate,
@@ -108,7 +109,7 @@ class BackgroundJob(models.Model):
                 aborted_on=str(job.aborted_on),
             )
             self.env.cr.commit()
-            busModel._sendone(channel, 'background_job', message)
+            busModel._sendone('res.background_job', 'background_job.state_change', message)
             self.env.cr.commit()
 
     def start(self, statusMsg=None):

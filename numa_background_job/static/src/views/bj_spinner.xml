@@ -1,28 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<templates id="template" xml:space="preserve">
+<templates id="template" xml:space="preserve" >
 
-    <t t-name="bj_spinner">
+    <t t-name="numa_background_job.bj_spinner" owl="1" >
         <div class="bj_spinner">
-            <div class="o_bjprogressbar_state">
-                <span t-att-text="state_msg"/>
+            <div >
+                <p t-esc="state_msg"/>
             </div>
-            <t t-if="state == 'aborted' || this.state == 'aborting'" >
+
+            <t t-if="spinner_state == 'aborted' || spinner_state == 'aborting'" >
                 <div class="o_bjprogressbar">
                     <div class="o_bjprogressbar_indicator" style="background-color: #C080C0">&nbsp;</div>
                     <div class="o_bjprogressbar_frame">
-                        <span class="o_bjprogressbar_value" t-att-text="message + ' %'"/>
+                        <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
                     </div>
                 </div>
             </t>
-            <t t-if="state == 'init'">
+            <t t-if="spinner_state == 'init'">
                 <div class="o_bjprogressbar">
                     <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
-                    <div class="o_bjprogressbar_frame">
-                        <span class="o_bjprogressbar_value" t-att-text="message + ' %'"/>
-                    </div>
                 </div>
                 <div class="o_bjprogressbar_abort" >
-                    <button t-on-click="() => state.value = state.value + props.increment">
+                    <button t-on-click="() => click_abort()">
                         Cancel
                     </button>
                 </div>
@@ -30,11 +28,11 @@
                     <span t-esc="message"/>
                 </div>
             </t>
-            <t t-if="state == 'ended'">
+            <t t-if="spinner_state == 'ended'">
                 <div class="o_bjprogressbar">
                     <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
                     <div class="o_bjprogressbar_frame">
-                        <span class="o_bjprogressbar_value" t-att-text="message + ' %'"/>
+                        <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
                     </div>
                 </div>
                 <div class="o_bjprogressbar_message" >
@@ -44,29 +42,18 @@
                     <span t-esc="error"/>
                 </div>
             </t>
-            <t t-if="state == 'ended'">
+            <t t-if="spinner_state == 'started'">
                 <div class="o_bjprogressbar">
                     <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
                     <div class="o_bjprogressbar_frame">
-                        <span class="o_bjprogressbar_value" t-att-text="message + ' %'"/>
+                        <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
                     </div>
                 </div>
                 <div class="o_bjprogressbar_message" >
-                    <span t-esc="message"/>
-                </div>
-                <div class="o_bjprogressbar_error" >
-                    <span t-esc="error"/>
-                </div>
-            </t>
-            <t t-if="state == 'started'">
-                <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
-                    <div class="o_bjprogressbar_frame">
-                        <span class="o_bjprogressbar_value" t-att-text="message + ' %'"/>
-                    </div>
+                    <span t-esc="current_status"/>
                 </div>
                 <div class="o_bjprogressbar_abort" >
-                    <button t-on-click="() => field._click_abort()">
+                    <button t-on-click="() => click_abort()">
                         Cancel
                     </button>
                 </div>

@@ -129,8 +129,8 @@ class BackgroundJobTest(models.TransientModel):
             time.sleep(2)
 
         if count >= 10:
-            bkJob.end('<p><b>Everthing ok!</b></p>')
+            bkJob.end('Everthing ok!')
         else:
-            bkJob.end('<p><b>Unexpected end!</b></p><p>Try again if you want!</p>')
+            bkJob.end('Unexpected end! Try again if you want!')
 
         _logger.info("Ending job")
