@@ -40,7 +40,7 @@
                     <field name="price_qty" invisible="1"/>
                     <field name="unit_price_uom_id" invisible="1"/>
                 </xpath>
-                <xpath expr="//field[@name='line_ids']/tree/field[@name='price_unit']" position="after">
+                <xpath expr="//field[@name='line_ids']/tree/field[@name='credit']" position="after">
                     <field name="price_base" invisible="1"/>
                     <field name="price_qty" invisible="1"/>
                     <field name="unit_price_uom_id" invisible="1"/>

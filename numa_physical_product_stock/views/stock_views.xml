@@ -95,7 +95,6 @@
                     <field name="sale_order_id" readonly="1" force_save="1"/>
                 </field>
                 <field name="product_uom_id" position="after">
-                    <field name="product_uom_qty"/>
                     <field name="unit_weight" readonly="1" force_save="1"/>
                     <field name="unit_surface" invisible="True"/>
                     <field name="unit_volume" invisible="True"/>
@@ -132,7 +131,6 @@
                     <field name="product_id" type="row"/>
                     <field name="location_dest_id" groups="stock.group_stock_multi_locations" type="row"/>
                     <field name="qty_done" type="measure"/>
-                    <field name="product_uom_qty" type="measure"/>
                     <field name="total_weight" type="measure"/>
                 </pivot>
             </field>
