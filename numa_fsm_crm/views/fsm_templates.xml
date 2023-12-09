@@ -4,13 +4,6 @@
         <t t-raw="body_view_html or body_view_arch" />
     </template>
 
-    <record model="mail.template" id="basic_mail_template">
-        <field name="name" >Basic workflow mail template</field>
-        <field name="model" >fsm.wf.mail_template</field>
-        <field name="body_type" >qweb</field>
-        <field name="body_view_id" ref="mail_layout"/>
-    </record>
-
     <template id="page_template" name="Page for Workflow">
         <t name="Workflow" t-name="numa_fsm_crm.page_template">
             <t t-call="website.layout">
