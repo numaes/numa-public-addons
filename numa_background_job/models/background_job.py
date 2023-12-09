@@ -37,7 +37,7 @@ class BackgroundJob(models.Model):
     method = fields.Char('Method to call', required=True)
     reference_id = fields.Integer('Reference id')
     completion_rate = fields.Integer("Completion rate [%]")
-    current_status = fields.Html('Current status')
+    current_status = fields.Text('Current status')
     error = fields.Text('Error message')
 
     initialized_on = fields.Datetime('Initialized on')

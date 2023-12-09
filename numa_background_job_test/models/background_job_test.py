@@ -23,7 +23,7 @@ class BackgroundJobTest(models.TransientModel):
 
     job = fields.Many2one("res.background_job", "Job")
     job_completion_rate = fields.Integer('Rate', related="job.completion_rate")
-    job_current_status = fields.Html('Current status', related="job.current_status")
+    job_current_status = fields.Text('Current status', related="job.current_status")
     job_error = fields.Text('Error', related="job.error")
     job_state = fields.Selection(related="job.state")
     state = fields.Selection([

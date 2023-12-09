@@ -14,6 +14,12 @@
                         <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
                     </div>
                 </div>
+                <div class="o_bjprogressbar_message" >
+                    <span t-esc="current_status"/>
+                </div>
+                <div class="o_bjprogressbar_error" >
+                    <span t-esc="error_msg"/>
+                </div>
             </t>
             <t t-if="spinner_state == 'init'">
                 <div class="o_bjprogressbar">
@@ -25,7 +31,7 @@
                     </button>
                 </div>
                 <div class="o_bjprogressbar_message" >
-                    <span t-esc="message"/>
+                    <span t-esc="current_status"/>
                 </div>
             </t>
             <t t-if="spinner_state == 'ended'">
@@ -36,10 +42,10 @@
                     </div>
                 </div>
                 <div class="o_bjprogressbar_message" >
-                    <span t-esc="message"/>
+                    <span t-esc="current_status"/>
                 </div>
                 <div class="o_bjprogressbar_error" >
-                    <span t-esc="error"/>
+                    <span t-esc="error_msg"/>
                 </div>
             </t>
             <t t-if="spinner_state == 'started'">
@@ -58,7 +64,7 @@
                     </button>
                 </div>
                 <div class="o_bjprogressbar_message" >
-                    <span t-esc="message"/>
+                    <span t-esc="error_msg"/>
                 </div>
             </t>
         </div>

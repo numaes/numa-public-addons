@@ -32,6 +32,8 @@ export class BJSpinner extends Component {
     }
 
     onWillUnmount() {
+        const bus_service = this.env.services.bus_service;
+
         core.bus.off('res.background_job', 'background_job', this._onNotification);
         super.onWillUnmount();
     }
@@ -76,15 +78,17 @@ export class BJSpinner extends Component {
 
             let vals = values[0];
 
-            this.spinner_name = vals.name;
-            this.spinner_state = vals.state;
-            this.completion_rate = vals.completion_rate;
-            this.current_status = vals.current_status;
-            this.error_msg = vals.error;
+            this.spinner_name = vals.name || '';
+            this.spinner_state = vals.state || '';
+            this.completion_rate = vals.completion_rate || 0;
+            this.current_status = vals.current_status || '';
+            this.error_msg = vals.error || '';
             this.initialized_on = vals.initialized_on;
             this.started_on = vals.started_on;
             this.ended_on = vals.ended_on;
             this.aborted_on = vals.aborted_on;
+
+            console.log(this.current_status);
 
             this.render();
         }
