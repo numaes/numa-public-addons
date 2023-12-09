@@ -22,8 +22,8 @@ export class BJSpinner extends Component {
         bus_service.addChannel('res.background_job');
         bus_service.addEventListener('notification', ({ detail: notifications }) => {
             for (const { payload, type } of notifications) {
-                if (type === 'background_job.state_change') {
-                    self._get_current_state();
+                if (type === 'background_job.state_change' && self.props.value[0] === payload.id) {
+                    self._update_spinner(payload);
                 }
             }
         });
@@ -51,7 +51,26 @@ export class BJSpinner extends Component {
 
             this.spinner_state = 'aborting';
             this.render();
+
+            if (this.spinner_state === 'started') {
+                const self = this;
+                setTimeout(() => self._get_current_state(), 10000);
+            }
         }
+    }
+
+    async _update_spinner(vals) {
+        this.spinner_name = vals.name || this.spinner_name;
+        this.spinner_state = vals.state || this.state;
+        this.completion_rate = vals.completion_rate || 0;
+        this.current_status = vals.current_status || '';
+        this.error_msg = vals.error || '';
+        this.initialized_on = vals.initialized_on;
+        this.started_on = vals.started_on;
+        this.ended_on = vals.ended_on;
+        this.aborted_on = vals.aborted_on;
+
+        this.render();
     }
 
     async _get_current_state() {
@@ -76,21 +95,7 @@ export class BJSpinner extends Component {
                 ]
             );
 
-            let vals = values[0];
-
-            this.spinner_name = vals.name || '';
-            this.spinner_state = vals.state || '';
-            this.completion_rate = vals.completion_rate || 0;
-            this.current_status = vals.current_status || '';
-            this.error_msg = vals.error || '';
-            this.initialized_on = vals.initialized_on;
-            this.started_on = vals.started_on;
-            this.ended_on = vals.ended_on;
-            this.aborted_on = vals.aborted_on;
-
-            console.log(this.current_status);
-
-            this.render();
+            this._update_spinner(values[0]);
         }
     }
 }
