@@ -352,10 +352,6 @@ class InvoiceLine(models.Model):
                     'price_total': taxes['total_included'],
                     'price_subtotal': taxes['total_excluded'],
                 })
-                il.update(il._get_fields_onchange_subtotal())
-                il.flush()
-                il._onchange_balance()
-                il._onchange_amount_currency()
 
     def _get_fields_onchange_balance(self, quantity=None, discount=None, amount_currency=None, move_type=None, currency=None, taxes=None, price_subtotal=None, force_computation=False):
         self.ensure_one()
