@@ -16,7 +16,7 @@
                                widget="monetary"
                                options="{'currency_field': 'currency_id', 'field_digits': True}"/>
                         <field name="currency_id" class="oe_edit_only"  nolabel="1"
-                               options="{'no_create_edit':1}"/>
+                               options="{'no_create_edit':1, 'no_create': 1}"/>
                     </group>
                 </field>
                 <field name="standard_price" position="replace" >
@@ -25,7 +25,7 @@
                                widget="monetary"
                                options="{'currency_field': 'cost_currency_id', 'field_digits': True}"/>
                         <field name="cost_currency_id" class="oe_edit_only" nolabel="1"
-                               options="{'no_create_edit':1}"/>
+                               options="{'no_create_edit': 1, 'no_create': 1}"/>
                     </group>
                 </field>
             </data>
