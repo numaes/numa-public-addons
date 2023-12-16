@@ -13,19 +13,19 @@
                 <field name="list_price" position="replace" >
                     <group name="list_price_div" groups="base.group_user">
                         <field name="list_price" class="oe_inline" nolabel="1"
-                               widget='monetary'
+                               widget="monetary"
                                options="{'currency_field': 'currency_id', 'field_digits': True}"/>
                         <field name="currency_id" class="oe_edit_only"  nolabel="1"
-                               widget="selection"/>
+                               options="{'no_create_edit':1}"/>
                     </group>
                 </field>
                 <field name="standard_price" position="replace" >
                     <group name="standard_price_div" groups="base.group_user">
                         <field name="standard_price" class="oe_inline" nolabel="1"
-                               widget='monetary'
+                               widget="monetary"
                                options="{'currency_field': 'cost_currency_id', 'field_digits': True}"/>
                         <field name="cost_currency_id" class="oe_edit_only" nolabel="1"
-                               widget="selection" />
+                               options="{'no_create_edit':1}"/>
                     </group>
                 </field>
             </data>
