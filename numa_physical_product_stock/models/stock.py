@@ -145,7 +145,6 @@ class StockMove(models.Model):
                         'unit_volume': move_line.product_id.volume
                     })
                 move_line.onchange_qty()
-                move_line.flush()
 
         return result
 
