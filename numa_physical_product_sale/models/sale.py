@@ -82,9 +82,6 @@ class SaleOrderLine(models.Model):
     @api.onchange('product_uom', 'product_uom_qty')
     def product_uom_change(self):
         for sol in self:
-            product = sol.product_id
-            if not product or product.price_base == 'normal':
-                super(SaleOrderLine, sol).product_uom_change()
             sol._compute_unit_price_uom()
             sol.compute_totals()
 
