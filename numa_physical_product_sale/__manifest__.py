@@ -9,7 +9,7 @@ Technical module to expand sales by physical products
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'uom', 'numa_physical_product', 'sale'],
+    'depends': ['base', 'uom', 'numa_physical_product', 'sale_management'],
     'data': [
         'views/sale_views.xml',
     ],
