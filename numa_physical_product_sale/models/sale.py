@@ -75,7 +75,6 @@ class SaleOrderLine(models.Model):
     @api.onchange('product_id')
     def product_id_change(self):
         for sol in self:
-            super(SaleOrderLine, sol).product_id_change()
             sol._compute_unit_price_uom()
             sol.compute_totals()
 

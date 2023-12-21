@@ -21,11 +21,12 @@ class ProductTemplate(models.Model):
         required=True, readonly=False, compute=None,
         default=_get_default_currency)
 
-    def price_compute(self, price_type, uom=False, currency=False, company=False):
+    def price_compute(self, price_type, uom=False, currency=False, date=False, company=False):
         prices = super(ProductTemplate, self).price_compute(
             price_type,
             uom=uom,
             currency=False,
+            date=date,
             company=company
         )
 
@@ -59,11 +60,12 @@ class ProductProduct(models.Model):
         for product in self:
             product.currency_id = product.product_tmpl_id.currency_id.id
 
-    def price_compute(self, price_type, uom=False, currency=False, company=False):
+    def price_compute(self, price_type, uom=False, currency=False, date=False, company=False):
         prices = super(ProductProduct, self).price_compute(
             price_type,
             uom=uom,
             currency=False,
+            date=date,
             company=company
         )
 
