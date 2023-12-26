@@ -11,7 +11,7 @@ _logger = logging.getLogger(__name__)
 class Pricelist(models.Model):
     _inherit = 'product.pricelist'
 
-    def _compute_price_rule(self, products_qty_partner, date=False, uom_id=False):
+    def _compute_price_rule(self, product, quantity, partner=False, uom=False, date=False, **kwargs):
         """ Low-level method - Mono pricelist, multi products
         Returns: dict{product_id: (price, suitable_rule) for the given pricelist}
 
@@ -25,15 +25,13 @@ class Pricelist(models.Model):
 
         if not date:
             date = self._context.get('date') or fields.Datetime.now()
-        if not uom_id and self._context.get('uom'):
-            uom_id = self._context['uom']
-        if uom_id:
+        if not uom and self._context.get('uom'):
+            uom = self._context['uom']
+        if uom:
             # rebrowse with uom if given
-            products = [item[0].with_context(uom=uom_id) for item in products_qty_partner]
-            products_qty_partner = [(products[index], data_struct[1], data_struct[2]) for index, data_struct in
-                                    enumerate(products_qty_partner)]
+            products = [product.with_context(uom=uom.id)]
         else:
-            products = [item[0] for item in products_qty_partner]
+            products = [product]
 
         if not products:
             return {}
@@ -41,9 +39,9 @@ class Pricelist(models.Model):
         # Prepare analysis parameters
         parameters = []
 
-        for product, quantity, partner in products_qty_partner:
+        for product in products:
             index = product.id
-            product = product.with_context(uom=uom_id)
+            product = product.with_context(uom=uom.id)
             if product._name == "product.template":
                 variants = [p for p in
                             list(chain.from_iterable(product.product_variant_ids))]
@@ -72,12 +70,12 @@ class Pricelist(models.Model):
             suitable_rule = None
             for rule in self.item_ids.sorted(key=lambda r: r.sequence):
                 if rule.check_if_triggered(product, variants, quantity, partner,
-                                           categories, date, uom_id):
+                                           categories, date, uom):
                     base_price = rule.compute_base(product, variants, quantity, partner,
-                                                   categories, date, uom_id)
+                                                   categories, date, uom)
 
                     price = rule.apply_formula(base_price, product, variants, quantity,
-                                               partner, categories, date, uom_id)
+                                               partner, categories, date, uom)
 
                     if not self.currency_id.is_zero(price):
                         suitable_rule = rule
@@ -215,7 +213,7 @@ class PricelistItem(models.Model):
 
         return True
 
-    def compute_base(self, product, variants, qty, partner, categories, date, uom_id):
+    def compute_base(self, product, variants, qty, partner, categories, date, uom):
         variant = variants[0] if variants else product
         price = 0.0
         if self.compute_price == 'fixed':
@@ -236,7 +234,7 @@ class PricelistItem(models.Model):
                                   'but none is defined (%s)') % self.display_name)
 
             price, rule = self.base_pricelist_id._compute_price_rule(
-                [(variant, qty, partner)], date, uom_id)[variant.id]
+                [(variant, qty, partner)], uom=uom, date=date)[variant.id]
             source_currency = self.base_pricelist_id.currency_id or \
                               self.base_pricelist_id.company_id.currency_id
         elif self.base == 'supplier':
@@ -262,7 +260,8 @@ class PricelistItem(models.Model):
             round=False
         )
 
-    def apply_formula(self, price, product, variants, qty, partner, categories, date, uom_id):
+    def apply_formula(self, price, product, variants, qty, partner, categories, date, uom):
         qty_uom_id = self._context.get('uom') or product.uom_id.id
+
         price_uom = self.env['uom.uom'].browse([qty_uom_id])
         return self._compute_price(price, price_uom, product, quantity=qty, partner=partner)

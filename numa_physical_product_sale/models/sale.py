@@ -75,13 +75,11 @@ class SaleOrderLine(models.Model):
     @api.onchange('product_id')
     def product_id_change(self):
         for sol in self:
-            sol._compute_unit_price_uom()
             sol.compute_totals()
 
     @api.onchange('product_uom', 'product_uom_qty')
     def product_uom_change(self):
         for sol in self:
-            sol._compute_unit_price_uom()
             sol.compute_totals()
 
     def _compute_unit_price_uom(self):
