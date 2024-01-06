@@ -45,7 +45,8 @@ class StockPicking(models.Model):
     def button_validate(self):
         self.onchange_move_line_ids()
         for picking in self:
-            picking.move_lines.onchange_move_line_ids()
+            for move in picking.move_ids:
+                move._onchange_move_line_ids()
         return super().button_validate()
 
 
@@ -116,10 +117,10 @@ class StockMove(models.Model):
 
         return result
 
-    def _action_assign(self):
+    def _action_assign(self, force_qty=False):
         move_line_model = self.env['stock.move.line']
 
-        result = super()._action_assign()
+        result = super()._action_assign(force_qty=force_qty)
 
         for move in self:
             for move_line in move.move_line_ids:
