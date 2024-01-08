@@ -113,7 +113,7 @@
                     <field name="partner_id" readonly="1" force_save="1"/>
                     <field name="sale_order_id" readonly="1" force_save="1"/>
                 </field>
-                <field name="package_id" position="after">
+                <field name="lot_name" position="after">
                     <field name="unit_weight" />
                     <field name="unit_surface" />
                     <field name="unit_volume" />
