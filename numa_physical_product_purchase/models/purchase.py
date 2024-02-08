@@ -119,7 +119,7 @@ class PurchaseOrderLine(models.Model):
                 price_qty = normalized_qty
             pol.price_qty = price_qty
 
-            pol._compute_amount()
+            #pol._compute_amount()
 
     #@api.depends('price_qty', 'price_unit', 'taxes_id')
     #def _compute_amount(self):
