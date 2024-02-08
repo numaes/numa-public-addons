@@ -136,3 +136,9 @@ class PurchaseOrderLine(models.Model):
                 #'price_total': taxes['total_included'],
                 #'price_subtotal': taxes['total_excluded'],
             #})
+
+    def _convert_to_tax_base_line_dict(self):
+        res = super(PurchaseOrderLine, self)._convert_to_tax_base_line_dict()
+        res['quantity'] = self.price_qty
+
+        return res
