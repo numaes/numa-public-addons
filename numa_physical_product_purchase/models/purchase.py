@@ -65,7 +65,7 @@ class PurchaseOrderLine(models.Model):
     @api.onchange('product_uom', 'product_uom_qty')
     def _onchange_quantity(self):
         for pol in self:
-            super(PurchaseOrderLine, pol)._onchange_quantity()
+            #super(PurchaseOrderLine, pol)._onchange_quantity()
             pol._compute_unit_price_uom()
             pol.compute_totals()
 
