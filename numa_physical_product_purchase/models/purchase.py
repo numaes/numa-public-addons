@@ -121,18 +121,18 @@ class PurchaseOrderLine(models.Model):
 
             pol._compute_amount()
 
-    @api.depends('price_qty', 'price_unit', 'taxes_id')
-    def _compute_amount(self):
-        for pol in self:
-            vals = pol._prepare_compute_all_values()
-            taxes = pol.taxes_id.compute_all(
-                pol.price_unit,
-                vals['currency_id'],
-                pol.price_qty,
-                vals['product'],
-                vals['partner'])
-            pol.update({
-                'price_tax': sum(t.get('amount', 0.0) for t in taxes.get('taxes', [])),
-                'price_total': taxes['total_included'],
-                'price_subtotal': taxes['total_excluded'],
-            })
+    #@api.depends('price_qty', 'price_unit', 'taxes_id')
+    #def _compute_amount(self):
+        #for pol in self:
+            #vals = pol._prepare_compute_all_values()
+            #taxes = pol.taxes_id.compute_all(
+                #pol.price_unit,
+                #vals['currency_id'],
+                #pol.price_qty,
+                #vals['product'],
+                #vals['partner'])
+            #pol.update({
+                #'price_tax': sum(t.get('amount', 0.0) for t in taxes.get('taxes', [])),
+                #'price_total': taxes['total_included'],
+                #'price_subtotal': taxes['total_excluded'],
+            #})
