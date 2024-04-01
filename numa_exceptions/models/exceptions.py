@@ -21,7 +21,7 @@
 ##############################################################################
 
 from odoo import models, fields, api, _, registry, exceptions
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import UserError, ValidationError, RedirectWarning
 from odoo import SUPERUSER_ID
 from odoo.loglevels import exception_to_unicode, ustr
 from odoo.http import request, Response, ROUTING_KEYS, Stream
@@ -237,7 +237,9 @@ class IrHttp(models.AbstractModel):
                 e)
 
             if not isinstance(e, (
-                    odoo.exceptions.Warning, SessionExpiredException,
+                    odoo.exceptions.Warning,
+                    odoo.exceptions.RedirectWarning,
+                    SessionExpiredException,
                     UserError,
                     werkzeug.exceptions.NotFound)):
                 if ename:
