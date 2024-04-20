@@ -237,7 +237,6 @@ class IrHttp(models.AbstractModel):
                 e)
 
             if not isinstance(e, (
-                    odoo.exceptions.Warning,
                     odoo.exceptions.RedirectWarning,
                     SessionExpiredException,
                     UserError,
