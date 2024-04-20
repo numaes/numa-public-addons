@@ -22,7 +22,7 @@
 
 {
     'name': 'NUMA Background Job',
-    'version': '12.0',
+    'version': '17.0',
     'category': 'Extra Tools',
     'description': """
 NUMA Background Job

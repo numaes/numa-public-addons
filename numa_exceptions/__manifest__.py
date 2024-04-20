@@ -35,7 +35,7 @@ Extended exception processing.
 
 """,
 	'summary': "Exception Information Database",
-    'version': '16.0',
+    'version': '17.0',
     'depends': ['base', 'mail'],
     'data': ['security/ir.model.access.csv','security/security.xml','views/exceptions_view.xml','data/exceptions_data.xml',],
     'auto_install': True,
