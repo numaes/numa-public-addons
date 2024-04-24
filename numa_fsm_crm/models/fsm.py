@@ -107,7 +107,7 @@ class FSMInstance(models.Model):
                 res_id=self.partner_id.id,
                 use_active_domain=False,
                 no_auto_thread=False,
-                partner_ids=[self.comitente_id.partner_id.id] if self.comitente_id else [],
+                partner_ids=[self.partner_id.id],
                 auto_delete_message=False,
             ))
             mcm.send_mail()
