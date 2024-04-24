@@ -93,7 +93,7 @@ class FSMInstance(models.Model):
         if mail_template and len(mail_template) == 1 and self.partner_id:
             mcm_model = self.env['mail.compose.message']
             mcm = mcm_model.create(dict(
-                reply_to=self.reply_to,
+                reply_to='comerciales@alfyinversiones.com.ar',
                 subject=subject if subject else _('Workflow automatic mail'),
                 body=self.render_dynamic_html(f'<div>{mail_template.body_view_html}</div>'),
                 attachment_ids=mail_template.attachment_ids.ids,
@@ -102,7 +102,7 @@ class FSMInstance(models.Model):
                 res_id=self.partner_id.id,
                 use_active_domain=False,
                 no_auto_thread=False,
-                partner_ids=[self.comitente_id.partner_id.id] if self.comitente_id else [],
+                partner_ids=[self.partner_id.id],
                 auto_delete_message=False,
             ))
             mcm.send_mail()
