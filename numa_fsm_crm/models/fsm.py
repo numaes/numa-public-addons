@@ -6,10 +6,11 @@ import json
 import lxml
 import re
 from jinja2 import Environment
+import base64
 
 import odoo
 from odoo import api, _, exceptions
-from odoo import models, fields
+from odoo import models, fields, tools
 from odoo.exceptions import UserError
 from .miniqweb import render
 
@@ -76,26 +77,30 @@ class FSMInstance(models.Model):
             variable_start_string="{{",
             variable_end_string="}}",
         )
-        jinja_template = templater.from_string(template)
 
-        # Inject data into the view and replace our template tags with the data
-        processed_body = jinja_template.render(
-            instance=self,
-            **params
-        )
+        processed_body = template
+        while processed_body.find("{{") >= 0:
+            # Inject data into the view and replace our template tags with the data
+            jinja_template = templater.from_string(template)
+            processed_body = jinja_template.render(
+                instance=self,
+                **params
+            )
 
-        return render(processed_body, **dict(instance=self, **params))
+        return render(processed_body, self, **dict(instance=self, **params))
 
     def send_mail_to_partner(self, mail_template_name, subject=None):
         self.ensure_one()
 
         mail_template = self.definition_id.mail_templates.filtered(lambda x: x.name == mail_template_name)
         if mail_template and len(mail_template) == 1 and self.partner_id:
+            body_html = self.render_dynamic_html(f'<div>{mail_template.body_view_html}</div>')
+
             mcm_model = self.env['mail.compose.message']
             mcm = mcm_model.create(dict(
-                reply_to='comerciales@alfyinversiones.com.ar',
-                subject=subject if subject else _('Workflow automatic mail'),
-                body=self.render_dynamic_html(f'<div>{mail_template.body_view_html}</div>'),
+                reply_to=self.reply_to,
+                subject=subject if subject else mail_template.name,
+                body=body_html,
                 attachment_ids=mail_template.attachment_ids.ids,
                 composition_mode='comment',
                 model='res.partner',
@@ -105,16 +110,7 @@ class FSMInstance(models.Model):
                 partner_ids=[self.partner_id.id],
                 auto_delete_message=False,
             ))
-
-            smtp_server_name = 'Postmark'
-            mail_server = self.env['ir.mail_server'].search([('name', '=', smtp_server_name)], limit=1)
-            if mail_server:
-                mcm = mcm.with_context(mail_server_id=mail_server.id)
-                mcm.send_mail()
-                _logger.info(f'Enviado correo por PostMark')
-            else:
-                mcm.send_mail()
-                _logger.info(f'Enviado correo de onboarding por Sendgrid')
+            mcm.send_mail()
 
         elif len(mail_template) > 1:
             self.message_post(
@@ -153,14 +149,31 @@ class WorkFlowMailTemplate(models.Model):
     name = fields.Char('Name', required=True)
     subject = fields.Char('Subject')
     template_id = fields.Many2one('mail.template', 'Mail template', required=True)
-    body_view_arch = fields.Html('Body', translate=False)
-    body_view_html = fields.Html('Body HTML', sanitize_attributes=False)
+    body_view_arch = fields.Html('Body', sanitize=False, translate=False)
+    body_view_html = fields.Html('Body HTML', sanitize=False)
 
     attachment_ids = fields.Many2many(
         'ir.attachment', 'wfmt_ir_attachments_rel',
         'wfmt_id', 'attachment_id',
         string='Attachments'
     )
+
+    def send_mail(self, res_id, force_send=False, raise_exception=False, email_values=None, notif_layout=False):
+
+        values = email_values.copy() if email_values else {}
+        base_attachment_ids = values.get('attachment_ids', [])
+
+        for template in self:
+            template_attachment_ids = base_attachment_ids + template.attachment_ids.ids
+            template_values = email_values.copy() if email_values else {}
+            template_values['attachment_ids'] = template_attachment_ids
+            template.template_id.send_mail(
+                res_id,
+                force_send=force_send,
+                raise_exception=raise_exception,
+                email_values=template_values,
+                notif_layout=notif_layout
+            )
 
     def open_mail_template(self):
         self.ensure_one()
