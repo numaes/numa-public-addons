@@ -12,7 +12,6 @@
         'crm',
         'mail',
         'mass_mailing',
-        'email_template_qweb',
     ],
     'data': [
         "security/security.xml",

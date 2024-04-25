@@ -26,19 +26,24 @@ class FSMInstance(models.Model):
 
         mail_template = self.definition_id.mail_templates.filtered(lambda x: x.name == mail_template_name)
         if mail_template and len(mail_template) == 1 and self.partner_id:
+            body_html = self.render_dynamic_html(f'<div>{mail_template.body_view_html}</div>')
+
             mcm_model = self.env['mail.compose.message']
             mcm = mcm_model.create(dict(
-                subject=subject if subject else _('Automatic mail'),
-                body=self.render_dynamic_html(f'<div>{mail_template.body_view_html}</div>'),
+                reply_to=self.reply_to,
+                subject=subject if subject else mail_template.name,
+                body=body_html,
                 attachment_ids=mail_template.attachment_ids.ids,
                 composition_mode='comment',
                 model='hr.employee',
-                res_id=self.employee_id.id if self.employee_id else False,
+                res_id=self.employee_id.id,
                 use_active_domain=False,
                 no_auto_thread=False,
+                partner_ids=[self.employee_id.partner_id.id],
                 auto_delete_message=False,
             ))
             mcm.send_mail()
+
         elif len(mail_template) > 1:
             self.message_post(
                 subject='Execution error',

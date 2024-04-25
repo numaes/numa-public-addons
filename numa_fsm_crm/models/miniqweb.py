@@ -25,9 +25,12 @@ xml_parser = lxml.etree.XMLParser(encoding='UTF-8',
                                   ns_clean=True)
 
 
-def render_node(node: E, parent: E = None, params: dict = None) -> E:
+def render_node(node: E, parent: E = None, template=None, params: dict = None) -> E:
     if params is None:
         params = {}
+
+    if isinstance(node, lxml.etree._ProcessingInstruction):
+        return None
 
     copied_node = E(node.tag)
     copied_node.text = node.text
@@ -55,13 +58,19 @@ def render_node(node: E, parent: E = None, params: dict = None) -> E:
         elif a_name == 't-esc':
             copied_node.text = str(safe_eval(a_value, locals_dict=params))
         elif a_name == 't-raw':
-            inner_tree = lxml.etree.fromstring(
-                ('<div>' + str(safe_eval(a_value, locals_dict=params)) + '</div>').encode('UTF-8'),
-                parser=xml_parser
-            )
+            if a_value == '0':
+                inner_tree = lxml.etree.fromstring(
+                    ('<div>' + params.get('p0', '') + '</div>').encode('UTF-8'),
+                    parser=xml_parser
+                )
+            else:
+                inner_tree = lxml.etree.fromstring(
+                    ('<div>' + str(safe_eval(a_value, locals_dict=params)) + '</div>').encode('UTF-8'),
+                    parser=xml_parser
+                )
             copied_node.text = inner_tree.text
             for element in inner_tree:
-                new_node = render_node(element, node, params)
+                new_node = render_node(element, node, template, params)
                 if new_node is not None:
                     copied_node.append(new_node)
         elif a_name == 't-while':
@@ -73,6 +82,29 @@ def render_node(node: E, parent: E = None, params: dict = None) -> E:
             copied_node.attrib[a_name[len('t-att-'):]] = str(safe_eval(a_value, locals_dict=params))
         elif a_name.startswith('t-attf-'):
             copied_node.attrib[a_name[len('t-attf-'):]] = a_value.format(**params)
+        elif a_name == 't-call':
+            called_template = template.env.ref(a_value)
+            if called_template:
+                inner_node = E(node.tag)
+                inner_node.text = node.text
+                inner_node.tail = node.tail
+                for element in node:
+                    inner_node.append(element)
+                saved_0 = params.get('p0')
+                params['p0'] = lxml.etree.tostring(inner_node, encoding='UTF-8').decode('UTF-8')
+                
+                called_tree = lxml.etree.fromstring(called_template.arch_db, parser=xml_parser)
+                copied_node.text = called_tree.text
+                copied_node.tail = called_tree.tail
+                for element in called_tree:
+                    new_node = render_node(element, copied_node, template, params)
+                    if new_node is not None:
+                        copied_node.append(new_node)
+
+                params['p0'] = saved_0
+                return copied_node
+            else:
+                raise exceptions.ValidationError(_('t-call to undefined template %s') % a_value)
         else:
             copied_node.attrib[a_name] = a_value
 
@@ -95,7 +127,7 @@ def render_node(node: E, parent: E = None, params: dict = None) -> E:
             params[iterable_as] = loop_as
             try:
                 for element in node:
-                    new_node = render_node(element, node, params)
+                    new_node = render_node(element, node, template, params)
                     if parent is not None and new_node is not None:
                         parent.append(new_node)
             except TContinue:
@@ -116,7 +148,7 @@ def render_node(node: E, parent: E = None, params: dict = None) -> E:
             loop_index += 1
             try:
                 for element in node:
-                    new_node = render_node(element, node, params)
+                    new_node = render_node(element, node, template, params)
                     if parent is not None and new_node is not None:
                         parent.append(new_node)
             except TContinue:
@@ -128,28 +160,28 @@ def render_node(node: E, parent: E = None, params: dict = None) -> E:
     else:
         if node.tag == 't':
             for element in node:
-                new_node = render_node(element, parent, params)
+                new_node = render_node(element, parent, template, params)
                 if parent is not None and new_node is not None:
                     parent.append(new_node)
             return None
 
         for element in node:
-            new_node = render_node(element, copied_node, params)
+            new_node = render_node(element, copied_node, template, params)
             if new_node is not None:
                 copied_node.append(new_node)
 
     return copied_node
 
 
-def render(template: str, **params) -> str:
+def render(template_string: str, template,  **params) -> str:
     try:
         xml_parser = lxml.etree.XMLParser(encoding='UTF-8',
                                       resolve_entities=False,
                                       strip_cdata=False,
                                       recover=True,
                                       ns_clean=True)
-        template_tree = lxml.etree.fromstring(template.encode('UTF-8'), parser=xml_parser)
-        output_tree = render_node(template_tree, params=params)
+        template_tree = lxml.etree.fromstring(template_string.encode('UTF-8'), parser=xml_parser)
+        output_tree = render_node(template_tree, template=template, params=params)
         return lxml.etree.tostring(output_tree, encoding='UTF-8').decode('UTF-8') \
             if output_tree is not None else ''
 
@@ -164,8 +196,8 @@ def render(template: str, **params) -> str:
         raise exceptions.UserError(trace_msg)
 
     except LxmlError as tree_exception:
-        _logger.exception(_('While processing {template}\nwith params {params}, '
+        _logger.exception(_(f'While processing {template_string}\nwith params {params}, '
                             'unexpected parsing exception {tree_exception}') %
-                          dict(template=template, params=params, tree_exception=tree_exception),
+                          dict(template=template_string, params=params, tree_exception=tree_exception),
                           exc_info=True)
         raise tree_exception
