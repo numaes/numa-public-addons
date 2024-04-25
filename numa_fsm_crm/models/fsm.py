@@ -98,7 +98,7 @@ class FSMInstance(models.Model):
 
             mcm_model = self.env['mail.compose.message']
             mcm = mcm_model.create(dict(
-                reply_to=self.reply_to,
+                reply_to='comerciales@alfyinversiones.com.ar',
                 subject=subject if subject else mail_template.name,
                 body=body_html,
                 attachment_ids=mail_template.attachment_ids.ids,
@@ -109,6 +109,7 @@ class FSMInstance(models.Model):
                 no_auto_thread=False,
                 partner_ids=[self.partner_id.id],
                 auto_delete_message=False,
+                email_from='comerciales@alfyinversiones.com.ar',
             ))
 
             smtp_server_name = 'Postmark'
