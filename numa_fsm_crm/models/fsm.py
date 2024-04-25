@@ -105,7 +105,17 @@ class FSMInstance(models.Model):
                 partner_ids=[self.partner_id.id],
                 auto_delete_message=False,
             ))
-            mcm.send_mail()
+
+            smtp_server_name = 'Postmark'
+            mail_server = self.env['ir.mail_server'].search([('name', '=', smtp_server_name)], limit=1)
+            if mail_server:
+                mcm = mcm.with_context(mail_server_id=mail_server.id)
+                mcm.send_mail()
+                _logger.info(f'Enviado correo por PostMark')
+            else:
+                mcm.send_mail()
+                _logger.info(f'Enviado correo de onboarding por Sendgrid')
+
         elif len(mail_template) > 1:
             self.message_post(
                 subject='Execution error',
