@@ -115,7 +115,7 @@ class FSMInstance(models.Model):
             smtp_server_name = 'Postmark'
             mail_server = self.env['ir.mail_server'].search([('name', '=', smtp_server_name)], limit=1)
             if mail_server:
-                mcm = mcm.with_context(mail_server_id=mail_server.id)
+                mcm = mcm.with_context(smtp_server_id=mail_server.id)
                 mcm.send_mail()
                 _logger.info(f'Enviado correo por PostMark')
             else:
