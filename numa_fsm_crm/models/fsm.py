@@ -95,8 +95,8 @@ class FSMInstance(models.Model):
         mail_template = self.definition_id.mail_templates.filtered(lambda x: x.name == mail_template_name)
         if mail_template and len(mail_template) == 1 and self.partner_id:
             body_html = self.render_dynamic_html(f'<div>{mail_template.body_view_html}</div>')
-
             mcm_model = self.env['mail.compose.message']
+
             mcm = mcm_model.create(dict(
                 reply_to='comerciales@alfyinversiones.com.ar',
                 subject=subject if subject else mail_template.name,
@@ -111,16 +111,7 @@ class FSMInstance(models.Model):
                 auto_delete_message=False,
                 email_from='comerciales@alfyinversiones.com.ar',
             ))
-
-            smtp_server_name = 'Postmark'
-            mail_server = self.env['ir.mail_server'].search([('name', '=', smtp_server_name)], limit=1)
-            if mail_server:
-                mcm = mcm.with_context(smtp_server_id=mail_server.id)
-                mcm.send_mail()
-                _logger.info(f'Enviado correo por PostMark')
-            else:
-                mcm.send_mail()
-                _logger.info(f'Enviado correo de onboarding por Sendgrid')
+            mcm.send_mail()
 
         elif len(mail_template) > 1:
             self.message_post(
