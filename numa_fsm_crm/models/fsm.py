@@ -107,11 +107,12 @@ class FSMInstance(models.Model):
                 res_id=self.partner_id.id,
                 use_active_domain=False,
                 no_auto_thread=False,
-                partner_ids=[self.partner_id.id],
+                partner_ids=[(6, 0, [self.partner_id.id])],
                 auto_delete_message=False,
                 email_from='comerciales@alfyinversiones.com.ar',
             ))
             mcm.send_mail()
+
 
         elif len(mail_template) > 1:
             self.message_post(
