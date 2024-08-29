@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<openerp>
+
+<odoo>
     <data noupdate="1">
-
         <!-- Sequences for exceptions -->
-
         <record id="seq_exception" model="ir.sequence">
             <field name="name">General Exception</field>
             <field name="code">base.general_exception</field>
@@ -13,8 +12,7 @@
         </record>
 
 		<!-- Scheduler for Clean Action-->
-		<record forcecreate="True" id="ir_cron_scheduler_alarm"
-			model="ir.cron">
+		<record forcecreate="True" id="ir_cron_scheduler_alarm" model="ir.cron">
             <field name='name'>Exceptions cleaning</field>
             <field name='interval_number'>1</field>
             <field name='interval_type'>days</field>
@@ -25,6 +23,5 @@
             <field name="state">code</field>
             <field name="code">model.action_clean()</field>
 		</record>
-
     </data>
-</openerp>
+</odoo>

@@ -37,6 +37,8 @@ from odoo.http import SessionExpiredException
 import datetime
 import sys
 import inspect
+from odoo.osv import expression
+
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -46,56 +48,56 @@ DT_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 class VariableValue(models.Model):
     _name = "base.variable_value"
-    _description = "Exceptions: variable value"
+    _description = "Exceptions: Variable Value"
 
-    frame = fields.Many2one('base.frame', 'Frame',
-                            ondelete="cascade")
-    sequence = fields.Integer('Sequence')
-    name = fields.Char('Name', readonly=True)
-    value = fields.Text('Value', readonly=True)
+    frame = fields.Many2one(comodel_name='base.frame', string='Frame', ondelete="cascade")
+    sequence = fields.Integer(string='Sequence')
+    name = fields.Char(string='Name', readonly=True)
+    value = fields.Text(string='Value', readonly=True)
 
 
 class Frame(models.Model):
     _name = "base.frame"
-    _description = "Exceptions: call frame"
+    _description = "Exceptions: Call Frame"
 
-    gexception = fields.Many2one('base.general_exception', 'Exception',
-                                 ondelete="cascade")
-    src_code = fields.Text('Source code', readonly=True)
-    line_number = fields.Integer('Line number', readonly=True)
-    file_name = fields.Char('File name', readonly=True)
-    locals = fields.One2many('base.variable_value', 'frame', 'Local variables',
+    gexception = fields.Many2one(comodel_name='base.general_exception', string='Exception', ondelete="cascade")
+    src_code = fields.Text(string='Source code', readonly=True)
+    line_number = fields.Integer(string='Line number', readonly=True)
+    file_name = fields.Char(string='File name', readonly=True)
+    locals = fields.One2many(comodel_name='base.variable_value',
+                             inverse_name='frame',
+                             string='Local variables',
                              readonly=True)
 
-    def name_get(self):
-        res = []
-        for f in self:
-            res.append((f.id, "%s, %d" % (f.file_name, f.line_number)))
-        return res
+    @api.depends('file_name', 'line_number')
+    def _compute_display_name(self):
+        for record in self:
+            record.display_name = "%s %d" % (record.file_name, record.line_number)
 
     @api.model
-    def name_search(self, name, args=None, operator='ilike', context=None, limit=80):
-        frames = self.search(['|', ('file_name', operator, name), ('line_number', operator, name)],
-                             limit=limit)
-                          
-        return frames.name_get()
-
+    def _name_search(self, name, domain=None, operator='ilike', limit=80, order=None):
+        domain = domain or []
+        if operator != 'ilike' or (name or '').strip():
+            name_domain = ['|', ('file_name', operator, name), ('line_number', operator, name)]
+            domain = expression.AND([name_domain, domain])
+        return self._search(domain, limit=limit, order=order)
 
 class GeneralException (models.Model):
     _name = "base.general_exception"
     _inherit = ['mail.thread', 'mail.activity.mixin']
-    _description = "Exceptions: exception log"
+    _description = "Exceptions: Exception Log"
     _order = "timestamp desc"
 
-    name = fields.Char('Identification', readonly=True)
-    service = fields.Char('Service', readonly=True)
-    exception = fields.Text('Exception', readonly=True)
-    method = fields.Char('Method', readonly=True)
-    params = fields.Text('Params', readonly=True)
-    timestamp = fields.Datetime('Timestamp', readonly=True)
-    do_not_purge = fields.Boolean('Do not purge?', readonly=True)
-    user = fields.Many2one('res.users', 'User', readonly=True, ondelete='set null')
-    frames = fields.One2many('base.frame', 'gexception', 'Frames', readonly=True)
+    name = fields.Char(string='Identification', readonly=True)
+    service = fields.Char(string='Service', readonly=True)
+    exception = fields.Text(string='Exception', readonly=True)
+    method = fields.Char(string='Method', readonly=True)
+    params = fields.Text(string='Params', readonly=True)
+    timestamp = fields.Datetime(string='Timestamp', readonly=True)
+    do_not_purge = fields.Boolean(string='Do not purge?', readonly=True)
+    user = fields.Many2one(comodel_name='res.users', string='User', readonly=True, ondelete='set null')
+    frames = fields.One2many(comodel_name='base.frame', inverse_name='gexception', string='Frames', readonly=True)
+    frames_count = fields.Integer(string='Frames Count', compute='_compute_frames_count', readonly=True)
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -104,7 +106,11 @@ class GeneralException (models.Model):
             vals['name'] = self.env['ir.sequence'].next_by_code('base.general_exception') or '/'
             vals['timestamp'] = fields.Datetime.now()
         return super(GeneralException, self).create(vals_list)
-        
+
+    def _compute_frames_count(self):
+        for record in self:
+            record.frames_count = len(record.frames) if record.frames else 0
+
     def action_frames(self):
         self.ensure_one()
 

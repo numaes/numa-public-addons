@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<openerp>
+
+<odoo>
     <data>
-        <menuitem name="Background Jobs" 
-                  parent="base.menu_custom"
-                  id="background_jobs_submenu"/>
+        <menuitem name="Background Jobs" parent="base.menu_custom" id="background_jobs_submenu"/>
 
         <record model="ir.ui.view" id="background_job_tree">
             <field name="name">NUMA Background job tree</field>
@@ -99,4 +98,4 @@
             
 
     </data>
-</openerp>
+</odoo>

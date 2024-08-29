@@ -1,19 +1,20 @@
 <?xml version="1.0"?>
-<openerp>
-    <data>
 
+<odoo>
+    <data>
         <record id="exceptions_form_view" model="ir.ui.view">
             <field name="name">Exceptions form</field>
             <field name="model">base.general_exception</field>
             <field name="arch" type="xml">
                 <form string="Exception">
                     <header>
+
                     </header>
                     <sheet>
-                        <div class="oe_right oe_button_box" name="buttons">
-                            <div>
-                                <button name="action_frames" string="Frames" type="object" />
-                            </div>
+                        <div class="oe_button_box" name="button_box">
+                            <button class="oe_stat_button" name="action_frames" type="object" icon="fa-list">
+                                <field string=" Frames" name="frames_count" widget="statinfo"/>
+                            </button>
                         </div>
 
                         <div class="oe_title">
@@ -60,8 +61,7 @@
             <field name="model">base.general_exception</field>
             <field name="arch" type="xml">
                 <search string="Exceptions" >
-                    <filter string="Do not purge" name="do_not_purge"
-                            domain="[('do_not_purge','=',True)]"/>
+                    <filter string="Do not purge" name="do_not_purge" domain="[('do_not_purge','=',True)]"/>
                     <separator orientation="vertical"/>
                     <field name="name"/>
                     <field name="user" />
@@ -71,23 +71,6 @@
             </field>
         </record>
 
-        <record id="exceptions_action" model="ir.actions.act_window">
-            <field name="name">Exceptions</field>
-            <field name="type">ir.actions.act_window</field>
-            <field name="res_model">base.general_exception</field>
-            <field name="view_mode">list,form</field>
-            <field name="help" type="html">
-              <p class="oe_view_nocontent_create">
-                  Exceptions recorded. 
-              </p>
-            </field>
-        </record>
-
-        <menuitem id="exceptions_menu"
-            action="exceptions_action"
-            parent="base.next_id_9"
-            sequence="99"/>
-            
         <record id="exc_frame_form_view" model="ir.ui.view">
             <field name="name">Exception frames form</field>
             <field name="model">base.frame</field>
@@ -129,6 +112,5 @@
                 </tree>
             </field>
         </record>
-
     </data>
-</openerp>
+</odoo>
