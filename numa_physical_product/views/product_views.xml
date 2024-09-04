@@ -1,15 +1,15 @@
 <?xml version="1.0"?>
+
 <odoo>
     <data>
         <!-- Products template Form View -->
-        <record model="ir.ui.view" id="product_template_form_view">
-            <field name="name">Product Template Physical</field>
+        <record id="product_template_form_view" model="ir.ui.view">
+            <field name="name">product.template.form</field>
             <field name="model">product.template</field>
-            <field name="inherit_id" ref="product.product_template_form_view" />
+            <field name="inherit_id" ref="product.product_template_form_view"/>
             <field name="arch" type="xml">
                 <xpath expr="//group[@name='inventory']/group[@name='group_lots_and_weight']" position="after">
-                    <group name="physical_characteristics" string="Physical characteristics"
-                           attrs="{'invisible':[('type', 'not in', ['product', 'consu'])]}" >
+                    <group name="physical_characteristics" string="Physical Characteristics" invisible="type not in ['product', 'consu']">
                         <field name="product_width" />
                         <field name="product_length" />
                         <field name="product_height" />
@@ -17,33 +17,32 @@
                         <field name="volume" />
                         <field name="weight" />
                     </group>
-                    <group name="price_computation" string="Price computation">
+                    <group name="price_computation" string="Price Computation">
                         <field name="price_base" />
                    </group>
-                    <group name="weight_computation" string="Weight computation">
+                    <group name="weight_computation" string="Weight Computation">
                         <field name="weight_kind" />
-                        <field name="weight_factor" attrs="{'invisible':[('weight_kind','=','normal')]}"/>
+                        <field name="weight_factor" invisible="weight_kind == 'normal'"/>
                     </group>
                 </xpath>
             </field>
         </record>
 
         <!-- Products variant Form View -->
-        <record model="ir.ui.view" id="product_normal_form_view">
-            <field name="name">Product Variant Physical</field>
+        <record id="product_normal_form_view" model="ir.ui.view">
+            <field name="name">product.normal.form</field>
             <field name="model">product.product</field>
             <field name="inherit_id" ref="product.product_normal_form_view" />
             <field name="arch" type="xml">
                 <xpath expr="//group[@name='inventory']/group[@name='weight_computation']" position="inside">
-                    <field name="variant_width" invisible="True"/>
-                    <field name="variant_length" invisible="True" />
-                    <field name="variant_height" invisible="True" />
-                    <field name="variant_surface" invisible="True" />
-                    <field name="variant_volume" invisible="True" />
-                    <field name="variant_weight" invisible="True" />
+                    <field name="variant_width" invisible="1"/>
+                    <field name="variant_length" invisible="1" />
+                    <field name="variant_height" invisible="1" />
+                    <field name="variant_surface" invisible="1" />
+                    <field name="variant_volume" invisible="1" />
+                    <field name="variant_weight" invisible="1" />
                 </xpath>
             </field>
         </record>
-
     </data>
 </odoo>

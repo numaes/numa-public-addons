@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<openerp>
+
+<odoo>
     <data noupdate="1">
-        <!--
-        Property
-        -->
         <record forcecreate="True" id="decimal_stock_length" model="decimal.precision">
             <field name="name">Stock Length</field>
             <field name="digits">3</field>
@@ -18,6 +16,5 @@
             <field name="name">Stock Surface</field>
             <field name="digits">3</field>
         </record>
-
     </data>
-</openerp>
+</odoo>
