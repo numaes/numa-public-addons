@@ -43,7 +43,7 @@ Extended exception processing.
              'views/menu_views.xml',
              'data/exceptions_data.xml',
              ],
-    'auto_install': True,
+    'auto_install': False,
     'application': True,
     'license': 'LGPL-3',
 }

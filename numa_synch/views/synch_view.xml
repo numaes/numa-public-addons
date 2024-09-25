@@ -39,10 +39,10 @@
             <field name="name">synch_remote tree view</field>
             <field name="model">synch.remote</field>
             <field name="arch" type="xml">
-                <tree string="Synch Remotes">
+                <list string="Synch Remotes">
                     <field name="name"/>
                     <field name="type"/>
-                </tree>
+                </list>
             </field>
         </record>
 
@@ -71,12 +71,12 @@
             <field name="name">synch_link tree view</field>
             <field name="model">synch.link</field>
             <field name="arch" type="xml">
-                <tree string="Synch Links" editable="bottom">
+                <list string="Synch Links" editable="bottom">
                     <field name="remote"/>
                     <field name="model"/>
                     <field name="remote_id"/>
                     <field name="local_id"/>
-                </tree>
+                </list>
             </field>
         </record>
 
@@ -109,11 +109,11 @@
             <field name="name">synch_log tree view</field>
             <field name="model">synch.log</field>
             <field name="arch" type="xml">
-                <tree string="Synch Logs" editable="bottom">
+                <list string="Synch Logs" editable="bottom">
                     <field name="remote"/>
                     <field name="timestamp"/>
                     <field name="message"/>
-                </tree>
+                </list>
             </field>
         </record>
 
@@ -142,11 +142,11 @@
             <field name="name">synch_timestamp tree view</field>
             <field name="model">synch.timestamp</field>
             <field name="arch" type="xml">
-                <tree string="Synch Timestamp" editable="bottom">
+                <list string="Synch Timestamp" editable="bottom">
                     <field name="remote"/>
                     <field name="model"/>
                     <field name="last_update"/>
-                </tree>
+                </list>
             </field>
         </record>
 

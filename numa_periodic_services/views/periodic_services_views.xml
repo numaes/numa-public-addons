@@ -69,13 +69,13 @@
             <field name="name">Periodic Service list</field>
             <field name="model">base.periodic_service</field>
             <field name="arch" type="xml">
-                <tree string="Periodic Services" >
+                <list string="Periodic Services" >
                     <field name="name" select="True"/>
                     <field name="type" select="True" />
                     <field name="next_execution" select="True" />
                     <field name="error_count" select="True" />
                     <field name="state" select="True" />
-                </tree>
+                </list>
             </field>
         </record>
 

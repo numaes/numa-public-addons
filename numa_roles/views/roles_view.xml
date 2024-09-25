@@ -61,11 +61,11 @@
             <field name="name">Groups Type Tree</field>
             <field name="model">res.groups_type</field>
             <field name="arch" type="xml">
-				<tree editable="bottom">
+				<list editable="bottom">
 					<field name="name"/>
 					<field name="description"/>
                     <field name="active"/>
-				</tree>
+				</list>
             </field>
         </record>
 

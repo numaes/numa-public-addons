@@ -18,20 +18,20 @@
                         <notebook >
                             <page name="pages" string="Pages">
                                 <field name="pages" mode="tree">
-                                    <tree string="Pages">
+                                    <list string="Pages">
                                         <field name="name"/>
                                         <button name="open_page_template" type="object"
                                                 string="View"/>
-                                    </tree>
+                                    </list>
                                 </field>
                             </page>
                             <page name="mail_templates" string="Mail templates">
                                 <field name="mail_templates" mode="tree">
-                                    <tree string="Mail Templates">
+                                    <list string="Mail Templates">
                                         <field name="name"/>
                                         <button name="open_mail_template" type="object"
                                                 string="Edit"/>
-                                    </tree>
+                                    </list>
                                 </field>
                             </page>
                             <page name="definition" string="Definition">
@@ -57,10 +57,10 @@
             <field name="name">FSM Definition tree view</field>
             <field name="model">fsm.definition</field>
             <field name="arch" type="xml">
-                <tree string="FSM Definitions">
+                <list string="FSM Definitions">
                     <field name="name" />
                     <field name="type" />
-                </tree>
+                </list>
             </field>
         </record>
 
@@ -150,13 +150,13 @@
             <field name="name">FSM Instance tree view</field>
             <field name="model">fsm.instance</field>
             <field name="arch" type="xml">
-                <tree string="FSM Instances">
+                <list string="FSM Instances">
                     <field name="name" />
                     <field name="definition_id" />
                     <field name="partner_id" />
                     <field name="state" />
                     <field name="current_state" />
-                </tree>
+                </list>
             </field>
         </record>
 

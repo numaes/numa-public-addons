@@ -10,9 +10,9 @@
             <field name="mode">extension</field>
             <field name="inherit_id" ref="product.attribute_tree_view" />
             <field name="arch" type="xml">
-                <tree position="inside">
+                <list position="inside">
                     <field name="code_identifier" />
-                </tree>
+                </list>
             </field>
         </record>
 
