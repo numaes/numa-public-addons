@@ -4,7 +4,7 @@
     'summary': "HR Workflow",
     'author': "Gustavo Marino <gamarino@numaes.com>",
     'website': 'https://www.numaes.com',
-    'version': "1.0",
+    'version': "18.0.0.1",
     'category': "mailing",
     'depends': [
         'base',

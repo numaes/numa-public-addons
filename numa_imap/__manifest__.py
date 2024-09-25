@@ -8,7 +8,7 @@ NUMA IMAP extension
     * Leave read mails from IMAP servers as unread on server
 """,
 	'summary': "IMAP extension",
-    'version': '1.0',
+    'version': '18.0.0.1',
     'depends': ['base','fetchmail'],
     'data': [
         'security/ir.model.access.csv',

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name' : 'Numa Roles',
-    'version' : '1.0',
+    'version' : '18.0.0.1',
     'author' : 'Numa Extreme Systems',
     'category' : 'Specific Numa Applications',
     'website': 'https://www.numaes.com',

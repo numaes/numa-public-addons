@@ -49,7 +49,7 @@ checked to run the ones wich its next run is already happened.
 
 """,
 	'summary': "Periodic Services administration",
-    'version': '1.0',
+    'version': '18.0.0.1',
     'depends': ['base',
                 'mail',
                 'numa_exceptions'],

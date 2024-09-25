@@ -2,7 +2,7 @@
 
 {
     'name': 'NUMA Physical Product - Invoice',
-    'version': '1.0',
+    'version': '18.0.0.1',
     'category': 'Product',
     'description': """
 Technical module to expand invoices by physical products
