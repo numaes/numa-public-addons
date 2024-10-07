@@ -131,7 +131,7 @@ fi
 #--------------------------------------------------
 echo -e "\n==== Installing numa-public-odoo Server ===="
 if [ ! -d "odoo-$OE_VERSION-numa" ]; then
-  git clone https://github.com/numaes/numa-public-odoo -b "$OE_VERSION-numa" "odoo-$OE_VERSION-numa"
+  git clone https://github.com/numaes/numa-public-odoo -b "$OE_VERSION-numa" "numa-public-odoo-$OE_VERSION-numa"
 fi
 
 echo -e "\n==== Installing numa-public-addons ===="
@@ -208,6 +208,7 @@ if [ "$PROJECT" != "" ]; then
     fi
 
     source venv/bin/activate
+    sudo ./setup/debinstall.sh
 
     if [ ! -f 'odoo.config' ]; then
       touch odoo.config
@@ -235,6 +236,9 @@ if [ "$PROJECT" != "" ]; then
           printf "proxy_mode = True\n" >> odoo.config
       fi
       printf "data_dir = data\n" >> odoo.config
+      printf "limit_memory_hard = 1677721600" >> odoo.config
+      printf "limit_memory_soft = 629145600" >> odoo.config
+      printf "limit_request = 8192" >> odoo.config
       printf "limit_time_cpu = 3600\n" >> odoo.config
       printf "limit_time_real = 7200\n" >> odoo.config
       printf "db_user = pg-$PROJECT-$OE_VERSION\n" >>odoo.config
@@ -257,7 +261,7 @@ if [ "$PROJECT" != "" ]; then
           printf "../enterprise-$OE_VERSION," >> odoo.config
       fi
 
-      printf "../odoo-$OE_VERSION-numa/addons,../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
+      printf "../numa-public-odoo-$OE_VERSION-numa/addons,../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
 
     fi
 
@@ -446,8 +450,8 @@ map \$http_upgrade \$connection_upgrade {
 # http -> https
 server {
    listen 80;
-   add_header Strict-Transport-Security max-age=2592000;
-   rewrite ^/.*\$ https://\$host\$request_uri? permanent;
+   server_name $WEBSITE_NAME;
+   rewrite ^/.*\$ https://\$host\$1 permanent;
 }
 
 server {
@@ -504,16 +508,18 @@ server {
   client_max_body_size 0;
 
   location / {
+    proxy_set_header X-Forwarded-Host $http_host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Real-IP $remote_addr;
     proxy_redirect off;
-    proxy_pass    http://backend-odoo;
+    proxy_pass http://odoo;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
+    proxy_cookie_flags session_id samesite=lax secure;  # requires nginx 1.19.8
+
   }
-  location /longpolling {
-    proxy_pass http://backend-odoo-im;
-    proxy_set_header X-Forwarded-Host \$host;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
-    proxy_set_header X-Real-IP \$remote_addr;
-  }
+
   location /websocket {
     proxy_pass http://backend-odoo-im;
     proxy_set_header Upgrade \$http_upgrade;
@@ -522,20 +528,14 @@ server {
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
     proxy_set_header X-Real-IP \$remote_addr;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
+    proxy_cookie_flags session_id samesite=lax secure;  # requires nginx 1.19.8
   }
-  location ~* .js|css|png|jpg|jpeg|gif|ico$ {
-    expires 2d;
-    proxy_pass http://backend-odoo;
-    add_header Cache-Control "public, no-transform";
-  }
-  # cache some static data in memory for 60mins.
-  location ~ /[a-zA-Z0-9_-]*/static/ {
-    proxy_cache_valid 200 302 60m;
-    proxy_cache_valid 404      1m;
-    proxy_buffering    on;
-    expires 864000;
-    proxy_pass    http://backend-odoo;
-  }
+
+  gzip_types text/css text/scss text/plain text/xml application/xml application/json application/javascript;
+  gzip on;
+
 }
 EOF
 
