@@ -226,7 +226,7 @@ if [ "$PROJECT" != "" ]; then
       else
           printf "xmlrpc_port = ${OE_PORT}\n" >> odoo.config
       fi
-      if [ "$OE_VERSION" \>= "16.0" ]; then
+      if [ "$OE_VERSION" -gt "16" ]; then
           printf "gevent_port = ${LONGPOLLING_PORT}\n" >> odoo.config
           printf "longpolling_port = False\n" >> odoo.config
       else
