@@ -221,12 +221,12 @@ if [ "$PROJECT" != "" ]; then
       fi
       printf "admin_passwd = ${OE_SUPERADMIN}\n" >> odoo.config
 
-      if [ "$OE_VERSION" \> "11.0 " ]; then
+      if [ "$OE_VERSION" -gt "11.0 " ]; then
           printf "http_port = ${OE_PORT}\n" >> odoo.config
       else
           printf "xmlrpc_port = ${OE_PORT}\n" >> odoo.config
       fi
-      if [ "$OE_VERSION" -gt "16" ]; then
+      if [ "$OE_VERSION" -gte "16" ]; then
           printf "gevent_port = ${LONGPOLLING_PORT}\n" >> odoo.config
           printf "longpolling_port = False\n" >> odoo.config
       else
