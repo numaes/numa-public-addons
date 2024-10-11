@@ -30,7 +30,7 @@ read -r -e -p "Odoo longpolling port: " -i "8072" LONGPOLLING_PORT
 
 # Choose the Odoo version which you want to install. For example: 13.0, 12.0, 11.0 or saas-18. When using 'master' the master version will be installed.
 # IMPORTANT! This script contains extra libraries that are specifically needed for Odoo 13.0
-read -r -e -p "Odoo version: " -i "16.0" OE_VERSION
+read -r -e -p "Odoo version: " -i "18.0" OE_VERSION
 
 # Set this to True if you want to install the Odoo enterprise version!
 read -r -e -p "Is enterprise? [True/False]: " -i "False" IS_ENTERPRISE
@@ -83,7 +83,7 @@ sudo apt-get upgrade -y
 # Install PostgreSQL Server
 #--------------------------------------------------
 echo -e "\n---- Install PostgreSQL Server ----"
-sudo apt-get install postgresql postgres-client postgres-client-common postgresql-server-dev-all libpq-dev -y
+sudo apt-get install postgresql postgresql-contrib postgresql-client postgresql-client-common postgresql-server-dev-all libpq-dev -y
 sudo -u postgres createuser $USER
 
 echo -e "\n---- Creating the ODOO PostgreSQL User  ----"
@@ -161,6 +161,19 @@ if [ "$INSTALL_PRIVATE" = "True" ]; then
         GITHUB_RESPONSE=$(git clone https://github.com/numaes/numa-addons -b "$OE_VERSION" "numa-addons-$OE_VERSION" 2>&1)
     done
   fi
+
+  echo -e "\n==== Installing numa-addons Server ===="
+  if [ ! -d "numa_l10n_ar-$OE_VERSION" ]; then
+    GITHUB_RESPONSE="Authentication"
+    while [[ $GITHUB_RESPONSE == *"Authentication"* ]]; do
+        echo "------------------------WARNING------------------------------"
+        echo "Your authentication with NUMA numa-addons has failed! Please try again."
+        echo "TIP: Press ctrl+c to stop this script."
+        echo "-------------------------------------------------------------"
+        echo " "
+        GITHUB_RESPONSE=$(git clone https://github.com/numaes/numa_l10n_ar -b "$OE_VERSION" "numa_l10n_ar-$OE_VERSION" 2>&1)
+    done
+  fi
 fi
 
 if [ "$IS_ENTERPRISE" = "True" ]; then
@@ -218,8 +231,10 @@ if [ "$PROJECT" != "" ]; then
       if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then
           echo -e "* Generating random admin password"
           OE_SUPERADMIN=$cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1
+          printf "admin_passwd = ${OE_SUPERADMIN}\n" >> odoo.config
+      else
+          printf "admin_passwd = ${OE_SUPERADMIN}768\n" >> odoo.config
       fi
-      printf "admin_passwd = ${OE_SUPERADMIN}\n" >> odoo.config
 
       if [ "$OE_VERSION" -gt "11.0 " ]; then
           printf "http_port = ${OE_PORT}\n" >> odoo.config
@@ -237,31 +252,34 @@ if [ "$PROJECT" != "" ]; then
       fi
       printf "data_dir = data\n" >> odoo.config
       printf "limit_memory_hard = 1677721600\n" >> odoo.config
-      printf "limit_memory_soft = 6291456000\n" >> odoo.config
+      printf "limit_memory_soft = 8291456000\n" >> odoo.config
       printf "limit_request = 8192\n" >> odoo.config
       printf "limit_time_cpu = 3600\n" >> odoo.config
       printf "limit_time_real = 7200\n" >> odoo.config
       printf "db_user = pg-$PROJECT-$OE_VERSION\n" >>odoo.config
+      createuser -s pg-$PROJECT-$OE_VERSION
 
       if [ "$PROJECT_REPO" = "True" ]; then
-        printf "addons_path=$PROJECT-addons-$OE_VERSION," >> odoo.config
+        printf "addons_path=$PROJECT-addons-$OE_VERSION,\n" >> odoo.config
       else
-        printf "addons_path=" >> odoo.config
+        printf "addons_path=\n" >> odoo.config
       fi
 
-      printf "../extra-addons-$OE_VERSION," >> odoo.config
+      printf "    ../extra-addons-$OE_VERSION,\n" >> odoo.config
 
       if [ "$INSTALL_PRIVATE" = "Yes" ]; then
-        printf "../numa-addons-$OE_VERSION," >>odoo.config
+        printf "    ../numa-addons-$OE_VERSION,\n" >>odoo.config
+        printf "    ../numa_l10n_ar-$OE_VERSION,\n" >>odoo.config
       fi
 
-      printf "../numa-public-addons-$OE_VERSION," >>odoo.config
+      printf "    ../numa-public-addons-$OE_VERSION,\n" >>odoo.config
 
       if [ "$IS_ENTERPRISE" = "True" ]; then
-          printf "../enterprise-$OE_VERSION," >> odoo.config
+          printf "../enterprise-$OE_VERSION,\n" >> odoo.config
       fi
 
-      printf "../numa-public-odoo-$OE_VERSION-numa/addons,../numa-public-odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
+      printf "    ../numa-public-odoo-$OE_VERSION-numa/addons,\n" >>odoo.config
+      printf "    ../numa-public-odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
 
     fi
 
