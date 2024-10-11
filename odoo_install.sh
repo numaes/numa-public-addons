@@ -527,14 +527,14 @@ server {
 
   location / {
     proxy_set_header X-Forwarded-Host $http_host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-Host \$host;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Real-IP \$remote_addr;
     proxy_redirect off;
-    proxy_pass http://odoo;
+    proxy_pass http://backend-odoo;
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
-    proxy_cookie_flags session_id samesite=lax secure;  # requires nginx 1.19.8
 
   }
 
@@ -548,12 +548,7 @@ server {
     proxy_set_header X-Real-IP \$remote_addr;
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
-    proxy_cookie_flags session_id samesite=lax secure;  # requires nginx 1.19.8
   }
-
-  gzip_types text/css text/scss text/plain text/xml application/xml application/json application/javascript;
-  gzip on;
-
 }
 EOF
 
