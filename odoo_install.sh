@@ -236,9 +236,9 @@ if [ "$PROJECT" != "" ]; then
           printf "proxy_mode = True\n" >> odoo.config
       fi
       printf "data_dir = data\n" >> odoo.config
-      printf "limit_memory_hard = 1677721600" >> odoo.config
-      printf "limit_memory_soft = 629145600" >> odoo.config
-      printf "limit_request = 8192" >> odoo.config
+      printf "limit_memory_hard = 1677721600\n" >> odoo.config
+      printf "limit_memory_soft = 6291456000\n" >> odoo.config
+      printf "limit_request = 8192\n" >> odoo.config
       printf "limit_time_cpu = 3600\n" >> odoo.config
       printf "limit_time_real = 7200\n" >> odoo.config
       printf "db_user = pg-$PROJECT-$OE_VERSION\n" >>odoo.config
@@ -261,13 +261,13 @@ if [ "$PROJECT" != "" ]; then
           printf "../enterprise-$OE_VERSION," >> odoo.config
       fi
 
-      printf "../numa-public-odoo-$OE_VERSION-numa/addons,../odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
+      printf "../numa-public-odoo-$OE_VERSION-numa/addons,../numa-public-odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
 
     fi
 
     cat <<EOF > ./start.sh
 source venv/bin/activate
-../odoo-$OE_VERSION-numa/odoo-bin -c odoo.config \$1 \$2 \$3 \$4 \$5 \$6 \$7 \$8 \$9
+../numa-public-odoo-$OE_VERSION-numa/odoo-bin -c odoo.config \$1 \$2 \$3 \$4 \$5 \$6 \$7 \$8 \$9
 EOF
     chmod +x ./start.sh
 
@@ -432,7 +432,7 @@ fi
 #--------------------------------------------------
 if [ "$INSTALL_NGINX" = "True" ]; then
   echo -e "\n---- Installing and setting up Nginx ----"
-  sudo apt install nginx certbot -y
+  sudo apt install nginx letsencrypt -y
 
   cat <<EOF > ~/odoo
 #odoo server
