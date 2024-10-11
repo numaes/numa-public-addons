@@ -84,7 +84,7 @@ sudo apt-get upgrade -y
 #--------------------------------------------------
 echo -e "\n---- Install PostgreSQL Server ----"
 sudo apt-get install postgresql postgresql-contrib postgresql-client postgresql-client-common postgresql-server-dev-all libpq-dev -y
-sudo -u postgres createuser $USER
+sudo -u postgres createuser -s $USER
 
 echo -e "\n---- Creating the ODOO PostgreSQL User  ----"
 createuser -s "pg-$PROJECT-$OE_VERSION"
