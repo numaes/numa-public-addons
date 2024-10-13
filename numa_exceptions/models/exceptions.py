@@ -23,7 +23,7 @@
 from odoo import models, fields, api, _, registry, exceptions
 from odoo.exceptions import UserError, ValidationError, RedirectWarning
 from odoo import SUPERUSER_ID
-from odoo.loglevels import exception_to_unicode, ustr
+from odoo.loglevels import exception_to_unicode
 from odoo.http import request, Response, ROUTING_KEYS, Stream
 
 import odoo
@@ -149,7 +149,7 @@ def register_exception(service_name, method, params, db, uid, e):
     if not db:
         return None
 
-    db_registry = registry(db)
+    db_registry = odoo.modules.registry.Registry(db)
 
     if not db_registry:
         return None
@@ -169,7 +169,7 @@ def register_exception(service_name, method, params, db, uid, e):
                     output = '<pre>\n'
                     try:
                         if count >= 0:
-                            local_vars = [(0, 0, {'name': ustr(k), 'value': ustr(v)})
+                            local_vars = [(0, 0, {'name': str(k), 'value': str(v)})
                                           for k, v in frame.f_locals.items()]
                             local_vars.sort(key=lambda x: x[2]['name'])
                             seq = 1
@@ -200,8 +200,8 @@ def register_exception(service_name, method, params, db, uid, e):
 
                 def get_exception_chain(exc):
                     if exc.__cause__:
-                        return "%s\n\nCaused by:\n%s" % (ustr(exc), get_exception_chain(exc.__cause__))
-                    return ustr(exc)
+                        return "%s\n\nCaused by:\n%s" % (str(exc), get_exception_chain(exc.__cause__))
+                    return str(exc)
 
                 exc_description = get_exception_chain(e)
 
