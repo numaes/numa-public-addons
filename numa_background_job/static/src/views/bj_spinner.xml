@@ -9,7 +9,8 @@
 
             <t t-if="spinner_state == 'aborted' || spinner_state == 'aborting'" >
                 <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C080C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_background" style="background-color: #FFFFFF"> </div>
+                    <div class="o_bjprogressbar_indicator" t-att-style="'background-color: #C080C0;width:'+completion_rate+'%'"> </div>
                     <div class="o_bjprogressbar_frame">
                         <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
                     </div>
@@ -23,7 +24,7 @@
             </t>
             <t t-if="spinner_state == 'init'">
                 <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0"> </div>
                 </div>
                 <div class="o_bjprogressbar_abort" >
                     <button t-on-click="() => click_abort()">
@@ -36,7 +37,8 @@
             </t>
             <t t-if="spinner_state == 'ended'">
                 <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_background" style="background-color: #FFFFFF"> </div>
+                    <div class="o_bjprogressbar_indicator" t-att-style="'background-color: #C080C0;width:'+completion_rate+'%'"> </div>
                     <div class="o_bjprogressbar_frame">
                         <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
                     </div>
@@ -50,7 +52,8 @@
             </t>
             <t t-if="spinner_state == 'started'">
                 <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_background" style="background-color: #FFFFFF"> </div>
+                    <div class="o_bjprogressbar_indicator" t-att-style="'background-color: #C080C0;width:'+completion_rate+'%'"> </div>
                     <div class="o_bjprogressbar_frame">
                         <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
                     </div>

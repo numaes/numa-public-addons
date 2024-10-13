@@ -2,39 +2,54 @@
 
 
 import {
-    EventBus,
     Component,
 } from "@odoo/owl";
-import { _lt, _t } from "@web/core/l10n/translation";
+import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
+import { serializeDateTime } from "@web/core/l10n/dates";
+import { useBus, useService } from "@web/core/utils/hooks";
 
 export class BJSpinner extends Component {
+    static template = "numa_background_job.bj_spinner";
+    static components = {};
+    static defaultProps = { dynamicPlaceholder: false };
+    static props = {
+        ...standardFieldProps,
+        spinner_name: {type: String, optional: true },
+        spinner_state: {type: String, optional: true },
+        state_msg: {type: String, optional: true },
+        completion_rate: {type: Number, optional: true },
+        current_status: {type: String, optional: true },
+        error_msg: {type: String, optional: true },
+        initialized_on: {type: String, optional: true },
+        started_on: {type: String, optional: true },
+        ended_on: {type: String, optional: true },
+        aborted_on: {type: String, optional: true },
+        context: { type: Object, optional: true },
+        domain: { type: [Array, Function], optional: true },
+    };
+
     setup() {
         super.setup();
+
+        this.orm = useService("orm");
+        this.busService = this.env.services.bus_service;
 
         this.name = parent.name;
         this.options = this.nodeOptions || {};
 
-        self = this;
+        const self = this;
 
-        const bus_service = this.env.services.bus_service;
-        bus_service.addChannel('res.background_job');
-        bus_service.addEventListener('notification', ({ detail: notifications }) => {
-            for (const { payload, type } of notifications) {
-                if (type === 'background_job.state_change' && self.props.value[0] === payload.id) {
-                    self._update_spinner(payload);
-                }
-            }
-        });
+        this.busService = this.env.services.bus_service;
 
-        bus_service.start();
+        this.channel = "res.background_job"
+        this.busService.addChannel(this.channel)
+        this.busService.subscribe("notification", this._update_spinner.bind(this))
     }
 
     onWillUnmount() {
-        const bus_service = this.env.services.bus_service;
-
-        core.bus.off('res.background_job', 'background_job', this._onNotification);
+        this.busService.unsubscribe('res.background_job', 'notification');
         super.onWillUnmount();
     }
 
@@ -44,8 +59,9 @@ export class BJSpinner extends Component {
         let record_id = this.props.value && this.props.value[0];
         let self = this
         if (record_id) {
-            orm.try_to_abort(
+            this.orm.call(
                 'res.background_job',
+                'try_to_abort',
                 [record_id]
             );
 
@@ -60,6 +76,7 @@ export class BJSpinner extends Component {
     }
 
     async _update_spinner(vals) {
+        vals = vals || {};
         this.spinner_name = vals.name || this.spinner_name;
         this.spinner_state = vals.state || this.state;
         this.completion_rate = vals.completion_rate || 0;
@@ -79,8 +96,9 @@ export class BJSpinner extends Component {
         let record_id = this.props.value && this.props.value[0];
         let self = this;
         if (record_id) {
-            let values = await orm.read(
+            let values = await this.orm.call(
                 'res.background_job',
+                'read',
                 [record_id],
                 [
                     'name',
@@ -95,62 +113,49 @@ export class BJSpinner extends Component {
                 ]
             );
 
-            this._update_spinner(values[0]);
+            this._update_spinner();
         }
     }
 }
-BJSpinner.bus = new EventBus();
 
-BJSpinner.template = "numa_background_job.bj_spinner";
-BJSpinner.components = {
-};
-BJSpinner.defaultProps = { dynamicPlaceholder: false };
-BJSpinner.props = {
-    ...standardFieldProps,
-    spinner_name: {type: String},
-    spinner_state: {type: String},
-    state_msg: {type: String},
-    completion_rate: {type: Number},
-    current_status: {type: String},
-    error_msg: {type: String},
-    initialized_on: {type: String},
-    started_on: {type: String},
-    ended_on: {type: String},
-    aborted_on: {type: String}
-};
+export const bjSpinnerField = {
+    component: BJSpinner,
+    displayName: _t("BJSpinner"),
+    supportedOptions: [],
+    supportedTypes: ["many2one"],
+    extractProps: ({ attrs, field }, dynamicInfo) => {
+        let state_msg = {
+            init: _t('Initializing: ') + attrs.initialized_on,
+            started: _t('Started: ') + attrs.started_on,
+            ended: _t('Started: ') + attrs.started_on +
+                _t(' - Ended: ') + attrs.ended_on +
+                _t(' - Duración: ') + attrs.ended_on + '-' + attrs.started_on,
+            aborting: _t('Aborting ...'),
+            aborted: _t('Started: ') + attrs.started_on +
+                _t(' - Aborted: ') + attrs.aborted_on +
+                _t(' - Duración: ') + attrs.aborted_on + ' - ' + attrs.started_on
+        }[attrs.spinner_state]
+        if (!state_msg) {
+            state_msg = '';
+        }
 
-BJSpinner.displayName = _lt("BJSpinner");
-BJSpinner.supportedTypes = ["many2one"];
-
-BJSpinner.extractProps = ({ attrs, field }) => {
-    let state_msg = {
-        init: _t('Initializing: ') + moment.utc(attrs.initialized_on).utcOffset(-3).format('DD-MM-YYYY HH:mm:ss'),
-        started: _t('Started: ') + moment.utc(attrs.started_on).utcOffset(-3).format('DD-MM-YYYY HH:mm:ss'),
-        ended: _t('Started: ') + moment.utc(attrs.started_on).utcOffset(-3).format('DD-MM-YYYY HH:mm:ss') +
-            _t(' - Ended: ') + moment.utc(attrs.ended_on).utcOffset(-3).format('DD-MM-YYYY HH:mm:ss') +
-            _t(' - Duración: ') + moment.utc(moment.utc(attrs.ended_on, 'DD-MM-YYYY HH:mm:ss.SSS').diff(moment.utc(attrs.started_on, 'DD-MM-YYYY HH:mm:ss.SSS'))).format('HH:mm:ss.SSS'),
-        aborting: _t('Aborting ...'),
-        aborted: _t('Started: ') + moment.utc(attrs.started_on).utcOffset(-3).format('DD-MM-YYYY HH:mm:ss') +
-            _t(' - Aborted: ') + moment.utc(attrs.aborted_on).utcOffset(-3).format('DD-MM-YYYY HH:mm:ss') +
-            _t(' - Duración: ') + moment.utc(moment.utc(attrs.aborted_on, 'DD-MM-YYYY HH:mm:ss.SSS').diff(moment.utc(attrs.started_on, 'DD-MM-YYYY HH:mm:ss.SSS'))).format('HH:mm:ss.SSS')
-    }[attrs.spinner_state]
-    if (!state_msg) {
-        state_msg = '';
+        return {
+            state_msg: state_msg || _t('Starting ...'),
+            spinner_name: attrs.spinner_name || '...',
+            spinner_state: attrs.spinner_state || 'init',
+            completion_rate: attrs.completion_rate || 0,
+            current_status: attrs.current_status || '...',
+            error_msg: attrs.error_msg || '',
+            initialized_on: attrs.initialized_on || '',
+            started_on: attrs.started_on || '',
+            ended_on: attrs.ended_on || '',
+            aborted_on: attrs.aborted_on || '',
+            context: dynamicInfo.context,
+            domain: dynamicInfo.domain,
+        };
     }
-
-    return {
-        state_msg: state_msg || _t('Starting ...'),
-        spinner_name: attrs.spinner_name || '...',
-        spinner_state: attrs.spinner_state || 'init',
-        completion_rate: attrs.completion_rate || 0,
-        current_status: attrs.current_status || '...',
-        error_msg: attrs.error_msg || '',
-        initialized_on: attrs.initialized_on || '',
-        started_on: attrs.started_on || '',
-        ended_on: attrs.ended_on || '',
-        aborted_on: attrs.aborted_on || ''
-    };
 };
 
-registry.category("fields").add("bj_spinner", BJSpinner);
+
+registry.category("fields").add("bj_spinner", bjSpinnerField);
 

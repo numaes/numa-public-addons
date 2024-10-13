@@ -109,7 +109,7 @@ class BackgroundJob(models.Model):
                 aborted_on=str(job.aborted_on),
             )
             self.env.cr.commit()
-            busModel._sendone('res.background_job', 'background_job.state_change', message)
+            busModel._sendone('res.background_job', 'notification', message)
             self.env.cr.commit()
 
     def start(self, statusMsg=None):

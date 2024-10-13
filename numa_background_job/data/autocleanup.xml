@@ -5,9 +5,7 @@
             <field name='name'>AutoVacuum background jobs objects</field>
             <field name='interval_number'>1</field>
             <field name='interval_type'>days</field>
-            <field name="numbercall">-1</field>
             <field name="active">True</field>
-            <field name="doall" eval="False" />
             <field name="model_id" ref="model_res_background_job"/>
             <field name="state">code</field>
             <field name="code">model.prune()</field>
