@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<templates id="template" xml:space="preserve" >
 
-    <t t-name="numa_background_job.bj_spinner" owl="1" >
-        <div class="bj_spinner">
+<templates id="template" xml:space="preserve" >
+    <t t-name="numa_background_job.BJSpinner" owl="1" >
+        <div>
             <div >
                 <p t-esc="state_msg"/>
             </div>
-
-            <t t-if="spinner_state == 'aborted' || spinner_state == 'aborting'" >
+            <t t-if="spinner_state in ['aborted', 'aborting']" >
                 <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C080C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_background"> </div>
+                    <div class="o_bjprogressbar_indicator" t-att-style="'width:' + completion_rate + '%'"> </div>
                     <div class="o_bjprogressbar_frame">
                         <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
                     </div>
@@ -23,10 +23,10 @@
             </t>
             <t t-if="spinner_state == 'init'">
                 <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_indicator"> </div>
                 </div>
                 <div class="o_bjprogressbar_abort" >
-                    <button t-on-click="() => click_abort()">
+                    <button t-on-click="() => this.click_abort()">
                         Cancel
                     </button>
                 </div>
@@ -36,7 +36,8 @@
             </t>
             <t t-if="spinner_state == 'ended'">
                 <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_background"> </div>
+                    <div class="o_bjprogressbar_indicator" t-att-style="'width:' + completion_rate + '%'"> </div>
                     <div class="o_bjprogressbar_frame">
                         <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
                     </div>
@@ -50,7 +51,8 @@
             </t>
             <t t-if="spinner_state == 'started'">
                 <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">&nbsp;</div>
+                    <div class="o_bjprogressbar_background"> </div>
+                    <div class="o_bjprogressbar_indicator" t-att-style="'width:' + completion_rate + '%'"> </div>
                     <div class="o_bjprogressbar_frame">
                         <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
                     </div>
@@ -59,7 +61,7 @@
                     <span t-esc="current_status"/>
                 </div>
                 <div class="o_bjprogressbar_abort" >
-                    <button t-on-click="() => click_abort()">
+                    <button t-on-click="() => this.click_abort()">
                         Cancel
                     </button>
                 </div>

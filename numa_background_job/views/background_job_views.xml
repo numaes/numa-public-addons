@@ -2,75 +2,72 @@
 
 <odoo>
     <data>
-        <menuitem name="Background Jobs" parent="base.menu_custom" id="background_jobs_submenu"/>
-
-        <record model="ir.ui.view" id="background_job_tree">
-            <field name="name">NUMA Background job tree</field>
-            <field name="model">res.background_job</field>
+        <record id="background_job_tree" model="ir.ui.view">
+            <field name="name">background.job.tree</field>
+            <field name="model">res.background.job</field>
             <field name="arch" type="xml">
                 <tree string="Background Jobs">
                     <field name="name"/>
-
                     <field name="model"/>
                     <field name="res_id"/>
                     <field name="method"/>
                     <field name="reference_id"/>
-
                     <field name="completion_rate"/>
                     <field name="current_status"/>
-
                     <field name="initialized_on"/>
                     <field name="started_on"/>
                     <field name="ended_on"/>
                     <field name="aborted_on"/>
-
-                    <field name="state"/>
+                    <field name="state" widget="badge"/>
                 </tree>
             </field>
         </record>
 
-        <record model="ir.ui.view" id="background_job_form">
-            <field name="name">NUMA Background job form</field>
-            <field name="model">res.background_job</field>
+        <record id="background_job_form" model="ir.ui.view">
+            <field name="name">background.job.form</field>
+            <field name="model">res.background.job</field>
             <field name="arch" type="xml">
                 <form string="Background Job" version="7.0">
                     <header>
-                        <button name="abort" states="started" type="object" string="Abort" />
-                        <field name="state" widget="statusbar" 
-                               statusbar_visible="init,started,ended,aborted" 
-                               statusbar_colors='{"canceled":"red","init":"blue"}'/>
+                        <button name="abort" invisible="state != 'started'" type="object" string="Abort" />
+                        <field name="state" widget="statusbar"/>
                     </header>
-                    <sheet width="90%">
-                      <h1>
-                          <field name="name" class="oe_inline" readonly="1"/>
-                      </h1>
-                      <group name="main_info">
-                        <field name="model"/>
-                        <field name="res_id"/>
-                        <field name="method"/>
-                        <field name="reference_id"/>
-                      </group>
-                      <group name="current_state">
-                        <field name="completion_rate"/>
-                        <field name="current_status"/>
-                        <field name="error" colspan="4"/>
-                      </group>
-                      <group name="dates">
-                        <field name="initialized_on"/>
-                        <field name="started_on"/>
-                        <field name="ended_on"/>
-                        <field name="aborted_on"/>
-                      </group>
+                    <sheet>
+                        <div class="oe_title">
+                            <label for="name"/>
+                            <h1>
+                                <field name="name" class="oe_inline" readonly="1"/>
+                            </h1>
+                        </div>
+                        <group>
+                            <group name="main_info" string="Information">
+                                <field name="model"/>
+                                <field name="res_id"/>
+                                <field name="method"/>
+                                <field name="reference_id"/>
+                            </group>
+                            <group name="current_state" string="States">
+                                <field name="completion_rate"/>
+                                <field name="current_status"/>
+                                <field name="error"/>
+                            </group>
+                            <group name="dates" string="Dates">
+                                <field name="initialized_on"/>
+                                <field name="started_on"/>
+                                <field name="ended_on"/>
+                                <field name="aborted_on"/>
+                            </group>
+                        </group>
                    </sheet>
                 </form>
             </field>
         </record>
 
-        <record model="ir.ui.view" id="background_job_search" >
-            <field name="name">NUMA Background job search</field>
-            <field name="model">res.background_job</field>
+        <record id="background_job_search" model="ir.ui.view">
+            <field name="name">background.job.search</field>
+            <field name="model">res.background.job</field>
             <field name="arch" type="xml">
-                <search string="Search background jobs">
+                <search string="Background Jobs">
                     <filter string="Initialized" name="initialized" domain="[('state','=','init')]" />
                     <filter string="Started" name="started" domain="[('state','=','started')]" />
                     <filter string="Ended" name="ended" domain="[('state','=','ended')]" />
@@ -84,18 +81,5 @@
                 </search>
             </field>
         </record>
-
-        <record id="background_job_action" model="ir.actions.act_window">
-            <field name="name">Background job</field>
-            <field name="res_model">res.background_job</field>
-            <field name="view_mode">tree,form</field>
-        </record>
-
-        <menuitem id="background_job_menu"
-            action="background_job_action"
-            parent="background_jobs_submenu" 
-            sequence="10"/>
-            
-
     </data>
 </odoo>

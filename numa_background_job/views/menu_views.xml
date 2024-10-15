@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<odoo>
+    <data>
+        <record id="background_job_action" model="ir.actions.act_window">
+            <field name="name">Processes</field>
+            <field name="res_model">res.background.job</field>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+        <menuitem name="Background Job" parent="base.menu_custom" id="background_job_submenu"/>
+        <menuitem id="background_job_menu" action="background_job_action" parent="background_job_submenu" sequence="10"/>
+
+    </data>
+</odoo>

@@ -22,7 +22,7 @@
 
 {
     'name': 'NUMA Background Job - Test',
-    'version': '17.0',
+    'version': '12.0',
     'category': 'Extra Tools',
     'description': """
 NUMA Background Job Test Suite

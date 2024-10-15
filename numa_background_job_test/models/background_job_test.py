@@ -21,7 +21,7 @@ class BackgroundJobTest(models.TransientModel):
     _name = "res.background_job_test"
     _description = 'Test class for background jobs'
 
-    job = fields.Many2one("res.background_job", "Job")
+    job = fields.Many2one("res.background.job", "Job")
     job_completion_rate = fields.Integer('Rate', related="job.completion_rate")
     job_current_status = fields.Text('Current status', related="job.current_status")
     job_error = fields.Text('Error', related="job.error")
@@ -54,7 +54,7 @@ class BackgroundJobTest(models.TransientModel):
         bjt.state = 'running'
         bjt.run_type = run_type if run_type else 'normal'
 
-        bjt.job = self.env["res.background_job"].create({
+        bjt.job = self.env["res.background.job"].create({
             'name': 'Prueba',
             'model': 'res.background_job_test',
             'res_id': bjt.id,

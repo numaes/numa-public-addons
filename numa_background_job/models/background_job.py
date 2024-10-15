@@ -18,32 +18,29 @@ _logger = logging.getLogger(__name__)
 
 
 class BackgroundJob(models.Model):
-    _name = "res.background_job"
-    _description = '''
-        Background Job Tasks
-    '''
+    _name = "res.background.job"
+    _description = 'Background Jobs'
 
-    name = fields.Char('Job name')
-    state = fields.Selection([
-        ('init', 'Initializing'),
-        ('started', 'Started'),
-        ('ended', 'Ended'),
-        ('aborting', 'Aborting ...'),
-        ('aborted', 'Aborted'),
-    ], string="State", required=True, default='init')
-
-    model = fields.Char('Model', required=True)
-    res_id = fields.Integer('Resource ID', required=True)
-    method = fields.Char('Method to call', required=True)
-    reference_id = fields.Integer('Reference id')
-    completion_rate = fields.Integer("Completion rate [%]")
-    current_status = fields.Text('Current status')
-    error = fields.Text('Error message')
-
-    initialized_on = fields.Datetime('Initialized on')
-    started_on = fields.Datetime('Started on')
-    ended_on = fields.Datetime('Ended on')
-    aborted_on = fields.Datetime('Aborted on')
+    name = fields.Char(string='Job Name')
+    state = fields.Selection(selection=[('init', 'Initializing'),
+                                        ('started', 'Started'),
+                                        ('ended', 'Ended'),
+                                        ('aborting', 'Aborting ...'),
+                                        ('aborted', 'Aborted')],
+                             string="State",
+                             required=True,
+                             default='init')
+    model = fields.Char(string='Model', required=True)
+    res_id = fields.Integer(string='Resource ID', required=True)
+    method = fields.Char(string='Method to call', required=True)
+    reference_id = fields.Integer(string='Reference id')
+    completion_rate = fields.Integer(string="Completion rate [%]")
+    current_status = fields.Text(string='Current status')
+    error = fields.Text(string='Error message')
+    initialized_on = fields.Datetime(string='Initialized on')
+    started_on = fields.Datetime(string='Started on')
+    ended_on = fields.Datetime(string='Ended on')
+    aborted_on = fields.Datetime(string='Aborted on')
 
     def create(self, vals):
         """
@@ -109,7 +106,7 @@ class BackgroundJob(models.Model):
                 aborted_on=str(job.aborted_on),
             )
             self.env.cr.commit()
-            busModel._sendone('res.background_job', 'background_job.state_change', message)
+            busModel._sendone('res.background.job', 'background_job.state_change', message)
             self.env.cr.commit()
 
     def start(self, statusMsg=None):
@@ -120,7 +117,7 @@ class BackgroundJob(models.Model):
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-            bkJobObj = env['res.background_job']
+            bkJobObj = env['res.background.job']
             bkJobObj.env.invalidate_all()
             for job in bkJobObj.browse(ids):
                 if job.state == 'init':
@@ -144,7 +141,7 @@ class BackgroundJob(models.Model):
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-            bkJobObj = env['res.background_job']
+            bkJobObj = env['res.background.job']
             bkJobObj.env.flush_all()
             for job in bkJobObj.browse(ids):
                 if job.state not in ['ended', 'aborted']:
@@ -169,7 +166,7 @@ class BackgroundJob(models.Model):
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-            bkJobObj = env['res.background_job']
+            bkJobObj = env['res.background.job']
             bkJobObj.env.invalidate_all()
             for job in bkJobObj.browse(ids):
                 if job.state in ('started', 'aborting'):
@@ -195,7 +192,7 @@ class BackgroundJob(models.Model):
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-            bkJobObj = env['res.background_job']
+            bkJobObj = env['res.background.job']
             bkJobObj.env.flush_all()
             for job in bkJobObj.browse(ids):
                 if job.state == 'started':
@@ -221,7 +218,7 @@ class BackgroundJob(models.Model):
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-            bkJobObj = env['res.background_job']
+            bkJobObj = env['res.background.job']
             bkJobObj.env.invalidate_all()
             job = bkJobObj.browse(bkjId)
             wasAborted = job.state not in ['started']
@@ -238,7 +235,7 @@ class BackgroundJob(models.Model):
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-            bkJobObj = env['res.background_job']
+            bkJobObj = env['res.background.job']
             bkJobObj.env.invalidate_all()
             for job in bkJobObj.browse(ids):
                 if job.state == 'started':
@@ -265,7 +262,7 @@ class BackgroundJob(models.Model):
         if db:
             cr = db.cursor()
             env = api.Environment(cr, SUPERUSER_ID, self.env.context)
-            bkJobObj = env['res.background_job']
+            bkJobObj = env['res.background.job']
             bkJobObj.env.flush_all()
             job = bkJobObj.browse(bjId)
             state = job.state
@@ -308,7 +305,7 @@ class BackgroundThread(threading.Thread):
             if db:
                 cr = db.cursor()
                 env = api.Environment(cr, self.uid, self.context)
-                bkJobObj = env['res.background_job']
+                bkJobObj = env['res.background.job']
                 bkJob = bkJobObj.browse(self.jobId)
                 if bkJob.exists():
                     bkJob.start()

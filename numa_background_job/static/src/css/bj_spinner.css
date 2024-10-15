@@ -1,7 +1,15 @@
+.o_field_bj_spinner {
+    width: 100%;
+}
+
 .o_bjprogressbar {
     height: 30px;
     width: 100%;
 	margin: 5px 0;
+}
+
+.o_bjprogressbar_background {
+    background-color: #FFF;
 }
 
 .o_bjprogressbar_value {
@@ -23,7 +31,7 @@
 .o_bjprogressbar_indicator{
     height: 30px;
     border-radius: 4px;
-    background-color: #f0f0f0;
+    background-color: #C0C0C0;
     z-index: -1;
 }
 

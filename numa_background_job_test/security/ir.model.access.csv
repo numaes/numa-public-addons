@@ -1,2 +1,2 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_res_background_job_test,Background Job Test,model_res_background_job_test,,1,1,1,1
+access_res_background_job_test,Background Job Test,model_res_background_job_test,base.group_user,1,1,1,1
