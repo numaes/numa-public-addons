@@ -47,6 +47,10 @@ class WorkflowController(http.Controller):
     def crm_workflow_event(self, wkf_id, event_id, **kwargs):
         wkf_model = request.env['fsm.instance'].with_context(tz='America/Buenos_Aires').sudo()
 
+        for field_name in kwargs.keys():
+            if field_name.endswith('[]'):
+                kwargs[field_name] = request.httprequest.files.getlist(field_name)
+
         if not wkf_id or not event_id:
             return request.render('fsm_crm.error_on_id', {
                 'message': 'You should identify the workflow and the event you want to process'
