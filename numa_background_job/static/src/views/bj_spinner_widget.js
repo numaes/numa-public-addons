@@ -2,13 +2,12 @@
 
 
 import {
+    EventBus,
     Component,
 } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
-import { serializeDateTime } from "@web/core/l10n/dates";
-import { useBus, useService } from "@web/core/utils/hooks";
 
 export class BJSpinner extends Component {
     static template = "numa_background_job.bj_spinner";
