@@ -61,7 +61,7 @@ class Frame(models.Model):
     _description = "Exceptions: Call Frame"
 
     gexception = fields.Many2one(comodel_name='base.general_exception', string='Exception', ondelete="cascade")
-    src_code = fields.Text(string='Source code', readonly=True)
+    src_code = fields.Html(string='Source code', readonly=True)
     line_number = fields.Integer(string='Line number', readonly=True)
     file_name = fields.Char(string='File name', readonly=True)
     locals = fields.One2many(comodel_name='base.variable_value',
@@ -117,7 +117,7 @@ class GeneralException (models.Model):
         ge = self
         return {
             'name': _("Frames"),
-            'view_mode': 'tree,form',
+            'view_mode': 'list,form',
             'view_type': 'form',
             'res_model': 'base.frame',
             'type': 'ir.actions.act_window',
@@ -180,7 +180,7 @@ def register_exception(service_name, method, params, db, uid, e):
                             for line in lines:
                                 if (frame.f_lineno - 10) < lineno < (frame.f_lineno + 10):
                                     if frame.f_lineno == lineno:
-                                        fmt = '</pre><b><pre>%5d: %s</pre></b><pre>'
+                                        fmt = '<b>%5d: %s</b>'
                                     else:
                                         fmt = '%5d: %s'
                                     output += fmt % (lineno, line)
@@ -188,7 +188,7 @@ def register_exception(service_name, method, params, db, uid, e):
                     except Exception as process_exception:
                         output += "\nEXCEPTION DURING PROCESSING: %s" % exception_to_unicode(process_exception)
 
-                    output += '</pre>'
+                    output += '</pre>\n'
                     frames.append(
                         (0, 0, {'file_name': frame.f_code.co_filename,
                                 'line_number': frame.f_lineno,

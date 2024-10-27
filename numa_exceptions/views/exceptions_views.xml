@@ -33,11 +33,7 @@
                             <field name="user"/>
                         </group>
                     </sheet>
-                    <div class="oe_chatter">
-                        <field name="message_follower_ids"/>
-                        <field name="activity_ids"/>
-                        <field name="message_ids"/>
-                    </div>
+                    <chatter />
                 </form>
             </field>
         </record>
@@ -46,7 +42,7 @@
             <field name="name">Exceptions list</field>
             <field name="model">base.general_exception</field>
             <field name="arch" type="xml">
-                <list string="Exception" create="0">
+                <list string="Exception" create="0" edit="0">
                     <field name="user" select="True"/>
                     <field name="name" select="True" />
                     <field name="timestamp" select="True" />
@@ -87,7 +83,7 @@
                         <group string="General">
                             <field name="gexception" invisible="True" />
                             <field name="line_number"/>
-                            <field name="src_code" widget="html"/>
+                            <field name="src_code"/>
                             <field name="locals" readonly="True">
                                 <list string="Locals">
                                     <field name="sequence" invisible="True"/>
@@ -105,7 +101,7 @@
             <field name="name">Exceptions frames list</field>
             <field name="model">base.frame</field>
             <field name="arch" type="xml">
-                <list string="Frames" create="0">
+                <list string="Frames" create="0"  edit="0">
                     <field name="gexception" select="True"/>
                     <field name="file_name" select="True" />
                     <field name="line_number" select="True" />
