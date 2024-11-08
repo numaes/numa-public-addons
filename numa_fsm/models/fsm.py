@@ -273,14 +273,14 @@ class FSMInstance(models.Model):
 
     logging = fields.Boolean('Logging?')
 
-    @api.model_create_single
-    def create(self, vals):
-        fsm_instance = super().create(vals)
+    @api.model_create_multi
+    def create(self, vals: list[dict]):
+        fsm_instances = super().create(vals)
 
         if not self.env.get('no_start'):
-            fsm_instance.start()
+            fsm_instances.start()
 
-        return fsm_instance
+        return fsm_instances
 
     def prepare_env(self):
         self.ensure_one()

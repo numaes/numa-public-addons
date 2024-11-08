@@ -8,8 +8,8 @@
 
             <menuitem id="menu_definitions" name="Definitions"
                       action="definition_action"/>
-            <menuitem id="menu_instances" name="Instances"
-                      action="instance_action"/>
+            <menuitem id="menu_instances" name="CRM Workflows"
+                      action="crm_workflow_action"/>
 
         </menuitem>
 

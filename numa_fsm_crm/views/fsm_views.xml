@@ -7,188 +7,101 @@
         <record model="ir.ui.view" id="definition_form_view">
             <field name="name">FSM Definition form</field>
             <field name="model">fsm.definition</field>
+            <field name="inherit_id" ref="numa_fsm.definition_form_view"/>
             <field name="arch" type="xml">
-                <form string="FSM Definition">
-                    <sheet>
-                        <header >
-                        </header>
-                        <group name="top">
-                            <field name="name" />
-                        </group>
-                        <notebook >
-                            <page name="pages" string="Pages">
-                                <field name="pages" mode="tree">
-                                    <list string="Pages">
-                                        <field name="name"/>
-                                        <button name="open_page_template" type="object"
-                                                string="View"/>
-                                    </list>
-                                </field>
-                            </page>
-                            <page name="mail_templates" string="Mail templates">
-                                <field name="mail_templates" mode="tree">
-                                    <list string="Mail Templates">
-                                        <field name="name"/>
-                                        <button name="open_mail_template" type="object"
-                                                string="Edit"/>
-                                    </list>
-                                </field>
-                            </page>
-                            <page name="definition" string="Definition">
-                                <field name="type" invisible="True"/>
-                                <newline />
-                                <field name="text_definition"
-                                       widget="ace" options="{'mode': 'python'}" />
-                                <field name="json_compiled_definition" invisible="True"/>
-                                <field name="parent_id" invisible="True"/>
-                            </page>
-                        </notebook>
-                    </sheet>
-                    <div class="oe_chatter">
-                        <field name="message_follower_ids"/>
-                        <field name="activity_ids"/>
-                        <field name="message_ids"/>
-                    </div>
-                </form>
-            </field>
-        </record>
-
-        <record model="ir.ui.view" id="definition_tree_view">
-            <field name="name">FSM Definition tree view</field>
-            <field name="model">fsm.definition</field>
-            <field name="arch" type="xml">
-                <list string="FSM Definitions">
-                    <field name="name" />
-                    <field name="type" />
-                </list>
-            </field>
-        </record>
-
-        <record model="ir.ui.view" id="definition_search_view">
-            <field name="name">FSM Definition search view</field>
-            <field name="model">fsm.definition</field>
-            <field name="arch" type="xml">
-                <search string="FSM Definition search">
-                    <field name="name" />
-                    <field name="type" />
-                    <field name="text_definition" />
-                    <group expand="0" string="Group By">
-                        <filter string="type" name="group_type" context="{'group_by': 'type'}"/>
-                    </group>
-                </search>
+                <notebook position="inside">
+                    <page name="pages" string="Pages" invisible="type != 'CRM_Workflow'">
+                        <field name="pages" mode="list">
+                            <list string="Pages">
+                                <field name="name"/>
+                                <button name="open_page_template" type="object"
+                                        string="View"/>
+                            </list>
+                        </field>
+                    </page>
+                    <page name="mail_templates" string="Mail templates" invisible="type != 'CRM_Workflow'">
+                        <field name="mail_templates" mode="list">
+                            <list string="Mail Templates">
+                                <field name="name"/>
+                                <button name="open_mail_template" type="object"
+                                        string="Edit"/>
+                            </list>
+                        </field>
+                    </page>
+                </notebook>
             </field>
         </record>
 
         <record model="ir.actions.act_window" id="definition_action">
-            <field name="name">Workflows</field>
+            <field name="name">CRM Workflows definitions</field>
             <field name="res_model">fsm.definition</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="domain">[('type', '=', 'CRM_Workflow')]</field>
             <field name="context">{'default_type': 'CRM_Workflow'}</field>
         </record>
 
-        <!-- FSM Instance -->
+        <!-- CRM Workflows -->
 
-        <record model="ir.ui.view" id="instance_form_view">
-            <field name="name">FSM Instance form</field>
-            <field name="model">fsm.instance</field>
+        <record model="ir.ui.view" id="crm_workflow_form_view">
+            <field name="name">CRM Workflow form</field>
+            <field name="model">crm.workflow</field>
+            <field name="inherit_id" ref="numa_fsm.instance_form_view"/>
             <field name="arch" type="xml">
-                <form string="FSM Instance">
-                    <sheet>
-                        <header >
-                            <button name="start" type="object"
-                                    string="Arrancar"
-                                    states="init"/>
-                            <button name="end" type="object"
-                                    string="Parar instancia"
-                                    states="running"/>
-                            <button name="start_logging" type="object"
-                                    string="Activar logging"
-                                    states="running"/>
-                            <button name="stop_logging" type="object"
-                                    string="Desactivar logging"
-                                    states="running"/>
-                            <button name="action_confirm_manual_operation" type="object"
-                                    string="Confirmar operación manual"
-                                    states="running"/>
-
-                            <field name="state" widget="statusbar" />
-                        </header>
-                        <group name="top">
-                            <field name="name" />
+                <field name="state" position="before">
+                    <button name="action_confirm_manual_operation" type="object"
+                            string="Confirm manual operation"
+                            invisible="state != 'running'"/>
+                </field>
+                <field name="definition_id" position="attributes">
+                    <attribute name="domain">[('type', '=', 'CRM_Workflow')]</attribute>
+                    <attribute name="context">{'default_type': 'CRM_Workflow'}</attribute>
+                </field>
+                <notebook position="inside">
+                    <page name="relations" string="Relations">
+                        <group>
+                            <field name="partner_id" />
+                            <field name="reply_to" />
                         </group>
-                        <notebook >
-                            <page name="relations" string="Relations">
-                                <group>
-                                    <field name="partner_id" />
-                                    <field name="reply_to" />
-                                </group>
-                            </page>
-                            <page name="status" string="Status">
-                                <group>
-                                    <field name="definition_id" />
-                                    <newline />
-                                    <field name="current_state" readonly="True"/>
-                                    <field name="json_instance_values"
-                                           widget="ace" options="{'mode': 'json'}" />
-                                    <field name="logging" />
-                                    <field name="manual_operation_needed" />
-                                </group>
-                            </page>
-                        </notebook>
-                    </sheet>
-                    <div class="oe_chatter">
-                        <field name="message_follower_ids"/>
-                        <field name="activity_ids"/>
-                        <field name="message_ids"/>
-                    </div>
-                </form>
+                    </page>
+                </notebook>
+                <xpath expr="//page[@name='status']/group" position="inside">
+                    <field name="manual_operation_needed" />
+                </xpath>
             </field>
         </record>
 
-        <record model="ir.ui.view" id="instance_tree_view">
-            <field name="name">FSM Instance tree view</field>
-            <field name="model">fsm.instance</field>
+        <record model="ir.ui.view" id="crm_workflow_list_view">
+            <field name="name">CRM Workflow list view</field>
+            <field name="model">crm.workflow</field>
+            <field name="inherit_id" ref="numa_fsm.instance_list_view"/>
             <field name="arch" type="xml">
-                <list string="FSM Instances">
-                    <field name="name" />
-                    <field name="definition_id" />
+                <field name="definition_id" position="after">
                     <field name="partner_id" />
-                    <field name="state" />
-                    <field name="current_state" />
-                </list>
+                    <field name="manual_operation_needed" />
+                </field>
             </field>
         </record>
 
-        <record model="ir.ui.view" id="instance_search_view">
-            <field name="name">FSM Instance search view</field>
-            <field name="model">fsm.instance</field>
+        <record model="ir.ui.view" id="crm_workflow_search_view">
+            <field name="name">CRM Workflow search view</field>
+            <field name="model">crm.workflow</field>
+            <field name="inherit_id" ref="numa_fsm.instance_search_view"/>
             <field name="arch" type="xml">
-                <search string="FSM Instance search">
-                    <field name="name" />
-                    <field name="definition_id" />
+                <field name="state" position="after">
                     <field name="partner_id" />
-                    <field name="state" />
-                    <field name="current_state" />
-                    <group expand="0" string="Filtered By">
-                        <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
-                        <filter string="Logging" name="logging" domain="[('logging', '=', True)]"/>
-                    </group>
-                    <group expand="0" string="Group By">
-                        <filter string="Definition" name="group_definition" context="{'group_by': 'definition_id'}"/>
-                        <filter string="Instance State" name="group_state" context="{'group_by': 'state'}"/>
-                        <filter string="Current state" name="group_current_state" context="{'group_by': 'current_state'}"/>
-                        <filter string="Partner" name="group_partner_id" context="{'group_by': 'partner_id'}"/>
-                        <filter string="Manual Op Needed" name="group_manual_op" context="{'group_by': 'manual_operation_needed'}"/>
-                    </group>
-                </search>
+                    <field name="manual_operation_needed" />
+                </field>
+                <xpath expr="//group[@name='group_by']" position="inside">
+                    <filter string="Partner" name="group_partner_id" context="{'group_by': 'partner_id'}"/>
+                    <filter string="Manual Op Needed" name="group_manual_op" context="{'group_by': 'manual_operation_needed'}"/>
+                </xpath>
             </field>
         </record>
 
-        <record model="ir.actions.act_window" id="instance_action">
-            <field name="name">Instances</field>
-            <field name="res_model">fsm.instance</field>
-            <field name="view_mode">tree,form</field>
+        <record model="ir.actions.act_window" id="crm_workflow_action">
+            <field name="name">CRM Workflows</field>
+            <field name="res_model">crm.workflow</field>
+            <field name="view_mode">list,form</field>
             <field name="domain">[('definition_id.type', '=', 'CRM_Workflow')]</field>
             <field name="context">{'default_type': 'CRM_Workflow'}</field>
         </record>
@@ -247,8 +160,6 @@
                 </form>
             </field>
         </record>
-
-
 
         <!-- FSM Page template -->
 

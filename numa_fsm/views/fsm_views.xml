@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+
+        <!-- FSM Definition -->
+
+        <record model="ir.ui.view" id="definition_form_view">
+            <field name="name">FSM Definition form</field>
+            <field name="model">fsm.definition</field>
+            <field name="arch" type="xml">
+                <form string="FSM Definition">
+                    <sheet>
+                        <header >
+                        </header>
+                        <group name="top">
+                            <field name="name" />
+                        </group>
+                        <notebook >
+                            <page name="definition" string="Definition">
+                                <field name="type" invisible="True"/>
+                                <newline />
+                                <field name="text_definition"
+                                       widget="ace" options="{'mode': 'python'}" />
+                                <field name="json_compiled_definition" invisible="True"/>
+                                <field name="parent_id" invisible="True"/>
+                            </page>
+                        </notebook>
+                    </sheet>
+                    <chatter />
+                </form>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="definition_list_view">
+            <field name="name">FSM Definition list view</field>
+            <field name="model">fsm.definition</field>
+            <field name="arch" type="xml">
+                <list string="FSM Definitions">
+                    <field name="name" />
+                    <field name="type" />
+                </list>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="definition_search_view">
+            <field name="name">FSM Definition search view</field>
+            <field name="model">fsm.definition</field>
+            <field name="arch" type="xml">
+                <search string="FSM Definition search">
+                    <field name="name" />
+                    <field name="type" />
+                    <field name="text_definition" />
+                    <group expand="0" name="group_by" string="Group By">
+                        <filter string="type" name="group_type" context="{'group_by': 'type'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="definition_action">
+            <field name="name">Workflows</field>
+            <field name="res_model">fsm.definition</field>
+            <field name="view_mode">list,form</field>
+            <field name="domain">[('type', '=', 'CRM_Workflow')]</field>
+            <field name="context">{'default_type': 'CRM_Workflow'}</field>
+        </record>
+
+        <!-- FSM Instance -->
+
+        <record model="ir.ui.view" id="instance_form_view">
+            <field name="name">FSM Instance form</field>
+            <field name="model">fsm.instance</field>
+            <field name="arch" type="xml">
+                <form string="FSM Instance">
+                    <sheet>
+                        <header >
+                            <button name="start" type="object"
+                                    string="Start"
+                                    invisible="state != 'init'"/>
+                            <button name="end" type="object"
+                                    string="End"
+                                    invisible="state != 'running'"/>
+                            <button name="start_logging" type="object"
+                                    string="Strart logging"
+                                    invisible="state != 'running'"/>
+                            <button name="stop_logging" type="object"
+                                    string="Stop logging"
+                                    invisible="state != 'running'"/>
+                            <field name="state" widget="statusbar" />
+                        </header>
+                        <group name="top">
+                            <field name="name" />
+                        </group>
+                        <notebook >
+                            <page name="status" string="Status">
+                                <group>
+                                    <field name="definition_id" />
+                                    <newline />
+                                    <field name="current_state" readonly="True"/>
+                                    <field name="json_instance_values"
+                                           widget="ace" options="{'mode': 'json'}" />
+                                    <field name="logging" />
+                                </group>
+                            </page>
+                        </notebook>
+                    </sheet>
+                    <chatter />
+                </form>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="instance_list_view">
+            <field name="name">FSM Instance list view</field>
+            <field name="model">fsm.instance</field>
+            <field name="arch" type="xml">
+                <list string="FSM Instances">
+                    <field name="name" />
+                    <field name="definition_id" />
+                    <field name="state" />
+                    <field name="current_state" />
+                </list>
+            </field>
+        </record>
+
+        <record model="ir.ui.view" id="instance_search_view">
+            <field name="name">FSM Instance search view</field>
+            <field name="model">fsm.instance</field>
+            <field name="arch" type="xml">
+                <search string="FSM Instance search">
+                    <field name="name" />
+                    <field name="definition_id" />
+                    <field name="state" />
+                    <field name="current_state" />
+                    <group expand="0" name="filtered_by" string="Filtered By">
+                        <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
+                        <filter string="Logging" name="logging" domain="[('logging', '=', True)]"/>
+                    </group>
+                    <group expand="0" name="group_by" string="Group By">
+                        <filter string="Definition" name="group_definition" context="{'group_by': 'definition_id'}"/>
+                        <filter string="Instance State" name="group_state" context="{'group_by': 'state'}"/>
+                        <filter string="Current state" name="group_current_state" context="{'group_by': 'current_state'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <record model="ir.actions.act_window" id="instance_action">
+            <field name="name">Instances</field>
+            <field name="res_model">fsm.instance</field>
+            <field name="view_mode">list,form</field>
+            <field name="domain">[]</field>
+            <field name="context">{}</field>
+        </record>
+
+    </data>
+</odoo>

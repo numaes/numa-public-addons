@@ -35,14 +35,41 @@ class FSMDefinition(models.Model):
     mail_templates = fields.Many2many('fsm.wf.mail_template', 'wf_mail_templates_rel', string='Mail templates')
 
 
-class FSMInstance(models.Model):
-    _inherit = 'fsm.instance'
+class CRMWorkflow(models.Model):
+    _name = 'crm.workflow'
+    _description = 'CRM Workflow'
+    _order = 'create_date desc'
+    _rec_name = 'name'
+    _inherits = {'fsm.instance': 'fsm_instance_id'}
+
+    fsm_instance_id = fields.Many2one('fsm.instance', 'FSM instance',
+                                      required=True, ondelete='cascade')
 
     partner_id = fields.Many2one('res.partner', 'Contact')
+    reply_to = fields.Char('Reply_to')
 
     current_page = fields.Many2one('fsm.wf.page_template', 'Current Page template')
     manual_operation_needed = fields.Boolean('Manual operation required?')
-    reply_to = fields.Char('Reply_to')
+
+    _defaults = {
+        'type': 'CRM_Workflow',
+    }
+
+    def start(self):
+        for workflow in self:
+            workflow.fsm_instance_id.start()
+
+    def end(self):
+        for workflow in self:
+            workflow.fsm_instance_id.end()
+
+    def start_logging(self):
+        for workflow in self:
+            workflow.fsm_instance_id.start_logging()
+
+    def stop_logging(self):
+        for workflow in self:
+            workflow.fsm_instance_id.stop_logging()
 
     def set_page(self, page_name):
         self.ensure_one()
@@ -53,7 +80,7 @@ class FSMInstance(models.Model):
             raise exceptions.UserError(_('Invalid current page to set: %s') % page_name)
 
         if len(target_page) > 1:
-            raise exceptions.UserError(_('Ambigous page to set as current: %s') % page_name)
+            raise exceptions.UserError(_('Ambiguous page to set as current: %s') % page_name)
 
         self.current_page = target_page
 

@@ -8,9 +8,7 @@
             <field name='name'>FSM: Main timer survillance</field>
             <field name='interval_number'>1</field>
             <field name='interval_type'>minutes</field>
-            <field name="numbercall">-1</field>
             <field name="active">True</field>
-            <field name="doall" eval="False" />
             <field name="model_id" ref="model_fsm_timer"/>
             <field name="state">code</field>
             <field name="code">model.schedule_timers()</field>
