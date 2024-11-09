@@ -1,10 +1,7 @@
-import datetime
-import json
 import logging
 
 from odoo import http
 from odoo.http import request
-from ..models.miniqweb import render as mqweb_render
 
 _logger = logging.getLogger(__name__)
 

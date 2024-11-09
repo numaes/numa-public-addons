@@ -143,11 +143,6 @@ def render_node(node: E, parent: E = None, params: dict = None) -> E:
 
 def render(template: str, **params) -> str:
     try:
-        xml_parser = lxml.etree.XMLParser(encoding='UTF-8',
-                                      resolve_entities=False,
-                                      strip_cdata=False,
-                                      recover=True,
-                                      ns_clean=True)
         template_tree = lxml.etree.fromstring(template.encode('UTF-8'), parser=xml_parser)
         output_tree = render_node(template_tree, params=params)
         return lxml.etree.tostring(output_tree, encoding='UTF-8').decode('UTF-8') \

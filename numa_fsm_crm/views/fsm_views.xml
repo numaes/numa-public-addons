@@ -4,34 +4,6 @@
 
         <!-- FSM Definition -->
 
-        <record model="ir.ui.view" id="definition_form_view">
-            <field name="name">FSM Definition form</field>
-            <field name="model">fsm.definition</field>
-            <field name="inherit_id" ref="numa_fsm.definition_form_view"/>
-            <field name="arch" type="xml">
-                <notebook position="inside">
-                    <page name="pages" string="Pages" invisible="type != 'CRM_Workflow'">
-                        <field name="pages" mode="list">
-                            <list string="Pages">
-                                <field name="name"/>
-                                <button name="open_page_template" type="object"
-                                        string="View"/>
-                            </list>
-                        </field>
-                    </page>
-                    <page name="mail_templates" string="Mail templates" invisible="type != 'CRM_Workflow'">
-                        <field name="mail_templates" mode="list">
-                            <list string="Mail Templates">
-                                <field name="name"/>
-                                <button name="open_mail_template" type="object"
-                                        string="Edit"/>
-                            </list>
-                        </field>
-                    </page>
-                </notebook>
-            </field>
-        </record>
-
         <record model="ir.actions.act_window" id="definition_action">
             <field name="name">CRM Workflows definitions</field>
             <field name="res_model">fsm.definition</field>
@@ -45,6 +17,7 @@
         <record model="ir.ui.view" id="crm_workflow_form_view">
             <field name="name">CRM Workflow form</field>
             <field name="model">crm.workflow</field>
+            <field name="mode">primary</field>
             <field name="inherit_id" ref="numa_fsm.instance_form_view"/>
             <field name="arch" type="xml">
                 <field name="state" position="before">
@@ -73,6 +46,7 @@
         <record model="ir.ui.view" id="crm_workflow_list_view">
             <field name="name">CRM Workflow list view</field>
             <field name="model">crm.workflow</field>
+            <field name="mode">primary</field>
             <field name="inherit_id" ref="numa_fsm.instance_list_view"/>
             <field name="arch" type="xml">
                 <field name="definition_id" position="after">
@@ -85,6 +59,7 @@
         <record model="ir.ui.view" id="crm_workflow_search_view">
             <field name="name">CRM Workflow search view</field>
             <field name="model">crm.workflow</field>
+            <field name="mode">primary</field>
             <field name="inherit_id" ref="numa_fsm.instance_search_view"/>
             <field name="arch" type="xml">
                 <field name="state" position="after">
@@ -104,81 +79,6 @@
             <field name="view_mode">list,form</field>
             <field name="domain">[('definition_id.type', '=', 'CRM_Workflow')]</field>
             <field name="context">{'default_type': 'CRM_Workflow'}</field>
-        </record>
-
-        <!-- FSM Mail template -->
-
-        <record model="ir.ui.view" id="mail_template_form_view">
-            <field name="name">FSM Template form</field>
-            <field name="model">fsm.wf.mail_template</field>
-            <field name="arch" type="xml">
-                <form string="Mail template">
-                    <sheet>
-                        <header >
-                        </header>
-                        <group name="definition" string="Definition">
-                            <field name="name" />
-                            <field name="body_view_html"
-                                   widget="ace"/>
-                            <field name="body_view_arch" invisible="True"/>
-                            <field name="template_id"/>
-                        </group>
-                        <group name="attachments" string="Attachments">
-                            <field name="attachment_ids" />
-                        </group>
-                    </sheet>
-                </form>
-            </field>
-        </record>
-
-        <record model="ir.ui.view" id="mail_template_html_edit">
-            <field name="name">FSM Template form (HTML Edit)</field>
-            <field name="model">fsm.wf.mail_template</field>
-            <field name="arch" type="xml">
-                <form string="Mail template">
-                    <sheet>
-                        <header >
-                        </header>
-                        <group name="definition" string="Definition">
-                            <field name="name" />
-                            <field name="body_view_html" invisible="True"/>
-                            <field name="body_view_arch"
-                                   class="o_mail_body oe_edit_only"
-                                   widget="mass_mailing_html"
-                                options="{
-                                    'snippets': 'mass_mailing.email_designer_snippets',
-                                    'cssEdit': 'mass_mailing.iframe_css_assets_edit',
-                                    'inline-field': 'body_view_html'
-                                }"/>
-
-                            <field name="template_id"/>
-                        </group>
-                        <group name="attachments" string="Attachments">
-                            <field name="attachment_ids" />
-                        </group>
-                    </sheet>
-                </form>
-            </field>
-        </record>
-
-        <!-- FSM Page template -->
-
-        <record model="ir.ui.view" id="page_template_form_view">
-            <field name="name">FSM Template form</field>
-            <field name="model">fsm.wf.page_template</field>
-            <field name="arch" type="xml">
-                <form string="Mail template">
-                    <sheet>
-                        <header >
-                        </header>
-                        <group name="definition" string="Definition">
-                            <field name="name" />
-                            <field name="body"
-                                   widget="ace"/>
-                        </group>
-                    </sheet>
-                </form>
-            </field>
         </record>
 
     </data>

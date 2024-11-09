@@ -1,19 +1,7 @@
 import logging
-import uuid
-from datetime import date, datetime, timedelta
-
-import json
-import lxml
 import re
-from jinja2 import Environment
-
-import odoo
-from odoo import api, _, exceptions
+from odoo import _, exceptions
 from odoo import models, fields
-from odoo.exceptions import UserError
-from .miniqweb import render
-
-import pprint
 
 _logger = logging.getLogger(__name__)
 
@@ -55,6 +43,36 @@ class CRMWorkflow(models.Model):
         'type': 'CRM_Workflow',
     }
 
+    # Repair inheritance limitations
+
+    def prepare_env(self):
+        for workflow in self:
+            workflow.fsm_instance_id.prepare_env()
+
+    def flush_env(self, env):
+        for workflow in self:
+            workflow.fsm_instance_id.flush_env(env)
+
+    def get_globals(self):
+        for workflow in self:
+            workflow.fsm_instance_id.get_globals()
+
+    def consume_event(self, event):
+        for workflow in self:
+            workflow.fsm_instance_id.consume_event(event)
+
+    def process_event(self, event, env):
+        for workflow in self:
+            workflow.fsm_instance_id.process_event(event, env)
+
+    def process_events(self):
+        for workflow in self:
+            workflow.fsm_instance_id.process_events()
+
+    def send_event(self, event):
+        for workflow in self:
+            workflow.fsm_instance_id.send_event(event)
+
     def start(self):
         for workflow in self:
             workflow.fsm_instance_id.start()
@@ -71,18 +89,47 @@ class CRMWorkflow(models.Model):
         for workflow in self:
             workflow.fsm_instance_id.stop_logging()
 
-    def set_page(self, page_name):
-        self.ensure_one()
+    def on_send_event(self, event):
+        for workflow in self:
+            workflow.fsm_instance_id.on_send_event(event)
 
-        target_page = self.definition_id.pages.filtered(lambda x: x.name == page_name)
+    def before_event_process(self, event, env):
+        for workflow in self:
+            workflow.fsm_instance_id.before_event_process(event, env)
 
-        if not target_page:
-            raise exceptions.UserError(_('Invalid current page to set: %s') % page_name)
+    def after_event_process(self, event, env):
+        for workflow in self:
+            workflow.fsm_instance_id.after_event_process(event, env)
 
-        if len(target_page) > 1:
-            raise exceptions.UserError(_('Ambiguous page to set as current: %s') % page_name)
+    def recover_retained_events(self):
+        for workflow in self:
+            workflow.fsm_instance_id.recover_retained_events()
 
-        self.current_page = target_page
+    def retain_event(self, event):
+        for workflow in self:
+            workflow.fsm_instance_id.retain_event()
+
+    def change_state(self, new_state):
+        for workflow in self:
+            workflow.fsm_instance_id.change_state(new_state)
+
+    def start_timer(self, event, delay=None, at=None):
+        for workflow in self:
+            workflow.fsm_instance_id.start_timer(event, delay, at)
+
+    def stop_timer(self, event_name):
+        for workflow in self:
+            workflow.fsm_instance_id.stop_timer(event_name)
+
+    def stop_all_timers(self):
+        for workflow in self:
+            workflow.fsm_instance_id.stop_all_timers()
+
+    def render_dynamic_html(self, template, **params):
+        for workflow in self:
+            workflow.fsm_instance_id.render_dynamic_html(template, **params)
+
+    # End of reflected methods
 
     def workflow_local_link(self):
         self.ensure_one()
@@ -97,21 +144,6 @@ class CRMWorkflow(models.Model):
             )
 
         return site_url + self.workflow_local_link()
-
-    def render_dynamic_html(self, template, **params):
-        templater = Environment(
-            variable_start_string="{{",
-            variable_end_string="}}",
-        )
-        jinja_template = templater.from_string(template)
-
-        # Inject data into the view and replace our template tags with the data
-        processed_body = jinja_template.render(
-            instance=self,
-            **params
-        )
-
-        return render(processed_body, **dict(instance=self, **params))
 
     def send_mail_to_partner(self, mail_template_name, subject=None):
         self.ensure_one()
@@ -151,71 +183,3 @@ class CRMWorkflow(models.Model):
                 instance.consume_event(dict(name='manualOperationCheck'))
 
 
-class WorkFlowMailTemplate(models.Model):
-    _name = 'fsm.wf.mail_template'
-    _description = 'FSM WorkFlow Mail template'
-
-    _inherit = ['mail.render.mixin']
-
-    @api.model
-    def default_body_view_id(self):
-        view_model = self.env['ir.ui.view']
-
-        return view_model.create(dict(
-                type='qweb',
-                name='Workflow Mail Template - ' + str(uuid.uuid4()),
-                arch='<template>\n</template>',
-        ))
-
-    name = fields.Char('Name', required=True)
-    subject = fields.Char('Subject')
-    template_id = fields.Many2one('mail.template', 'Mail template', required=True)
-    body_view_arch = fields.Html('Body', translate=False)
-    body_view_html = fields.Html('Body HTML', sanitize_attributes=False)
-
-    attachment_ids = fields.Many2many(
-        'ir.attachment', 'wfmt_ir_attachments_rel',
-        'wfmt_id', 'attachment_id',
-        string='Attachments'
-    )
-
-    def open_mail_template(self):
-        self.ensure_one()
-
-        compose_form = self.env.ref('numa_fsm_crm.mail_template_html_edit')
-
-        return {
-            'type': 'ir.actions.act_window',
-            'name': self.name,
-            'view_mode': 'form',
-            'res_model': 'fsm.wf.mail_template',
-            'views': [(compose_form.id, 'form')],
-            'view_id': compose_form.id,
-            'res_id': self.id,
-        }
-
-
-class WorkFlowPageTemplate(models.Model):
-    _name = 'fsm.wf.page_template'
-    _description = 'FSM WorkFlow Page template'
-
-    _inherit = ['mail.render.mixin']
-
-    name = fields.Char('Name', required=True)
-    body = fields.Html('Body', sanitize=False)
-
-    def plain_body(self, target_object, vals=None):
-        self.ensure_one()
-
-        context = dict(vals or {}, object=target_object)
-
-        return self.body_view_id._render(context)
-
-    def open_page_template(self):
-        self.ensure_one()
-
-        return {
-            "type": "ir.actions.act_url",
-            "url": '/crm_page_template/%d' % self.id,
-            "target": "new"
-        }

@@ -18,7 +18,6 @@
         "security/ir.model.access.csv",
         "views/fsm_views.xml",
         "views/menu_views.xml",
-        "views/fsm_templates.xml",
     ],
     'installable': True,
     'license': 'LGPL-3',

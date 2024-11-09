@@ -193,6 +193,9 @@ class FSMDefinition(models.Model):
     parent_id = fields.Many2one('fsm.definition', 'Parent FSM')
     children_ids = fields.One2many('fsm.definition', 'parent_id', 'Children FSMs')
 
+    pages = fields.Many2many('fsm.wf.page_template', 'wf_page_templates_rel', string='Pages')
+    mail_templates = fields.Many2many('fsm.wf.mail_template', 'wf_mail_templates_rel', string='Mail templates')
+
     # For subclasses, used to filter per usage
     type = fields.Char('Type')
 
@@ -211,6 +214,76 @@ class FSMDefinition(models.Model):
                     ) % cd['extends'])
             for child in fsm.children_ids:
                 child.onchange_text_definition()
+
+
+class WorkFlowMailTemplate(models.Model):
+    _name = 'fsm.wf.mail_template'
+    _description = 'FSM WorkFlow Mail template'
+
+    _inherit = ['mail.render.mixin']
+
+    @api.model
+    def default_body_view_id(self):
+        view_model = self.env['ir.ui.view']
+
+        return view_model.create(dict(
+                type='qweb',
+                name='Mail Template - ' + str(uuid.uuid4()),
+                arch='<template>\n</template>',
+        ))
+
+    name = fields.Char('Name', required=True)
+    subject = fields.Char('Subject')
+    template_id = fields.Many2one('mail.template', 'Mail template', required=True)
+    body_view_arch = fields.Html('Body', translate=False)
+    body_view_html = fields.Html('Body HTML', sanitize_attributes=False)
+
+    attachment_ids = fields.Many2many(
+        'ir.attachment', 'wfmt_ir_attachments_rel',
+        'wfmt_id', 'attachment_id',
+        string='Attachments'
+    )
+
+    def open_mail_template(self):
+        self.ensure_one()
+
+        compose_form = self.env.ref('numa_fsm_crm.mail_template_html_edit')
+
+        return {
+            'type': 'ir.actions.act_window',
+            'name': self.name,
+            'view_mode': 'form',
+            'res_model': 'fsm.wf.mail_template',
+            'views': [(compose_form.id, 'form')],
+            'view_id': compose_form.id,
+            'res_id': self.id,
+        }
+
+
+class WorkFlowPageTemplate(models.Model):
+    _name = 'fsm.wf.page_template'
+    _description = 'FSM WorkFlow Page template'
+
+    _inherit = ['mail.render.mixin']
+
+    name = fields.Char('Name', required=True)
+    body = fields.Html('Body', sanitize=False)
+
+    def plain_body(self, target_object, vals=None):
+        self.ensure_one()
+
+        context = dict(vals or {}, object=target_object)
+
+        return self.body_view_id._render(context)
+
+    def open_page_template(self):
+        self.ensure_one()
+
+        return {
+            "type": "ir.actions.act_url",
+            "url": '/crm_page_template/%d' % self.id,
+            "target": "new"
+        }
 
 
 class FSMTimer(models.Model):
@@ -619,5 +692,19 @@ class FSMInstance(models.Model):
                 _logger.info(f"Stopping all timers "
                              f"for instance {fsm_instance.display_name}")
 
+    def render_dynamic_html(self, template, **params):
+        templater = Environment(
+            variable_start_string="{{",
+            variable_end_string="}}",
+        )
+        jinja_template = templater.from_string(template)
+
+        # Inject data into the view and replace our template tags with the data
+        processed_body = jinja_template.render(
+            instance=self,
+            **params
+        )
+
+        return render(processed_body, **dict(instance=self, **params))
 
 

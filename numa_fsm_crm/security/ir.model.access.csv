@@ -1,4 +1,2 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_crm_workflow,General access CRM Workflow,model_crm_workflow,base.group_user,1,1,1,1
-access_workflow_page,General access Workflow Page template,model_fsm_wf_page_template,base.group_user,1,1,1,1
-access_workflow_mail,General access Workflow Mail template,model_fsm_wf_mail_template,base.group_user,1,1,1,1
