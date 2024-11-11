@@ -247,7 +247,7 @@ class WorkFlowMailTemplate(models.Model):
     def open_mail_template(self):
         self.ensure_one()
 
-        compose_form = self.env.ref('numa_fsm_crm.mail_template_html_edit')
+        compose_form = self.env.ref('numa_fsm.mail_template_html_edit')
 
         return {
             'type': 'ir.actions.act_window',
@@ -281,7 +281,7 @@ class WorkFlowPageTemplate(models.Model):
 
         return {
             "type": "ir.actions.act_url",
-            "url": '/crm_page_template/%d' % self.id,
+            "url": '/fsm_page_template/%d' % self.id,
             "target": "new"
         }
 

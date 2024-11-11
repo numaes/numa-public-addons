@@ -5,7 +5,7 @@
     </template>
 
     <template id="page_template" name="Page for Workflow">
-        <t name="Workflow" t-name="numa_fsm_crm.page_template">
+        <t name="Workflow" t-name="numa_fsm.page_template">
             <t t-call="website.layout">
                 <div>
                     <div class="oe_structure">
@@ -26,7 +26,7 @@
     </template>
 
     <template id="page_edit_template" name="Edit Workflow Page">
-        <t name="Edit page" t-name="numa_fsm_crm.page_edit_template">
+        <t name="Edit page" t-name="numa_fsm.page_edit_template">
             <t t-call="website.layout">
                 <div>
                     <div class="oe_structure">
@@ -47,7 +47,7 @@
     </template>
 
     <template id="error_page" name="Page Not Found">
-        <t name="Workflow" t-name="numa_fsm_crm.error_page">
+        <t name="Workflow" t-name="numa_fsm.error_page">
             <t t-call="website.layout">
                 <div>
                     <div class="oe_structure">
