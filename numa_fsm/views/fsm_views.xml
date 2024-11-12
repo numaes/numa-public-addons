@@ -182,10 +182,10 @@
                         </header>
                         <group name="definition" string="Definition">
                             <field name="name" />
-                            <field name="body_html"
+                            <field name="render_model" readonly="False" />
+                            <field name="body_arch"
                                    widget="ace"/>
-                            <field name="body" invisible="True"/>
-                            <field name="template_id"/>
+                            <field name="body_html" invisible="True"/>
                         </group>
                         <group name="attachments" string="Attachments">
                             <field name="attachment_ids" />
@@ -196,8 +196,9 @@
         </record>
 
         <record model="ir.ui.view" id="mail_template_html_edit">
-            <field name="name">FSM Template form (HTML Edit)</field>
+            <field name="name">FSM Mail Template form (HTML Edit)</field>
             <field name="model">fsm.wf.mail_template</field>
+            <field name="priority">99</field>
             <field name="arch" type="xml">
                 <form string="Mail template">
                     <sheet>
@@ -206,23 +207,13 @@
                         <group name="definition" string="Definition">
                             <field name="name" />
                             <field name="body_html" invisible="True"/>
-                            <field name="body"
-                                   class="o_mail_body"
-                                   widget="ace"/>
-                            <!--
-                            <field name="body"
-                                   class="o_mail_body"
-                                   widget="mass_mailing_html"
-                                options="{
-                                    'snippets': 'mass_mailing.email_designer_snippets',
-                                    'cssEdit': 'mass_mailing.iframe_css_assets_edit',
-                                    'inline-field': 'body_html',
-                                    'dynamic_placeholder': false,
-                                    'cssReadonly': 'mass_mailing.iframe_css_assets_edit'
-                                }"/>
-                                -->
-
-                            <field name="template_id"/>
+                            <field name="render_model" invisible="True"/>
+                            <field name="body_arch" widget="html_composer_message" class="oe-bordered-editor"
+                                    placeholder="Write your message here..." force_save="1"
+                                    options="{
+                                            'dynamic_placeholder': true,
+                                            'dynamic_placeholder_model_reference_field': 'render_model',
+                                    }" />
                         </group>
                         <group name="attachments" string="Attachments">
                             <field name="attachment_ids" />

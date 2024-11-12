@@ -11,6 +11,8 @@ from odoo import models, fields
 from odoo.exceptions import UserError
 from odoo.tools.safe_eval import safe_eval, wrap_module
 
+from . import miniqweb
+
 import pprint
 
 _logger = logging.getLogger(__name__)
@@ -234,9 +236,12 @@ class WorkFlowMailTemplate(models.Model):
 
     name = fields.Char('Name', required=True)
     subject = fields.Char('Subject')
-    template_id = fields.Many2one('mail.template', 'Mail template', required=True)
-    body = fields.Html('Body', translate=False)
-    body_html = fields.Html('Body HTML', sanitize_attributes=False)
+    body_html = fields.Html(
+        string='Body converted to be sent by mail', sanitize='email_outgoing',
+        render_engine='qweb', render_options={'post_process': True})
+    is_body_empty = fields.Boolean(compute="_compute_is_body_empty")
+
+    render_model = fields.Char('Render model', default='fsm.instance')
 
     attachment_ids = fields.Many2many(
         'ir.attachment', 'wfmt_ir_attachments_rel',
@@ -692,12 +697,21 @@ class FSMInstance(models.Model):
                 _logger.info(f"Stopping all timers "
                              f"for instance {fsm_instance.display_name}")
 
-    def render_dynamic_html(self, template, **params):
+    def render_page_html(self, page_name, **params):
+        self.ensure_one()
+
+        page = self.definition_id.pages.filter(lambda s: s.name == page_name)
+        if not page:
+            raise exceptions.UserError(
+                _('Page %s not found for definition %s') %
+                (page_name, self.definition_id.name)
+            )
+
         templater = Environment(
             variable_start_string="{{",
             variable_end_string="}}",
         )
-        jinja_template = templater.from_string(template)
+        jinja_template = templater.from_string(page.body_html)
 
         # Inject data into the view and replace our template tags with the data
         processed_body = jinja_template.render(
@@ -705,6 +719,39 @@ class FSMInstance(models.Model):
             **params
         )
 
-        return render(processed_body, **dict(instance=self, **params))
+        return miniqweb.render(processed_body, **dict(instance=self, **params))
 
+    def action_send_template_mail(self, contact, mail_template_name):
+        mail_template = self.definition_id.mail_templates.filter(lambda s: s.name == mail_template_name)
+        if not mail_template:
+            raise exceptions.UserError(
+                _('Mail template %s not found for definition %s') %
+                (mail_template_name, self.definition_id.name)
+            )
 
+        templater = Environment(
+            variable_start_string="{{",
+            variable_end_string="}}",
+        )
+        jinja_template = templater.from_string(page.body_html)
+
+        # Inject data into the view and replace our template tags with the data
+        processed_body = jinja_template.render(
+            instance=self,
+            **params
+        )
+
+        concrete_body = miniqweb.render(processed_body, **dict(instance=self, **params))
+
+        jinja_template = templater.from_string(page.subject)
+
+        # Inject data into the view and replace our template tags with the data
+        concrete_subject = jinja_template.render(
+            instance=self,
+            **params
+        )
+
+        contact.message_post(
+            subject=concrete_subject,
+            body_html=concrete_body,
+        )

@@ -154,7 +154,7 @@ class CRMWorkflow(models.Model):
             mcm = mcm_model.create(dict(
                 reply_to=self.reply_to,
                 subject=subject if subject else _('Workflow automatic mail'),
-                body=self.render_dynamic_html(f'<div>{mail_template.body_view_html}</div>'),
+                body=self.render_dynamic_html(f'<div>{mail_template.body_html}</div>'),
                 attachment_ids=mail_template.attachment_ids.ids,
                 composition_mode='comment',
                 model='res.partner',
