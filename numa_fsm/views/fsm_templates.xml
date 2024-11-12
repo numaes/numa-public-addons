@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <template id="mail_layout">
-        <t t-raw="body_view_html or body_view_arch" />
+        <t t-raw="body_html or body" />
     </template>
 
     <template id="page_template" name="Page for Workflow">

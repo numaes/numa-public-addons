@@ -235,8 +235,8 @@ class WorkFlowMailTemplate(models.Model):
     name = fields.Char('Name', required=True)
     subject = fields.Char('Subject')
     template_id = fields.Many2one('mail.template', 'Mail template', required=True)
-    body_view_arch = fields.Html('Body', translate=False)
-    body_view_html = fields.Html('Body HTML', sanitize_attributes=False)
+    body = fields.Html('Body', translate=False)
+    body_html = fields.Html('Body HTML', sanitize_attributes=False)
 
     attachment_ids = fields.Many2many(
         'ir.attachment', 'wfmt_ir_attachments_rel',

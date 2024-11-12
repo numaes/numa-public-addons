@@ -9,6 +9,7 @@
     'depends': [
         'base',
         'mail',
+        'mass_mailing',
     ],
     'data': [
         "security/security.xml",
