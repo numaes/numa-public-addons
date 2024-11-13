@@ -1,1 +1,2 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_hr_workflow,General access HR Workflow,model_hr_workflow,base.group_user,1,1,1,1

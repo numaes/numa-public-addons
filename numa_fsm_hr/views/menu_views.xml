@@ -3,15 +3,16 @@
     <data>
 
         <menuitem id="menu_workflow" name="Workflows"
-            parent="hr.menu_hr_root"
-            sequence="20" >
+            parent="numa_finance_accounting.finance_accounting_menu"
+            sequence="24" >
 
             <menuitem id="menu_definitions" name="Definitions"
                       action="definition_action"/>
-            <menuitem id="menu_instances" name="Instances"
-                      action="instance_action"/>
+            <menuitem id="menu_instances" name="FA Workflows"
+                      action="fa_workflow_action"/>
 
         </menuitem>
+
 
     </data>
 </odoo>

@@ -8,9 +8,9 @@ _logger = logging.getLogger(__name__)
 
 class WorkflowController(http.Controller):
 
-    @http.route('/crm_workflow/<string:wkf_id>', auth='public', type='http', csrf=False, website=True)
-    def crm_workflow(self, wkf_id, **kwargs):
-        wkf_model = request.env['crm.workflow'].sudo()
+    @http.route('/hr_workflow/<string:wkf_id>', auth='public', type='http', csrf=False, website=True)
+    def hr_workflow(self, wkf_id, **kwargs):
+        wkf_model = request.env['hr.workflow'].sudo()
 
         if not wkf_id:
             return request.render('numa_fsm.error_page', {
@@ -38,10 +38,10 @@ class WorkflowController(http.Controller):
             **kwargs
         ))
 
-    @http.route('/crm_workflow/<string:wkf_id>/event/<string:event_id>', auth='public', type='http',
+    @http.route('/hr_workflow/<string:wkf_id>/event/<string:event_id>', auth='public', type='http',
                 csrf=False, website=True)
-    def crm_workflow_event(self, wkf_id, event_id, **kwargs):
-        wkf_model = request.env['crm.workflow'].sudo()
+    def hr_workflow_event(self, wkf_id, event_id, **kwargs):
+        wkf_model = request.env['hr.workflow'].sudo()
 
         if not wkf_id or not event_id:
             return request.render('numa_fsm.error_on_id', {
@@ -70,10 +70,10 @@ class WorkflowController(http.Controller):
             ),
         ))
 
-    @http.route('/crm_workflow/<string:wkf_id>/json_event/<string:event_id>', auth='public', type='http',
+    @http.route('/hr_workflow/<string:wkf_id>/json_event/<string:event_id>', auth='public', type='http',
                 csrf=False, website=True)
-    def crm_workflow_json_event(self, wkf_id, event_id, **kwargs):
-        wkf_model = request.env['crm.workflow'].sudo()
+    def hr_workflow_json_event(self, wkf_id, event_id, **kwargs):
+        wkf_model = request.env['hr.workflow'].sudo()
 
         if not wkf_id or not event_id:
             return request.render('fsm_crm.error_on_id', {
@@ -104,10 +104,10 @@ class WorkflowController(http.Controller):
             ),
         ))
 
-    @http.route('/crm_workflow/<string:wkf_id>/post', auth='public', type='http',
+    @http.route('/hr_workflow/<string:wkf_id>/post', auth='public', type='http',
                 methods=['post', 'update'], csrf=False, website=True)
-    def crm_workflow_post(self, wkf_id, **kwargs):
-        wkf_model = request.env['crm.workflow'].sudo()
+    def hr_workflow_post(self, wkf_id, **kwargs):
+        wkf_model = request.env['hr.workflow'].sudo()
 
         wkf_id = wkf_id.replace('_', '-')
         if not wkf_id:

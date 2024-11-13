@@ -1,15 +1,17 @@
 {
     'application': True,
-    'name': "NUMA FSM Human Resource",
-    'summary': "HR Workflow",
+    'name': "NUMA Finite State Machine - CRM",
+    'summary': "FSM CRM",
     'author': "Gustavo Marino <gamarino@numaes.com>",
     'website': 'https://www.numaes.com',
     'version': "18.0.0.1",
     'category': "mailing",
     'depends': [
         'base',
-        'numa_fsm_crm',
-        'hr',
+        'numa_fsm',
+        'crm',
+        'mail',
+        'mass_mailing',
     ],
     'data': [
         "security/security.xml",

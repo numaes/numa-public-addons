@@ -145,13 +145,14 @@ class CRMWorkflow(models.Model):
 
         return site_url + self.workflow_local_link()
 
-    def send_mail_to_partner(self, mail_template_name, subject=None):
+    def send_mail_to_partner(self, contact, mail_template_name, subject=None):
         self.ensure_one()
 
         mail_template = self.definition_id.mail_templates.filtered(lambda x: x.name == mail_template_name)
         if mail_template and len(mail_template) == 1 and self.partner_id:
             mcm_model = self.env['mail.compose.message']
             mcm = mcm_model.create(dict(
+                mail_to=contact.email,
                 reply_to=self.reply_to,
                 subject=subject if subject else _('Workflow automatic mail'),
                 body=self.render_dynamic_html(f'<div>{mail_template.body_html}</div>'),
