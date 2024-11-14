@@ -467,7 +467,6 @@ class FSMInstance(models.Model):
                         env = fsm_instance.process_event(event, env)
                         event_entry.unlink()
                         fsm_instance.flush_env(env)
-                        fsm_instance.flush()
                         if env and env.get('fsm_instance_ended', False):
                             break
                     else:
@@ -751,42 +750,41 @@ class FSMInstance(models.Model):
 
         return miniqweb.render(processed_body, **dict(instance=fsm_instance, **params))
 
-    def action_send_template_mail(self, contact, mail_template_name):
+    def action_send_template_mail(self, fsm_instance, target_object, mail_template_name, subject=None):
         self.ensure_one()
 
-        global_objects = self.get_globals()
-        fsm_instance = global_objects
-
-        mail_template = self.definition_id.mail_templates.filter(lambda s: s.name == mail_template_name)
+        mail_template = self.definition_id.mail_templates.filtered(lambda s: s.name == mail_template_name)
         if not mail_template:
             raise exceptions.UserError(
                 _('Mail template %s not found for definition %s') %
                 (mail_template_name, self.definition_id.name)
+            )
+        if len(mail_template) > 1:
+            self.message_post(
+                subject='Execution error',
+                body=_("<span>Error trying to send mail template with ambiguous name %s</span>") % mail_template_name,
             )
 
         templater = Environment(
             variable_start_string="{{",
             variable_end_string="}}",
         )
-        jinja_template = templater.from_string(page.body_html)
+        jinja_template = templater.from_string(mail_template.body_html)
 
         # Inject data into the view and replace our template tags with the data
-        processed_body = jinja_template.render(
-            instance=fsm_instance,
-            **params
-        )
+        processed_body = jinja_template.render(instance=fsm_instance)
 
-        concrete_body = miniqweb.render(processed_body, **dict(instance=self, **params))
-
-        jinja_template = templater.from_string(page.subject)
+        concrete_body = miniqweb.render(processed_body, **dict(instance=fsm_instance))
 
         # Inject data into the view and replace our template tags with the data
-        concrete_subject = jinja_template.render(
-            instance=fsm_instance,
-            **params
-        )
+        jinja_template = templater.from_string(subject or mail_template.subject or _('Workflow message'))
 
-        contact.message_post(
+        concrete_subject = jinja_template.render(instance=fsm_instance)
+
+        target_object.message_post(
             subject=concrete_subject,
-            body_html=concrete_body,
+            body=concrete_body,
+            body_is_html=True,
+            attachment_ids=mail_template.attachment_ids.ids,
         )
+
