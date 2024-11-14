@@ -782,10 +782,10 @@ class FSMInstance(models.Model):
 
         concrete_subject = jinja_template.render(instance=fsm_instance)
 
-        target_object.message_post(
+        target_object.message_notify(
             subject=concrete_subject,
             body=Markup(concrete_body),
-            body_is_html=True,
             attachment_ids=mail_template.attachment_ids.ids,
+            partner_ids=[fsm_instance.partner_id.id] if fsm_instance.partner_id else False,
         )
 
