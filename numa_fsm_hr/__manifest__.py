@@ -1,6 +1,6 @@
 {
     'application': True,
-    'name': "NUMA Finite State Machine - CRM",
+    'name': "NUMA Finite State Machine - HR",
     'summary': "FSM CRM",
     'author': "Gustavo Marino <gamarino@numaes.com>",
     'website': 'https://www.numaes.com',
@@ -9,7 +9,7 @@
     'depends': [
         'base',
         'numa_fsm',
-        'crm',
+        'employee',
         'mail',
         'mass_mailing',
     ],

@@ -3,13 +3,13 @@
     <data>
 
         <menuitem id="menu_workflow" name="Workflows"
-            parent="crm.crm_menu_root"
+            parent="hr.menu_hr_root"
             sequence="24" >
 
             <menuitem id="menu_definitions" name="Definitions"
                       action="definition_action"/>
-            <menuitem id="menu_instances" name="CRM Workflows"
-                      action="crm_workflow_action"/>
+            <menuitem id="menu_instances" name="HR Workflows"
+                      action="hr_workflow_action"/>
 
         </menuitem>
 

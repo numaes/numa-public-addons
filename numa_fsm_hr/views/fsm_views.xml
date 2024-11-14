@@ -5,7 +5,7 @@
         <!-- FSM Definition -->
 
         <record model="ir.actions.act_window" id="definition_action">
-            <field name="name">HR Workflows definitions</field>
+            <field name="name">CRM Workflows definitions</field>
             <field name="res_model">fsm.definition</field>
             <field name="view_mode">list,form</field>
             <field name="domain">[('type', '=', 'HR_Workflow')]</field>
@@ -51,7 +51,6 @@
             <field name="inherit_id" ref="numa_fsm.instance_list_view"/>
             <field name="arch" type="xml">
                 <field name="definition_id" position="after">
-                    <field name="employee_id" />
                     <field name="partner_id" />
                     <field name="manual_operation_needed" />
                 </field>

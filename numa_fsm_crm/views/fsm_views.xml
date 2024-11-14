@@ -26,8 +26,8 @@
                             invisible="state != 'running'"/>
                 </field>
                 <field name="definition_id" position="attributes">
-                    <attribute name="domain">[('type', '=', 'FA_Workflow')]</attribute>
-                    <attribute name="context">{'default_type': 'FA_Workflow'}</attribute>
+                    <attribute name="domain">[('type', '=', 'CRM_Workflow')]</attribute>
+                    <attribute name="context">{'default_type': 'CRM_Workflow'}</attribute>
                 </field>
                 <notebook position="inside">
                     <page name="relations" string="Relations">
@@ -78,7 +78,7 @@
             <field name="res_model">crm.workflow</field>
             <field name="view_mode">list,form</field>
             <field name="domain">[('definition_id.type', '=', 'CRM_Workflow')]</field>
-            <field name="context">{'default_type': 'CRN_Workflow'}</field>
+            <field name="context">{'default_type': 'CRM_Workflow'}</field>
         </record>
 
     </data>

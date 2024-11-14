@@ -3,13 +3,13 @@
     <data>
 
         <menuitem id="menu_workflow" name="Workflows"
-            parent="numa_finance_accounting.finance_accounting_menu"
+            parent="crm.crm_menu_root"
             sequence="24" >
 
             <menuitem id="menu_definitions" name="Definitions"
                       action="definition_action"/>
-            <menuitem id="menu_instances" name="FA Workflows"
-                      action="fa_workflow_action"/>
+            <menuitem id="menu_instances" name="CRM Workflows"
+                      action="crm_workflow_action"/>
 
         </menuitem>
 

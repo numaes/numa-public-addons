@@ -10,24 +10,12 @@ _logger = logging.getLogger(__name__)
 image_re = re.compile(r"data:(image/[A-Za-z]+);base64,(.*)")
 
 
-class MailMessage(models.Model):
-    _inherit = 'mail.message'
-
-    body = fields.Html(sanitize=False, sanitize_tags=False, sanitize_style=False)
-
-
-class FSMDefinition(models.Model):
-    _inherit = 'fsm.definition'
-
-    pages = fields.Many2many('fsm.wf.page_template', 'wf_page_templates_rel', string='Pages')
-    mail_templates = fields.Many2many('fsm.wf.mail_template', 'wf_mail_templates_rel', string='Mail templates')
-
-
 class CRMWorkflow(models.Model):
     _name = 'crm.workflow'
     _description = 'CRM Workflow'
     _order = 'create_date desc'
     _rec_name = 'name'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _inherits = {'fsm.instance': 'fsm_instance_id'}
 
     fsm_instance_id = fields.Many2one('fsm.instance', 'FSM instance',
@@ -36,26 +24,25 @@ class CRMWorkflow(models.Model):
     partner_id = fields.Many2one('res.partner', 'Contact')
     reply_to = fields.Char('Reply_to')
 
-    current_page = fields.Many2one('fsm.wf.page_template', 'Current Page template')
     manual_operation_needed = fields.Boolean('Manual operation required?')
-
-    _defaults = {
-        'type': 'CRM_Workflow',
-    }
 
     # Repair inheritance limitations
 
-    def prepare_env(self):
+    def set_page(self, page_name):
         for workflow in self:
-            workflow.fsm_instance_id.prepare_env()
+            workflow.fsm_instance_id.set_page(page_name)
+
+    def prepare_env(self):
+        self.ensure_one()
+        return self.fsm_instance_id.prepare_env()
 
     def flush_env(self, env):
         for workflow in self:
             workflow.fsm_instance_id.flush_env(env)
 
     def get_globals(self):
-        for workflow in self:
-            workflow.fsm_instance_id.get_globals()
+        self.ensure_one()
+        return self.fsm_instance_id.get_globals()
 
     def consume_event(self, event):
         for workflow in self:
@@ -126,8 +113,8 @@ class CRMWorkflow(models.Model):
             workflow.fsm_instance_id.stop_all_timers()
 
     def render_dynamic_html(self, template, **params):
-        for workflow in self:
-            workflow.fsm_instance_id.render_dynamic_html(template, **params)
+        self.ensure_one()
+        return self.fsm_instance_id.render_dynamic_html(template, **params)
 
     # End of reflected methods
 
@@ -145,42 +132,15 @@ class CRMWorkflow(models.Model):
 
         return site_url + self.workflow_local_link()
 
-    def send_mail_to_partner(self, contact, mail_template_name, subject=None):
+    def send_mail_to_contact(self, mail_template_name, subject=None):
         self.ensure_one()
 
-        mail_template = self.definition_id.mail_templates.filtered(lambda x: x.name == mail_template_name)
-        if mail_template and len(mail_template) == 1 and self.partner_id:
-            mcm_model = self.env['mail.compose.message']
-            mcm = mcm_model.create(dict(
-                mail_to=contact.email,
-                reply_to=self.reply_to,
-                subject=subject if subject else _('Workflow automatic mail'),
-                body=self.render_dynamic_html(f'<div>{mail_template.body_html}</div>'),
-                attachment_ids=mail_template.attachment_ids.ids,
-                composition_mode='comment',
-                model='res.partner',
-                res_id=self.partner_id.id,
-                use_active_domain=False,
-                no_auto_thread=False,
-                partner_ids=[self.partner_id.id],
-                auto_delete_message=False,
-            ))
-            mcm.send_mail()
-        elif len(mail_template) > 1:
-            self.message_post(
-                subject='Execution error',
-                body=_("<span>Error trying to send mail template with ambiguous name %s</span>") % mail_template_name,
-            )
-        else:
-            self.message_post(
-                subject='Execution error',
-                body=_("<span>Error trying to send mail template with invalid name %s or no partner</span>") % mail_template_name,
-            )
+        self.fsm_instance_id.action_send_template_mail(self, self.partner_id, mail_template_name, subject)
 
     def action_confirm_manual_operation(self):
         for instance in self:
             if instance.manual_operation_needed:
                 instance.manual_operation_needed = False
-                instance.consume_event(dict(name='manualOperationCheck'))
+            instance.consume_event(dict(name='manualOperationCheck'))
 
 
