@@ -1,6 +1,7 @@
 import logging
 import uuid
 from datetime import date, datetime, timedelta
+from markupsafe import Markup
 
 import json
 import base64
@@ -783,7 +784,7 @@ class FSMInstance(models.Model):
 
         target_object.message_post(
             subject=concrete_subject,
-            body=concrete_body,
+            body=Markup(concrete_body),
             body_is_html=True,
             attachment_ids=mail_template.attachment_ids.ids,
         )
