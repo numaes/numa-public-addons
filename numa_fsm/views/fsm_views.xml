@@ -24,7 +24,7 @@
                                 <field name="json_compiled_definition" invisible="True"/>
                                 <field name="parent_id" invisible="True"/>
                             </page>
-                            <page name="pages" string="Pages" invisible="type != 'CRM_Workflow'">
+                            <page name="pages" string="Pages">
                                 <field name="pages" mode="list">
                                     <list string="Pages">
                                         <field name="name"/>
@@ -33,7 +33,7 @@
                                     </list>
                                 </field>
                             </page>
-                            <page name="mail_templates" string="Mail templates" invisible="type != 'CRM_Workflow'">
+                            <page name="mail_templates" string="Mail templates">
                                 <field name="mail_templates" mode="list">
                                     <list string="Mail Templates">
                                         <field name="name"/>
@@ -183,9 +183,7 @@
                         <group name="definition" string="Definition">
                             <field name="name" />
                             <field name="render_model" readonly="False" />
-                            <field name="body_arch"
-                                   widget="ace"/>
-                            <field name="body_html" invisible="True"/>
+                            <field name="body_html" widget="ace" options="{'mode': 'html'}"/>
                         </group>
                         <group name="attachments" string="Attachments">
                             <field name="attachment_ids" />
@@ -206,9 +204,8 @@
                         </header>
                         <group name="definition" string="Definition">
                             <field name="name" />
-                            <field name="body_html" invisible="True"/>
                             <field name="render_model" invisible="True"/>
-                            <field name="body_arch" widget="html_composer_message" class="oe-bordered-editor"
+                            <field name="body_html" widget="html_composer_message" class="oe-bordered-editor"
                                     placeholder="Write your message here..." force_save="1"
                                     options="{
                                             'dynamic_placeholder': true,
@@ -236,7 +233,7 @@
                         <group name="definition" string="Definition">
                             <field name="name" />
                             <field name="body"
-                                   widget="ace"/>
+                                   widget="ace" options="{'mode': 'html'}"/>
                         </group>
                     </sheet>
                 </form>

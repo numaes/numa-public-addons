@@ -4,12 +4,14 @@ from datetime import date, datetime, timedelta
 
 import json
 import base64
+from jinja2 import Environment
 
 import odoo
 from odoo import api, _, exceptions
 from odoo import models, fields
 from odoo.exceptions import UserError
 from odoo.tools.safe_eval import safe_eval, wrap_module
+
 
 from . import miniqweb
 
@@ -332,6 +334,10 @@ class FSMInstance(models.Model):
     _order = 'create_date desc'
     _inherit = ['mail.thread', 'mail.activity.mixin']
 
+    concrete_model = fields.Char('Concrete model', default='fsm.instance')
+    concrete_id = fields.Integer('Concrete ID')
+    current_page = fields.Many2one('fsm.wf.page_template', 'Current page')
+
     name = fields.Char('Instance ID', default=lambda s: uuid.uuid4())
     definition_id = fields.Many2one('fsm.definition', 'Definition', required=True)
     type = fields.Char(string='Type', related='definition_id.type', readonly=True)
@@ -351,14 +357,15 @@ class FSMInstance(models.Model):
 
     logging = fields.Boolean('Logging?')
 
-    @api.model_create_multi
-    def create(self, vals: list[dict]):
-        fsm_instances = super().create(vals)
-
-        if not self.env.get('no_start'):
-            fsm_instances.start()
-
-        return fsm_instances
+    def set_page(self, page_name):
+        self.ensure_one()
+        current_page = self.definition_id.pages.filtered(lambda s: s.name == page_name)
+        if len(current_page) >= 1:
+            self.current_page = current_page[0]
+        else:
+            raise exceptions.UserError(
+                _('Page %s not found!') % page_name
+            )
 
     def prepare_env(self):
         self.ensure_one()
@@ -372,6 +379,8 @@ class FSMInstance(models.Model):
     def get_globals(self):
         self.ensure_one()
 
+        concrete_instance = self.env[self.concrete_model].browse(self.concrete_id).exists()
+
         return dict(
             datetime=wrap_module(
                 __import__('datetime'),
@@ -382,8 +391,8 @@ class FSMInstance(models.Model):
             exceptions=wrap_module(odoo.exceptions, ['UserError']),
             json=wrap_module(json, ['loads', 'dumps']),
             base64=wrap_module(base64, ['b64encode', 'b64decode']),
-            fsm_instance=self,
-            fsm_definition=self.definition_id,
+            fsm_instance=concrete_instance,
+            fsm_definition=concrete_instance.definition_id,
             user=self.env.user,
             company=self.env.company,
         )
@@ -399,8 +408,7 @@ class FSMInstance(models.Model):
         self.ensure_one()
 
         global_objects = self.get_globals()
-
-        fsm_instance = self
+        fsm_instance = global_objects['fsm_instance']
 
         if fsm_instance.state != 'running':
             # Nothing to do if it is not running
@@ -499,14 +507,14 @@ class FSMInstance(models.Model):
     def start(self):
         self.ensure_one()
 
-        fsm_instance = self
+        global_objects = self.get_globals()
+
+        fsm_instance = global_objects['fsm_instance']
         if fsm_instance.state != 'init':
             _logger.info(f'You cannot not start a not initialized FSM Instance! ({fsm_instance.display_name}')
             return
 
         env = {}
-
-        global_objects = self.get_globals()
 
         fsmd = fsm_instance.definition_id
         try:
@@ -697,16 +705,38 @@ class FSMInstance(models.Model):
                 _logger.info(f"Stopping all timers "
                              f"for instance {fsm_instance.display_name}")
 
-    def render_page_html(self, page_name, **params):
+    def render_dynamic_html(self, template, **params):
+        templater = Environment(
+            variable_start_string="{{",
+            variable_end_string="}}",
+        )
+
+        global_objects = self.get_globals()
+        fsm_instance = global_objects['fsm_instance']
+        processed_body = template
+        while processed_body.find("{{") >= 0:
+            # Inject data into the view and replace our template tags with the data
+            jinja_template = templater.from_string(template)
+            processed_body = jinja_template.render(
+                instance=fsm_instance,
+                **params
+            )
+
+        return miniqweb.render(processed_body, **dict(instance=fsm_instance, **params))
+
+    def render_page(self, page_name, **params):
         self.ensure_one()
 
-        page = self.definition_id.pages.filter(lambda s: s.name == page_name)
+        global_objects = self.get_globals()
+        fsm_instance = global_objects['fsm_instance']
+        page = self.definition_id.pages.filtered(lambda s: s.name == page_name)
         if not page:
             raise exceptions.UserError(
                 _('Page %s not found for definition %s') %
                 (page_name, self.definition_id.name)
             )
 
+        page = page[0]
         templater = Environment(
             variable_start_string="{{",
             variable_end_string="}}",
@@ -715,13 +745,18 @@ class FSMInstance(models.Model):
 
         # Inject data into the view and replace our template tags with the data
         processed_body = jinja_template.render(
-            instance=self,
+            instance=fsm_instance,
             **params
         )
 
-        return miniqweb.render(processed_body, **dict(instance=self, **params))
+        return miniqweb.render(processed_body, **dict(instance=fsm_instance, **params))
 
     def action_send_template_mail(self, contact, mail_template_name):
+        self.ensure_one()
+
+        global_objects = self.get_globals()
+        fsm_instance = global_objects
+
         mail_template = self.definition_id.mail_templates.filter(lambda s: s.name == mail_template_name)
         if not mail_template:
             raise exceptions.UserError(
@@ -737,7 +772,7 @@ class FSMInstance(models.Model):
 
         # Inject data into the view and replace our template tags with the data
         processed_body = jinja_template.render(
-            instance=self,
+            instance=fsm_instance,
             **params
         )
 
@@ -747,7 +782,7 @@ class FSMInstance(models.Model):
 
         # Inject data into the view and replace our template tags with the data
         concrete_subject = jinja_template.render(
-            instance=self,
+            instance=fsm_instance,
             **params
         )
 

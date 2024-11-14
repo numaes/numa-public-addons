@@ -18,7 +18,7 @@
                         </section>
                     </div>
                     <div class="container mt-4 mb-5">
-                        <t t-raw="processed_body"/>
+                        <t t-out="processed_body"/>
                     </div>
                 </div>
             </t>
