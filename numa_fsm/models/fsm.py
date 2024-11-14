@@ -785,6 +785,7 @@ class FSMInstance(models.Model):
             subject=concrete_subject,
             body=concrete_body,
             body_is_html=True,
+            message_type='email',
             attachment_ids=mail_template.attachment_ids.ids,
         )
 
