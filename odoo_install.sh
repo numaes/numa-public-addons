@@ -130,7 +130,7 @@ fi
 # Install ODOO
 #--------------------------------------------------
 echo -e "\n==== Installing numa-public-odoo Server ===="
-if [ ! -d "odoo-$OE_VERSION-numa" ]; then
+if [ ! -d "numa-public-odoo-$OE_VERSION-numa" ]; then
   git clone https://github.com/numaes/numa-public-odoo -b "$OE_VERSION-numa" "numa-public-odoo-$OE_VERSION-numa"
 fi
 
@@ -433,7 +433,7 @@ EOF
     echo -e "\n---- Install python packages/requirements ----"
     pip install --upgrade pip
     pip install wheel
-    pip install -r "../odoo-$OE_VERSION-numa/requirements.txt"
+    pip install -r "../numa-public-odoo-$OE_VERSION-numa/requirements.txt"
     pip install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
     if [ "$INSTALL_PRIVATE" = "Yes" ]; then
       pip install -r "../numa-addons-$OE_VERSION/requirements.txt"
