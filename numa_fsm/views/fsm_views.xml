@@ -116,7 +116,7 @@
                                     <newline />
                                     <field name="current_state" readonly="True"/>
                                     <field name="json_instance_values"
-                                           widget="ace" options="{'mode': 'json'}" />
+                                           widget="ace" options="{'mode': 'html'}" />
                                     <field name="logging" />
                                 </group>
                             </page>

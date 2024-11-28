@@ -1,9 +1,24 @@
 import logging
 
 from odoo import http
-from odoo.http import request
+import json
 
 _logger = logging.getLogger(__name__)
+
+from odoo.addons.website.controllers import form
+from odoo.http import request
+
+
+class WebsiteForm(form.WebsiteForm):
+
+    # Check and insert values from the form on the model <model> + validation phone fields
+    def _handle_website_form(self, model_name, **kwargs):
+        if model_name == 'fsm.form_input':
+            form_input_model = request.env['fsm.form_input']
+            form_input = form_input_model.create(kwargs)
+            return json.dumps({'id': form_input.id})
+        else:
+            return super()._handle_website_form(model_name, **kwargs)
 
 
 class FSMController(http.Controller):

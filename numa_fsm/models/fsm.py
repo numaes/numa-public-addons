@@ -329,6 +329,32 @@ class FSMEventEntry(models.Model):
     sequence = fields.Integer('Sequence')
 
 
+class FSMFormInput(models.TransientModel):
+    _name = 'fsm.form_input'
+    _description = 'FSM Form input'
+
+    website_form_access = fields.Boolean('Allowed to use in forms', help='Enable the form builder feature for this model.')
+
+    instance_id = fields.Many2one('fsm.instance', 'Target instance')
+    unrelated_identifier = fields.Char('Unrelated identifier')
+    json_data = fields.Char('JSON Data')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        result = self.env['fsm.form_input']
+        for vals in vals_list:
+            instance_id = vals.get('instance_id', False)
+            unrelated_identifier = vals.get('unrelated_identifier', False)
+            json_data = json.dumps(vals)
+            result |= super().create(dict(
+                instance_id=instance_id,
+                unrelated_identifier=unrelated_identifier,
+                json_data=json_data,
+            ))
+
+        return result
+
+
 class FSMInstance(models.Model):
     _name = 'fsm.instance'
     _description = 'FSM Instance'

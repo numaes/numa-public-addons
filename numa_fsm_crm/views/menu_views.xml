@@ -9,7 +9,7 @@
             <menuitem id="menu_definitions" name="Definitions"
                       action="definition_action"/>
             <menuitem id="menu_instances" name="HR Workflows"
-                      action="hr_workflow_action"/>
+                      action="crm_workflow_action"/>
 
         </menuitem>
 

@@ -2,6 +2,7 @@ id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_fsm_definition,General accees FSM Definition,model_fsm_definition,viewer_group,1,0,0,0
 access_workflow_page,General access Workflow Page template,model_fsm_wf_page_template,viewer_group,1,0,0,0
 access_workflow_mail,General access Workflow Mail template,model_fsm_wf_mail_template,viewer_group,1,0,0,0
+access_workflow_form_input,General access Workflow Form Input,model_fsm_form_input,viewer_group,1,1,1,1
 
 access_fsm_timer,General accees FSM Timer,model_fsm_timer,viewer_group,1,1,1,1
 access_fsm_event_entry,General accees FSM Event Entry,model_fsm_event_entry,viewer_group,1,1,1,1
