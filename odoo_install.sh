@@ -566,8 +566,8 @@ fi
 # Enable ssl with certbot
 #--------------------------------------------------
 
-if [ "$INSTALL_NGINX" = "True" ] && [ "$ENABLE_SSL" = "True" ] && [ "$ADMIN_EMAIL" != "odoo@example.com" ]  && [ "$WEBSITE_NAME" != "_" ];then
-  sudo apt-get install letsencrypt -y
+if [ "$INSTALL_NGINX" = "True" ]  && [ "$ADMIN_EMAIL" != "odoo@example.com" ]  && [ "$WEBSITE_NAME" != "_" ];then
+  sudo apt install python-rlPyCairo
   sudo letsncrypt certbot --nginx -d $WEBSITE_NAME --noninteractive --agree-tos --email $ADMIN_EMAIL --redirect
   sudo service nginx reload
   echo "SSL/HTTPS is enabled!"

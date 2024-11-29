@@ -341,13 +341,19 @@ class FSMFormInput(models.TransientModel):
 
     @api.model_create_multi
     def create(self, vals_list):
+        fsm_instance_model = self.env['fsm.instance']
+
         result = self.env['fsm.form_input']
         for vals in vals_list:
-            instance_id = vals.get('instance_id', False)
+            instance_name = vals.get('instance_id', False)
+            if instance_name:
+                instance = fsm_instance_model.search([('name', '=', instance_name)], limit=1)
+            else:
+                instance = False
             unrelated_identifier = vals.get('unrelated_identifier', False)
             json_data = json.dumps(vals)
             result |= super().create(dict(
-                instance_id=instance_id,
+                instance_id=instance.id if instance else False,
                 unrelated_identifier=unrelated_identifier,
                 json_data=json_data,
             ))
