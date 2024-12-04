@@ -10,6 +10,7 @@
         'base',
         'mail',
         'mass_mailing',
+        'website',
     ],
     'data': [
         "security/security.xml",
