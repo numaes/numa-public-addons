@@ -26,7 +26,7 @@
                         </group>
                     </group>
                 </xpath>
-                <xpath expr="//field[@name='order_line']/tree/field[@name='name']" position="after">
+                <xpath expr="//field[@name='order_line']/list/field[@name='name']" position="after">
                     <field name="unit_width" invisible="1"/>
                     <field name="unit_length" invisible="1"/>
                     <field name="unit_height" invisible="1"/>
@@ -41,7 +41,7 @@
                     <field name="price_qty" readonly="True" force_save="True"/>
                     <field name="unit_price_uom_id"/>
                 </xpath>
-                <xpath expr="//field[@name='order_line']/tree/field[@name='price_unit']" position="after">
+                <xpath expr="//field[@name='order_line']/list/field[@name='price_unit']" position="after">
                     <field name="price_qty" readonly="True" force_save="True"/>
                     <field name="unit_price_uom_id"/>
                 </xpath>

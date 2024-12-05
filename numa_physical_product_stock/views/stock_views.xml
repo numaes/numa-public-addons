@@ -12,20 +12,12 @@
                     <field name="picking_volume"/>
                 </field>
 
-                <xpath expr="//page[@name='operations']//tree//field[@name='lot_ids']" position="after">
+                <xpath expr="//page[@name='operations']//list//field[@name='lot_ids']" position="after">
                     <field name="unit_weight" invisible="True"/>
                     <field name="unit_surface" invisible="True"/>
                     <field name="unit_volume" invisible="True"/>
                     <field name="total_weight" readonly="1" force_save="1"/>
                     <field name="total_volume" readonly="1" force_save="1"/>
-                </xpath>
-
-                <xpath expr="//page[@name='operations']//form//field[@name='description_picking']" position="after">
-                    <field name="unit_weight" />
-                    <field name="unit_surface" />
-                    <field name="unit_volume" />
-                    <field name="total_weight"/>
-                    <field name="total_volume"/>
                 </xpath>
 
             </field>
@@ -130,7 +122,7 @@
                 <pivot string="Stock Moves Analysis" sample="1">
                     <field name="product_id" type="row"/>
                     <field name="location_dest_id" groups="stock.group_stock_multi_locations" type="row"/>
-                    <field name="qty_done" type="measure"/>
+                    <field name="quantity_product_uom" type="measure"/>
                     <field name="total_weight" type="measure"/>
                 </pivot>
             </field>
