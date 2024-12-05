@@ -167,13 +167,13 @@ class StockMoveLine(models.Model):
     partner_id = fields.Many2one('res.partner', string='Empresa', related='picking_id.partner_id', readonly=True, store=True)
     sale_order_id = fields.Many2one('sale.order', string='Pedido', related='picking_id.sale_id', readonly=True, store=True)
 
-    @api.onchange('product_id', 'qty_done')
-    @api.depends('product_id', 'qty_done')
+    @api.onchange('product_id', 'quantity_product_uom')
+    @api.depends('product_id', 'quantity_product_uom')
     def onchange_qty(self):
         for move_line in self:
-            normalized_qty = move_line.product_uom_id._compute_quantity(move_line.qty_done,
+            normalized_qty = move_line.product_uom_id._compute_quantity(move_line.quantity_product_uom,
                                                                         move_line.product_id.uom_id) \
-                if move_line.product_uom_id else move_line.qty_done
+                if move_line.product_uom_id else move_line.quantity_product_uom
             move_line.total_surface = normalized_qty * move_line.unit_surface
             move_line.total_weight = normalized_qty * move_line.unit_weight
             move_line.total_volume = normalized_qty * move_line.unit_volume
@@ -182,9 +182,9 @@ class StockMoveLine(models.Model):
     @api.depends('total_weight', 'total_surface', 'total_volume')
     def onchange_total_physicals(self):
         for move_line in self:
-            normalized_qty = move_line.product_uom_id._compute_quantity(move_line.qty_done,
+            normalized_qty = move_line.product_uom_id._compute_quantity(move_line.quantity_product_uom,
                                                                         move_line.product_id.uom_id) \
-                if move_line.product_uom_id else move_line.qty_done
+                if move_line.product_uom_id else move_line.quantity_product_uom
             if normalized_qty:
                 if move_line.unit_weight != move_line.total_weight / normalized_qty:
                     move_line.unit_weight = move_line.total_weight / normalized_qty
@@ -208,6 +208,6 @@ class StockMoveLine(models.Model):
 
     def write(self, vals):
         ret = super().write(vals)
-        if 'qty_done' in vals:
+        if 'quantity_product_uom' in vals:
             self.onchange_qty()
         return ret
