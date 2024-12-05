@@ -30,7 +30,7 @@
                     <field name="price_qty"/>
                     <field name="unit_price_uom_id"/>
                 </xpath>
-                <xpath expr="//field[@name='invoice_line_ids']/tree/field[@name='price_unit']" position="after">
+                <xpath expr="//field[@name='invoice_line_ids']/list/field[@name='price_unit']" position="after">
                     <field name="price_base" invisible="1"/>
                     <field name="price_qty" attrs="{'invisible': [('price_base', '=', 'normal')]}"/>
                     <field name="unit_price_uom_id" readonly="1" force_save="1" attrs="{'invisible': [('price_base', '=', 'normal')]}"/>
@@ -40,7 +40,7 @@
                     <field name="price_qty" invisible="1"/>
                     <field name="unit_price_uom_id" invisible="1"/>
                 </xpath>
-                <xpath expr="//field[@name='line_ids']/tree/field[@name='credit']" position="after">
+                <xpath expr="//field[@name='line_ids']/list/field[@name='credit']" position="after">
                     <field name="price_base" invisible="1"/>
                     <field name="price_qty" invisible="1"/>
                     <field name="unit_price_uom_id" invisible="1"/>
