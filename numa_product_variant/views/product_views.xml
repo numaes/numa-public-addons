@@ -27,7 +27,7 @@
                     <field name="default_value" />
                     <field name="change_on_create" />
                 </group>
-                <xpath expr="//page/field[@name='value_ids']/tree/field[@name='name']" position="before">
+                <xpath expr="//page/field[@name='value_ids']/list/field[@name='name']" position="before">
                     <field name="code_value"/>
                     <field name="value_on_create"/>
                     <field name="weight_factor"/>
