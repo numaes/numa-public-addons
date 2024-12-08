@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_poly_base,General access Polymorphic Base,model_ir_poly_base,base.group_user,1,1,1,1
+
