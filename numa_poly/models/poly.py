@@ -6,6 +6,7 @@ from docutils.nodes import field_name
 import odoo
 from odoo import api, _, exceptions
 from odoo import models, fields
+from odoo.models import BaseModel, MetaModel
 import odoo
 from odoo import SUPERUSER_ID
 from odoo import api
@@ -33,7 +34,7 @@ if typing.TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 
-class PolyBase(models.Model):
+class IrPolyBase(models.Model):
     _name = 'ir.poly_base'
     _description = 'Polymorphic Models Base'
     _rec_name = 'id'
@@ -48,44 +49,19 @@ class PolyBase(models.Model):
         return concrete_model.browse(self.id).exists()
 
 
-class Base(models.AbstractModel):
-    _inherit = 'base'
-
-    """Position ordered dictionary {'parent_model': 'm2o_field'} mapping the _name of the parent business
-    objects to the names of the corresponding foreign key fields to use::
-
-      _depend_models = {
-          'a.model': 'a_field_id',
-          'b.model': 'b_field_id'
-      }
-
-    implements full polymorphic inheritance: the new model exposes all
-    the fields of the dependant models but stores none of them:
-    the values themselves remain stored on the linked record.
-
-    A direct representation of a base will be available in the corresponding field ('a_field_id', 'b_field_id')
-    The Many2one field will be created automatically, it is no needed to define it explicitly
-
-    .. warning::
-
-      if multiple fields with the same name are defined in the
-      :attr:`~odoo.models.Model._depend_models` models, the inherited field will
-      correspond to the last one (in the depends list order).
-    """
-    _depend_models = OrderedDict()
-    _depends_children = OrderedSet()
-
-    _checked_id = False
+class PolyMetaModel(MetaModel):
+    _register = False
 
     def __init__(self, name, bases, attrs):
         super().__init__(name, bases, attrs)
 
-        meta = type(self)
-        if not meta._abstract and meta._depend_models:
+        if self._register and not self._abstract and self._depend_models:
+            _logger.info(f'Init of model {name}, with bases {bases} and attrs {attrs}')
+
             # this class defines a model: add magic fields
             def _set(attr_name, field):
-                setattr(meta, attr_name, field)
-                field.__set_name__(meta, name)
+                setattr(self, attr_name, field)
+                field.__set_name__(self, name)
 
             # Create a poly_base_id many2one
             _set('poly_base_id',
@@ -126,6 +102,39 @@ class Base(models.AbstractModel):
                                  related='poly_base_id.write_uid',
                                  automatic=True, readonly=True))
 
+
+class PolyBase(BaseModel, metaclass=PolyMetaModel):
+    _register = False
+
+
+    """Position ordered dictionary {'parent_model': 'm2o_field'} mapping the _name of the parent business
+    objects to the names of the corresponding foreign key fields to use::
+
+      _depend_models = {
+          'a.model': 'a_field_id',
+          'b.model': 'b_field_id'
+      }
+
+    implements full polymorphic inheritance: the new model exposes all
+    the fields of the dependant models but stores none of them:
+    the values themselves remain stored on the linked record.
+
+    A direct representation of a base will be available in the corresponding field ('a_field_id', 'b_field_id')
+    The Many2one field will be created automatically, it is no needed to define it explicitly
+
+    .. warning::
+
+      if multiple fields with the same name are defined in the
+      :attr:`~odoo.models.Model._depend_models` models, the inherited field will
+      correspond to the last one (in the depends list order).
+    """
+
+    _depend_models = OrderedDict()
+    _depends_children = OrderedSet()
+
+
+    _checked_id = False
+
     def compute_poly_base_id(self):
         for instance in self:
             instance.poly_base_id = instance.id
@@ -143,10 +152,10 @@ class Base(models.AbstractModel):
         the Python sense) from all classes that define the model, and possibly
         other registry classes.
         """
-        model_class_without_depends = super()._build_model(pool, cr)
 
-        if hasattr(cls, '_depend_models'):
-            model_class_without_depends._depends_children = OrderedSet()
+        model_class_without_depends = super(PolyBase, cls)._build_model(pool, cr)
+
+        if hasattr(cls, '_depend_models') and cls._depend_models:
 
             # all models except 'base' implicitly depend from 'ir.poly_base'
             name = cls._name
@@ -161,6 +170,8 @@ class Base(models.AbstractModel):
                     raise TypeError("Model %r depends from non-existing model %r." % (name, parent))
                 parent_class = pool[parent]
                 if parent == name:
+                    if not hasattr(parent_class, '__depends_base_classes'):
+                        parent_class.__depends_base_classes = OrderedSet()
                     for base in parent_class.__depends_base_classes:
                         bases.add(base)
                 else:
@@ -168,13 +179,13 @@ class Base(models.AbstractModel):
                         raise TypeError("Model %r depends from non-polymorphic model %r. Only polymorphic is allowed" %
                                         (name, parent))
                     bases.add(parent_class)
+                    if not hasattr(parent_class, '_depends_children'):
+                        parent_class._depends_children = OrderedSet()
                     parent_class._depends_children.add(name)
 
             model_class_without_depends.__depends_base_classes = tuple(bases)
 
             # determine the attributes of the model's class
-            model_class_without_depends._build_dependant_model_attributes(pool)
-
             pool[name] = model_class_without_depends
 
         return model_class_without_depends
@@ -182,6 +193,9 @@ class Base(models.AbstractModel):
     @api.model
     def _setup_base(self):
         super()._setup_base()
+
+        if self._depend_models:
+            self._build_dependant_model_attributes(self.env)
 
         def get_next_id(base_name) -> int:
             base_model = self.env[base_name]
@@ -214,8 +228,6 @@ class Base(models.AbstractModel):
     def _build_dependant_model_attributes(cls, pool):
         """ Initialize base model attributes. """
 
-        super()._build_model_attributes(pool)
-
         def set(name, field):
             setattr(cls, name, field)
             field.__set_name__(cls, name)
@@ -230,12 +242,12 @@ class Base(models.AbstractModel):
                 for instance in self:
                     instance[model_field] = instance.id
 
-            set(f'compute_{model_field}', compute_method)
+            setattr(cls, f'compute_{model_field}', compute_method)
 
-            for subfield_name, subfield_definition in pool[model_name]._fields:
+            for subfield_name, subfield in pool[model_name]._fields.items():
                 if subfield_name not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date'] and \
                    not hasattr(cls, subfield_name):
-                    subfield_type = subfield_definition['type']
+                    subfield_type = subfield.type
                     field_subclass = {
                         'char': fields.Char,
                         'integer': fields.Integer,
@@ -254,7 +266,7 @@ class Base(models.AbstractModel):
                     }.get(subfield_type)
                     if field_subclass:
                         new_field = field_subclass(
-                            string=subfield_definition['string'],
+                            string=subfield.string,
                             related=f'{model_field}.{subfield_name}'
                         )
                     else:
@@ -288,21 +300,24 @@ class Base(models.AbstractModel):
                 # First ensure all base records will be created
                 base_data = {}
                 for base in self._depend_models:
-                    base_data.setdefault(base, {})
-                    for field_name in data.keys():
-                        field_description = self._fields[field_name]
-                        if field_description['related']:
-                            related_field = field_description['related'].split('.')[0]
-                            if related_field in related2base:
-                                base_data[base][field_name] = data[field_name]
-                                del data[field_name]
-                    base_model = self.env[base]
-                    base_data[base]['id'] = new_poly.id
-                    base_model.create(base_data[base])
+                    if base != 'ir.poly_base':
+                        base_data.setdefault(base, {})
+                        for field_name in data.keys():
+                            field_definition = self._fields[field_name].get_description(self.env, attributes=['related'])
+                            if field_definition.get('related'):
+                                related = field_definition['related']
+                                related_root = related.split('.')[0]
+                                if related_root in related2base:
+                                    base_data[base][field_name] = data[field_name]
+                                    del data[field_name]
+                        base_model = self.env[base]
+                        base_data[base]['id'] = new_poly.id
+                        base_model.create(base_data[base])
 
                 # Lastly create the new records, all bases already created
                 data['id'] = new_poly.id
-                new_records |= super().create(data)
+                data_place['stored'] = data
+                new_records |= super()._create([data_place])
 
             return new_records
 
@@ -364,4 +379,97 @@ class Base(models.AbstractModel):
             for base in self._depend_models:
                 base_model = self.env[base]
                 base_model.browse(self.ids).unlink()
+
+
+class PolyModel(PolyBase):
+    """ Main super-class for regular database-persisted Odoo models.
+
+    Odoo models are created by inheriting from this class::
+
+        class user(Model):
+            ...
+
+    The system will later instantiate the class once per database (on
+    which the class' module is installed).
+    """
+    _auto = True                # automatically create database backend
+    _register = False           # not visible in ORM registry, meant to be python-inherited only
+    _abstract = False           # not abstract
+    _transient = False          # not transient
+
+
+class PolyTransientModel(PolyModel):
+    """ Model super-class for transient records, meant to be temporarily
+    persistent, and regularly vacuum-cleaned.
+
+    A TransientModel has a simplified access rights management, all users can
+    create new records, and may only access the records they created. The
+    superuser has unrestricted access to all TransientModel records.
+    """
+    _auto = True                # automatically create database backend
+    _register = False           # not visible in ORM registry, meant to be python-inherited only
+    _abstract = False           # not abstract
+    _transient = True           # transient
+
+    @api.autovacuum
+    def _transient_vacuum(self):
+        """Clean the transient records.
+
+        This unlinks old records from the transient model tables whenever the
+        :attr:`_transient_max_count` or :attr:`_transient_max_hours` conditions
+        (if any) are reached.
+
+        Actual cleaning will happen only once every 5 minutes. This means this
+        method can be called frequently (e.g. whenever a new record is created).
+
+        Example with both max_hours and max_count active:
+
+        Suppose max_hours = 0.2 (aka 12 minutes), max_count = 20, there are
+        55 rows in the table, 10 created/changed in the last 5 minutes, an
+        additional 12 created/changed between 5 and 10 minutes ago, the rest
+        created/changed more than 12 minutes ago.
+
+        - age based vacuum will leave the 22 rows created/changed in the last 12
+          minutes
+        - count based vacuum will wipe out another 12 rows. Not just 2,
+          otherwise each addition would immediately cause the maximum to be
+          reached again.
+        - the 10 rows that have been created/changed the last 5 minutes will NOT
+          be deleted
+        """
+        if self._transient_max_hours:
+            # Age-based expiration
+            self._transient_clean_rows_older_than(self._transient_max_hours * 60 * 60)
+
+        if self._transient_max_count:
+            # Count-based expiration
+            self._transient_clean_old_rows(self._transient_max_count)
+
+    def _transient_clean_old_rows(self, max_count):
+        # Check how many rows we have in the table
+        self._cr.execute(SQL("SELECT count(*) FROM %s", SQL.identifier(self._table)))
+        [count] = self._cr.fetchone()
+        if count > max_count:
+            self._transient_clean_rows_older_than(300)
+
+    def _transient_clean_rows_older_than(self, seconds):
+        # Never delete rows used in last 5 minutes
+        seconds = max(seconds, 300)
+        self._cr.execute(SQL(
+            "SELECT id FROM %s WHERE %s < %s %s",
+            SQL.identifier(self._table),
+            SQL("COALESCE(write_date, create_date, (now() AT TIME ZONE 'UTC'))::timestamp"),
+            SQL("(now() AT TIME ZONE 'UTC') - interval %s", f"{seconds} seconds"),
+            SQL(f"LIMIT { GC_UNLINK_LIMIT }"),
+        ))
+        ids = [x[0] for x in self._cr.fetchall()]
+        self.sudo().browse(ids).unlink()
+        if len(ids) >= GC_UNLINK_LIMIT:
+            self.env.ref('base.autovacuum_job')._trigger()
+
+
+odoo.models.BaseModel = PolyBase
+odoo.models.AbstractModel = PolyBase
+odoo.models.Model = PolyModel
+odoo.models.TransientModel = PolyTransientModel
 
