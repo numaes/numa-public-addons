@@ -230,6 +230,7 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
 
         def set(name, field):
             setattr(cls, name, field)
+            cls._fields[name] = field
             field.__set_name__(cls, name)
 
         for model_name, model_field in reversed(cls._depend_models.items()):
@@ -244,36 +245,52 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
 
             setattr(cls, f'compute_{model_field}', compute_method)
 
-            for subfield_name, subfield in pool[model_name]._fields.items():
-                if subfield_name not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date'] and \
-                   not hasattr(cls, subfield_name):
-                    subfield_type = subfield.type
-                    field_subclass = {
-                        'char': fields.Char,
-                        'integer': fields.Integer,
-                        'float': fields.Float,
-                        'monetary': fields.Monetary,
-                        'date': fields.Date,
-                        'datetime': fields.Datetime,
-                        'selection': fields.Selection,
-                        'many2one': fields.Many2one,
-                        'one2many': fields.One2many,
-                        'many2many': fields.Many2many,
-                        'text': fields.Text,
-                        'html': fields.Html,
-                        'binary': fields.Binary,
-                        'boolean': fields.Boolean,
-                    }.get(subfield_type)
-                    if field_subclass:
-                        new_field = field_subclass(
-                            string=subfield.string,
-                            related=f'{model_field}.{subfield_name}'
-                        )
-                    else:
-                        raise TypeError(_('Unsupported field type %s for field %s') %
-                                        (subfield_type, field_name))
+            visited_bases = OrderedSet()
+            def add_subfields(mm):
+                if mm in visited_bases:
+                    return
+                visited_bases.add(mm)
+                base_model = pool[mm]
+                related_bases = OrderedSet(base_model._depend_models.values())
+                for subfield_name, subfield in base_model._fields.items():
+                    subfield_plain_name = subfield_name.split('.')[-1]
+                    if subfield_plain_name not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date'] and \
+                       subfield_plain_name in base_model._fields and \
+                       not hasattr(cls, subfield_name) and \
+                       (not subfield.args.get('related') or subfield.args['related'].split('.')[0] not in related_bases):
+                        subfield_type = subfield.type
+                        field_subclass = {
+                            'char': fields.Char,
+                            'integer': fields.Integer,
+                            'float': fields.Float,
+                            'monetary': fields.Monetary,
+                            'date': fields.Date,
+                            'datetime': fields.Datetime,
+                            'selection': fields.Selection,
+                            'many2one': fields.Many2one,
+                            'one2many': fields.One2many,
+                            'many2many': fields.Many2many,
+                            'text': fields.Text,
+                            'html': fields.Html,
+                            'binary': fields.Binary,
+                            'boolean': fields.Boolean,
+                        }.get(subfield_type)
+                        if field_subclass:
+                            new_field = field_subclass(
+                                string=subfield.string,
+                                related=f'{model_field}.{subfield_plain_name}'
+                            )
+                        else:
+                            raise TypeError(_('Unsupported field type %s for field %s') %
+                                            (subfield_type, field_name))
 
-                    set(subfield_name, new_field)
+                        set(subfield_name, new_field)
+
+                if base_model._depend_models:
+                    for base_name in base_model._depend_models:
+                        add_subfields(base_name)
+
+            add_subfields(model_name)
 
     @api.model
     def _create(self, data_list):
@@ -297,26 +314,26 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
 
             for data_place in data_list:
                 data = data_place['stored']
+                outer_data = data.copy()
                 # First ensure all base records will be created
                 base_data = {}
                 for base in self._depend_models:
                     if base != 'ir.poly_base':
                         base_data.setdefault(base, {})
                         for field_name in data.keys():
-                            field_definition = self._fields[field_name].get_description(self.env, attributes=['related'])
-                            if field_definition.get('related'):
-                                related = field_definition['related']
-                                related_root = related.split('.')[0]
-                                if related_root in related2base:
+                            field_definition = self._fields[field_name]
+                            if field_definition.args.get('related'):
+                                related_root = field_definition.args['related'].split('.')[0]
+                                if related_root in related2base and related2base[related_root] == base:
                                     base_data[base][field_name] = data[field_name]
-                                    del data[field_name]
+                                    del outer_data[field_name]
                         base_model = self.env[base]
                         base_data[base]['id'] = new_poly.id
                         base_model.create(base_data[base])
 
                 # Lastly create the new records, all bases already created
-                data['id'] = new_poly.id
-                data_place['stored'] = data
+                outer_data['id'] = new_poly.id
+                data_place['stored'] = outer_data
                 new_records |= super()._create([data_place])
 
             return new_records
