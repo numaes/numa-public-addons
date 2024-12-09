@@ -1,5 +1,5 @@
 import logging
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict, deque
 
 from docutils.nodes import field_name
 
@@ -21,6 +21,8 @@ from odoo.tools import (
 )
 from odoo.tools.misc import LastOrderedSet, ReversedIterable, unquote
 
+from odoo.models import LOG_ACCESS_COLUMNS
+
 import typing
 if typing.TYPE_CHECKING:
     from collections.abc import Reversible
@@ -36,7 +38,14 @@ class PolyBase(models.Model):
     _description = 'Polymorphic Models Base'
     _rec_name = 'id'
 
-    concrete_model_id = fields.Many2one('res.models', 'Concrete Model', required=True)
+    concrete_model_id = fields.Many2one('ir.model', 'Concrete Model',
+                                        ondelete='cascade', required=True)
+
+    def as_concrete_model(self):
+        self.ensure_one()
+
+        concrete_model = self.env[self.concrete_model_id.model]
+        return concrete_model.browse(self.id).exists()
 
 
 class Base(models.AbstractModel):
@@ -64,88 +73,62 @@ class Base(models.AbstractModel):
       correspond to the last one (in the depends list order).
     """
     _depend_models = OrderedDict()
+    _depends_children = OrderedSet()
 
     _checked_id = False
 
     def __init__(self, name, bases, attrs):
         super().__init__(name, bases, attrs)
 
-        if not self._abstract and self._depend_models and self._name not in self._depend_models.keys():
+        meta = type(self)
+        if not meta._abstract and meta._depend_models:
             # this class defines a model: add magic fields
-            def set(name, field):
-                setattr(self, name, field)
-                field.__set_name__(self, name)
+            def _set(attr_name, field):
+                setattr(meta, attr_name, field)
+                field.__set_name__(meta, name)
 
             # Create a poly_base_id many2one
-            set(
-                'poly_base_id',
-                fields.Many2one(
+            _set('poly_base_id',
+                 fields.Many2one(
                     'ir.poly_base',
                     string='Poly base',
                     compute='compute_poly_base_id()',
                     automatic=True,
                     readonly=True
-                )
+                 )
             )
 
             # Create a concrete_model_id poly_base_id many2one
-            set(
-                'concrete_model_id',
-                fields.Many2one(
+            _set('concrete_model_id',
+                 fields.Many2one(
                     'ir.model',
                     string='Concrete model',
                     related='poly_base_id.concrete_model_id',
                     automatic=True,
                     readonly=True
-                )
+                 )
             )
 
-            if attrs.get('_log_access', self._auto):
-                # Redefine log access on ir.poly_bas
-                set('create_uid',
-                    fields.Many2one('res.users', string='Created by',
-                                    related='poly_base_id.create_uid',
-                                    automatic=True, readonly=True))
-                set('create_date',
-                    fields.Datetime(string='Created on',
-                                    related='poly_base_id.create_date',
-                                    automatic=True, readonly=True))
-                set('write_uid',
-                    fields.Many2one('res.users', string='Last Updated by',
-                                    related='poly_base_id.write_uid',
-                                    automatic=True, readonly=True))
-                set('write_date',
-                    fields.Datetime(string='Last Updated on',
-                                    related='poly_base_id.write_uid',
-                                    automatic=True, readonly=True))
+            _set('create_uid',
+                 fields.Many2one('res.users', string='Created by',
+                                 related='poly_base_id.create_uid',
+                                 automatic=True, readonly=True))
+            _set('create_date',
+                 fields.Datetime(string='Created on',
+                                 related='poly_base_id.create_date',
+                                 automatic=True, readonly=True))
+            _set('write_uid',
+                 fields.Many2one('res.users', string='Last Updated by',
+                                 related='poly_base_id.write_uid',
+                                 automatic=True, readonly=True))
+            _set('write_date',
+                 fields.Datetime(string='Last Updated on',
+                                 related='poly_base_id.write_uid',
+                                 automatic=True, readonly=True))
 
     def compute_poly_base_id(self):
         for instance in self:
             instance.poly_base_id = instance.id
-
-    def _get_depends_list(self):
-        """
-        Build a dependant list, ordered by inheritance order
-        :return: a List of model names, ordered by precedence, last is the first to consider
-        """
-        self.ensure_one()
-
-        if self._name != 'base':
-            return super()._get_depends_list() + self._depend_models.keys()
-        else:
-            return []
-
-    def _get_depends_fields(self):
-        """
-        Build a dependant mapping dictionary to get the Many2one field names of the bases
-        :return: a dict of field names, to be accesed by model name
-        """
-        self.ensure_one()
-
-        if self._name != 'base':
-            return super()._get_depends_fields().update(self._depend_models)
-        else:
-            return {}
 
     #
     # Goal: try to apply inheritance at the instantiation level and
@@ -160,41 +143,39 @@ class Base(models.AbstractModel):
         the Python sense) from all classes that define the model, and possibly
         other registry classes.
         """
-        model_class_without_depends = super()._build_model(cls, pool, cr)
+        model_class_without_depends = super()._build_model(pool, cr)
 
-        model_class_without_depends._depends_module = {}
-        model_class_without_depends._depends_children = OrderedSet()
-        check_parent = model_class_without_depends._build_model_check_parent
+        if hasattr(cls, '_depend_models'):
+            model_class_without_depends._depends_children = OrderedSet()
 
-        # all models except 'base' implicitly depend from 'ir.poly_base'
-        name = cls._name
-        parents = list(cls._depend_models.keys())
-        if name != 'ir.poly_base':
-            parents.append('ir.poly_base')
+            # all models except 'base' implicitly depend from 'ir.poly_base'
+            name = cls._name
+            parents = list(cls._depend_models.keys())
+            if name != 'ir.poly_base':
+                parents.append('ir.poly_base')
 
-        # determine all the classes the model should inherit from
-        bases = LastOrderedSet([cls])
-        for parent in parents:
-            if parent not in pool:
-                raise TypeError("Model %r depends from non-existing model %r." % (name, parent))
-            parent_class = pool[parent]
-            if parent == name:
-                for base in parent_class.__depends_base_classes:
-                    bases.add(base)
-            else:
-                if parent_class._name != 'ir.poly_base' and not parent_class._depend_models:
-                    raise TypeError("Model %r depends from non-polymorphic model %r. Only polymorphic is allowed" %
-                                    (name, parent))
-                bases.add(parent_class)
-                model_class_without_depends._depends_module[parent] = cls._module
-                parent_class._depends_children.add(name)
+            # determine all the classes the model should inherit from
+            bases = LastOrderedSet([cls])
+            for parent in parents:
+                if parent not in pool:
+                    raise TypeError("Model %r depends from non-existing model %r." % (name, parent))
+                parent_class = pool[parent]
+                if parent == name:
+                    for base in parent_class.__depends_base_classes:
+                        bases.add(base)
+                else:
+                    if parent_class._name != 'ir.poly_base' and not parent_class._depend_models:
+                        raise TypeError("Model %r depends from non-polymorphic model %r. Only polymorphic is allowed" %
+                                        (name, parent))
+                    bases.add(parent_class)
+                    parent_class._depends_children.add(name)
 
-        model_class_without_depends.__depends_base_classes = tuple(bases)
+            model_class_without_depends.__depends_base_classes = tuple(bases)
 
-        # determine the attributes of the model's class
-        model_class_without_depends._build_dependant_model_attributes(pool)
+            # determine the attributes of the model's class
+            model_class_without_depends._build_dependant_model_attributes(pool)
 
-        pool[name] = model_class_without_depends
+            pool[name] = model_class_without_depends
 
         return model_class_without_depends
 
@@ -205,13 +186,16 @@ class Base(models.AbstractModel):
         def get_next_id(base_name) -> int:
             base_model = self.env[base_name]
             if base_model._table:
-                self.env.cr.execute(f'''SELECT currval(pg_get_serial_sequence('{base_name}', 'id'))''')[0]
+                self.env.cr.execute(f'''
+                    SELECT currval(pg_get_serial_sequence('{base_model._table}', 'id'))
+                ''')
                 next_id = self.env.cr.fetchall()[0][0]
                 return next_id
             else:
                 return 1
 
-        if self._depend_models:
+        # if self._depend_models:
+        if False:
             # Ensure no polymorphic models has existing records
             # with IDs clashing with newly created polymorphic records
             poly_base_id = get_next_id('ir.poly_base')
@@ -282,7 +266,7 @@ class Base(models.AbstractModel):
     @api.model
     def _create(self, data_list):
         """ Create records from the stored field values in ``data_list``. """
-        """ TODO Investigate if access rules shold be applied base by base also """
+        """ TODO Investigate if access rules should be applied base by base also """
 
         if not self._depend_models:
             # Normal Odoo ORM model, just process it the normal way
@@ -296,10 +280,11 @@ class Base(models.AbstractModel):
             new_records = self
 
             new_poly = self.env['ir.poly_base'].create(dict(
-                concrete_model_id=self.env['ir.model']._get(self._name).id
+                    concrete_model_id=self.env['ir.model']._get_id(self._name)
             ))
 
-            for data in data_list:
+            for data_place in data_list:
+                data = data_place['stored']
                 # First ensure all base records will be created
                 base_data = {}
                 for base in self._depend_models:
@@ -312,14 +297,62 @@ class Base(models.AbstractModel):
                                 base_data[base][field_name] = data[field_name]
                                 del data[field_name]
                     base_model = self.env[base]
-                    base_values = base_model._prepare_create_values(base_data[base])
-                    base_values['id'] = new_poly.id
-                    base_model._create(base_values)
+                    base_data[base]['id'] = new_poly.id
+                    base_model.create(base_data[base])
 
                 # Lastly create the new records, all bases already created
-                new_records |= super()._create([data])[0]
+                data['id'] = new_poly.id
+                new_records |= super().create(data)
 
             return new_records
+
+    def _prepare_create_values(self, vals_list):
+        """ Modified version from Odoo. Do NOT FILTER OUT id!"""
+        """ Clean up and complete the given create values, and return a list of
+        new vals containing:
+
+        * default values,
+        * discarded forbidden values (magic fields),
+        * precomputed fields.
+
+        :param list vals_list: List of create values
+        :returns: new list of completed create values
+        :rtype: dict
+        """
+        #bad_names = ['id', 'parent_path']
+        bad_names = ['parent_path']
+        if self._log_access:
+            # the superuser can set log_access fields while loading registry
+            if not(self.env.uid == SUPERUSER_ID and not self.pool.ready):
+                bad_names.extend(LOG_ACCESS_COLUMNS)
+
+        # also discard precomputed readonly fields (to force their computation)
+        bad_names.extend(
+            fname
+            for fname, field in self._fields.items()
+            if field.precompute and field.readonly
+        )
+
+        result_vals_list = []
+        for vals in vals_list:
+            # add default values
+            vals = self._add_missing_default_values(vals)
+
+            # add magic fields
+            for fname in bad_names:
+                vals.pop(fname, None)
+            if self._log_access:
+                vals.setdefault('create_uid', self.env.uid)
+                vals.setdefault('create_date', self.env.cr.now())
+                vals.setdefault('write_uid', self.env.uid)
+                vals.setdefault('write_date', self.env.cr.now())
+
+            result_vals_list.append(vals)
+
+        # add precomputed fields
+        self._add_precomputed_values(result_vals_list)
+
+        return result_vals_list
 
     def unlink(self):
         """ Unlink records """

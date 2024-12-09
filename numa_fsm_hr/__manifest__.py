@@ -16,7 +16,7 @@
     'data': [
         "security/security.xml",
         "security/ir.model.access.csv",
-        "views/poly_views.xml",
+        "views/poly_test_views.xml",
         "views/menu_views.xml",
     ],
     'installable': True,

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+
+        <record id="test_wizard_form_view" model="ir.ui.view">
+            <field name="name">Test wizard form</field>
+            <field name="model">test.test_wizard</field>
+            <field name="arch" type="xml">
+                <form string="Polymorphic test">
+                    <header>
+
+                    </header>
+                    <sheet>
+                        <group>
+                            <button name="action_test1" type="object"
+                                    string="Test 1" />
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="test_wizard_action" model="ir.actions.act_window">
+            <field name="name">Polymorphic test</field>
+            <field name="type">ir.actions.act_window</field>
+            <field name="res_model">test.test_wizard</field>
+            <field name="view_mode">form</field>
+        </record>
+
+    </data>
+</odoo>
