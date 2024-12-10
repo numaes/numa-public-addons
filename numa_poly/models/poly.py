@@ -53,61 +53,7 @@ class IrPolyBase(models.Model):
         return concrete_model.browse(self.id).exists()
 
 
-class PolyMetaModel(MetaModel):
-    _register = False
-
-    def __init__(self, name, bases, attrs):
-        super().__init__(name, bases, attrs)
-
-        if self._register and not self._abstract and self._depend_models:
-            _logger.info(f'Init of model {name}, with bases {bases} and attrs {attrs}')
-
-            # this class defines a model: add magic fields
-            def _set(attr_name, field):
-                setattr(self, attr_name, field)
-                field.__set_name__(self, name)
-
-            # Create a poly_base_id many2one
-            _set('poly_base_id',
-                 fields.Many2one(
-                    'ir.poly_base',
-                    string='Poly base',
-                    automatic=True,
-                    readonly=True
-                 )
-            )
-
-            # Create a concrete_model_id poly_base_id many2one
-            _set('concrete_model_id',
-                 fields.Many2one(
-                    'ir.model',
-                    string='Concrete model',
-                    related='poly_base_id.concrete_model_id',
-                    automatic=True,
-                    readonly=True
-                 )
-            )
-
-
-            # _set('create_uid',
-            #      fields.Many2one('res.users', string='Created by',
-            #                      related='poly_base_id.create_uid',
-            #                      automatic=False, readonly=True))
-            # _set('create_date',
-            #      fields.Datetime(string='Created on',
-            #                      related='poly_base_id.create_date',
-            #                      automatic=False, readonly=True))
-            # _set('write_uid',
-            #      fields.Many2one('res.users', string='Last Updated by',
-            #                      related='poly_base_id.write_uid',
-            #                      automatic=False, readonly=True))
-            # _set('write_date',
-            #      fields.Datetime(string='Last Updated on',
-            #                      related='poly_base_id.write_uid',
-            #                      automatic=False, readonly=True))
-
-
-class PolyBase(BaseModel, metaclass=PolyMetaModel):
+class PolyBase(BaseModel):
     _register = False
 
 
@@ -231,78 +177,134 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
     @classmethod
     def _build_dependant_model_attributes(self):
         """ Initialize base model attributes. """
-
-        def set(name, field):
-            _logger.info(f'Agregando campo {name}, de tipo {field} a {self._name}')
+        def set(name, field, related_base=None):
+            _logger.info(f'Agregando campo {name}, de tipo {field} a {self._name}'
+                         f' (base: {related_base or "N/A"})')
             setattr(self, name, field)
             self._fields[name] = field
             field._direct = True
             field.prepare_setup()
             field.__set_name__(self, name)
 
-        for model_name, model_field in reversed(self._depend_models.items()):
-            set(model_field,
-                fields.Many2one(comodel_name=model_name, string=model_name,
-                                automatic=True, readonly=True)
-            )
+        # Create a poly_base_id many2one
+        set('poly_base_id',
+            fields.Many2one(
+                'ir.poly_base',
+                string='Poly base',
+                automatic=True,
+                readonly=True
+             )
+        )
 
-            visited_bases = OrderedSet()
+        # Create a concrete_model_id poly_base_id many2one
+        set('concrete_model_id',
+            fields.Many2one(
+                'ir.model',
+                string='Concrete model',
+                related='poly_base_id.concrete_model_id',
+                automatic=True,
+                readonly=True
+             )
+        )
+
+        # set('create_uid',
+        #      fields.Many2one('res.users', string='Created by',
+        #                      related='poly_base_id.create_uid',
+        #                      automatic=False, readonly=True))
+        # set('create_date',
+        #      fields.Datetime(string='Created on',
+        #                      related='poly_base_id.create_date',
+        #                      automatic=False, readonly=True))
+        # set('write_uid',
+        #      fields.Many2one('res.users', string='Last Updated by',
+        #                      related='poly_base_id.write_uid',
+        #                      automatic=False, readonly=True))
+        # set('write_date',
+        #      fields.Datetime(string='Last Updated on',
+        #                      related='poly_base_id.write_uid',
+        #                      automatic=False, readonly=True))
+
+        related_fields = {}
+        for model_name, model_field in reversed(self._depend_models.items()):
             def add_subfields(mm):
-                if mm in visited_bases:
+                if mm == 'ir.poly_base':
                     return
-                visited_bases.add(mm)
+
                 base_model = self.pool[mm]
-                related_bases = OrderedSet(base_model._depend_models.values())
                 for subfield_name, subfield in base_model._fields.items():
                     subfield_plain_name = subfield_name.split('.')[-1]
-                    if subfield_plain_name not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date'] and \
-                       subfield_plain_name in base_model._fields and \
-                       not hasattr(self, subfield_name) and \
-                       (not subfield.related or subfield.related.split('.')[0] not in related_bases):
-                        subfield_type = subfield.type
-                        field_subclass = {
-                            'char': fields.Char,
-                            'integer': fields.Integer,
-                            'float': fields.Float,
-                            'monetary': fields.Monetary,
-                            'date': fields.Date,
-                            'datetime': fields.Datetime,
-                            'selection': fields.Selection,
-                            'many2one': fields.Many2one,
-                            'one2many': fields.One2many,
-                            'many2many': fields.Many2many,
-                            'text': fields.Text,
-                            'html': fields.Html,
-                            'binary': fields.Binary,
-                            'boolean': fields.Boolean,
-                        }.get(subfield_type)
+                    if subfield_plain_name not in self._fields and \
+                       subfield_plain_name not in related_fields and \
+                       not subfield.related:
+                        related_fields[subfield_plain_name] = (
+                            mm, subfield_plain_name,
+                            subfield.type, subfield.comodel_name, subfield.string
+                        )
 
-                        if field_subclass and \
-                           subfield.type in ['many2one', 'many2many', 'one2many']:
-                            new_field = field_subclass(
-                                comodel_name = subfield.args['comodel_name'],
-                                string=subfield_name,
-                                related=f'{model_field}.{subfield_plain_name}',
-                                automatic=True,
-                                recursive=True,
-                            )
-                        elif field_subclass:
-                                new_field = field_subclass(
-                                    string=subfield_name,
-                                    related=f'{model_field}.{subfield_plain_name}',
-                                    automatic=True,
-                                )
-                        else:
-                            raise TypeError(_('Unsupported field type %s for field %s') %
-                                            (subfield_type, field_name))
-
-                        set(subfield_name, new_field)
-
-                if base_model._depend_models:
-                    for base_name in base_model._depend_models:
-                        add_subfields(base_name)
+                for sub_base in base_model._depend_models.keys():
+                    add_subfields(sub_base)
 
             add_subfields(model_name)
+
+        related_bases = {}
+        related_counter = 1
+        for new_field_name in related_fields.keys():
+            model, field_name, field_type, comodel, description = related_fields[new_field_name]
+            if model not in related_bases:
+                if model in self._depend_models:
+                    model_field = self._depend_models[model]
+                else:
+                    model_field = f'related_{related_counter}'
+                    related_counter += 1
+                related_bases[model] = model_field
+                set(model_field,
+                    fields.Many2one(comodel_name=model, string=model,
+                                    automatic=True, readonly=True)
+                )
+
+            field_subclass = {
+                'char': fields.Char,
+                'integer': fields.Integer,
+                'float': fields.Float,
+                'monetary': fields.Monetary,
+                'date': fields.Date,
+                'datetime': fields.Datetime,
+                'selection': fields.Selection,
+                'many2one': fields.Many2one,
+                'one2many': fields.One2many,
+                'many2many': fields.Many2many,
+                'text': fields.Text,
+                'html': fields.Html,
+                'binary': fields.Binary,
+                'boolean': fields.Boolean,
+            }.get(field_type)
+
+            if field_type in ['many2one', 'many2many', 'one2many']:
+                new_field = field_subclass(
+                    comodel_name=comodel,
+                    string=description,
+                    related=f'{related_bases[model]}.{field_name}',
+                    automatic=True,
+                    recursive=True,
+                )
+            elif field_subclass:
+                new_field = field_subclass(
+                    string=description,
+                    related=f'{related_bases[model]}.{field_name}',
+                    automatic=True,
+                )
+            else:
+                raise TypeError(_('Unsupported field type %s for field %s') %
+                                (field_type, field_name))
+
+            set(field_name, new_field, related_bases[model])
+
+        for model, model_field in self._depend_models.items():
+            if model not in related_bases:
+                set(model_field,
+                    fields.Many2one(comodel_name=model, string=model,
+                                    automatic=True, readonly=True)
+                )
 
     @api.model_create_multi
     def create(self, data_list: list[ValuesType]) -> Self:
@@ -320,7 +322,7 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
 
             new_records = self
 
-            depend_fields = []
+            depend_fields = [base_field for base_field in self._depend_models.values()]
             all_created = OrderedSet()
 
             for data in data_list:
@@ -337,10 +339,13 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
                     new_id = new_poly.id
 
                 # First ensure all base records will be created
+                created_models = OrderedSet()
+                created_models.add('ir.poly_base')
                 base_data = {}
                 for base, base_field in self._depend_models.items():
-                    depend_fields.append(base_field)
-                    if base != 'ir.poly_base':
+                    if base not in created_models:
+                        created_models.add(base)
+
                         base_data.setdefault(base, {})
                         for field_name in data.keys():
                             field_definition = self._fields[field_name]
@@ -349,13 +354,20 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
                                 if related_root in related2base and related2base[related_root] == base:
                                     base_data[base][field_name] = data[field_name]
                                     del outer_data[field_name]
+
                         base_model = self.env[base]
+                        if base_model.search([('id', '=', new_id)], limit=1):
+                            # Already created by other base
+                            continue
+
                         base_data[base]['id'] = new_id
                         _logger.info(f'Creando {base_model._name} con {base_data[base]} para id {new_id}')
                         all_created.add(base_model.create(base_data[base]))
 
                 # Lastly create the new records, all bases already created
                 outer_data['id'] = new_id
+                outer_data['poly_base_id'] = new_id
+
                 for base_field in depend_fields:
                     outer_data[base_field] = new_id
 
