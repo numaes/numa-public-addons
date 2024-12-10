@@ -1,6 +1,8 @@
 import logging
 from collections import OrderedDict, defaultdict, deque
 
+from operator import attrgetter, itemgetter
+
 from docutils.nodes import field_name
 
 import odoo
@@ -22,13 +24,15 @@ from odoo.tools import (
 )
 from odoo.tools.misc import LastOrderedSet, ReversedIterable, unquote
 
-from odoo.models import LOG_ACCESS_COLUMNS
+from odoo.models import LOG_ACCESS_COLUMNS, INSERT_BATCH_SIZE, UPDATE_BATCH_SIZE, SQL_DEFAULT, GC_UNLINK_LIMIT
+
 
 import typing
 if typing.TYPE_CHECKING:
     from collections.abc import Reversible
     from odoo.modules.registry import Registry
-    from odoo.api import Self, ValuesType, IdType
+
+from odoo.api import Self, ValuesType, IdType
 
 
 _logger = logging.getLogger(__name__)
@@ -68,7 +72,6 @@ class PolyMetaModel(MetaModel):
                  fields.Many2one(
                     'ir.poly_base',
                     string='Poly base',
-                    compute='compute_poly_base_id()',
                     automatic=True,
                     readonly=True
                  )
@@ -85,22 +88,23 @@ class PolyMetaModel(MetaModel):
                  )
             )
 
-            _set('create_uid',
-                 fields.Many2one('res.users', string='Created by',
-                                 related='poly_base_id.create_uid',
-                                 automatic=True, readonly=True))
-            _set('create_date',
-                 fields.Datetime(string='Created on',
-                                 related='poly_base_id.create_date',
-                                 automatic=True, readonly=True))
-            _set('write_uid',
-                 fields.Many2one('res.users', string='Last Updated by',
-                                 related='poly_base_id.write_uid',
-                                 automatic=True, readonly=True))
-            _set('write_date',
-                 fields.Datetime(string='Last Updated on',
-                                 related='poly_base_id.write_uid',
-                                 automatic=True, readonly=True))
+
+            # _set('create_uid',
+            #      fields.Many2one('res.users', string='Created by',
+            #                      related='poly_base_id.create_uid',
+            #                      automatic=False, readonly=True))
+            # _set('create_date',
+            #      fields.Datetime(string='Created on',
+            #                      related='poly_base_id.create_date',
+            #                      automatic=False, readonly=True))
+            # _set('write_uid',
+            #      fields.Many2one('res.users', string='Last Updated by',
+            #                      related='poly_base_id.write_uid',
+            #                      automatic=False, readonly=True))
+            # _set('write_date',
+            #      fields.Datetime(string='Last Updated on',
+            #                      related='poly_base_id.write_uid',
+            #                      automatic=False, readonly=True))
 
 
 class PolyBase(BaseModel, metaclass=PolyMetaModel):
@@ -195,7 +199,7 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
         super()._setup_base()
 
         if self._depend_models:
-            self._build_dependant_model_attributes(self.env)
+            self._build_dependant_model_attributes()
 
         def get_next_id(base_name) -> int:
             base_model = self.env[base_name]
@@ -225,39 +229,36 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
                         ''')
 
     @classmethod
-    def _build_dependant_model_attributes(cls, pool):
+    def _build_dependant_model_attributes(self):
         """ Initialize base model attributes. """
 
         def set(name, field):
-            setattr(cls, name, field)
-            cls._fields[name] = field
-            field.__set_name__(cls, name)
+            _logger.info(f'Agregando campo {name}, de tipo {field} a {self._name}')
+            setattr(self, name, field)
+            self._fields[name] = field
+            field._direct = True
+            field.prepare_setup()
+            field.__set_name__(self, name)
 
-        for model_name, model_field in reversed(cls._depend_models.items()):
+        for model_name, model_field in reversed(self._depend_models.items()):
             set(model_field,
-                fields.Many2one(model_name, string=model_name,
-                                compute=f'compute_{model_field}',
+                fields.Many2one(comodel_name=model_name, string=model_name,
                                 automatic=True, readonly=True)
             )
-            def compute_method(self):
-                for instance in self:
-                    instance[model_field] = instance.id
-
-            setattr(cls, f'compute_{model_field}', compute_method)
 
             visited_bases = OrderedSet()
             def add_subfields(mm):
                 if mm in visited_bases:
                     return
                 visited_bases.add(mm)
-                base_model = pool[mm]
+                base_model = self.pool[mm]
                 related_bases = OrderedSet(base_model._depend_models.values())
                 for subfield_name, subfield in base_model._fields.items():
                     subfield_plain_name = subfield_name.split('.')[-1]
                     if subfield_plain_name not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date'] and \
                        subfield_plain_name in base_model._fields and \
-                       not hasattr(cls, subfield_name) and \
-                       (not subfield.args.get('related') or subfield.args['related'].split('.')[0] not in related_bases):
+                       not hasattr(self, subfield_name) and \
+                       (not subfield.related or subfield.related.split('.')[0] not in related_bases):
                         subfield_type = subfield.type
                         field_subclass = {
                             'char': fields.Char,
@@ -275,11 +276,22 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
                             'binary': fields.Binary,
                             'boolean': fields.Boolean,
                         }.get(subfield_type)
-                        if field_subclass:
+
+                        if field_subclass and \
+                           subfield.type in ['many2one', 'many2many', 'one2many']:
                             new_field = field_subclass(
-                                string=subfield.string,
-                                related=f'{model_field}.{subfield_plain_name}'
+                                comodel_name = subfield.args['comodel_name'],
+                                string=subfield_name,
+                                related=f'{model_field}.{subfield_plain_name}',
+                                automatic=True,
+                                recursive=True,
                             )
+                        elif field_subclass:
+                                new_field = field_subclass(
+                                    string=subfield_name,
+                                    related=f'{model_field}.{subfield_plain_name}',
+                                    automatic=True,
+                                )
                         else:
                             raise TypeError(_('Unsupported field type %s for field %s') %
                                             (subfield_type, field_name))
@@ -292,14 +304,14 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
 
             add_subfields(model_name)
 
-    @api.model
-    def _create(self, data_list):
+    @api.model_create_multi
+    def create(self, data_list: list[ValuesType]) -> Self:
         """ Create records from the stored field values in ``data_list``. """
         """ TODO Investigate if access rules should be applied base by base also """
 
         if not self._depend_models:
             # Normal Odoo ORM model, just process it the normal way
-            return super()._create(data_list)
+            return super().create(data_list)
         else:
             # It is a polymorphic create.
             related2base = {}
@@ -308,16 +320,26 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
 
             new_records = self
 
-            new_poly = self.env['ir.poly_base'].create(dict(
-                    concrete_model_id=self.env['ir.model']._get_id(self._name)
-            ))
+            depend_fields = []
+            all_created = OrderedSet()
 
-            for data_place in data_list:
-                data = data_place['stored']
+            for data in data_list:
                 outer_data = data.copy()
+
+                if 'id' in data:
+                    new_id = data['id']
+                else:
+                    new_poly = self.env['ir.poly_base'].create(dict(
+                        concrete_model_id=self.env['ir.model']._get_id(self._name)
+                    ))
+                    _logger.info(f'Creando poly base para {self._name} con {data}, id = {new_poly.id}')
+                    all_created.add(new_poly)
+                    new_id = new_poly.id
+
                 # First ensure all base records will be created
                 base_data = {}
-                for base in self._depend_models:
+                for base, base_field in self._depend_models.items():
+                    depend_fields.append(base_field)
                     if base != 'ir.poly_base':
                         base_data.setdefault(base, {})
                         for field_name in data.keys():
@@ -328,13 +350,19 @@ class PolyBase(BaseModel, metaclass=PolyMetaModel):
                                     base_data[base][field_name] = data[field_name]
                                     del outer_data[field_name]
                         base_model = self.env[base]
-                        base_data[base]['id'] = new_poly.id
-                        base_model.create(base_data[base])
+                        base_data[base]['id'] = new_id
+                        _logger.info(f'Creando {base_model._name} con {base_data[base]} para id {new_id}')
+                        all_created.add(base_model.create(base_data[base]))
 
                 # Lastly create the new records, all bases already created
-                outer_data['id'] = new_poly.id
-                data_place['stored'] = outer_data
-                new_records |= super()._create([data_place])
+                outer_data['id'] = new_id
+                for base_field in depend_fields:
+                    outer_data[base_field] = new_id
+
+                _logger.info(f'Creando {self._name} con {outer_data} para id {new_id}')
+                new_record = super().create([outer_data])
+                all_created.add(new_record)
+                new_records |= new_record
 
             return new_records
 

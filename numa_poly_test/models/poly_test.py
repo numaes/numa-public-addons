@@ -79,15 +79,12 @@ class TestWizard(models.TransientModel):
         assert t3_1.a4 == 'A4'
 
         t2_2 = t2_model.create({'a1': 'B1', 'a2': 'B2', 'a3': 'B3'})
-
-        return
-
         assert t2_2.a1 == 'B1'
         assert t2_2.a2 == 'B2'
         assert t2_2.a3 == 'B3'
-        assert t2_2.test1_id == t2_2.id
-        assert t2_2.concrete_model.name == 'test.test2'
-        assert t2_2.test1_id.concrete_model.name == 'test.test1'
+        assert t2_2.test1_id.id == t2_2.id
+        assert t2_2._name == 'test.test2'
+        assert t2_2.test1_id.name == 'test.test1'
 
         t4_1 = t4_model.create({'a1': 'C1', 'a2': 'C2', 'a3': 'C3', 'a4': 'C4'})
         assert t4_1.a1 == 'C1'
@@ -96,10 +93,10 @@ class TestWizard(models.TransientModel):
         assert t4_1.test1_id.id == t4_1.id
         assert t4_1.test2_id.id == t4_1.id
         assert t4_1.test3_id.id == t4_1.id
-        assert t4_1.concrete_model.name == 'test.test4'
-        assert t4_1.test1_id.concrete_model.name == 'test.test1'
-        assert t4_1.test2_id.concrete_model.name == 'test.test2'
-        assert t4_1.test3_id.concrete_model.name == 'test.test3'
+        assert t4_1._name == 'test.test4'
+        assert t4_1.test1_id._name == 'test.test1'
+        assert t4_1.test2_id._name == 'test.test2'
+        assert t4_1.test3_id._name == 'test.test3'
 
         t4_1.a1 = 'D1'
         t4_1.a2 = 'D2'

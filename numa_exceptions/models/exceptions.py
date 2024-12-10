@@ -234,6 +234,7 @@ class IrHttp(models.AbstractModel):
         try:
             return super(IrHttp, cls)._dispatch(endpoint)
         except Exception as e:
+            _logger.exception(e)
             ename = register_exception(
                 'Endpoint %s' % request.httprequest,
                 'IrHttp.dispatch',
