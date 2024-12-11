@@ -53,6 +53,11 @@ class IrPolyBase(models.Model):
         return concrete_model.browse(self.id).exists()
 
 
+class PolyReference(fields.Many2one):
+    auto_join = True
+    store = False
+
+
 class PolyBase(BaseModel):
     _register = False
 
@@ -188,7 +193,7 @@ class PolyBase(BaseModel):
 
         # Create a poly_base_id many2one
         set('poly_base_id',
-            fields.Many2one(
+            PolyReference(
                 'ir.poly_base',
                 string='Poly base',
                 automatic=True,
@@ -262,8 +267,8 @@ class PolyBase(BaseModel):
                     related_counter += 1
                 related_bases[model] = model_field
                 set(model_field,
-                    fields.Many2one(comodel_name=model, string=model,
-                                    automatic=True, readonly=True)
+                    PolyReference(comodel_name=model, string=model,
+                                  automatic=True, readonly=True)
                 )
 
             field_subclass = {
