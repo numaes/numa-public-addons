@@ -65,6 +65,10 @@ class TestWizard(models.TransientModel):
         t3_model = self.env['test.test3']
         t4_model = self.env['test.test4']
 
+        t1s = t1_model.search([]).unlink()
+        t2s = t2_model.search([]).unlink()
+        t3s = t3_model.search([]).unlink()
+        t4s = t4_model.search([]).unlink()
 
         t1_1 = t1_model.create({'a1': 'A1', 'a2': 'A2'})
         assert t1_1.a1 == 'A1'
@@ -87,7 +91,6 @@ class TestWizard(models.TransientModel):
         assert t2_2.test1_id._name == 'test.test1'
 
         t4_1 = t4_model.create({'a1': 'C1', 'a2': 'C2', 'a3': 'C3'})
-        return
         assert t4_1.a1 == 'C1'
         assert t4_1.a2 == 'C2'
         assert t4_1.a3 == 'C3'
@@ -112,17 +115,19 @@ class TestWizard(models.TransientModel):
         t3s = t3_model.search([])
         t4s = t4_model.search([])
 
-        assert len(t1s) == 3
-        assert len(t2s) == 2
-        assert len(t3s) == 1
+        assert len(t1s) == 5
+        assert len(t2s) == 3
+        assert len(t3s) == 2
         assert len(t4s) == 1
 
         poly_base_model = self.env['ir.poly_base']
         poly_base_2 = poly_base_model.browse(t4_1.id)
 
-        assert poly_base_2._name == 'test.test4'
+        assert poly_base_2._name == 'ir.poly_base'
         t4_2 = poly_base_2.as_concrete_model()
         assert t4_2._name == 'test.test4'
+
+
 
 
 

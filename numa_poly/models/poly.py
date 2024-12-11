@@ -250,6 +250,10 @@ class PolyBase(BaseModel):
         related_counter = 1
         for new_field_name in related_fields.keys():
             model, field_name, field_type, comodel, description = related_fields[new_field_name]
+
+            if field_name in self._fields:
+                continue
+
             if model not in related_bases:
                 if model in self._depend_models:
                     model_field = self._depend_models[model]
@@ -349,9 +353,10 @@ class PolyBase(BaseModel):
                         base_data.setdefault(base, {})
                         for field_name in data.keys():
                             field_definition = self._fields[field_name]
-                            if field_definition.args.get('related'):
-                                related_root = field_definition.args['related'].split('.')[0]
-                                if related_root in related2base and related2base[related_root] == base:
+                            if field_definition.related:
+                                related_root = field_definition.related.split('.')[0]
+                                if field_name in outer_data and \
+                                   (related_root in related2base or related_root.startswith('related_')):
                                     base_data[base][field_name] = data[field_name]
                                     del outer_data[field_name]
 
@@ -370,6 +375,11 @@ class PolyBase(BaseModel):
 
                 for base_field in depend_fields:
                     outer_data[base_field] = new_id
+
+                for field_name, field_definition in self._fields.items():
+                    plain_name = field_name.split('.')[-1]
+                    if plain_name.startswith('related_'):
+                        outer_data[plain_name] = new_id
 
                 _logger.info(f'Creando {self._name} con {outer_data} para id {new_id}')
                 new_record = super().create([outer_data])
