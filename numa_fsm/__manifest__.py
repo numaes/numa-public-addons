@@ -15,7 +15,7 @@
     'data': [
         "security/security.xml",
         "security/ir.model.access.csv",
-        "views/poly_test_views.xml",
+        "views/fsm_views.xml",
         "views/menu_views.xml",
         "views/fsm_templates.xml",
         "data/fsm_data.xml",
