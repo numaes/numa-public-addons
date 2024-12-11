@@ -178,7 +178,7 @@ class PolyBase(BaseModel):
     def _build_dependant_model_attributes(self):
         """ Initialize base model attributes. """
         def set(name, field, related_base=None):
-            _logger.info(f'Agregando campo {name}, de tipo {field} a {self._name}'
+            _logger.info(f'Agregando campo {name} a {self._name}'
                          f' (base: {related_base or "N/A"})')
             setattr(self, name, field)
             self._fields[name] = field
