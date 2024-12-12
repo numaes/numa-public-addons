@@ -428,6 +428,22 @@ class PolyExpression(expression):
                 for elem in domain_combine_anies(domain, model):
                     push(elem, model, alias)
 
+            elif len(path) > 1:
+                # Non-stored field should provide an implementation of search.
+                if not field.search:
+                    # field does not support search!
+                    _logger.error("Non-stored field %s cannot be searched.", field, exc_info=True)
+                    if _logger.isEnabledFor(logging.DEBUG):
+                        _logger.debug(''.join(traceback.format_stack()))
+                    # Ignore it: generate a dummy leaf.
+                    domain = []
+                else:
+                    right = comodel._search([(path[1], operator, right)])
+                    domain = [('id', 'in', right)]
+
+                for elem in domain_combine_anies(domain, model):
+                    push(elem, model, alias)
+
             # -------------------------------------------------
             # RELATIONAL FIELDS
             # -------------------------------------------------
