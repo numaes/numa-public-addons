@@ -349,7 +349,8 @@ class PolyExpression(expression):
             #    as after transforming the column, it will go through this loop once again
             # ----------------------------------------
 
-            elif operator in ('any', 'not any') and field.type == 'many2one' and field.auto_join:
+            elif operator in ('any', 'not any') and field.type == 'many2one' \
+                 and (not field.related) and field.auto_join:
                 # res_partner.state_id = res_partner__state_id.id
                 coalias = self.query.make_alias(alias, field.name)
                 if field.store:
@@ -386,9 +387,10 @@ class PolyExpression(expression):
             elif operator in ('any', 'not any') and field.type == 'many2one':
                 right_ids = comodel._search(right)
                 if operator == 'any':
-                    push((left, 'in', right_ids), model, alias)
+                    push((left if field.store else 'id', 'in', right_ids), model, alias)
                 else:
-                    for dom_leaf in ('|', (left, 'not in', right_ids), (left, '=', False)):
+                    for dom_leaf in ('|', (left if field.store else 'id', 'not in', right_ids),
+                                          (left if field.store else 'id', '=', False)):
                         push(dom_leaf, model, alias)
 
             # Making search easier when there is a left operand as one2many or many2many
@@ -412,7 +414,16 @@ class PolyExpression(expression):
                     if len(path) > 1:
                         right = comodel._search([(path[1], operator, right)])
                         operator = 'in'
-                    domain = field.determine_domain(model, operator, right)
+                        domain = field.determine_domain(model, operator, right)
+                    else:
+                        if field.related and not field.store:
+                            related_field_name = field.related.split('.')[0]
+                            comodel_name = model._fields[related_field_name].comodel_name
+                            comodel = model.env[comodel_name].with_context(active_test=False)
+                            right = comodel._search([(path[0], operator, right)])
+                            domain = [('id', 'in', right)]
+                        else:
+                            domain = field.determine_domain(model, operator, right)
 
                 for elem in domain_combine_anies(domain, model):
                     push(elem, model, alias)
@@ -688,7 +699,4 @@ class PolyExpression(expression):
         self.query.add_where(self.result)
 
 
-
-
-
-osv.expression = PolyExpression
+osv.expression.expression = PolyExpression

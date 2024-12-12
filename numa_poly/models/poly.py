@@ -22,9 +22,11 @@ from odoo.tools import (
     ormcache, partition, Query, split_every, unique,
     SQL, sql,
 )
-from odoo.tools.misc import LastOrderedSet, ReversedIterable, unquote
+from odoo.tools.misc import LastOrderedSet, ReversedIterable, unquote, Sentinel, SENTINEL
 
 from odoo.models import LOG_ACCESS_COLUMNS, INSERT_BATCH_SIZE, UPDATE_BATCH_SIZE, SQL_DEFAULT, GC_UNLINK_LIMIT
+
+from . import expression
 
 
 import typing
@@ -56,6 +58,61 @@ class IrPolyBase(models.Model):
 class PolyReference(fields.Many2one):
     auto_join = True
     store = False
+    readonly = True
+
+    def __init__(self, comodel_name: str | Sentinel = SENTINEL, string: str | Sentinel = SENTINEL, **kwargs):
+        super(PolyReference, self).__init__(comodel_name=comodel_name, string=string, **kwargs)
+        self.search = self._search_related
+
+    def convert_to_record(self, value, record):
+        return record.pool[self.comodel_name](record.env, (record.id,), (record.id,))
+
+    @property
+    def _description_searchable(self):
+        return True
+
+    def _search_related(self, records, operator, value):
+        """ Determine the domain to search on field ``self``. """
+
+        # This should never happen to avoid bypassing security checks
+        # and should already be converted to (..., 'in', subquery)
+        assert operator not in ('any', 'not any')
+
+        # determine whether the related field can be null
+        if isinstance(value, (list, tuple)):
+            value_is_null = any(val is False or val is None for val in value)
+        else:
+            value_is_null = value is False or value is None
+
+        can_be_null = (  # (..., '=', False) or (..., 'not in', [truthy vals])
+            (operator not in expression.NEGATIVE_TERM_OPERATORS and value_is_null)
+            or (operator in expression.NEGATIVE_TERM_OPERATORS and not value_is_null)
+        )
+
+        def make_domain(path, model):
+            if '.' not in path:
+                return [(path, operator, value)]
+
+            prefix, suffix = path.split('.', 1)
+            field = model._fields[prefix]
+            comodel = model.env[field.comodel_name]
+
+            if field.store:
+                domain = [(prefix, 'in', comodel._search(make_domain(suffix, comodel)))]
+                if can_be_null and field.type == 'many2one' and not field.required:
+                    return expression.OR([domain, [(prefix, '=', False)]])
+            else:
+                domain = [('id', 'in', comodel._search(make_domain(suffix, comodel)))]
+                if can_be_null and field.type == 'many2one' and not field.required:
+                    return expression.OR([domain, [('id', '=', False)]])
+
+            return domain
+
+        model = records.env[self.model_name].with_context(active_test=False)
+        model = model.sudo(records.env.su or self.compute_sudo)
+
+        return make_domain(self.related or '', model)
+
 
 
 class PolyBase(BaseModel):
@@ -212,22 +269,26 @@ class PolyBase(BaseModel):
              )
         )
 
+        # TODO log fields should be registered only on ir.poly_base
+        #      currently not working
+        #
         # set('create_uid',
         #      fields.Many2one('res.users', string='Created by',
         #                      related='poly_base_id.create_uid',
-        #                      automatic=False, readonly=True))
+        #                      automatic=False))
         # set('create_date',
         #      fields.Datetime(string='Created on',
         #                      related='poly_base_id.create_date',
-        #                      automatic=False, readonly=True))
+        #                      automatic=False))
         # set('write_uid',
         #      fields.Many2one('res.users', string='Last Updated by',
         #                      related='poly_base_id.write_uid',
-        #                      automatic=False, readonly=True))
+        #                      automatic=False))
         # set('write_date',
         #      fields.Datetime(string='Last Updated on',
-        #                      related='poly_base_id.write_uid',
-        #                      automatic=False, readonly=True))
+        #                      related='poly_base_id.write_date',
+        #                      automatic=False))
+        #
 
         related_fields = {}
         for model_name, model_field in reversed(self._depend_models.items()):
@@ -288,6 +349,9 @@ class PolyBase(BaseModel):
                 'boolean': fields.Boolean,
             }.get(field_type)
 
+            if isinstance(description, PolyReference):
+                field_subclass = PolyReference
+
             if field_type in ['many2one', 'many2many', 'one2many']:
                 new_field = field_subclass(
                     comodel_name=comodel,
@@ -311,8 +375,8 @@ class PolyBase(BaseModel):
         for model, model_field in self._depend_models.items():
             if model not in related_bases:
                 set(model_field,
-                    fields.Many2one(comodel_name=model, string=model,
-                                    automatic=True, readonly=True)
+                    PolyReference(comodel_name=model, string=model,
+                                  automatic=True, readonly=True)
                 )
 
     @api.model_create_multi
@@ -377,14 +441,6 @@ class PolyBase(BaseModel):
                 # Lastly create the new records, all bases already created
                 outer_data['id'] = new_id
                 outer_data['poly_base_id'] = new_id
-
-                for base_field in depend_fields:
-                    outer_data[base_field] = new_id
-
-                for field_name, field_definition in self._fields.items():
-                    plain_name = field_name.split('.')[-1]
-                    if plain_name.startswith('related_'):
-                        outer_data[plain_name] = new_id
 
                 _logger.info(f'Creando {self._name} con {outer_data} para id {new_id}')
                 new_record = super().create([outer_data])
