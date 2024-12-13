@@ -13,7 +13,7 @@ import odoo
 from odoo import SUPERUSER_ID
 from odoo import api
 from odoo import tools
-from odoo.api import NewId, model
+from odoo.api import ContextType, DomainType, IdType, NewId, M, T
 from odoo.exceptions import AccessError, MissingError, ValidationError, UserError
 from odoo.tools import (
     clean_context, config, date_utils, discardattr,
@@ -27,6 +27,8 @@ from odoo.tools.misc import LastOrderedSet, ReversedIterable, unquote, Sentinel,
 from odoo.models import LOG_ACCESS_COLUMNS, INSERT_BATCH_SIZE, UPDATE_BATCH_SIZE, SQL_DEFAULT, GC_UNLINK_LIMIT
 
 from . import expression
+
+from odoo.fields import first, MetaField, T
 
 
 import typing
@@ -67,6 +69,13 @@ class PolyReference(fields.Many2one):
     def convert_to_record(self, value, record):
         return record.pool[self.comodel_name](record.env, (record.id,), (record.id,))
 
+    def __get__(self, records, owner=None):
+        # base case: do the regular access
+        if records is None or len(records._ids) <= 1:
+            return super().__get__(records, owner)
+        # multirecord case: use mapped
+        return records.pool[self.comodel_name](records.env, tuple(records.ids), tuple(records.ids))
+
     @property
     def _description_searchable(self):
         return True
@@ -90,6 +99,8 @@ class PolyReference(fields.Many2one):
         )
 
         def make_domain(path, model):
+            if not path:
+                return [('id', operator, value)]
             if '.' not in path:
                 return [(path, operator, value)]
 
@@ -141,7 +152,7 @@ class PolyBase(BaseModel):
       correspond to the last one (in the depends list order).
     """
 
-    _depend_models = OrderedDict()
+    _depend_models = None
     _depends_children = OrderedSet()
 
 
@@ -167,7 +178,7 @@ class PolyBase(BaseModel):
 
         model_class_without_depends = super(PolyBase, cls)._build_model(pool, cr)
 
-        if hasattr(cls, '_depend_models') and cls._depend_models:
+        if hasattr(cls, '_depend_models') and cls._depend_models != None:
 
             # all models except 'base' implicitly depend from 'ir.poly_base'
             name = cls._name
@@ -187,7 +198,7 @@ class PolyBase(BaseModel):
                     for base in parent_class.__depends_base_classes:
                         bases.add(base)
                 else:
-                    if parent_class._name != 'ir.poly_base' and not parent_class._depend_models:
+                    if parent_class._name != 'ir.poly_base' and parent_class._depend_models == None:
                         raise TypeError("Model %r depends from non-polymorphic model %r. Only polymorphic is allowed" %
                                         (name, parent))
                     bases.add(parent_class)
@@ -202,46 +213,45 @@ class PolyBase(BaseModel):
 
         return model_class_without_depends
 
-    @api.model
     def _setup_base(self):
         super()._setup_base()
 
-        if self._depend_models:
+        if self._depend_models != None:
             self._build_dependant_model_attributes()
+
+    def _register_hook(self):
+        """ stuff to do right after the registry is built """
+        super()._register_hook()
 
         def get_next_id(base_name) -> int:
             base_model = self.env[base_name]
             if base_model._table:
                 self.env.cr.execute(f'''
-                    SELECT currval(pg_get_serial_sequence('{base_model._table}', 'id'))
+                    SELECT pg_sequence_last_value('{base_model._table}_id_seq')
                 ''')
                 next_id = self.env.cr.fetchall()[0][0]
                 return next_id
             else:
                 return 1
 
-        # if self._depend_models:
-        if False:
+        if self._depend_models != None:
             # Ensure no polymorphic models has existing records
             # with IDs clashing with newly created polymorphic records
             poly_base_id = get_next_id('ir.poly_base')
-            for base_name in self._depend_models.keys:
-                base = self.pool[base_name]
-                if not base._id_checked:
-                    base._id_checked = True
-                    current_id = get_next_id(base._name)
-                    if current_id > poly_base_id:
-                        poly_base_id = current_id
-                        self.env.cr.execute(f'''
-                            ALTER SEQUENCE pg_get_serial_sequence('ir_poly_base', 'id') MINVALUE {poly_base_id};
-                        ''')
+            for base_name in self._depend_models.keys():
+                current_id = get_next_id(base_name)
+                if current_id and current_id > poly_base_id:
+                    poly_base_id = current_id
+                    self.env.cr.execute(f'''
+                        ALTER SEQUENCE 'ir_poly_base_id_seq' RESTART WITH {current_id + 1};
+                    ''')
 
     @classmethod
     def _build_dependant_model_attributes(self):
         """ Initialize base model attributes. """
         def set(name, field, related_base=None):
-            _logger.info(f'Agregando campo {name} a {self._name}'
-                         f' (base: {related_base or "N/A"})')
+            _logger.debug(f'Agregando campo {name} a {self._name}'
+                          f' (base: {related_base or "N/A"})')
             setattr(self, name, field)
             self._fields[name] = field
             field._direct = True
@@ -298,21 +308,30 @@ class PolyBase(BaseModel):
 
                 base_model = self.pool[mm]
                 for subfield_name, subfield in base_model._fields.items():
-                    subfield_plain_name = subfield_name.split('.')[-1]
-                    if subfield_plain_name not in self._fields and \
-                       subfield_plain_name not in related_fields and \
+                    if subfield_name not in self._fields and \
                        not subfield.related:
-                        related_fields[subfield_plain_name] = (
-                            mm, subfield_plain_name,
-                            subfield.type, subfield.comodel_name, subfield.string
-                        )
+                        if subfield_name not in related_fields:
+                            related_fields[subfield_name] = (
+                                mm,
+                                subfield_name,
+                                subfield.type,
+                                subfield.comodel_name,
+                                subfield
+                            )
 
                 for sub_base in base_model._depend_models.keys():
                     add_subfields(sub_base)
 
             add_subfields(model_name)
 
-        related_bases = {}
+        related_bases = {base_model: base_field for base_model, base_field in self._depend_models.items()}
+        for base_model, base_field in related_bases.items():
+            related_bases[base_model] = base_field
+            set(base_field,
+                PolyReference(comodel_name=base_model, string=base_model,
+                              automatic=True, readonly=True)
+                )
+
         related_counter = 1
         for new_field_name in related_fields.keys():
             model, field_name, field_type, comodel, description = related_fields[new_field_name]
@@ -331,6 +350,13 @@ class PolyBase(BaseModel):
                     PolyReference(comodel_name=model, string=model,
                                   automatic=True, readonly=True)
                 )
+            else:
+                model_field = related_bases[model]
+                if model_field not in self._fields:
+                    set(model_field,
+                        PolyReference(comodel_name=model, string=model,
+                                      automatic=True, readonly=True)
+                    )
 
             field_subclass = {
                 'char': fields.Char,
@@ -372,79 +398,91 @@ class PolyBase(BaseModel):
 
             set(field_name, new_field, related_bases[model])
 
-        for model, model_field in self._depend_models.items():
-            if model not in related_bases:
-                set(model_field,
-                    PolyReference(comodel_name=model, string=model,
-                                  automatic=True, readonly=True)
-                )
+        _logger.debug(f'_build_dependant_model_attributes finished')
+
 
     @api.model_create_multi
     def create(self, data_list: list[ValuesType]) -> Self:
         """ Create records from the stored field values in ``data_list``. """
         """ TODO Investigate if access rules should be applied base by base also """
 
-        if not self._depend_models:
+        if self._depend_models == None:
             # Normal Odoo ORM model, just process it the normal way
             return super().create(data_list)
         else:
             # It is a polymorphic create.
-            related2base = {}
-            for base_name, base_many2one in self._depend_models.items():
-                related2base[base_many2one] = base_name
 
             new_records = self
 
-            depend_fields = [base_field for base_field in self._depend_models.values()]
-            all_created = OrderedSet()
+            inverse_related = {field_name.split('.')[-1]: field_definition
+                               for field_name, field_definition in self._fields.items()
+                               if field_definition.related}
+
+            inverse_field2base = {base_field: base_name for base_name, base_field in self._depend_models.items()}
+
+            bases_to_create = {}
+
+            for field_name, field_definition in inverse_related.items():
+                related_base = field_definition.related.split('.', 1)[0]
+                if related_base != 'poly_base_id':
+                    if related_base in inverse_field2base:
+                        base = inverse_field2base[related_base]
+                        if base not in bases_to_create:
+                            bases_to_create[base] = set()
+                        bases_to_create[base].add(field_name)
+
+            for base in self._depend_models.keys():
+                if base not in bases_to_create:
+                    bases_to_create[base] = set()
 
             for data in data_list:
-                outer_data = data.copy()
-
                 if 'id' in data:
+                    existing_record = self.search([('id', '=', data['id'])], limit=1)
+                    if existing_record:
+                        raise ValidationError(
+                            _('Your are trying to create an %s with explicit id %d. It exists already!') %
+                            (self._name, data['id'])
+                        )
                     new_id = data['id']
                 else:
                     new_poly = self.env['ir.poly_base'].create(dict(
                         concrete_model_id=self.env['ir.model']._get_id(self._name)
                     ))
-                    _logger.info(f'Creando poly base para {self._name} con {data}, id = {new_poly.id}')
-                    all_created.add(new_poly)
+                    _logger.debug(f'Creando poly base para {self._name}, id = {new_poly.id}')
                     new_id = new_poly.id
 
-                # First ensure all base records will be created
-                created_models = OrderedSet()
-                created_models.add('ir.poly_base')
-                base_data = {}
-                for base, base_field in self._depend_models.items():
-                    if base not in created_models:
-                        created_models.add(base)
+                for base, field_set in bases_to_create.items():
+                    base_model = self.env[base]
+                    base_data = {}
+                    for field_name in field_set:
+                        if field_name in data:
+                            base_data[field_name] = data[field_name]
+                    for field_name, field_definition in base_model._fields.items():
+                        field_plain_name = field_name.split('.')[-1]
+                        if field_plain_name in data:
+                            base_data[field_name] = data[field_plain_name]
 
-                        base_data.setdefault(base, {})
-                        for field_name in data.keys():
-                            field_definition = self._fields[field_name]
-                            if field_definition.related:
-                                related_root = field_definition.related.split('.')[0]
-                                if field_name in outer_data and \
-                                   (related_root in related2base or related_root.startswith('related_')):
-                                    base_data[base][field_name] = data[field_name]
-                                    del outer_data[field_name]
+                    base_data['id'] = new_id
+                    existing_base = base_model.search([('id', '=', new_id)], limit=1)
+                    if not existing_base:
+                        _logger.debug(f'Creando {base} con {base_data} para id {new_id}')
+                        base_model.create(base_data)
+                    else:
+                        _logger.debug(f'Actualizando {base} con {base_data} para id {new_id}')
+                        existing_base.write(base_data)
 
-                        base_model = self.env[base]
-                        if base_model.search([('id', '=', new_id)], limit=1):
-                            # Already created by other base
-                            continue
-
-                        base_data[base]['id'] = new_id
-                        _logger.info(f'Creando {base_model._name} con {base_data[base]} para id {new_id}')
-                        all_created.add(base_model.create(base_data[base]))
 
                 # Lastly create the new records, all bases already created
-                outer_data['id'] = new_id
-                outer_data['poly_base_id'] = new_id
+                base_data = {}
+                for full_field_name, field_definition in self._fields.items():
+                    if not field_definition.related and field_definition.store:
+                        field_name = full_field_name.split('.')[-1]
+                        if field_name in data:
+                            base_data[field_name] = data[field_name]
 
-                _logger.info(f'Creando {self._name} con {outer_data} para id {new_id}')
-                new_record = super().create([outer_data])
-                all_created.add(new_record)
+                base_data['id'] = new_id
+                _logger.debug(f'Creando {self._name} con {base_data} para id {new_id}')
+                new_record = super().create(base_data)
                 new_records |= new_record
 
             return new_records
@@ -502,7 +540,7 @@ class PolyBase(BaseModel):
 
         super().unlink()
 
-        if self._depend_models:
+        if self._depend_models != None:
             # Ensure all bases will be unlinked also
             for base in self._depend_models:
                 base_model = self.env[base]
@@ -518,7 +556,7 @@ class PolyBase(BaseModel):
         # determine records that require updating parent_path
         parent_records = self._parent_store_update_prepare(vals_list)
 
-        if self._log_access and self._name != 'ir.poly_base' and not self._depend_models:
+        if self._log_access and self._name != 'ir.poly_base' and self._depend_models == None:
             # set magic fields (already done by write(), but not for computed fields)
             log_vals = {'write_uid': self.env.uid, 'write_date': self.env.cr.now()}
             vals_list = [(log_vals | vals) for vals in vals_list]
@@ -595,7 +633,7 @@ class PolyBase(BaseModel):
             parent_records._parent_store_update()
 
         # update log fields for polymorphic models
-        if self._log_access and self._depend_models and self._name != 'ir.poly_base':
+        if self._log_access and self._depend_models != None and self._name != 'ir.poly_base':
             poly_base_model = self.env['ir.poly_base']
             log_vals = {'write_uid': self.env.uid, 'write_date': self.env.cr.now()}
             poly_base_model.browse(self.ids).write(log_vals)

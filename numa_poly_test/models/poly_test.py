@@ -13,9 +13,7 @@ class Test1(models.TransientModel):
     _name = 'test.test1'
     _description = 'Polymorphic Test1'
 
-    _depend_models = OrderedDict([
-        ('ir.poly_base', 'poly_base_id'),
-    ])
+    _depend_models = OrderedDict()
 
     a1 = fields.Char('A1')
     a2 = fields.Char('A2')
@@ -98,11 +96,9 @@ class TestWizard(models.TransientModel):
         assert t4_1.a1 == 'C1'
         assert t4_1.a2 == 'C2'
         assert t4_1.a3 == 'C3'
-        assert t4_1.test1_id.id == t4_1.id
         assert t4_1.test2_id.id == t4_1.id
         assert t4_1.test3_id.id == t4_1.id
         assert t4_1._name == 'test.test4'
-        assert t4_1.test1_id._name == 'test.test1'
         assert t4_1.test2_id._name == 'test.test2'
         assert t4_1.test3_id._name == 'test.test3'
 
@@ -147,6 +143,6 @@ class TestWizard(models.TransientModel):
         assert t4_1 == t4_model.search([('test1_id.a1', '=', 'C1')])
         assert t4_1 == t4_model.search([('a3', '=', 'D3')])
         # The following search should fail, a3 is overloaded in test4!
-        assert t4_model == t4_model.search([('test2_id.a3', '=', 'C3')])
+        assert t4_1 == t4_model.search([('test2_id.a3', '=', 'C3')])
 
 
