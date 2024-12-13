@@ -381,14 +381,14 @@ class PolyBase(BaseModel):
             if field_type in ['many2one', 'many2many', 'one2many']:
                 new_field = field_subclass(
                     comodel_name=comodel,
-                    string=description,
+                    string=description.string,
                     related=f'{related_bases[model]}.{field_name}',
                     automatic=True,
                     recursive=True,
                 )
             elif field_subclass:
                 new_field = field_subclass(
-                    string=description,
+                    string=description.string,
                     related=f'{related_bases[model]}.{field_name}',
                     automatic=True,
                 )
