@@ -106,5 +106,14 @@ class TestStructure(PolyTestCommon):
         # The following search should fail, a3 is overloaded in test4!
         assert t4_1 == t4_model.search([('test2_id.a3', '=', 'C3')])
 
+        t1_1.set_a1()
+        assert t1_1.a1 == 'Set by test1'
+
+        t2_1.set_a1()
+        assert t2_1.a1 == 'Set by test1'
+
+        t4_1.set_a1()
+        assert t4_1.a1 == 'Set by test4'
+
         _logger.info(f'Ending successfully poly tests')
 

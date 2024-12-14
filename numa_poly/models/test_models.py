@@ -11,6 +11,9 @@ class Test1(models.TransientModel):
     a1 = fields.Char('A1')
     a2 = fields.Char('A2')
 
+    def set_a1(self):
+        self.a1 = 'Set by test1'
+
 
 class Test2(models.TransientModel):
     _name = 'test.test2'
@@ -45,4 +48,7 @@ class Test4(models.TransientModel):
 
     a3 = fields.Char('A3 test 4')
     partner_id = fields.Many2one('res.partner', 'Test 1 related')
+
+    def set_a1(self):
+        self.a1 = 'Set by test4'
 

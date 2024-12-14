@@ -1,8 +1,10 @@
 import logging
 from collections import OrderedDict, defaultdict, deque
+import inspect
 
 from operator import attrgetter, itemgetter
 
+from attr import attributes
 from docutils.nodes import field_name
 
 import odoo
@@ -320,13 +322,22 @@ class PolyBase(BaseModel):
                                 subfield
                             )
 
+                for attribute_name in base_model.mro()[1].__class__.__dir__(base_model):
+                    if attribute_name.startswith('__'):
+                        continue
+                    attribute = getattr(base_model, attribute_name)
+                    if not isinstance(attribute, fields.Field) and \
+                       not hasattr(self, attribute_name):
+                        setattr(self, attribute_name, attribute)
+
                 for sub_base in base_model._depend_models.keys():
                     add_subfields(sub_base)
 
             add_subfields(model_name)
 
-        related_bases = {base_model: base_field for base_model, base_field in self._depend_models.items()}
-        for base_model, base_field in related_bases.items():
+        related_bases = OrderedDict(
+            {base_model: base_field for base_model, base_field in self._depend_models.items()}.items())
+        for base_model, base_field in reversed(related_bases.items()):
             related_bases[base_model] = base_field
             set(base_field,
                 PolyReference(comodel_name=base_model,
