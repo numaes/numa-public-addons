@@ -1,7 +1,7 @@
-from odoo.addons.base.tests.common import SavepointCase
+from odoo.addons.base.tests.common import TransactionCase
 
 
-class TestFSMCommon(SavepointCase):
+class TestFSMCommon(TransactionCase):
     ''' Setup with FSM test configuration. '''
 
     @classmethod

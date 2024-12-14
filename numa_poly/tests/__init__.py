@@ -1,3 +1,4 @@
-from . import poly_test
+from . import common
+from . import test_structure
 
 

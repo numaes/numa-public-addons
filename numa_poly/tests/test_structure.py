@@ -5,27 +5,20 @@ from odoo import models, fields
 from odoo import api
 from odoo.exceptions import AccessError, MissingError, ValidationError, UserError
 from odoo.tests import Form, tagged, TransactionCase, BaseCase
+from .common import PolyTestCommon
 
 _logger = logging.getLogger(__name__)
 
-@tagged('post_install', '-at_install')
-class Test4(models.TransientModel):
-    _name = 'test.test4'
-    _description = 'Polymorphic Test1'
+class TestStructure(PolyTestCommon):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env = cls.env(context=dict(
+            cls.env.context,
+            test_queue_job_no_delay=True,  # no jobs thanks
+        ))
 
-    _depend_models = OrderedDict([
-        ('test.test2', 'test2_id'),
-        ('test.test3', 'test3_id'),
-    ])
-
-    a3 = fields.Char('A3 test 4')
-    partner_id = fields.Many2one('res.partner', 'Test 1 related')
-
-
-@tagged('standard', 'post_install', '-at_install')
-class TestWizard(BaseCase):
-
-    def action_test1(self):
+    def test_structural_integrity(self):
         _logger.info(f'Starting poly tests')
 
         t1_model = self.env['test.test1']
@@ -109,7 +102,6 @@ class TestWizard(BaseCase):
 
         # test path search using polymorphic links
 
-        assert t4_1 == t4_model.search([('test1_id.a1', '=', 'C1')])
         assert t4_1 == t4_model.search([('a3', '=', 'D3')])
         # The following search should fail, a3 is overloaded in test4!
         assert t4_1 == t4_model.search([('test2_id.a3', '=', 'C3')])

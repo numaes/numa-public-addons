@@ -309,6 +309,7 @@ class PolyBase(BaseModel):
                 base_model = self.pool[mm]
                 for subfield_name, subfield in base_model._fields.items():
                     if subfield_name not in self._fields and \
+                       not isinstance(subfield, PolyReference) and \
                        not subfield.related:
                         if subfield_name not in related_fields:
                             related_fields[subfield_name] = (
@@ -328,7 +329,8 @@ class PolyBase(BaseModel):
         for base_model, base_field in related_bases.items():
             related_bases[base_model] = base_field
             set(base_field,
-                PolyReference(comodel_name=base_model, string=base_model,
+                PolyReference(comodel_name=base_model,
+                              string=f'Base for {base_model}',
                               automatic=True, readonly=True)
                 )
 
@@ -340,14 +342,11 @@ class PolyBase(BaseModel):
                 continue
 
             if model not in related_bases:
-                if model in self._depend_models:
-                    model_field = self._depend_models[model]
-                else:
-                    model_field = f'related_{related_counter}'
-                    related_counter += 1
+                model_field = f'related_{related_counter}'
+                related_counter += 1
                 related_bases[model] = model_field
                 set(model_field,
-                    PolyReference(comodel_name=model, string=model,
+                    PolyReference(comodel_name=model, string=f'Base for {model}',
                                   automatic=True, readonly=True)
                 )
             else:
@@ -359,24 +358,27 @@ class PolyBase(BaseModel):
                     )
 
             field_subclass = {
-                'char': fields.Char,
+                'boolean': fields.Boolean,
                 'integer': fields.Integer,
                 'float': fields.Float,
                 'monetary': fields.Monetary,
-                'date': fields.Date,
-                'datetime': fields.Datetime,
-                'selection': fields.Selection,
-                'many2one': fields.Many2one,
-                'one2many': fields.One2many,
-                'many2many': fields.Many2many,
+                'char': fields.Char,
                 'text': fields.Text,
                 'html': fields.Html,
+                'date': fields.Date,
+                'datetime': fields.Datetime,
                 'binary': fields.Binary,
-                'boolean': fields.Boolean,
+                'image': fields.Image,
+                'selection': fields.Selection,
+                'reference': fields.Reference,
+                'many2one': fields.Many2one,
+                'many2one_reference' : fields.Many2oneReference,
+                'json': fields.Json,
+                'properties': fields.Properties,
+                'properties_definition': fields.PropertiesDefinition,
+                'one2many': fields.One2many,
+                'many2many': fields.Many2many,
             }.get(field_type)
-
-            if isinstance(description, PolyReference):
-                field_subclass = PolyReference
 
             if field_type in ['many2one', 'many2many', 'one2many']:
                 new_field = field_subclass(
@@ -384,7 +386,6 @@ class PolyBase(BaseModel):
                     string=description.string,
                     related=f'{related_bases[model]}.{field_name}',
                     automatic=True,
-                    recursive=True,
                 )
             elif field_subclass:
                 new_field = field_subclass(

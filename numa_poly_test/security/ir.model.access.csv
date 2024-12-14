@@ -1,7 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_test_test1,General access Test 1,model_test_test1,base.group_user,1,1,1,1
-access_test_test2,General access Test 2,model_test_test2,base.group_user,1,1,1,1
-access_test_test3,General access Test 3,model_test_test3,base.group_user,1,1,1,1
-access_test_test4,General access Test 4,model_test_test4,base.group_user,1,1,1,1
-access_test_test_wizard,General access Test Wizard,model_test_test_wizard,base.group_user,1,1,1,1
-
