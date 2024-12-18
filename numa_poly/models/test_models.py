@@ -2,7 +2,7 @@ from odoo import models, fields
 from collections import OrderedDict
 
 
-class Test1(models.TransientModel):
+class Test1(models.Model):
     _name = 'test.test1'
     _description = 'Polymorphic Test1'
 
@@ -15,7 +15,7 @@ class Test1(models.TransientModel):
         self.a1 = 'Set by test1'
 
 
-class Test2(models.TransientModel):
+class Test2(models.Model):
     _name = 'test.test2'
     _description = 'Polymorphic Test1'
 
@@ -26,7 +26,7 @@ class Test2(models.TransientModel):
     a3 = fields.Char('A3')
 
 
-class Test3(models.TransientModel):
+class Test3(models.Model):
     _name = 'test.test3'
     _description = 'Polymorphic Test1'
 
@@ -37,7 +37,7 @@ class Test3(models.TransientModel):
     a4 = fields.Char('A4')
 
 
-class Test4(models.TransientModel):
+class Test4(models.Model):
     _name = 'test.test4'
     _description = 'Polymorphic Test1'
 
