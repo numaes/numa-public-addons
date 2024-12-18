@@ -10,9 +10,9 @@ from werkzeug.datastructures import FileStorage
 
 import odoo
 from odoo import api, _, exceptions
-from odoo import models, fields
-from odoo.exceptions import UserError
 from odoo.tools.safe_eval import safe_eval, wrap_module
+from odoo import _, api, fields, models, SUPERUSER_ID
+from odoo.modules.registry import Registry
 
 
 from . import miniqweb
@@ -358,28 +358,29 @@ class FSMFormInput(models.TransientModel):
                 instance = fsm_instance_model.search([('name', '=', instance_name)], limit=1)
             else:
                 instance = False
-            unrelated_identifier = vals.get('unrelated_identifier', False)
             json_data = json.dumps(plain_vals)
-            result |= super().create(dict(
+            new_record = super().create(dict(
                 instance_id=instance.id if instance else False,
-                unrelated_identifier=unrelated_identifier,
+                unrelated_identifier=vals['unrelated_identifier'],
                 json_data=json_data,
             ))
 
             file_vals = {}
             for name, content in vals.items():
                 if isinstance(content, FileStorage):
-                    file_name = content.filename.split('[', 1)[0]
+                    field_name = name.split('[', 1)[0]
                     attachment = attachment_model.create({
-                        'name': file_name,
+                        'name': content.filename,
                         'res_model': self._name,
-                        'res_id': result.id,
+                        'res_id': new_record.id,
                         'type': 'binary',
                         'datas': base64.b64encode(content.read()),
                     })
-                    file_vals[file_name] = attachment.id
+                    file_vals[field_name] = attachment.id
 
-            result.json_files = json.dumps(file_vals)
+            new_record.json_files = json.dumps(file_vals)
+
+            result |= new_record
 
         return result
 
@@ -395,6 +396,25 @@ class FSMFormInput(models.TransientModel):
                 if attachment:
                     return attachment.datas
         return None
+
+    def move_file(self, instance, name: str, field_name):
+        attachment_model = self.env['ir.attachment']
+
+        self.ensure_one()
+        if self.json_files:
+            files = json.loads(self.json_files)
+            if name in files:
+                attachment_id = files[name]
+                attachment = attachment_model.browse(attachment_id).exists()
+                if attachment:
+                    attachment.res_model = instance._name
+                    attachment.res_id = instance.id
+                    attachment.res_field = field_name
+                self.flush_model('ir.attachment'
+                                 )
+    def debug_hook(self):
+        _logger.info('Debug hook')
+
 
 
 class FSMInstance(models.Model):
@@ -526,9 +546,11 @@ class FSMInstance(models.Model):
     def process_events(self):
         for fsm_instance in self:
             no_more_events = False
+
+            # acquire lock
+            self.env.cr.execute(f'SELECT id FROM fsm_instance WHERE id = {fsm_instance.id} FOR UPDATE')
+
             while not no_more_events:
-                # acquire lock
-                self.env.cr.execute(f'SELECT id FROM fsm_instance WHERE id = {fsm_instance.id} FOR UPDATE')
 
                 if fsm_instance.state != 'running':
                     self.env.flush_all()
@@ -550,17 +572,23 @@ class FSMInstance(models.Model):
 
                         if env and env.get('fsm_instance_ended', False):
                             break
+
+                        self.env.flush_all()
+                        self.env.cr.commit()
                     else:
                         no_more_events = True
                 except Exception as e:
-                    _logger.exception(e, exc_info=True)
                     self.env.cr.rollback()
+
+                    _logger.exception(e, exc_info=True)
                     fsm_instance.message_post(
                         subject='Unexpected exception',
                         body=f'<pre>{pprint.pformat(e)}</pre>',
                     )
                     _logger.info(f'FSM Instance of FSM {fsm_instance.definition_id.display_name}, '
                                  f'unexpected exception: {e}')
+
+            self.env.cr.commit()
 
     def send_event(self, event):
         event_model = self.env['fsm.event_entry']
@@ -578,10 +606,16 @@ class FSMInstance(models.Model):
                 'sequence': last_event.sequence + 1 if last_event else 1,
             })]
 
-            def trigger():
-                fsm_instance.process_events()
+            dbname = self.env.cr.dbname
+            _context = self.env.context
 
-            self.env.cr.postcommit.add(trigger)
+            @self.env.cr.postcommit.add
+            def trigger():
+                db_registry = Registry(dbname)
+                with db_registry.cursor() as cr:
+                    env = api.Environment(cr, SUPERUSER_ID, _context)
+                    instance = env['fsm.instance'].browse(fsm_instance.id)
+                    instance.process_events()
 
     def start(self):
         self.ensure_one()
