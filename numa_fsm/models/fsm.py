@@ -6,6 +6,7 @@ from markupsafe import Markup
 import json
 import base64
 from jinja2 import Environment
+from werkzeug.datastructures import FileStorage
 
 import odoo
 from odoo import api, _, exceptions
@@ -338,27 +339,62 @@ class FSMFormInput(models.TransientModel):
     instance_id = fields.Many2one('fsm.instance', 'Target instance')
     unrelated_identifier = fields.Char('Unrelated identifier')
     json_data = fields.Char('JSON Data')
+    json_files = fields.Char('JSON Files')
 
     @api.model_create_multi
     def create(self, vals_list):
         fsm_instance_model = self.env['fsm.instance']
+        attachment_model = self.env['ir.attachment']
 
         result = self.env['fsm.form_input']
         for vals in vals_list:
+            plain_vals = {}
+            for name, content in vals.items():
+                if not isinstance(content, FileStorage):
+                    plain_vals[name] = content
+
             instance_name = vals.get('instance_id', False)
             if instance_name:
                 instance = fsm_instance_model.search([('name', '=', instance_name)], limit=1)
             else:
                 instance = False
             unrelated_identifier = vals.get('unrelated_identifier', False)
-            json_data = json.dumps(vals)
+            json_data = json.dumps(plain_vals)
             result |= super().create(dict(
                 instance_id=instance.id if instance else False,
                 unrelated_identifier=unrelated_identifier,
                 json_data=json_data,
             ))
 
+            file_vals = {}
+            for name, content in vals.items():
+                if isinstance(content, FileStorage):
+                    file_name = content.filename.split('[', 1)[0]
+                    attachment = attachment_model.create({
+                        'name': file_name,
+                        'res_model': self._name,
+                        'res_id': result.id,
+                        'type': 'binary',
+                        'datas': base64.b64encode(content.read()),
+                    })
+                    file_vals[file_name] = attachment.id
+
+            result.json_files = json.dumps(file_vals)
+
         return result
+
+    def get_file(self, name: str):
+        attachment_model = self.env['ir.attachment']
+
+        self.ensure_one()
+        if self.json_files:
+            files = json.loads(self.json_files)
+            if name in files:
+                attachment_id = files[name]
+                attachment = attachment_model.browse(attachment_id).exists()
+                if attachment:
+                    return attachment.datas
+        return None
 
 
 class FSMInstance(models.Model):
@@ -407,7 +443,14 @@ class FSMInstance(models.Model):
 
     def flush_env(self, env):
         self.ensure_one()
-        self.json_instance_values = json.dumps(env)
+        env2store = {}
+        if env:
+            for name, value in env.items():
+                if not isinstance(value, models.BaseModel):
+                    env2store[name] = value
+            self.json_instance_values = json.dumps(env2store) if env2store else '{}'
+        else:
+            self.json_instance_values = {}
 
     def get_globals(self):
         self.ensure_one()
@@ -469,6 +512,7 @@ class FSMInstance(models.Model):
                                 fsm_instance.after_event_process(event, env)
                             return env
                     current_fsmd = current_fsmd.parent_id
+                self.env.flush_all()
 
         except Exception as e:
             _logger.exception(e, exc_info=True)
@@ -487,6 +531,7 @@ class FSMInstance(models.Model):
                 self.env.cr.execute(f'SELECT id FROM fsm_instance WHERE id = {fsm_instance.id} FOR UPDATE')
 
                 if fsm_instance.state != 'running':
+                    self.env.flush_all()
                     self.env.cr.commit()
                     no_more_events = True
                     continue
@@ -496,10 +541,13 @@ class FSMInstance(models.Model):
                     # Process next event
                     if fsm_instance.events_queue:
                         event_entry = fsm_instance.events_queue[0]
+
                         event = json.loads(event_entry.json_definition)
                         env = fsm_instance.process_event(event, env)
-                        event_entry.unlink()
-                        fsm_instance.flush_env(env)
+
+                        # remove event from queue
+                        fsm_instance.events_queue = [(2, event_entry.id)]
+
                         if env and env.get('fsm_instance_ended', False):
                             break
                     else:
@@ -513,7 +561,6 @@ class FSMInstance(models.Model):
                     )
                     _logger.info(f'FSM Instance of FSM {fsm_instance.definition_id.display_name}, '
                                  f'unexpected exception: {e}')
-                self.env.cr.commit()
 
     def send_event(self, event):
         event_model = self.env['fsm.event_entry']
@@ -582,12 +629,12 @@ class FSMInstance(models.Model):
             fsm_instance.stop_all_timers()
             fsm_instance.state = 'ended'
             if fsm_instance.logging:
-                fsm_instance.message_post(
+                concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+                concrete_instance.message_post(
                     subject=f"Ending FSM",
                     body=f'<i>Ending FSM instance {fsm_instance.display_name}</i>'
                 )
                 _logger.info(f"Ending FSM instance {fsm_instance.display_name}")
-                fsm_instance.flush()
 
     def start_logging(self):
         for instance in self:
@@ -600,7 +647,8 @@ class FSMInstance(models.Model):
     def on_send_event(self, event):
         for fsm_instance in self:
             if fsm_instance.logging:
-                fsm_instance.message_post(
+                concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+                concrete_instance.message_post(
                     subject=f"Sending event",
                     body=f"<i>Sending event: {event['name']} to instance {fsm_instance.display_name}</i><br/>"
                          f"<b>Event:</b><br/>"
@@ -608,12 +656,12 @@ class FSMInstance(models.Model):
                 )
                 _logger.info(f"Sending event: {event['name']} to instance {fsm_instance.display_name}. "
                              f"Event: {event}")
-                fsm_instance.flush()
 
     def before_event_process(self, event, env):
         for fsm_instance in self:
             if fsm_instance.logging:
-                fsm_instance.message_post(
+                concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+                concrete_instance.message_post(
                     subject=f"Before event process",
                     body=f"Before event process. Event {event['name']} for instance {fsm_instance.display_name}</i><br/>"
                          f"<b>Event:</b><br/>"
@@ -621,12 +669,13 @@ class FSMInstance(models.Model):
                 )
                 _logger.info(f"Before event process: {event['name']} to instance {fsm_instance.display_name}. "
                              f"Event: {event}")
-                fsm_instance.flush()
+
 
     def after_event_process(self, event, env):
         for fsm_instance in self:
             if fsm_instance.logging:
-                fsm_instance.message_post(
+                concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+                concrete_instance.message_post(
                     subject=f"After event process",
                     body=f'<i>After event process for instance {fsm_instance.display_name}</i>.<br/>'
                          f'<b>Environment:</b><br/>'
@@ -634,7 +683,6 @@ class FSMInstance(models.Model):
                 )
                 _logger.info(f"After event process: {event['name']} for instance {fsm_instance.display_name}. "
                              f"Environment: {env}")
-                fsm_instance.flush()
 
     def recover_retained_events(self):
         for fsm_instance in self:
@@ -650,7 +698,8 @@ class FSMInstance(models.Model):
 
         fsm_instance = self
         if fsm_instance.logging:
-            fsm_instance.message_post(
+            concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+            concrete_instance.message_post(
                 subject=f"Posponing event",
                 body=f"<i>Posponing event {pprint.pformat(event)}, for instance {fsm_instance.display_name}</i>"
             )
@@ -669,7 +718,8 @@ class FSMInstance(models.Model):
 
         fsm_instance = self
         if fsm_instance.logging:
-            fsm_instance.message_post(
+            concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+            concrete_instance.message_post(
                 subject=f"Changing state",
                 body=f"<i>Changing state from {fsm_instance.current_state} "
                      f"to: {new_state} for instance {fsm_instance.display_name}</i>"
@@ -687,7 +737,8 @@ class FSMInstance(models.Model):
 
         for fsm_instance in self:
             if fsm_instance.logging:
-                fsm_instance.message_post(
+                concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+                concrete_instance.message_post(
                     subject=f"Sending timer",
                     body=f"<i>Sending timer {event} "
                          f"for: {delay}, trigger at: {at} for instance {fsm_instance.display_name}</i>"
@@ -711,7 +762,8 @@ class FSMInstance(models.Model):
 
         for fsm_instance in self:
             if fsm_instance.logging:
-                fsm_instance.message_post(
+                concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+                concrete_instance.message_post(
                     subject=f"Stopping timer",
                     body=f"<i>Stopping timer {event_name} "
                          f"for instance {fsm_instance.display_name}</i>"
@@ -729,7 +781,8 @@ class FSMInstance(models.Model):
 
         for fsm_instance in self:
             if fsm_instance.logging:
-                fsm_instance.message_post(
+                concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+                concrete_instance.message_post(
                     subject=f"Stopping all timers",
                     body=f"<i>Stopping all timers "
                          f"for instance {fsm_instance.display_name}</i>"
@@ -793,7 +846,8 @@ class FSMInstance(models.Model):
                 (mail_template_name, self.definition_id.name)
             )
         if len(mail_template) > 1:
-            self.message_post(
+            concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+            concrete_instance.message_post(
                 subject='Execution error',
                 body=_("<span>Error trying to send mail template with ambiguous name %s</span>") % mail_template_name,
             )

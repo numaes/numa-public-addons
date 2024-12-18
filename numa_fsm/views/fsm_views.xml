@@ -116,7 +116,7 @@
                                     <newline />
                                     <field name="current_state" readonly="True"/>
                                     <field name="json_instance_values"
-                                           widget="ace" options="{'mode': 'html'}" />
+                                           widget="ace" options="{'mode': 'python'}" />
                                     <field name="logging" />
                                 </group>
                             </page>
@@ -233,7 +233,7 @@
                         <group name="definition" string="Definition">
                             <field name="name" />
                             <field name="body"
-                                   widget="ace" options="{'mode': 'html'}"/>
+                                   widget="ace" options="{'mode': 'python'}"/>
                         </group>
                     </sheet>
                 </form>
