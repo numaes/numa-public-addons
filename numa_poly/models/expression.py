@@ -416,7 +416,7 @@ class PolyExpression(expression):
                         operator = 'in'
                         domain = field.determine_domain(model, operator, right)
                     else:
-                        if field.related and not field.store:
+                        if model._depend_models != None and field.related and not field.store:
                             related_field_name = field.related.split('.')[0]
                             comodel_name = model._fields[related_field_name].comodel_name
                             comodel = model.env[comodel_name].with_context(active_test=False)
