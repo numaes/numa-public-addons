@@ -407,14 +407,16 @@ class FSMFormInput(models.TransientModel):
                 attachment_id = files[name]
                 attachment = attachment_model.browse(attachment_id).exists()
                 if attachment:
+                    if not instance.fields_get([field_name]):
+                        raise exceptions.UserError(
+                            _('Field %s does not exists in model %s') % (field_name, instance._name)
+                        )
                     attachment.res_model = instance._name
                     attachment.res_id = instance.id
                     attachment.res_field = field_name
-                self.flush_model('ir.attachment'
-                                 )
+
     def debug_hook(self):
         _logger.info('Debug hook')
-
 
 
 class FSMInstance(models.Model):
@@ -506,58 +508,65 @@ class FSMInstance(models.Model):
         global_objects = self.get_globals()
         fsm_instance = global_objects['fsm_instance']
 
-        if fsm_instance.state != 'running':
-            # Nothing to do if it is not running
-            return
+        if fsm_instance.state == 'running':
+            try:
+                if fsm_instance.logging:
+                    fsm_instance.message_post(
+                        subject=f"Processing event",
+                        body=Markup(
+                            f"<i>Processing <pre>{event}</pre> "
+                            f"for instance {fsm_instance.display_name} "
+                            f"in state {fsm_instance.current_state}</i>"
+                        )
+                    )
 
-        try:
-            for target_state in [fsm_instance.current_state, 'all']:
-                current_fsmd = fsm_instance.definition_id
-                while current_fsmd:
-                    compiled_definition = json.loads(current_fsmd.json_compiled_definition)
-                    if target_state in compiled_definition['states']:
-                        state_definition = compiled_definition['states'][target_state]
-                        if event['name'] in state_definition:
-                            event_definition = state_definition[event['name']]
-                            if event_definition.get('pospone', False):
-                                self.retain_event(event)
-                            else:
-                                env = fsm_instance.prepare_env()
-                                fsm_instance.before_event_process(event, env)
-                                env['event'] = event
-                                code_definition = event_definition['code']
-                                exec(code_definition, global_objects, env)
-                                del env['event']
-                                self.flush_env(env)
-                                fsm_instance.after_event_process(event, env)
-                            return env
-                    current_fsmd = current_fsmd.parent_id
-                self.env.flush_all()
+                for target_state in [fsm_instance.current_state, 'all']:
+                    current_fsmd = fsm_instance.definition_id
+                    while current_fsmd:
+                        compiled_definition = json.loads(current_fsmd.json_compiled_definition)
+                        env = fsm_instance.prepare_env()
+                        if target_state in compiled_definition['states']:
+                            state_definition = compiled_definition['states'][target_state]
+                            if event['name'] in state_definition:
+                                event_definition = state_definition[event['name']]
+                                if event_definition.get('pospone', False):
+                                    fsm_instance.retain_event(event)
+                                else:
+                                    fsm_instance.before_event_process(event, env)
+                                    env['event'] = event
+                                    code_definition = event_definition['code']
+                                    exec(code_definition, global_objects, env)
+                                    fsm_instance.after_event_process(event, env)
+                                break
+                        current_fsmd = current_fsmd.parent_id
 
-        except Exception as e:
-            _logger.exception(e, exc_info=True)
-            raise exceptions.UserError(
-                f"Processing event {event['name']}, "
-                f"instance {fsm_instance.display_name}, "
-                f"on state {fsm_instance.current_state}\n"
-                f"Unexpected exception {e}"
-            )
+                return env
+
+            except Exception as e:
+                _logger.exception(e, exc_info=True)
+                fsm_instance.message_post(
+                    subject=f"Exception processing event",
+                    body=Markup(
+                        f"<i>Processing {event['name']} "
+                        f"for instance {fsm_instance.display_name}"
+                        f"unexpected exception <pre>{pprint.pformat(e)}</pre></i>"
+                    )
+                )
+                raise exceptions.UserError(
+                    f"Processing event {event['name']}, "
+                    f"instance {fsm_instance.display_name}, "
+                    f"on state {fsm_instance.current_state}\n"
+                    f"Unexpected exception {e}"
+                )
+
+    def lock(self):
+        self.env.cr.execute(
+            f'SELECT id FROM fsm_instance '
+            f'WHERE id in {tuple(self.ids) if len(self.ids) > 1 else f"({self.id})"} FOR UPDATE')
 
     def process_events(self):
         for fsm_instance in self:
-            no_more_events = False
-
-            # acquire lock
-            self.env.cr.execute(f'SELECT id FROM fsm_instance WHERE id = {fsm_instance.id} FOR UPDATE')
-
-            while not no_more_events:
-
-                if fsm_instance.state != 'running':
-                    self.env.flush_all()
-                    self.env.cr.commit()
-                    no_more_events = True
-                    continue
-
+            while fsm_instance.state == 'running':
                 try:
                     env = fsm_instance.prepare_env()
                     # Process next event
@@ -565,39 +574,26 @@ class FSMInstance(models.Model):
                         event_entry = fsm_instance.events_queue[0]
 
                         event = json.loads(event_entry.json_definition)
-                        env = fsm_instance.process_event(event, env)
+                        fsm_instance.process_event(event, env)
 
                         # remove event from queue
                         fsm_instance.events_queue = [(2, event_entry.id)]
-
-                        if env and env.get('fsm_instance_ended', False):
-                            break
-
-                        self.env.flush_all()
-                        self.env.cr.commit()
                     else:
-                        no_more_events = True
+                        break
                 except Exception as e:
-                    self.env.cr.rollback()
-
                     _logger.exception(e, exc_info=True)
                     fsm_instance.message_post(
                         subject='Unexpected exception',
-                        body=f'<pre>{pprint.pformat(e)}</pre>',
+                        body=Markup(f'<pre>{pprint.pformat(e)}</pre>'),
                     )
                     _logger.info(f'FSM Instance of FSM {fsm_instance.definition_id.display_name}, '
                                  f'unexpected exception: {e}')
-
-            self.env.cr.commit()
 
     def send_event(self, event):
         event_model = self.env['fsm.event_entry']
 
         for fsm_instance in self:
-            if fsm_instance.state != 'running':
-                _logger.info(f'Discarded event to a non running FSM instance {fsm_instance.display_name}')
-                continue
-
+            fsm_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
             fsm_instance.on_send_event(event)
             last_event = event_model.search([('instance_id', '=', fsm_instance.id)], limit=1, order='sequence desc')
             fsm_instance.events_queue = [(0, 0, {
@@ -614,8 +610,11 @@ class FSMInstance(models.Model):
                 db_registry = Registry(dbname)
                 with db_registry.cursor() as cr:
                     env = api.Environment(cr, SUPERUSER_ID, _context)
-                    instance = env['fsm.instance'].browse(fsm_instance.id)
+                    instance = env['fsm.instance'].sudo().browse(fsm_instance.id)
+                    instance.lock()
                     instance.process_events()
+                    env.flush_all()
+                    env.cr.commit()
 
     def start(self):
         self.ensure_one()
@@ -626,6 +625,14 @@ class FSMInstance(models.Model):
         if fsm_instance.state != 'init':
             _logger.info(f'You cannot not start a not initialized FSM Instance! ({fsm_instance.display_name}')
             return
+
+        if fsm_instance.logging:
+            fsm_instance.message_post(
+                subject=f"Starting instance",
+                body=Markup(
+                    f"<i>Starting instance {fsm_instance.display_name}</i>"
+                )
+            )
 
         env = {}
 
@@ -643,15 +650,24 @@ class FSMInstance(models.Model):
                     exec(code_definition, global_objects, env)
 
             fsm_instance.json_instance_values = json.dumps(env)
+            fsm_instance.state = 'running'
 
         except Exception as e:
             _logger.exception(e, exc_info=True)
+
+            if fsm_instance.logging:
+                fsm_instance.message_post(
+                    subject=f"Unexpected exception starting instance",
+                    body=Markup(
+                        f"<i>Starting instance {fsm_instance.display_name}"
+                        f"exception {e}</i>"
+                    )
+                )
+
             raise exceptions.UserError(
                 f'''Starting FSM {fsmd.display_name}, on instance {fsm_instance.display_name}\n
                 Unexpected exception {e}'''
             )
-
-        fsm_instance.state = 'running'
 
     def end(self):
         for fsm_instance in self:
@@ -660,13 +676,22 @@ class FSMInstance(models.Model):
                     f'You cannot not end a non running FSM Instance! ({fsm_instance.display_name}'
                 )
 
+            fsm_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
+            if fsm_instance.logging:
+                fsm_instance.message_post(
+                    subject=f"Ending instance",
+                    body=Markup(
+                        f"<i>Instance {fsm_instance.display_name}</i>"
+                    )
+                )
+
             fsm_instance.stop_all_timers()
             fsm_instance.state = 'ended'
             if fsm_instance.logging:
                 concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
                 concrete_instance.message_post(
                     subject=f"Ending FSM",
-                    body=f'<i>Ending FSM instance {fsm_instance.display_name}</i>'
+                    body=Markup(f'<i>Ending FSM instance {fsm_instance.display_name}</i>)')
                 )
                 _logger.info(f"Ending FSM instance {fsm_instance.display_name}")
 
@@ -679,44 +704,13 @@ class FSMInstance(models.Model):
             instance.logging = False
 
     def on_send_event(self, event):
-        for fsm_instance in self:
-            if fsm_instance.logging:
-                concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
-                concrete_instance.message_post(
-                    subject=f"Sending event",
-                    body=f"<i>Sending event: {event['name']} to instance {fsm_instance.display_name}</i><br/>"
-                         f"<b>Event:</b><br/>"
-                         f"<pre>{pprint.pformat(event)}</pre><br/>"
-                )
-                _logger.info(f"Sending event: {event['name']} to instance {fsm_instance.display_name}. "
-                             f"Event: {event}")
+        pass
 
     def before_event_process(self, event, env):
-        for fsm_instance in self:
-            if fsm_instance.logging:
-                concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
-                concrete_instance.message_post(
-                    subject=f"Before event process",
-                    body=f"Before event process. Event {event['name']} for instance {fsm_instance.display_name}</i><br/>"
-                         f"<b>Event:</b><br/>"
-                         f"<pre>{pprint.pformat(event)}</pre><br/>"
-                )
-                _logger.info(f"Before event process: {event['name']} to instance {fsm_instance.display_name}. "
-                             f"Event: {event}")
-
+        pass
 
     def after_event_process(self, event, env):
-        for fsm_instance in self:
-            if fsm_instance.logging:
-                concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
-                concrete_instance.message_post(
-                    subject=f"After event process",
-                    body=f'<i>After event process for instance {fsm_instance.display_name}</i>.<br/>'
-                         f'<b>Environment:</b><br/>'
-                         f'<pre>{pprint.pformat(env)}</pre><br/>'
-                )
-                _logger.info(f"After event process: {event['name']} for instance {fsm_instance.display_name}. "
-                             f"Environment: {env}")
+        pass
 
     def recover_retained_events(self):
         for fsm_instance in self:
@@ -735,7 +729,9 @@ class FSMInstance(models.Model):
             concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
             concrete_instance.message_post(
                 subject=f"Posponing event",
-                body=f"<i>Posponing event {pprint.pformat(event)}, for instance {fsm_instance.display_name}</i>"
+                body=Markup(
+                    f"<i>Posponing event {pprint.pformat(event)}, for instance {fsm_instance.display_name}</i>"
+                )
             )
             _logger.info(f"Posponing event {event}, for instance {fsm_instance.display_name}")
 
@@ -755,8 +751,10 @@ class FSMInstance(models.Model):
             concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
             concrete_instance.message_post(
                 subject=f"Changing state",
-                body=f"<i>Changing state from {fsm_instance.current_state} "
-                     f"to: {new_state} for instance {fsm_instance.display_name}</i>"
+                body=Markup(
+                    f"<i>Changing state from {fsm_instance.current_state} "
+                    f"to: {new_state} for instance {fsm_instance.display_name}</i>"
+                )
             )
             _logger.info(f"Changing state {'from ' + fsm_instance.current_state if fsm_instance.current_state else ''} "
                          f"to: {new_state} for instance {fsm_instance.display_name}")
@@ -773,9 +771,11 @@ class FSMInstance(models.Model):
             if fsm_instance.logging:
                 concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
                 concrete_instance.message_post(
-                    subject=f"Sending timer",
-                    body=f"<i>Sending timer {event} "
-                         f"for: {delay}, trigger at: {at} for instance {fsm_instance.display_name}</i>"
+                    subject=f"Starting timer",
+                    body=Markup(
+                        f"<i>Starting timer with event <pre>{event}</pre> "
+                        f"for: {delay} seconds, trigger at: {at} for instance {fsm_instance.display_name}</i>"
+                    )
                 )
                 _logger.info(f"Sending timer {event} "
                              f"for: {delay}, trigger at: {at} for instance {fsm_instance.display_name}")
@@ -799,8 +799,10 @@ class FSMInstance(models.Model):
                 concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
                 concrete_instance.message_post(
                     subject=f"Stopping timer",
-                    body=f"<i>Stopping timer {event_name} "
-                         f"for instance {fsm_instance.display_name}</i>"
+                    body=Markup(
+                        f"<i>Stopping timer {event_name} "
+                        f"for instance {fsm_instance.display_name}</i>"
+                    )
                 )
                 _logger.info(f"Stopping timer {event_name} "
                              f"for instance {fsm_instance.display_name}")
@@ -818,8 +820,10 @@ class FSMInstance(models.Model):
                 concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
                 concrete_instance.message_post(
                     subject=f"Stopping all timers",
-                    body=f"<i>Stopping all timers "
-                         f"for instance {fsm_instance.display_name}</i>"
+                    body=Markup(
+                        f"<i>Stopping all timers "
+                        f"for instance {fsm_instance.display_name}</i>"
+                    )
                 )
                 _logger.info(f"Stopping all timers "
                              f"for instance {fsm_instance.display_name}")
@@ -883,7 +887,9 @@ class FSMInstance(models.Model):
             concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
             concrete_instance.message_post(
                 subject='Execution error',
-                body=_("<span>Error trying to send mail template with ambiguous name %s</span>") % mail_template_name,
+                body=Markup(
+                    _("<span>Error trying to send mail template with ambiguous name %s</span>") % mail_template_name
+                ),
             )
 
         templater = Environment(
