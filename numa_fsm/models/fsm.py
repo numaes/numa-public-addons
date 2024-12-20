@@ -312,8 +312,49 @@ class FSMTimer(models.Model):
         now = fields.Datetime.now()
 
         triggered_timers = self.search([('trigger_at', '<', now)])
+        dbname = self.env.cr.dbname
+        _context = self.env.context
+
         for timer in triggered_timers:
-            timer.fsm_instance_id.send_event(json.loads(timer.json_event))
+            instance_name = timer.fsm_instance_id.name
+            event = json.loads(timer.json_event)
+            event['name'] = timer.name
+
+            last_event = timer.fsm_instance_id.events_queue[-1] if timer.fsm_instance_id.events_queue else None
+
+            timer.fsm_instance_id.events_queue = [(0, 0, {
+                'name': event['name'],
+                'json_definition': json.dumps(event),
+                'sequence': last_event.sequence + 1 if last_event else 1,
+            })]
+
+            @self.env.cr.postcommit.add
+            def _process_event(iname = instance_name):
+                db_registry = Registry(dbname)
+                with db_registry.cursor() as cr:
+                    env = api.Environment(cr, SUPERUSER_ID, _context)
+                    instance = env['fsm.instance'].locate_and_lock(iname)
+                    while len(instance.events_queue) > 0:
+                        try:
+                            env = instance.prepare_env()
+                            # Process next event
+                            if instance.events_queue:
+                                event_entry = instance.events_queue[0]
+
+                                event = json.loads(event_entry.json_definition)
+                                instance.process_event(event, env)
+
+                                # remove event from queue
+                                instance.events_queue = [(2, event_entry.id)]
+                        except Exception as e:
+                            _logger.exception(e, exc_info=True)
+                            instance.message_post(
+                                subject='Unexpected exception',
+                                body=Markup(f'<pre>{pprint.pformat(e)}</pre>'),
+                            )
+                            _logger.info(f'FSM Instance of FSM {instance.definition_id.display_name}, '
+                                         f'unexpected exception: {e}')
+
         if triggered_timers:
             triggered_timers.unlink()
 
@@ -375,6 +416,7 @@ class FSMFormInput(models.TransientModel):
                         'res_id': new_record.id,
                         'type': 'binary',
                         'datas': base64.b64encode(content.read()),
+                        'description': content.filename,
                     })
                     file_vals[field_name] = attachment.id
 
@@ -414,6 +456,7 @@ class FSMFormInput(models.TransientModel):
                     attachment.res_model = instance._name
                     attachment.res_id = instance.id
                     attachment.res_field = field_name
+                    instance[field_name + '_filename'] = attachment.name
 
     def debug_hook(self):
         _logger.info('Debug hook')
@@ -559,35 +602,50 @@ class FSMInstance(models.Model):
                     f"Unexpected exception {e}"
                 )
 
-    def lock(self):
-        self.env.cr.execute(
-            f'SELECT id FROM fsm_instance '
-            f'WHERE id in {tuple(self.ids) if len(self.ids) > 1 else f"({self.id})"} FOR UPDATE')
+    @api.model
+    def locate_and_lock(self, wkf_id):
+        self._cr.execute(
+            f"SELECT id FROM fsm_instance "
+            f"WHERE name = '{wkf_id}' FOR UPDATE NOWAIT")
+
+        instance_id = self.env.cr.fetchall()[0][0]
+        return self.browse(instance_id)
 
     def process_events(self):
-        for fsm_instance in self:
-            while fsm_instance.state == 'running':
-                try:
-                    env = fsm_instance.prepare_env()
-                    # Process next event
-                    if fsm_instance.events_queue:
-                        event_entry = fsm_instance.events_queue[0]
+        self.ensure_one()
 
-                        event = json.loads(event_entry.json_definition)
-                        fsm_instance.process_event(event, env)
+        dbname = self.env.cr.dbname
+        _context = self.env.context
 
-                        # remove event from queue
-                        fsm_instance.events_queue = [(2, event_entry.id)]
-                    else:
-                        break
-                except Exception as e:
-                    _logger.exception(e, exc_info=True)
-                    fsm_instance.message_post(
-                        subject='Unexpected exception',
-                        body=Markup(f'<pre>{pprint.pformat(e)}</pre>'),
-                    )
-                    _logger.info(f'FSM Instance of FSM {fsm_instance.definition_id.display_name}, '
-                                 f'unexpected exception: {e}')
+        if self.state == 'running':
+            instance_name = self.name
+
+            @self.env.cr.postcommit.add
+            def _process_event():
+                db_registry = Registry(dbname)
+                with db_registry.cursor() as cr:
+                    env = api.Environment(cr, SUPERUSER_ID, _context)
+                    instance = env['fsm.instance'].locate_and_lock(instance_name)
+                    while len(instance.events_queue) > 0:
+                        try:
+                            env = instance.prepare_env()
+                            # Process next event
+                            if instance.events_queue:
+                                event_entry = instance.events_queue[0]
+
+                                event = json.loads(event_entry.json_definition)
+                                instance.process_event(event, env)
+
+                                # remove event from queue
+                                instance.events_queue = [(2, event_entry.id)]
+                        except Exception as e:
+                            _logger.exception(e, exc_info=True)
+                            instance.message_post(
+                                subject='Unexpected exception',
+                                body=Markup(f'<pre>{pprint.pformat(e)}</pre>'),
+                            )
+                            _logger.info(f'FSM Instance of FSM {instance.definition_id.display_name}, '
+                                         f'unexpected exception: {e}')
 
     def send_event(self, event):
         event_model = self.env['fsm.event_entry']
@@ -604,14 +662,14 @@ class FSMInstance(models.Model):
 
             dbname = self.env.cr.dbname
             _context = self.env.context
+            instance_name = fsm_instance.name
 
             @self.env.cr.postcommit.add
             def trigger():
                 db_registry = Registry(dbname)
                 with db_registry.cursor() as cr:
                     env = api.Environment(cr, SUPERUSER_ID, _context)
-                    instance = env['fsm.instance'].sudo().browse(fsm_instance.id)
-                    instance.lock()
+                    instance = env['fsm.instance'].locate_and_lock(instance_name)
                     instance.process_events()
                     env.flush_all()
                     env.cr.commit()
