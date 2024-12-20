@@ -14,7 +14,7 @@ class WebsiteForm(form.WebsiteForm):
     # Check and insert values from the form on the model <model> + validation phone fields
     def _handle_website_form(self, model_name, **kwargs):
         if model_name == 'fsm.form_input':
-            form_input_model = request.env['fsm.form_input']
+            form_input_model = request.env['fsm.form_input'].sudo()
             form_input = form_input_model.create(kwargs)
             return json.dumps({'id': form_input.id})
         else:
