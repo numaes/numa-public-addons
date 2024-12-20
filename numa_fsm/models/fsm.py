@@ -333,7 +333,7 @@ class FSMTimer(models.Model):
                 db_registry = Registry(dbname)
                 with db_registry.cursor() as cr:
                     env = api.Environment(cr, SUPERUSER_ID, _context)
-                    instance = env['fsm.instance'].locate_and_lock(iname)
+                    instance = env['fsm.instance'].sudo().locate_and_lock(iname)
                     while len(instance.events_queue) > 0:
                         try:
                             env = instance.prepare_env()
@@ -625,7 +625,7 @@ class FSMInstance(models.Model):
                 db_registry = Registry(dbname)
                 with db_registry.cursor() as cr:
                     env = api.Environment(cr, SUPERUSER_ID, _context)
-                    instance = env['fsm.instance'].locate_and_lock(instance_name)
+                    instance = env['fsm.instance'].sudo().locate_and_lock(instance_name)
                     while len(instance.events_queue) > 0:
                         try:
                             env = instance.prepare_env()

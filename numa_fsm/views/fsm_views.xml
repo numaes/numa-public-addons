@@ -99,11 +99,11 @@
                                     string="End"
                                     invisible="state != 'running'"/>
                             <button name="start_logging" type="object"
-                                    string="Strart logging"
-                                    invisible="state != 'running'"/>
+                                    string="Start logging"
+                                    invisible="state != 'running' or logging"/>
                             <button name="stop_logging" type="object"
                                     string="Stop logging"
-                                    invisible="state != 'running'"/>
+                                    invisible="state != 'running' or not logging"/>
                             <field name="state" widget="statusbar" />
                         </header>
                         <group name="top">
