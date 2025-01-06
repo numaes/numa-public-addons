@@ -27,15 +27,15 @@
                     </group>
                 </xpath>
                 <xpath expr="//field[@name='order_line']/list/field[@name='name']" position="after">
-                    <field name="unit_width" invisible="1"/>
-                    <field name="unit_length" invisible="1"/>
-                    <field name="unit_height" invisible="1"/>
-                    <field name="unit_surface" invisible="1"/>
-                    <field name="unit_weight" invisible="1"/>
-                    <field name="unit_volume" invisible="1"/>
-                    <field name="total_surface" invisible="1"/>
-                    <field name="total_weight" invisible="1"/>
-                    <field name="total_volume" invisible="1"/>
+                    <field name="unit_width" optional="show"/>
+                    <field name="unit_length" optional="show"/>
+                    <field name="unit_height" optional="show"/>
+                    <field name="unit_surface" optional="show"/>
+                    <field name="unit_weight" optional="show"/>
+                    <field name="unit_volume" optional="show"/>
+                    <field name="total_surface" optional="show"/>
+                    <field name="total_weight" optional="show"/>
+                    <field name="total_volume" optional="show"/>
                 </xpath>
                 <xpath expr="//field[@name='order_line']/form//field[@name='price_unit']" position="after">
                     <field name="price_qty" readonly="True" force_save="True"/>
