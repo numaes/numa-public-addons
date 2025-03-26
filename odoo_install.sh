@@ -162,12 +162,12 @@ if [ "$INSTALL_PRIVATE" = "True" ]; then
     done
   fi
 
-  echo -e "\n==== Installing numa-addons Server ===="
+  echo -e "\n==== Installing numa_l10n_ar Server ===="
   if [ ! -d "numa_l10n_ar-$OE_VERSION" ]; then
     GITHUB_RESPONSE="Authentication"
     while [[ $GITHUB_RESPONSE == *"Authentication"* ]]; do
         echo "------------------------WARNING------------------------------"
-        echo "Your authentication with NUMA numa-addons has failed! Please try again."
+        echo "Your authentication with NUMA numa_l10n_ar has failed! Please try again."
         echo "TIP: Press ctrl+c to stop this script."
         echo "-------------------------------------------------------------"
         echo " "
@@ -256,7 +256,7 @@ if [ "$PROJECT" != "" ]; then
       printf "limit_request = 8192\n" >> odoo.config
       printf "limit_time_cpu = 3600\n" >> odoo.config
       printf "limit_time_real = 7200\n" >> odoo.config
-      printf "db_user = pg-$PROJECT-$OE_VERSION\n" >>odoo.config
+      printf "db_user = pg-qa-$OE_VERSION\n" >>odoo.config
       createuser -s pg-$PROJECT-$OE_VERSION
 
       if [ "$PROJECT_REPO" = "True" ]; then
@@ -437,9 +437,10 @@ EOF
     pip install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
     if [ "$INSTALL_PRIVATE" = "Yes" ]; then
       pip install -r "../numa-addons-$OE_VERSION/requirements.txt"
+      pip install -r "../numa_l10n_ar-$OE_VERSION/requirements.txt"
     fi
 
-    "../odoo-$OE_VERSION-numa/odoo-bin" -c odoo.config -s --stop-after-init
+    "../numa-public-odoo-$OE_VERSION-numa/odoo-bin" -c odoo.config -s --stop-after-init
 
     cd ..
   fi
@@ -454,11 +455,17 @@ if [ "$INSTALL_NGINX" = "True" ]; then
 
   cat <<EOF > ~/odoo
 #odoo server
-upstream backend-odoo {
+upstream backend-qa-odoo {
  server localhost:$OE_PORT;
 }
-upstream backend-odoo-im {
+upstream backend-qa-odoo-im {
  server localhost:$LONGPOLLING_PORT;
+}
+upstream backend-odoo {
+ server localhost:8169;
+}
+upstream backend-odoo-im {
+ server localhost:8172;
 }
 map \$http_upgrade \$connection_upgrade {
   default upgrade;
@@ -471,6 +478,83 @@ server {
    server_name $WEBSITE_NAME;
    rewrite ^/.*\$ https://\$host\$1 permanent;
 }
+
+server {
+  listen 443 ssl;
+  server_name test-$WEBSITE_NAME;
+  proxy_read_timeout 900s;
+  proxy_connect_timeout 900s;
+  proxy_send_timeout 900s;
+
+  ssl_certificate /etc/letsencrypt/live/test-$WEBSITE_NAME/fullchain.pem; # managed by Certbot
+  ssl_certificate_key /etc/letsencrypt/live/test-$WEBSITE_NAME/privkey.pem; # managed by Certbot
+  ssl_session_timeout 30m;
+  ssl_protocols TLSv1.2;
+  ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+  ssl_prefer_server_ciphers off;
+  keepalive_timeout 60;
+
+
+  # Add Headers for odoo proxy mode
+  proxy_set_header X-Forwarded-Host \$host;
+  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto \$scheme;
+  proxy_set_header X-Real-IP \$remote_addr;
+  add_header X-Frame-Options "SAMEORIGIN";
+  add_header X-XSS-Protection "1; mode=block";
+  proxy_set_header X-Client-IP \$remote_addr;
+  proxy_set_header HTTP_X_FORWARDED_HOST \$remote_addr;
+
+  #   odoo    log files
+  access_log  /var/log/nginx/$OE_USER-access.log;
+  error_log   /var/log/nginx/$OE_USER-error.log;
+
+  #   increase    proxy   buffer  size
+  proxy_buffers   16  64k;
+  proxy_buffer_size   128k;
+
+  #   force   timeouts    if  the backend dies
+  proxy_next_upstream error   timeout invalid_header  http_500    http_502
+  http_503;
+
+  types {
+    text/less less;
+    text/scss scss;
+  }
+
+  #   enable  data    compression
+  gzip    on;
+  gzip_min_length 1100;
+  gzip_buffers    4   32k;
+  gzip_types  text/css text/scss text/plain text/xml application/xml application/json application/javascript;
+  gzip_vary   on;
+  client_header_buffer_size 4k;
+  large_client_header_buffers 4 64k;
+  client_max_body_size 0;
+
+  location / {
+    proxy_set_header X-Forwarded-Host \$host;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_redirect off;
+    proxy_pass http://backend-qa-odoo;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
+
+  }
+
+  location /websocket {
+    proxy_pass http://backend-qa-odoo-im;
+    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Connection \$connection_upgrade;
+    proxy_set_header X-Forwarded-Host \$host;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header X-Real-IP \$remote_addr;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
+  }
 
 server {
   listen 443 ssl;
@@ -526,7 +610,6 @@ server {
   client_max_body_size 0;
 
   location / {
-    proxy_set_header X-Forwarded-Host $http_host;
     proxy_set_header X-Forwarded-Host \$host;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
@@ -549,6 +632,7 @@ server {
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
   }
+
 }
 EOF
 
