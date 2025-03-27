@@ -33,7 +33,7 @@
                         <button name="action_cancel"
                                 type="object"
                                 string="Cancel service"
-                                invisible="state not in ['draft', 'testing', 'running´, 'maintenance']"/>
+                                invisible="state not in ['draft', 'testing', 'running', 'maintenance']"/>
 
                         <field name="state" widget="statusbar" />
                     </header>
