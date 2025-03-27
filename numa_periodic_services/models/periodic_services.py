@@ -30,22 +30,14 @@ class PeriodicServices(models.Model):
 
     type = fields.Selection(
         [],
-        'Service type',
-        readonly=True,
-        states={'draft': [('readonly', False)]},
+        'Service type'
     )
 
     next_execution = fields.Datetime(
         'Next execution',
-        readonly=True,
-        states={'draft': [('readonly', False)],
-                'testing': [('readonly', False)],
-                'maintenance': [('readonly', True)]},
     )
     interval_value = fields.Integer(
         'Repetition interval',
-        readonly=True,
-        states={'draft': [('readonly', False)]},
     )
     interval_type = fields.Selection(
         [
@@ -54,8 +46,6 @@ class PeriodicServices(models.Model):
             ('days', 'Days'),
         ],
         'Interval unit',
-        readonly=True,
-        states={'draft': [('readonly', False)]},
     )
 
     error_treatment = fields.Selection(
@@ -64,14 +54,8 @@ class PeriodicServices(models.Model):
             ('retry_with_limit', 'Retry with limit'),
         ],
         'Error treatment',
-        readonly=True,
         required=True,
         default='retry_forever',
-        states={
-            'draft': [('readonly', False)],
-            'testing': [('readonly', False)],
-            'maintenance': [('readonly', False)],
-        },
     )
 
     error_count = fields.Integer('Current error count')

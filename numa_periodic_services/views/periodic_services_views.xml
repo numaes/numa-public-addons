@@ -48,10 +48,14 @@
                             </h1>
                         </div>
                         <group name="settings" string="Settings">
-                            <field name="type"/>
-                            <field name="next_execution"/>
-                            <field name="interval_value"/>
-                            <field name="interval_type"/>
+                            <field name="type"
+                                   readonly="state not in ['draft']"/>
+                            <field name="next_execution"
+                                   readonly="state not in ['draft', 'testing', 'maintenance']"/>
+                            <field name="interval_value"
+                                   readonly="state not in ['draft']"/>
+                            <field name="interval_type"
+                                   readonly="state not in ['draft']"/>
                         </group>
                         <group name="specific_data" string="Specific data">
                         </group>
