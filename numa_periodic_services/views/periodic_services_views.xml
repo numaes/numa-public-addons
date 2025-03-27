@@ -13,27 +13,27 @@
                         <button name="action_test"
                                 type="object"
                                 string="Go to test mode"
-                                states="draft,running,maintenance"/>
+                                invisible="state not in ['draft', 'running', 'maintenance']"/>
                         <button name="trigger"
                                 type="object"
                                 string="Manual trigger"
-                                states="testing,maintenance"/>
+                                invisible="state not in ['testing', 'maintenance']"/>
                         <button name="action_into_operation"
                                 type="object"
                                 string="Set normal operation"
-                                states="draft,testing,maintenance"/>
+                                invisible="state not in ['draft', 'testing', 'maintenance']"/>
                         <button name="action_into_maintenance"
                                 type="object"
                                 string="Go into maintenance mode"
-                                states="running"/>
+                                invisible="state not in ['running']"/>
                         <button name="action_into_configuration"
                                 type="object"
                                 string="Back to configuration"
-                                states="testing,running,maintenance,canceled"/>
+                                invisible="state not in ['testing', 'running', 'maintenance', 'canceled']"/>
                         <button name="action_cancel"
                                 type="object"
                                 string="Cancel service"
-                                states="draft,testing,running,maintenance"/>
+                                invisible="state not in ['draft', 'testing', 'running´, 'maintenance']"/>
 
                         <field name="state" widget="statusbar" />
                     </header>
