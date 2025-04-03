@@ -259,27 +259,24 @@ if [ "$PROJECT" != "" ]; then
       printf "db_user = pg-qa-$OE_VERSION\n" >>odoo.config
       createuser -s pg-$PROJECT-$OE_VERSION
 
-      if [ "$PROJECT_REPO" = "True" ]; then
-        printf "addons_path=$PROJECT-addons-$OE_VERSION,\n" >> odoo.config
-      else
-        printf "addons_path=\n" >> odoo.config
+      printf "addons_path=../numa-public-odoo-$OE_VERSION-numa/addons,\n" >>odoo.config
+      printf "    ../numa-public-odoo-$OE_VERSION-numa/odoo/addons,\n" >>odoo.config
+      printf "    ../extra-addons-$OE_VERSION,\n" >> odoo.config
+
+      if [ "$IS_ENTERPRISE" = "True" ]; then
+          printf "../enterprise-$OE_VERSION,\n" >> odoo.config
       fi
 
-      printf "    ../extra-addons-$OE_VERSION,\n" >> odoo.config
+      printf "    ../numa-public-addons-$OE_VERSION,\n" >>odoo.config
+      printf "    ../extra-addons-$OE_VERSION,\n" >>odoo.config
 
       if [ "$INSTALL_PRIVATE" = "Yes" ]; then
         printf "    ../numa-addons-$OE_VERSION,\n" >>odoo.config
         printf "    ../numa_l10n_ar-$OE_VERSION,\n" >>odoo.config
       fi
 
-      printf "    ../numa-public-addons-$OE_VERSION,\n" >>odoo.config
-
-      if [ "$IS_ENTERPRISE" = "True" ]; then
-          printf "../enterprise-$OE_VERSION,\n" >> odoo.config
-      fi
-
-      printf "    ../numa-public-odoo-$OE_VERSION-numa/addons,\n" >>odoo.config
-      printf "    ../numa-public-odoo-$OE_VERSION-numa/odoo/addons\n" >>odoo.config
+      if [ "$PROJECT_REPO" = "True" ]; then
+        printf "$PROJECT-addons-$OE_VERSION,\n" >> odoo.config
 
     fi
 
