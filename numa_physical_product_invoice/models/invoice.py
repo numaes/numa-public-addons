@@ -283,12 +283,12 @@ class InvoiceLine(models.Model):
                 normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id) \
                     if il.product_uom_id else il.quantity
                 if il.product_id.price_base == 'normal':
-                    il.unit_price_uom_id = il.product_id.uom_id
+                    il.unit_price_uom_id = il.product_id.uom_id.id
                 else:
                     il.unit_price_uom_id = uom_model.search(
                         [('name', '=', UNIT_PER_TYPE[il.product_id.price_base])],
                         limit=1
-                    )
+                    ).id
             else:
                 il.unit_price_uom_id = False
 

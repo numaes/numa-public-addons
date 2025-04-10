@@ -8,7 +8,7 @@
             <field name="inherit_id" ref="sale.view_order_form" />
             <field name="arch" type="xml">
                 <xpath expr="//field[@name='order_line']/form/field[@name='name']" position="after">
-                    <group attrs="{'invisible': [('display_type', '=', False)]}">
+                    <group invisible="not display_type">
                         <group>
                             <field name="unit_width"/>
                             <field name="unit_length"/>
@@ -27,15 +27,15 @@
                     </group>
                 </xpath>
                 <xpath expr="//field[@name='order_line']/list/field[@name='name']" position="after">
-                    <field name="unit_width" optional="show"/>
-                    <field name="unit_length" optional="show"/>
-                    <field name="unit_height" optional="show"/>
-                    <field name="unit_surface" optional="show"/>
-                    <field name="unit_weight" optional="show"/>
-                    <field name="unit_volume" optional="show"/>
-                    <field name="total_surface" optional="show"/>
-                    <field name="total_weight" optional="show"/>
-                    <field name="total_volume" optional="show"/>
+                    <field name="unit_width" optional="hide"/>
+                    <field name="unit_length" optional="hide"/>
+                    <field name="unit_height" optional="hide"/>
+                    <field name="unit_surface" optional="hide"/>
+                    <field name="unit_weight" optional="hide"/>
+                    <field name="unit_volume" optional="hide"/>
+                    <field name="total_surface" optional="hide"/>
+                    <field name="total_weight" optional="hide"/>
+                    <field name="total_volume" optional="hide"/>
                 </xpath>
                 <xpath expr="//field[@name='order_line']/form//field[@name='price_unit']" position="after">
                     <field name="price_qty" readonly="True" force_save="True"/>

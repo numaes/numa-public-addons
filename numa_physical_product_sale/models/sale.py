@@ -88,12 +88,12 @@ class SaleOrderLine(models.Model):
         for sol in self:
             if sol.product_id:
                 if sol.product_id.price_base == 'normal':
-                    sol.unit_price_uom_id = sol.product_id.uom_id
+                    sol.unit_price_uom_id = sol.product_id.uom_id.id
                 else:
                     sol.unit_price_uom_id = uom_model.search(
                         [('name', '=', UNIT_PER_TYPE[sol.product_id.price_base])],
                         limit=1
-                    )
+                    ).id
             else:
                 sol.unit_price_uom_id = False
 
@@ -172,12 +172,12 @@ class SaleOrderLine(models.Model):
 
         if not self.display_type and self.product_id:
             if self.product_id.price_base == 'normal':
-                return self.product_id.uom_id
+                return self.product_id.uom_id.id
             else:
                 return uom_model.search(
                     [('name', '=', UNIT_PER_TYPE[self.product_id.price_base])],
                     limit=1
-                )
+                ).id
 
     def _get_qty_to_invoice(self):
         self.ensure_one()
