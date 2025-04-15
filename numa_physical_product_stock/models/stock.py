@@ -46,7 +46,7 @@ class StockPicking(models.Model):
         self.onchange_move_line_ids()
         for picking in self:
             for move in picking.move_ids:
-                move._onchange_move_line_ids()
+                move.onchange_move_line_ids()
         return super().button_validate()
 
 
