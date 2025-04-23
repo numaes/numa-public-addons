@@ -84,7 +84,7 @@ sudo apt-get upgrade -y
 #--------------------------------------------------
 echo -e "\n---- Install PostgreSQL Server ----"
 sudo apt-get install postgresql postgresql-contrib postgresql-client postgresql-client-common postgresql-server-dev-all libpq-dev -y
-sudo -u postgres createuser -s $USER
+sudo -u postgres createuser -s "$USER"
 
 echo -e "\n---- Creating the ODOO PostgreSQL User  ----"
 createuser -s "pg-$PROJECT-$OE_VERSION"
@@ -183,7 +183,9 @@ if [ "$IS_ENTERPRISE" = "True" ]; then
     while [[ $GITHUB_RESPONSE == *"Authentication"* ]]; do
         echo "------------------------WARNING------------------------------"
         echo "Your authentication with Github has failed! Please try again."
-        echo "In order to clone and install the Odoo enterprise version you \nneed to be an offical Odoo partner and you need access to\nhttp://github.com/odoo/enterprise.\n"
+        echo "In order to clone and install the Odoo enterprise version you"
+        echo "need to be an offical Odoo partner and you need access to"
+        echo "nhttp://github.com/odoo/enterprise."
         echo "TIP: Press ctrl+c to stop this script."
         echo "-------------------------------------------------------------"
         echo " "
@@ -195,25 +197,29 @@ if [ "$IS_ENTERPRISE" = "True" ]; then
     sudo npm install -g less-plugin-clean-css
 fi
 
+# Mejora: Definir variables para las rutas al principio
+ODOO_ROOT="$OE_HOME/$PROJECT-$OE_VERSION"
+LOG_DIR="$ODOO_ROOT/log"
+DATA_DIR="$ODOO_ROOT/data"
+DATABASE_DIR="$ODOO_ROOT/database"
+
 if [ "$PROJECT" != "" ]; then
   if [ -n "$PROJECT" ]; then
     # Create project environment
+    
     echo -e "\n==== Installing project-addons ===="
-    if [ ! -d "$PROJECT-$OE_VERSION" ]; then
-      mkdir "$PROJECT-$OE_VERSION"
+    # Mejora: Usar las variables de directorio definidas al principio
+    mkdir -p "$ODOO_ROOT"
+    cd "$ODOO_ROOT" || exit
+
+    if [ ! -d "$PROJECT-addons-$OE_VERSION" ] && [ "$PROJECT_REPO" = "True" ]; then
+      git clone "https://github.com/numaes/$PROJECT-addons" -b "$OE_VERSION" "$PROJECT-addons-$OE_VERSION"
     fi
 
-    cd "$PROJECT-$OE_VERSION" || exit
-
-    if [ ! -d "$PROJECT-addons-$OE_VERSION" ]; then
-      if [ "$PROJECT_REPO" = "True" ]; then
-        git clone "https://github.com/numaes/$PROJECT-addons" -b "$OE_VERSION" "$PROJECT-addons-$OE_VERSION"
-      fi
-    fi
-
-    mkdir -p log
-    mkdir -p data
-    mkdir -p database
+    # Mejora: Usar variables para crear directorios
+    mkdir -p "$LOG_DIR"
+    mkdir -p "$DATA_DIR"
+    mkdir -p "$DATABASE_DIR"
 
     if [ ! -d venv ]; then
       echo -e "\n---- Install virtual env in current directory ----"
@@ -224,61 +230,25 @@ if [ "$PROJECT" != "" ]; then
     sudo ./setup/debinstall.sh
 
     if [ ! -f 'odoo.config' ]; then
-      touch odoo.config
-      echo -e "* Creating server config file"
+          cat > odoo.config <<EOF
+[options]
+admin_passwd = $(if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then head /dev/urandom | tr -dc A-Za-z0-9 | head -c 16; echo; else echo "$OE_SUPERADMIN"; fi)
+http_port = $OE_PORT
+longpolling_port = $(if [ "$OE_VERSION" -ge "16" ]; then echo "False"; else echo "$LONGPOLLING_PORT"; fi)
+gevent_port = $(if [ "$OE_VERSION" -ge "16" ]; then echo "$LONGPOLLING_PORT"; else echo ""; fi)
+proxy_mode = $INSTALL_NGINX
+data_dir = $DATA_DIR  # Usar variable para la ruta de datos
+limit_memory_hard = 1677721600
+limit_memory_soft = 8291456000
+limit_request = 8192
+limit_time_cpu = 3600
+limit_time_real = 7200
+db_user = "pg-$PROJECT-$OE_VERSION" # Entrecomillar la variable
+addons_path=../numa-public-odoo-$OE_VERSION-numa/addons,../numa-public-odoo-$OE_VERSION-numa/odoo/addons,../extra-addons-$OE_VERSION$(if [ "$IS_ENTERPRISE" = "True" ]; then echo ",../enterprise-$OE_VERSION"; fi),../numa-public-addons-$OE_VERSION,../extra-addons-$OE_VERSION$(if [ "$INSTALL_PRIVATE" = "Yes" ]; then echo ",../numa-addons-$OE_VERSION,../numa_l10n_ar-$OE_VERSION"; fi)$(if [ "$PROJECT_REPO" = "True" ]; then echo ",$PROJECT-addons-$OE_VERSION"; fi)
+EOF
 
-      printf "[options] \n; This is the password that allows database operations:\n" >> odoo.config
-      if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then
-          echo -e "* Generating random admin password"
-          OE_SUPERADMIN=$cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1
-          printf "admin_passwd = ${OE_SUPERADMIN}\n" >> odoo.config
-      else
-          printf "admin_passwd = ${OE_SUPERADMIN}768\n" >> odoo.config
+        createuser -s "pg-$PROJECT-$OE_VERSION"
       fi
-
-      if [ "$OE_VERSION" -gt "11.0 " ]; then
-          printf "http_port = ${OE_PORT}\n" >> odoo.config
-      else
-          printf "xmlrpc_port = ${OE_PORT}\n" >> odoo.config
-      fi
-      if [ "$OE_VERSION" -gte "16" ]; then
-          printf "gevent_port = ${LONGPOLLING_PORT}\n" >> odoo.config
-          printf "longpolling_port = False\n" >> odoo.config
-      else
-          printf "longpolling_port = ${LONGPOLLING_PORT}\n" >> odoo.config
-      fi
-      if [ "$INSTALL_NGINX" = "True" ]; then
-          printf "proxy_mode = True\n" >> odoo.config
-      fi
-      printf "data_dir = data\n" >> odoo.config
-      printf "limit_memory_hard = 1677721600\n" >> odoo.config
-      printf "limit_memory_soft = 8291456000\n" >> odoo.config
-      printf "limit_request = 8192\n" >> odoo.config
-      printf "limit_time_cpu = 3600\n" >> odoo.config
-      printf "limit_time_real = 7200\n" >> odoo.config
-      printf "db_user = pg-qa-$OE_VERSION\n" >>odoo.config
-      createuser -s pg-$PROJECT-$OE_VERSION
-
-      printf "addons_path=../numa-public-odoo-$OE_VERSION-numa/addons,\n" >>odoo.config
-      printf "    ../numa-public-odoo-$OE_VERSION-numa/odoo/addons,\n" >>odoo.config
-      printf "    ../extra-addons-$OE_VERSION,\n" >> odoo.config
-
-      if [ "$IS_ENTERPRISE" = "True" ]; then
-          printf "../enterprise-$OE_VERSION,\n" >> odoo.config
-      fi
-
-      printf "    ../numa-public-addons-$OE_VERSION,\n" >>odoo.config
-      printf "    ../extra-addons-$OE_VERSION,\n" >>odoo.config
-
-      if [ "$INSTALL_PRIVATE" = "Yes" ]; then
-        printf "    ../numa-addons-$OE_VERSION,\n" >>odoo.config
-        printf "    ../numa_l10n_ar-$OE_VERSION,\n" >>odoo.config
-      fi
-
-      if [ "$PROJECT_REPO" = "True" ]; then
-        printf "$PROJECT-addons-$OE_VERSION,\n" >> odoo.config
-
-    fi
 
     cat <<EOF > ./start.sh
 source venv/bin/activate
@@ -337,7 +307,9 @@ else
 	# get list of databases in system for current user
 	# command inspired on SISalp suggestion on odoo mail list
 	# https://www.odoo.com/groups/community-59/community-15954813
-	DBS=`$PSQL -l -U $ROLE | grep $ROLE | cut -d '|' -f1`
+	# shellcheck disable=SC2006
+	# shellcheck disable=SC2006
+	DBS=`$PSQL -l -U "$ROLE" | grep "$ROLE" | cut -d '|' -f1`
 	DBS="$1"
 
 	# now backup the tables
@@ -383,6 +355,7 @@ else
     else
         # echo "Droping database $DB if exists"
         # dropdb $DB -U $ROLE
+    fi
 
 		DBS=`$PSQL -l -U $ROLE | grep $ROLE | cut -d '|' -f1`
 
@@ -637,7 +610,15 @@ EOF
   sudo ln -s /etc/nginx/sites-available/odoo /etc/nginx/sites-enabled/odoo
   sudo rm /etc/nginx/sites-enabled/default
   sudo service nginx reload
-  sudo su root -c "echo 'proxy_mode = True\n' >> /etc/${OE_CONFIG}.conf"
+  # Mejora: Usar sudo para escribir en el archivo de configuración
+  # Mejora: Definir OE_CONFIG previamente o usar odoo.config si se refiere a ese archivo
+  if [ -n "$OE_CONFIG" ]; then # Verificar si la variable OE_CONFIG está definida
+      sudo su root -c "echo 'proxy_mode = True' >> /etc/$OE_CONFIG.conf"
+  else
+      echo "Error: La variable OE_CONFIG no está definida. No se pudo configurar proxy_mode."
+  fi
+  # O si se refiere al archivo odoo.config, usar:
+  # echo "proxy_mode = True" >> "$ODOO_ROOT/odoo.config"
   echo "Done! The Nginx server is up and running. Configuration can be found at /etc/nginx/sites-available/odoo"
 else
   echo "Nginx isn't installed due to choice of the user!"
@@ -647,11 +628,13 @@ fi
 # Enable ssl with certbot
 #--------------------------------------------------
 
-if [ "$INSTALL_NGINX" = "True" ]  && [ "$ADMIN_EMAIL" != "odoo@example.com" ]  && [ "$WEBSITE_NAME" != "_" ];then
-  sudo apt install python-rlPyCairo
-  sudo letsncrypt certbot --nginx -d $WEBSITE_NAME --noninteractive --agree-tos --email $ADMIN_EMAIL --redirect
-  sudo service nginx reload
-  echo "SSL/HTTPS is enabled!"
+if [ "$INSTALL_NGINX" = "True" ] && [ "$ADMIN_EMAIL" != "odoo@example.com" ] && [ "$WEBSITE_NAME" != "_" ]; then
+    # Mejora: Instalar letsencrypt-nginx si aún no lo está
+    sudo apt install python3-pip python3-venv python3-wheel python3-dev libxslt1-dev libzip-dev libldap2-dev libsasl2-dev libssl-dev libffi-dev libxml2-dev libxmlsec1-dev build-essential wget git nodejs npm rtlcss libjpeg-dev zlib1g-dev -y;
+    sudo apt install python-rlPyCairo letsencrypt letsencrypt-nginx
+    sudo letsencrypt certonly --standalone -d "$WEBSITE_NAME" --noninteractive --agree-tos --email "$ADMIN_EMAIL" --redirect
+    sudo service nginx reload
+    echo "SSL/HTTPS is enabled!"
 else
   echo "SSL/HTTPS isn't enabled due to choice of the user or because of a misconfiguration!"
 fi
