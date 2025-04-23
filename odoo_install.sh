@@ -235,7 +235,6 @@ if [ "$PROJECT" != "" ]; then
 admin_passwd = $(if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then head /dev/urandom | tr -dc A-Za-z0-9 | head -c 16; echo; else echo "$OE_SUPERADMIN"; fi)
 http_port = $OE_PORT
 longpolling_port = $(if [ "$OE_VERSION" -ge "16" ]; then echo "False"; else echo "$LONGPOLLING_PORT"; fi)
-gevent_port = $(if [ "$OE_VERSION" -ge "16" ]; then echo "$LONGPOLLING_PORT"; else echo ""; fi)
 proxy_mode = $INSTALL_NGINX
 data_dir = $DATA_DIR  # Usar variable para la ruta de datos
 limit_memory_hard = 1677721600
