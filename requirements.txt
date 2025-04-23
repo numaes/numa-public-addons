@@ -2,3 +2,5 @@ pdfminer
 requests
 Werkzeug
 lxml
+phonenumbers
+flanker
