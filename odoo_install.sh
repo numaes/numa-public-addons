@@ -236,7 +236,7 @@ admin_passwd = $(if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then head /dev/ura
 http_port = $OE_PORT
 longpolling_port = $(if [ "$OE_VERSION" -ge "16" ]; then echo "False"; else echo "$LONGPOLLING_PORT"; fi)
 proxy_mode = $INSTALL_NGINX
-data_dir = $DATA_DIR  # Usar variable para la ruta de datos
+data_dir = $DATA_DIR
 limit_memory_hard = 1677721600
 limit_memory_soft = 8291456000
 limit_request = 8192
