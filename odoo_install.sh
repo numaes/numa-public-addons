@@ -17,7 +17,7 @@
 ################################################################################
 
 OE_USER="$user"
-OE_HOME=$pwd
+OE_HOME=$(pwd)
 # The default port where this Odoo instance will run under provided you use the command -c in the terminal
 # Set to true if you want to install it, false if you don't need it or have it already installed.
 read -r -e -p "Install WkmhtmlToPdf [True/False]: " -i "False" INSTALL_WKHTMLTOPDF
