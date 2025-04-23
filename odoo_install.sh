@@ -408,7 +408,7 @@ EOF
       pip install -r "../numa-addons-$OE_VERSION/requirements.txt"
       pip install -r "../numa_l10n_ar-$OE_VERSION/requirements.txt"
     fi
-
+    source venv/bin/activate
     "../numa-public-odoo-$OE_VERSION-numa/odoo-bin" -c odoo.config -s --stop-after-init
 
     cd ..
