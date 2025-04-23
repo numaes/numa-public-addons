@@ -242,7 +242,7 @@ limit_memory_soft = 8291456000
 limit_request = 8192
 limit_time_cpu = 3600
 limit_time_real = 7200
-db_user = "pg-$PROJECT-$OE_VERSION" # Entrecomillar la variable
+db_user = pg-$PROJECT-$OE_VERSION
 addons_path=../numa-public-odoo-$OE_VERSION-numa/addons,../numa-public-odoo-$OE_VERSION-numa/odoo/addons,../extra-addons-$OE_VERSION$(if [ "$IS_ENTERPRISE" = "True" ]; then echo ",../enterprise-$OE_VERSION"; fi),../numa-public-addons-$OE_VERSION,../extra-addons-$OE_VERSION$(if [ "$INSTALL_PRIVATE" = "Yes" ]; then echo ",../numa-addons-$OE_VERSION,../numa_l10n_ar-$OE_VERSION"; fi)$(if [ "$PROJECT_REPO" = "True" ]; then echo ",$PROJECT-addons-$OE_VERSION"; fi)
 EOF
 
