@@ -199,7 +199,7 @@ class PolyReference(fields.Many2one):
             field = model._fields[prefix]
             comodel = model.env[field.comodel_name]
 
-            if field.store:
+            if not isinstance(field, PolyReference):
                 domain = [(prefix, 'in', comodel._search(make_domain(suffix, comodel)))]
                 if can_be_null and field.type == 'many2one' and not field.required:
                     return expression.OR([domain, [(prefix, '=', False)]])
