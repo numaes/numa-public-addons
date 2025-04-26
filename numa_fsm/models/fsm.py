@@ -2,6 +2,8 @@ import logging
 import uuid
 from datetime import date, datetime, timedelta
 from markupsafe import Markup
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import json
 import base64
@@ -13,13 +15,17 @@ from odoo import api, _, exceptions
 from odoo.tools.safe_eval import safe_eval, wrap_module
 from odoo import _, api, fields, models, SUPERUSER_ID
 from odoo.modules.registry import Registry
-
+from odoo.tools.config import config
 
 from . import miniqweb
 
 import pprint
 
 _logger = logging.getLogger(__name__)
+
+# If not specifically configured in config file, number of workers
+# used to process FSM events
+DEFAULT_FSM_WORKERS = 2
 
 
 def compile_definition(source):
@@ -295,82 +301,6 @@ class WorkFlowPageTemplate(models.Model):
         }
 
 
-class FSMTimer(models.Model):
-    _name = 'fsm.timer'
-    _description = 'FSM Timer'
-    _order = 'trigger_at desc'
-    _rec_name = 'name'
-
-    name = fields.Char('Event name', required=True)
-    json_event = fields.Text('JSON Event')
-
-    fsm_instance_id = fields.Many2one('fsm.instance', 'Target FSM instance')
-    trigger_at = fields.Datetime('Trigger at')
-
-    @api.model
-    def schedule_timers(self):
-        now = fields.Datetime.now()
-
-        triggered_timers = self.search([('trigger_at', '<', now)])
-        dbname = self.env.cr.dbname
-        _context = self.env.context
-
-        for timer in triggered_timers:
-            instance_name = timer.fsm_instance_id.name
-            event = json.loads(timer.json_event)
-            event['name'] = timer.name
-
-            last_event = timer.fsm_instance_id.events_queue[-1] if timer.fsm_instance_id.events_queue else None
-
-            timer.fsm_instance_id.events_queue = [(0, 0, {
-                'name': event['name'],
-                'json_definition': json.dumps(event),
-                'sequence': last_event.sequence + 1 if last_event else 1,
-            })]
-
-            @self.env.cr.postcommit.add
-            def _process_event(iname = instance_name):
-                db_registry = Registry(dbname)
-                with db_registry.cursor() as cr:
-                    env = api.Environment(cr, SUPERUSER_ID, _context)
-                    instance = env['fsm.instance'].sudo().locate_and_lock(iname)
-                    while len(instance.events_queue) > 0:
-                        try:
-                            env = instance.prepare_env()
-                            # Process next event
-                            if instance.events_queue:
-                                event_entry = instance.events_queue[0]
-
-                                event = json.loads(event_entry.json_definition)
-                                instance.process_event(event, env)
-
-                                # remove event from queue
-                                instance.events_queue = [(2, event_entry.id)]
-                        except Exception as e:
-                            _logger.exception(e, exc_info=True)
-                            instance.message_post(
-                                subject='Unexpected exception',
-                                body=Markup(f'<pre>{pprint.pformat(e)}</pre>'),
-                            )
-                            _logger.info(f'FSM Instance of FSM {instance.definition_id.display_name}, '
-                                         f'unexpected exception: {e}')
-
-        if triggered_timers:
-            triggered_timers.unlink()
-
-
-class FSMEventEntry(models.Model):
-    _name = 'fsm.event_entry'
-    _description = 'FSM Event'
-    _order = 'sequence'
-
-    instance_id = fields.Many2one('fsm.instance', 'Target instance', required=True)
-    retained_instance_id = fields.Many2one('fsm.instance', 'Retained instance')
-    name = fields.Char('Name', required=True)
-    json_definition = fields.Text('JSON Definition')
-    sequence = fields.Integer('Sequence')
-
-
 class FSMFormInput(models.TransientModel):
     _name = 'fsm.form_input'
     _description = 'FSM Form input'
@@ -462,6 +392,88 @@ class FSMFormInput(models.TransientModel):
         _logger.info('Debug hook')
 
 
+fsm_workers_config = config.get('fsm_workers')
+
+if not fsm_workers_config:
+    fsm_workers = DEFAULT_FSM_WORKERS
+else:
+    fsm_workers = int(fsm_workers_config)
+
+fsm_executor = ThreadPoolExecutor(max_workers=fsm_workers)
+
+
+def fsm_consume_event(db_name: str, _context: dict, instance_id: int, event: dict):
+    instance = None
+    try:
+        db = odoo.sql_db.db_connect(db_name)
+        threading.current_thread().dbname = db_name
+        with db.cursor() as cr:
+            env = api.Environment(cr, SUPERUSER_ID, _context)
+            instance = env['fsm.instance'].browse(instance_id).exists()
+            if instance:
+                instance_env = instance.prepare_env()
+                instance.process_event(event, instance_env)
+    except Exception as e:
+        _logger.exception('Exception in FSM instance %s:' %
+                          (instance.display_name if instance else 'N/A'),
+                          exc_info=True,
+                          stack_info=True)
+    finally:
+        if hasattr(threading.current_thread(), 'dbname'):
+            del threading.current_thread().dbname
+
+
+class FSMTimer(models.Model):
+    _name = 'fsm.timer'
+    _description = 'FSM Timer'
+    _order = 'trigger_at desc'
+    _rec_name = 'name'
+
+    name = fields.Char('Event name', required=True)
+    json_event = fields.Text('JSON Event')
+
+    fsm_instance_id = fields.Many2one('fsm.instance', 'Target FSM instance')
+    trigger_at = fields.Datetime('Trigger at')
+    database_name = fields.Char('Database name')
+
+    @api.model
+    def schedule_timers(self):
+        now = fields.Datetime.now()
+
+        triggered_timers = self.search([('trigger_at', '<', now)])
+        dbname = self.env.cr.dbname
+        _context = self.env.context
+
+        for timer in triggered_timers:
+            def trigger():
+                instance_id = timer.fsm_instance_id.id
+                event = json.loads(timer.json_event)
+                event['name'] = timer.name
+
+                last_event = timer.fsm_instance_id.events_queue[-1] if timer.fsm_instance_id.events_queue else None
+
+                timer.fsm_instance_id.events_queue = [(0, 0, {
+                    'name': event['name'],
+                    'json_definition': json.dumps(event),
+                    'sequence': last_event.sequence + 1 if last_event else 1,
+                })]
+
+
+                @self.env.cr.postcommit.add
+                def trigger_timer():
+                    db_registry = Registry(dbname)
+                    with db_registry.cursor() as cr:
+                        env = api.Environment(cr, SUPERUSER_ID, _context)
+                        fsm_instance = env['fsm.instance'].browse(instance_id).exists()
+                        fsm_executor.submit(fsm_consume_event, dbname, _context, fsm_instance.id, event)
+                        fsm_instance.on_send_event(event)
+
+            trigger()
+
+        if triggered_timers:
+            triggered_timers.unlink()
+
+
 class FSMInstance(models.Model):
     _name = 'fsm.instance'
     _description = 'FSM Instance'
@@ -548,6 +560,13 @@ class FSMInstance(models.Model):
     def process_event(self, event, env):
         self.ensure_one()
 
+        # Wait til lock is released
+        self._cr.execute(
+            f"SELECT id FROM fsm_instance "
+            f"WHERE id = '{self.id}' FOR UPDATE")
+
+        instance_id = self.env.cr.fetchall()[0][0]
+
         global_objects = self.get_globals()
         fsm_instance = global_objects['fsm_instance']
 
@@ -602,77 +621,31 @@ class FSMInstance(models.Model):
                     f"Unexpected exception {e}"
                 )
 
-    @api.model
-    def locate_and_lock(self, wkf_id):
-        self._cr.execute(
-            f"SELECT id FROM fsm_instance "
-            f"WHERE name = '{wkf_id}' FOR UPDATE NOWAIT")
-
-        instance_id = self.env.cr.fetchall()[0][0]
-        return self.browse(instance_id)
-
-    def process_events(self):
-        self.ensure_one()
-
-        dbname = self.env.cr.dbname
-        _context = self.env.context
-
-        if self.state == 'running':
-            instance_name = self.name
-
-            @self.env.cr.postcommit.add
-            def _process_event():
-                db_registry = Registry(dbname)
-                with db_registry.cursor() as cr:
-                    env = api.Environment(cr, SUPERUSER_ID, _context)
-                    instance = env['fsm.instance'].sudo().locate_and_lock(instance_name)
-                    while len(instance.events_queue) > 0:
-                        try:
-                            env = instance.prepare_env()
-                            # Process next event
-                            if instance.events_queue:
-                                event_entry = instance.events_queue[0]
-
-                                event = json.loads(event_entry.json_definition)
-                                instance.process_event(event, env)
-
-                                # remove event from queue
-                                instance.events_queue = [(2, event_entry.id)]
-                        except Exception as e:
-                            _logger.exception(e, exc_info=True)
-                            instance.message_post(
-                                subject='Unexpected exception',
-                                body=Markup(f'<pre>{pprint.pformat(e)}</pre>'),
-                            )
-                            _logger.info(f'FSM Instance of FSM {instance.definition_id.display_name}, '
-                                         f'unexpected exception: {e}')
-
     def send_event(self, event):
+        # Send an event to eventually multiple receivers
+        # Events only be sent if the transaction commits
+
         event_model = self.env['fsm.event_entry']
 
         for fsm_instance in self:
             fsm_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
-            fsm_instance.on_send_event(event)
-            last_event = event_model.search([('instance_id', '=', fsm_instance.id)], limit=1, order='sequence desc')
-            fsm_instance.events_queue = [(0, 0, {
-                'name': event['name'],
-                'json_definition': json.dumps(event),
-                'sequence': last_event.sequence + 1 if last_event else 1,
-            })]
 
-            dbname = self.env.cr.dbname
-            _context = self.env.context
-            instance_name = fsm_instance.name
+            def register_event():
+                # In case of several event receivers, prepare one task trigger per receiver
+                dbname = self.env.cr.dbname
+                _context = self.env.context
+                instance_id = fsm_instance.id
 
-            @self.env.cr.postcommit.add
-            def trigger():
-                db_registry = Registry(dbname)
-                with db_registry.cursor() as cr:
-                    env = api.Environment(cr, SUPERUSER_ID, _context)
-                    instance = env['fsm.instance'].locate_and_lock(instance_name)
-                    instance.process_events()
-                    env.flush_all()
-                    env.cr.commit()
+                @self.env.cr.postcommit.add
+                def trigger():
+                    db_registry = Registry(dbname)
+                    with db_registry.cursor() as cr:
+                        env = api.Environment(cr, SUPERUSER_ID, _context)
+                        fsm_instance = env['fsm.instance'].browse(instance_id).exists()
+                        fsm_executor.submit(fsm_consume_event, dbname, _context, fsm_instance.id, event)
+                        fsm_instance.on_send_event(event)
+
+            register_event()
 
     def start(self):
         self.ensure_one()
@@ -770,37 +743,6 @@ class FSMInstance(models.Model):
     def after_event_process(self, event, env):
         pass
 
-    def recover_retained_events(self):
-        for fsm_instance in self:
-            for event_entry in fsm_instance.retained_events:
-                event = json.loads(event_entry.json_definition)
-                fsm_instance.send_event(event)
-                event_entry.unlink()
-
-    def retain_event(self, event):
-        event_model = self.env['fsm.event_entry']
-
-        self.ensure_one()
-
-        fsm_instance = self
-        if fsm_instance.logging:
-            concrete_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
-            concrete_instance.message_post(
-                subject=f"Posponing event",
-                body=Markup(
-                    f"<i>Posponing event {pprint.pformat(event)}, for instance {fsm_instance.display_name}</i>"
-                )
-            )
-            _logger.info(f"Posponing event {event}, for instance {fsm_instance.display_name}")
-
-        last_event = event_model.search([('retained_instance_id', '=', fsm_instance.id)],
-                                        limit=1, order='sequence desc')
-        fsm_instance.retained_events = [(0, 0, {
-            'name': event['name'],
-            'json_definition': json.dumps(event),
-            'sequence': last_event.sequence + 1 if last_event else 1,
-        })]
-
     def change_state(self, new_state):
         self.ensure_one()
 
@@ -838,11 +780,27 @@ class FSMInstance(models.Model):
                 _logger.info(f"Sending timer {event} "
                              f"for: {delay}, trigger at: {at} for instance {fsm_instance.display_name}")
 
+            def register_event():
+                # In case of several event receivers, prepare one task trigger per receiver
+                dbname = self.env.cr.dbname
+                _context = self.env.context
+                instance_id = fsm_instance.id
+
+                @self.env.cr.postcommit.add
+                def trigger():
+                    db_registry = Registry(dbname)
+                    with db_registry.cursor() as cr:
+                        env = api.Environment(cr, SUPERUSER_ID, _context)
+                        fsm_instance = env['fsm.instance'].browse(instance_id).exists()
+                        fsm_executor.submit(fsm_consume_event, dbname, _context, fsm_instance.id, event)
+                        fsm_instance.on_send_event(event)
+
             timer_model.create(dict(
                 name=event['name'],
                 json_event=json.dumps(event),
                 fsm_instance_id=self.id,
                 trigger_at=at,
+                database_name=self.env.cr.dbname,
             ))
 
     def stop_timer(self, event_name):

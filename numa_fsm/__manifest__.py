@@ -11,6 +11,7 @@
         'mail',
         'mass_mailing',
         'website',
+        'numa_poly'
     ],
     'data': [
         "security/security.xml",
