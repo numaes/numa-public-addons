@@ -1,3 +1,15 @@
+"""
+Expression Module for Polymorphic Models
+
+This module extends Odoo's expression system to handle polymorphic models.
+It provides a custom expression class that modifies the domain parsing logic
+to properly handle polymorphic references and fields.
+
+The main modification is in the parse method, which has been extended to handle
+many2one fields differently based on whether they are stored or not, allowing
+for proper querying of polymorphic references.
+"""
+
 from odoo import osv
 from odoo.osv.expression import expression, NOT_OPERATOR, OR_OPERATOR, AND_OPERATOR, \
                                 DOMAIN_OPERATORS, TERM_OPERATORS, NEGATIVE_TERM_OPERATORS, \
@@ -23,22 +35,35 @@ _logger = logging.getLogger(__name__)
 
 
 class PolyExpression(expression):
+    """
+    Extended expression class for handling polymorphic models.
+
+    This class extends Odoo's standard expression class to properly handle
+    polymorphic models and fields. The main modification is in the parse method,
+    which has been adapted to handle non-stored Many2one fields (PolyReference)
+    by using the record's ID instead of a foreign key column.
+    """
 
     def parse(self):
-        """ Transform the leaves of the expression
+        """
+        Transform the leaves of the expression into SQL.
+
+        This method extends the standard Odoo expression parsing to handle
+        polymorphic references. The key modification is in the handling of
+        Many2one fields, where it checks if the field is stored or not and
+        adjusts the join condition accordingly.
 
         The principle is to pop elements from a leaf stack one at a time.
-        Each leaf is processed. The processing is a if/elif list of various
-        cases that appear in the leafs (many2one, function fields, ...).
+        Each leaf is processed through an if/elif list of various cases
+        (many2one, function fields, etc.).
 
         Three things can happen as a processing result:
 
-        - the leaf is a logic operator, and updates the result stack
-          accordingly;
-        - the leaf has been modified and/or new leafs have to be introduced
-          in the expression; they are pushed into the leaf stack, to be
-          processed right after;
-        - the leaf is converted to SQL and added to the result stack
+        1. The leaf is a logic operator, and updates the result stack accordingly
+        2. The leaf has been modified and/or new leaves have to be introduced
+           in the expression; they are pushed into the leaf stack to be
+           processed right after
+        3. The leaf is converted to SQL and added to the result stack
 
         Example:
 
@@ -55,16 +80,14 @@ class PolyExpression(expression):
         apply operator AND  []                  ["(A1 or A2) and B1"]
         =================== =================== =====================
 
-        Some internal var explanation:
+        Internal variables:
 
-        :var list path: left operand seen as a sequence of field names
-            ("foo.bar" -> ["foo", "bar"])
-        :var obj model: model object, model containing the field
-            (the name provided in the left operand)
-        :var obj field: the field corresponding to `path[0]`
-        :var obj column: the column corresponding to `path[0]`
-        :var obj comodel: relational model of field (field.comodel)
-            (res_partner.bank_ids -> res.partner.bank)
+        - path: left operand seen as a sequence of field names
+          ("foo.bar" -> ["foo", "bar"])
+        - model: model object containing the field (the name provided in the left operand)
+        - field: the field corresponding to path[0]
+        - comodel: relational model of field (field.comodel)
+          (res_partner.bank_ids -> res.partner.bank)
         """
         def to_ids(value, comodel, leaf):
             """ Normalize a single id or name, or a list of those, into a list of ids
@@ -333,33 +356,35 @@ class PolyExpression(expression):
 
             # ----------------------------------------
             # PATH SPOTTED
-            # -> many2one or one2many with _auto_join:
-            #
-            #    POLY MODIFICATION: depending on Many2one stored or not, it will make a join on
-            #                       stored field (standard Odoo behaviour) or the same id of the record
-            #                       Used on poly references to components of the object, no column required!
-            #
-            #    - add a join, then jump into linked column: column.remaining on
-            #      src_table is replaced by remaining on dst_table, and set for re-evaluation
-            #    - if a domain is defined on the column, add it into evaluation
-            #      on the relational table
-            # -> many2one, many2many, one2many: replace by an equivalent computed
-            #    domain, given by recursively searching on the remaining of the path
-            # -> note: hack about columns.property should not be necessary anymore
-            #    as after transforming the column, it will go through this loop once again
+            # This section handles fields that are paths (e.g., "partner_id.name")
             # ----------------------------------------
+
+            # POLYMORPHIC MODIFICATION:
+            # For many2one fields with auto_join, we handle them differently based on
+            # whether they are stored or not:
+            # - For stored fields (standard Odoo): join on foreign key column
+            # - For non-stored fields (PolyReference): join on the record's ID itself
+            #   This is the key modification for polymorphic models, as it allows
+            #   joining to dependent models without requiring a foreign key column.
 
             elif operator in ('any', 'not any') and field.type == 'many2one' \
                  and (not field.related) and field.auto_join:
-                # res_partner.state_id = res_partner__state_id.id
+                # Create an alias for the comodel table
                 coalias = self.query.make_alias(alias, field.name)
+
                 if field.store:
+                    # Standard Odoo behavior for stored many2one fields:
+                    # Join on the foreign key column
+                    # Example: res_partner.state_id = res_partner__state_id.id
                     self.query.add_join('LEFT JOIN', coalias, comodel._table, SQL(
                         "%s = %s",
                         model._field_to_sql(alias, field.name, self.query),
                         SQL.identifier(coalias, 'id'),
                     ))
                 else:
+                    # Polymorphic behavior for non-stored many2one fields (PolyReference):
+                    # Join on the record's ID itself, as polymorphic records share the same ID
+                    # across all dependent models
                     self.query.add_join('LEFT JOIN', coalias, comodel._table, SQL(
                         "%s = %s",
                         model._field_to_sql(alias, 'id', self.query),
