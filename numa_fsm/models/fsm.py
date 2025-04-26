@@ -1,3 +1,21 @@
+"""
+Finite State Machine (FSM) Module for Odoo
+
+This module implements a comprehensive Finite State Machine system for Odoo,
+allowing the definition and execution of complex workflows. It provides:
+
+- FSM definition parsing and compilation
+- Workflow state management
+- Event processing and transitions
+- Timer-based events
+- Email template integration
+- Dynamic page rendering
+- Form input handling
+
+The module is designed to be flexible and extensible, supporting various
+business process automation needs within the Odoo ecosystem.
+"""
+
 import logging
 import uuid
 from datetime import date, datetime, timedelta
@@ -29,7 +47,42 @@ DEFAULT_FSM_WORKERS = 2
 
 
 def compile_definition(source):
+    """
+    Compile an FSM definition from source text into a structured representation.
+
+    This function parses a text-based FSM definition with special syntax and converts
+    it into a Python dictionary that represents the FSM structure, including states,
+    events, transitions, and actions.
+
+    The FSM definition uses a custom syntax with meta-lines starting with '@' that
+    define states, events, and transitions, followed by Python code blocks that
+    define the actions to be executed.
+
+    Args:
+        source (str): The source text containing the FSM definition
+
+    Returns:
+        dict: A dictionary containing the compiled FSM definition with the following keys:
+            - 'states': Dictionary of states and their properties
+            - 'events': Dictionary of events and their properties
+            - 'transitions': List of transitions between states
+            - 'code': The Python code associated with the FSM
+            - 'extended': Boolean indicating if this is an extended FSM
+            - 'postpone': Boolean indicating if event processing should be postponed
+
+    Raises:
+        odoo.exceptions.UserError: If there are syntax errors in the FSM definition
+    """
     def tokenize(meta_line):
+        """
+        Split a meta-line into tokens.
+
+        Args:
+            meta_line (str): A line from the FSM definition starting with '@'
+
+        Returns:
+            list: A list of tokens extracted from the meta-line
+        """
         tokens = []
         token = ''
         for c in meta_line:
@@ -44,15 +97,38 @@ def compile_definition(source):
         return tokens
 
     def is_meta(raw_line):
+        """
+        Check if a line is a meta-line (starts with '@').
+
+        Args:
+            raw_line (str): A line from the FSM definition
+
+        Returns:
+            bool: True if the line is a meta-line, False otherwise
+        """
         if len(raw_line) > 0 and raw_line[0] == '@':
             return True
         return False
 
-    body = []
+    body = []  # Collects the code body of the FSM definition
 
     def get_unindented_body():
+        """
+        Process the collected code body and normalize indentation.
+
+        This function detects the indentation level of the first non-empty line
+        and removes that amount of leading whitespace from all lines. It also
+        checks for consistent indentation across the code body.
+
+        Returns:
+            str: The normalized code with consistent indentation
+
+        Raises:
+            odoo.exceptions.UserError: If inconsistent indentation is detected
+        """
         indentation = 0
         indentation_found = False
+        # Find the indentation level of the first non-empty line
         for line in body:
             for c in line:
                 if c in [' ']:
@@ -73,17 +149,20 @@ def compile_definition(source):
                 cleaned_line = ''
                 first_char_position = -1
                 position = -1
+                # Process each character in the line
                 for c in line:
                     position += 1
                     if c == '#':
-                        break
+                        break  # Stop at comments
                     elif c != ' ':
                         all_spaces = False
                         if first_char_position < 0:
                             first_char_position = position
                         cleaned_line += c
+                # Check for consistent indentation
                 if not all_spaces and first_char_position < indentation:
                     raise exceptions.UserError('Line indentation is not following the first line')
+                # Remove the leading indentation
                 if len(line) > indentation:
                     unindented_code.append(line[indentation:])
                 else:
@@ -194,6 +273,17 @@ def compile_definition(source):
 
 
 class FSMDefinition(models.Model):
+    """
+    Finite State Machine Definition Model
+
+    This model stores the definitions of finite state machines (FSMs) used in the system.
+    Each FSM definition includes a text-based definition that is compiled into a structured
+    JSON representation. FSM definitions can extend other definitions, creating a hierarchy.
+
+    The text definition uses a custom syntax with meta-lines starting with '@' that define
+    states, events, and transitions, followed by Python code blocks that define the actions
+    to be executed.
+    """
     _name = 'fsm.definition'
     _description = 'FSM Definition'
     _inherit = ['mail.thread', 'mail.activity.mixin']
@@ -213,6 +303,21 @@ class FSMDefinition(models.Model):
 
     @api.onchange('text_definition')
     def onchange_text_definition(self):
+        """
+        Compile the text definition into a JSON representation when it changes.
+
+        This method is triggered when the text_definition field changes. It compiles
+        the text definition into a structured representation, updates the JSON field,
+        and handles parent-child relationships based on the 'extends' directive in
+        the definition.
+
+        If the FSM extends another FSM, it sets the parent_id field accordingly.
+        It also propagates changes to child FSMs by triggering their onchange methods.
+
+        Raises:
+            odoo.exceptions.UserError: If an extended FSM referenced in the definition
+                                       cannot be found in the system.
+        """
         for fsm in self:
             cd = compile_definition(fsm.text_definition)
             fsm.json_compiled_definition = json.dumps(cd)
@@ -229,6 +334,16 @@ class FSMDefinition(models.Model):
 
 
 class WorkFlowMailTemplate(models.Model):
+    """
+    Email Template Model for FSM Workflows
+
+    This model defines email templates that can be used within FSM workflows.
+    These templates can be referenced in FSM definitions and used to send
+    emails at specific points in the workflow process.
+
+    The templates use QWeb for rendering and can access FSM instance data
+    during the rendering process.
+    """
     _name = 'fsm.wf.mail_template'
     _description = 'FSM WorkFlow Mail template'
 
@@ -236,6 +351,12 @@ class WorkFlowMailTemplate(models.Model):
 
     @api.model
     def default_body_view_id(self):
+        """
+        Create a default QWeb view for new mail templates.
+
+        Returns:
+            ir.ui.view: A newly created empty QWeb view for the template body
+        """
         view_model = self.env['ir.ui.view']
 
         return view_model.create(dict(
@@ -260,6 +381,12 @@ class WorkFlowMailTemplate(models.Model):
     )
 
     def open_mail_template(self):
+        """
+        Open the mail template in a form view for editing.
+
+        Returns:
+            dict: Action dictionary for opening the template form
+        """
         self.ensure_one()
 
         compose_form = self.env.ref('numa_fsm.mail_template_html_edit')
@@ -276,6 +403,16 @@ class WorkFlowMailTemplate(models.Model):
 
 
 class WorkFlowPageTemplate(models.Model):
+    """
+    Page Template Model for FSM Workflows
+
+    This model defines HTML page templates that can be used within FSM workflows.
+    These templates can be referenced in FSM definitions and used to render
+    dynamic HTML pages at specific points in the workflow process.
+
+    The templates can access FSM instance data during the rendering process,
+    allowing for dynamic content generation based on workflow state.
+    """
     _name = 'fsm.wf.page_template'
     _description = 'FSM WorkFlow Page template'
 
@@ -285,6 +422,16 @@ class WorkFlowPageTemplate(models.Model):
     body = fields.Html('Body', sanitize=False)
 
     def plain_body(self, target_object, vals=None):
+        """
+        Render the template body with the given target object and values.
+
+        Args:
+            target_object: The object to use for rendering (typically an FSM instance)
+            vals (dict, optional): Additional values to include in the rendering context
+
+        Returns:
+            str: The rendered HTML content
+        """
         self.ensure_one()
 
         context = dict(vals or {}, object=target_object)
@@ -292,6 +439,12 @@ class WorkFlowPageTemplate(models.Model):
         return self.body_view_id._render(context)
 
     def open_page_template(self):
+        """
+        Open the page template in a web browser for preview.
+
+        Returns:
+            dict: Action dictionary for opening the template in a browser
+        """
         self.ensure_one()
 
         return {
@@ -302,6 +455,16 @@ class WorkFlowPageTemplate(models.Model):
 
 
 class FSMFormInput(models.TransientModel):
+    """
+    Form Input Model for FSM Workflows
+
+    This transient model handles form submissions from web interfaces to FSM instances.
+    It processes both regular form data and file uploads, storing the data in a structured
+    format and associating it with the appropriate FSM instance.
+
+    The model is designed to be used with the website form builder and provides methods
+    for retrieving and processing uploaded files.
+    """
     _name = 'fsm.form_input'
     _description = 'FSM Form input'
 
@@ -314,6 +477,19 @@ class FSMFormInput(models.TransientModel):
 
     @api.model_create_multi
     def create(self, vals_list):
+        """
+        Create form input records from submitted form data.
+
+        This method processes form submissions, handling both regular form fields
+        and file uploads. It creates a form input record with the form data stored
+        as JSON and associates it with the appropriate FSM instance.
+
+        Args:
+            vals_list (list): List of dictionaries containing form field values
+
+        Returns:
+            fsm.form_input: The created form input records
+        """
         fsm_instance_model = self.env['fsm.instance']
         attachment_model = self.env['ir.attachment']
 
@@ -357,6 +533,15 @@ class FSMFormInput(models.TransientModel):
         return result
 
     def get_file(self, name: str):
+        """
+        Retrieve a file uploaded through the form.
+
+        Args:
+            name (str): The name of the file field in the form
+
+        Returns:
+            bytes or None: The base64-encoded file data if found, None otherwise
+        """
         attachment_model = self.env['ir.attachment']
 
         self.ensure_one()
@@ -370,6 +555,21 @@ class FSMFormInput(models.TransientModel):
         return None
 
     def move_file(self, instance, name: str, field_name):
+        """
+        Move an uploaded file to a binary field in the target instance.
+
+        This method transfers ownership of an uploaded file attachment to the
+        specified instance and field, allowing the file to be permanently stored
+        in the database associated with the appropriate record.
+
+        Args:
+            instance (Model): The target instance to associate the file with
+            name (str): The name of the file field in the form
+            field_name (str): The name of the binary field in the target instance
+
+        Raises:
+            odoo.exceptions.UserError: If the specified field does not exist in the target instance
+        """
         attachment_model = self.env['ir.attachment']
 
         self.ensure_one()
@@ -389,28 +589,56 @@ class FSMFormInput(models.TransientModel):
                     instance[field_name + '_filename'] = attachment.name
 
     def debug_hook(self):
+        """
+        Hook method for debugging purposes during development and testing.
+
+        This method can be called from form submissions to log debugging information.
+        """
         _logger.info('Debug hook')
 
 
 fsm_workers_config = config.get('fsm_workers')
 
+# Configure the thread pool size for FSM event processing
 if not fsm_workers_config:
     fsm_workers = DEFAULT_FSM_WORKERS
 else:
     fsm_workers = int(fsm_workers_config)
 
+# Create a thread pool executor for processing FSM events asynchronously
 fsm_executor = ThreadPoolExecutor(max_workers=fsm_workers)
 
 
 def fsm_consume_event(db_name: str, _context: dict, instance_id: int, event: dict):
+    """
+    Process an FSM event in a separate database connection.
+
+    This function is designed to be called from a separate thread or process to handle
+    FSM events asynchronously. It connects to the specified database, retrieves the
+    FSM instance, and processes the event.
+
+    Args:
+        db_name (str): The name of the database to connect to
+        _context (dict): The Odoo environment context
+        instance_id (int): The ID of the FSM instance to process the event for
+        event (dict): The event data to process
+
+    Note:
+        This function handles exceptions internally and logs them, so it's safe
+        to call from a thread pool without additional exception handling.
+    """
     instance = None
     try:
+        # Connect to the database
         db = odoo.sql_db.db_connect(db_name)
         threading.current_thread().dbname = db_name
         with db.cursor() as cr:
+            # Create a new environment with the cursor
             env = api.Environment(cr, SUPERUSER_ID, _context)
+            # Get the FSM instance
             instance = env['fsm.instance'].browse(instance_id).exists()
             if instance:
+                # Prepare the environment and process the event
                 instance_env = instance.prepare_env()
                 instance.process_event(event, instance_env)
     except Exception as e:
@@ -424,6 +652,17 @@ def fsm_consume_event(db_name: str, _context: dict, instance_id: int, event: dic
 
 
 class FSMTimer(models.Model):
+    """
+    Timer Model for FSM Workflows
+
+    This model stores timer-based events that need to be triggered at specific times
+    for FSM instances. Timers are used to implement delayed actions, timeouts, and
+    scheduled events within FSM workflows.
+
+    Timers are processed by a scheduled action that checks for timers that have
+    reached their trigger time and sends the associated events to the target
+    FSM instances.
+    """
     _name = 'fsm.timer'
     _description = 'FSM Timer'
     _order = 'trigger_at desc'
@@ -438,6 +677,19 @@ class FSMTimer(models.Model):
 
     @api.model
     def schedule_timers(self):
+        """
+        Process timers that have reached their trigger time.
+
+        This method is called by a scheduled action to check for timers that have
+        reached their trigger time. For each such timer, it sends the associated
+        event to the target FSM instance and then deletes the timer.
+
+        The event processing is done asynchronously using the FSM executor thread pool
+        to avoid blocking the scheduler.
+
+        Returns:
+            None
+        """
         now = fields.Datetime.now()
 
         triggered_timers = self.search([('trigger_at', '<', now)])
@@ -475,6 +727,21 @@ class FSMTimer(models.Model):
 
 
 class FSMInstance(models.Model):
+    """
+    Finite State Machine Instance Model
+
+    This model represents an active instance of a finite state machine (FSM) in the system.
+    Each instance is associated with a specific FSM definition and maintains its own state,
+    event queue, and instance-specific data.
+
+    FSM instances can be standalone or associated with other models through the concrete_model
+    and concrete_id fields. They process events according to the rules defined in their
+    associated FSM definition, transitioning between states and executing actions as needed.
+
+    The instance maintains a queue of events to be processed and can also retain events
+    for later processing. It provides methods for starting, stopping, and ending the FSM,
+    as well as for processing events, changing states, and managing timers.
+    """
     _name = 'fsm.instance'
     _description = 'FSM Instance'
     _order = 'create_date desc'
@@ -551,6 +818,19 @@ class FSMInstance(models.Model):
         )
 
     def consume_event(self, event):
+        """
+        Process an event immediately in the current transaction.
+
+        This method prepares the environment, processes the event, and then
+        flushes the environment back to the instance. It's used for synchronous
+        event processing within the current transaction.
+
+        Args:
+            event (dict): The event to process
+
+        Returns:
+            None
+        """
         self.ensure_one()
 
         env = self.prepare_env()
@@ -558,9 +838,30 @@ class FSMInstance(models.Model):
         self.flush_env(env)
 
     def process_event(self, event, env):
+        """
+        Process an event according to the FSM definition.
+
+        This is the core method for event processing in the FSM. It looks up the
+        appropriate event handler in the FSM definition based on the current state
+        and event name, and executes the associated code.
+
+        The method acquires a lock on the FSM instance to ensure that only one
+        process can modify the instance at a time. It also handles event postponing
+        and error reporting.
+
+        Args:
+            event (dict): The event to process, containing at least a 'name' key
+            env (dict): The environment dictionary for the event processing
+
+        Returns:
+            dict: The updated environment after event processing
+
+        Raises:
+            odoo.exceptions.UserError: If an error occurs during event processing
+        """
         self.ensure_one()
 
-        # Wait til lock is released
+        # Wait until lock is released
         self._cr.execute(
             f"SELECT id FROM fsm_instance "
             f"WHERE id = '{self.id}' FOR UPDATE")
@@ -622,8 +923,23 @@ class FSMInstance(models.Model):
                 )
 
     def send_event(self, event):
-        # Send an event to eventually multiple receivers
-        # Events only be sent if the transaction commits
+        """
+        Send an event asynchronously to the FSM instance.
+
+        This method queues an event for asynchronous processing after the current
+        transaction commits. It uses the FSM executor thread pool to process the
+        event in a separate thread, avoiding blocking the current transaction.
+
+        The event will only be processed if the current transaction commits successfully.
+
+        Args:
+            event (dict): The event to send, containing at least a 'name' key
+
+        Returns:
+            None
+        """
+        # Send an event to potentially multiple receivers
+        # Events will only be sent if the transaction commits
 
         event_model = self.env['fsm.event_entry']
 
@@ -648,6 +964,18 @@ class FSMInstance(models.Model):
             register_event()
 
     def start(self):
+        """
+        Initialize and start the FSM instance.
+
+        This method initializes the FSM instance by setting its initial state and
+        executing the start code from the FSM definition. It also sets the instance
+        state to 'running' and logs the start event if logging is enabled.
+
+        The method can only be called on instances in the 'init' state.
+
+        Returns:
+            None
+        """
         self.ensure_one()
 
         global_objects = self.get_globals()
@@ -701,6 +1029,20 @@ class FSMInstance(models.Model):
             )
 
     def end(self):
+        """
+        End the FSM instance.
+
+        This method ends the FSM instance by stopping all timers and setting the
+        state to 'ended'. It also logs the end event if logging is enabled.
+
+        The method can only be called on instances in the 'running' state.
+
+        Raises:
+            odoo.exceptions.UserError: If the instance is not in the 'running' state
+
+        Returns:
+            None
+        """
         for fsm_instance in self:
             if fsm_instance.state != 'running':
                 raise exceptions.UserError(
@@ -744,6 +1086,18 @@ class FSMInstance(models.Model):
         pass
 
     def change_state(self, new_state):
+        """
+        Change the current state of the FSM instance.
+
+        This method changes the current state of the FSM instance to the specified
+        new state. It also logs the state change if logging is enabled.
+
+        Args:
+            new_state (str): The new state to transition to
+
+        Returns:
+            None
+        """
         self.ensure_one()
 
         fsm_instance = self
@@ -762,6 +1116,25 @@ class FSMInstance(models.Model):
         fsm_instance.current_state = new_state
 
     def start_timer(self, event, delay=None, at=None):
+        """
+        Start a timer that will trigger an event after a delay or at a specific time.
+
+        This method creates a timer that will send the specified event to the FSM instance
+        either after the specified delay or at the specified time. The timer is stored
+        in the database and will be processed by the scheduler.
+
+        Args:
+            event (dict): The event to send when the timer triggers
+            delay (int, optional): The delay in seconds before triggering the event
+            at (datetime, optional): The specific time at which to trigger the event
+
+        Note:
+            Either delay or at must be specified. If both are specified, at takes precedence.
+            If neither is specified, the event is triggered immediately.
+
+        Returns:
+            None
+        """
         timer_model = self.env['fsm.timer']
 
         if not at:
@@ -930,4 +1303,3 @@ class FSMInstance(models.Model):
             attachment_ids=mail_template.attachment_ids.ids,
             partner_ids=[fsm_instance.partner_id.id] if fsm_instance.partner_id else False,
         )
-
