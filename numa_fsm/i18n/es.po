@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-11-08 21:03+0000\n"
-"PO-Revision-Date: 2024-11-08 21:03+0000\n"
+"POT-Creation-Date: 2023-11-15 12:00+0000\n"
+"PO-Revision-Date: 2023-11-15 12:00+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -19,7 +19,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_needaction
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_needaction
 msgid "Action Needed"
-msgstr "Se requiere acción"
+msgstr "Acción Necesaria"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__activity_ids
@@ -31,111 +31,145 @@ msgstr "Actividades"
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__activity_exception_decoration
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__activity_exception_decoration
 msgid "Activity Exception Decoration"
-msgstr ""
+msgstr "Decoración de Excepción de Actividad"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__activity_state
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__activity_state
 msgid "Activity State"
-msgstr "Estado de la actividad"
+msgstr "Estado de Actividad"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__activity_type_icon
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__activity_type_icon
 msgid "Activity Type Icon"
-msgstr ""
+msgstr "Icono de Tipo de Actividad"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_attachment_count
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_attachment_count
 msgid "Attachment Count"
-msgstr "Cuenta de adjuntos"
+msgstr "Conteo de Adjuntos"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__children_ids
-msgid "Children FSMs"
-msgstr "FSMs hijos"
+msgid "Child Definitions"
+msgstr "Definiciones Hijas"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__code
+msgid "Code"
+msgstr "Código"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__company_id
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__company_id
+msgid "Company"
+msgstr "Compañía"
+
+#. module: numa_fsm
+#: model:ir.ui.menu,name:numa_fsm.menu_configuration
+msgid "Configuration"
+msgstr "Configuración"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__create_uid
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__create_uid
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__create_uid
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__create_uid
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_timer__create_uid
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__create_uid
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__create_uid
 msgid "Created by"
 msgstr "Creado por"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__create_date
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__create_date
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__create_date
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__create_date
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_timer__create_date
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__create_date
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__create_date
 msgid "Created on"
 msgstr "Creado el"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__current_state
-msgid "Current state"
-msgstr "Estado actual"
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__current_state_id
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__current_state_id
+msgid "Current State"
+msgstr "Estado Actual"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__text_definition
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__definition_id
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__definition_id
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__definition_id
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__definition_id
 msgid "Definition"
 msgstr "Definición"
 
 #. module: numa_fsm
+#: model:ir.actions.act_window,name:numa_fsm.action_definition
+#: model:ir.ui.menu,name:numa_fsm.menu_definition
+msgid "Definitions"
+msgstr "Definiciones"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__description
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__description
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__description
+msgid "Description"
+msgstr "Descripción"
+
+#. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__display_name
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__display_name
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__display_name
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__display_name
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_timer__display_name
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__display_name
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__display_name
 msgid "Display Name"
-msgstr "Nombre a mostrar"
+msgstr "Nombre Mostrado"
 
 #. module: numa_fsm
-#: model:ir.model.fields.selection,name:numa_fsm.selection__fsm_instance__state__ended
-msgid "Ended"
-msgstr "Terminado"
+#: model:ir.model.fields.selection,name:numa_fsm.selection__fsm_instance__state__draft
+msgid "Draft"
+msgstr "Borrador"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_timer__name
-msgid "Event name"
-msgstr "Nombre del evento"
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__end_state_id
+msgid "End State"
+msgstr "Estado Final"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__events_queue
-msgid "Events queue"
-msgstr "Cola de eventos"
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__field_id
+msgid "Field"
+msgstr "Campo"
 
 #. module: numa_fsm
-#. odoo-python
-#: code:addons/numa_fsm/models/fsm.py:0
-msgid "Extended FSM %s not found!"
-msgstr "La máquina %s no fue encontrada!"
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__field_type
+msgid "Field Type"
+msgstr "Tipo de Campo"
 
 #. module: numa_fsm
 #: model:ir.model,name:numa_fsm.model_fsm_definition
-msgid "FSM Definition"
-msgstr "Definición de FSM"
+msgid "Finite State Machine Definition"
+msgstr "Definición de Máquina de Estados Finitos"
 
 #. module: numa_fsm
-#: model:ir.model,name:numa_fsm.model_fsm_event_entry
-msgid "FSM Event"
-msgstr "Evento FSM"
+#: model:ir.model,name:numa_fsm.model_fsm_form_input
+msgid "Finite State Machine Form Input"
+msgstr "Entrada de Formulario de Máquina de Estados Finitos"
 
 #. module: numa_fsm
 #: model:ir.model,name:numa_fsm.model_fsm_instance
-msgid "FSM Instance"
-msgstr "Instancia FSM"
+msgid "Finite State Machine Instance"
+msgstr "Instancia de Máquina de Estados Finitos"
 
 #. module: numa_fsm
-#: model:ir.model,name:numa_fsm.model_fsm_timer
-msgid "FSM Timer"
-msgstr "Temporizador FSM"
+#: model:ir.model,name:numa_fsm.model_fsm_state
+msgid "Finite State Machine State"
+msgstr "Estado de Máquina de Estados Finitos"
 
 #. module: numa_fsm
-#: model:ir.actions.server,name:numa_fsm.ir_cron_fsm_timers_ir_actions_server
-msgid "FSM: Main timer survillance"
-msgstr "Supervisión de temporizadores FSM"
+#: model:ir.model,name:numa_fsm.model_fsm_transition
+msgid "Finite State Machine Transition"
+msgstr "Transición de Máquina de Estados Finitos"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_follower_ids
@@ -147,50 +181,42 @@ msgstr "Seguidores"
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_partner_ids
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_partner_ids
 msgid "Followers (Partners)"
-msgstr ""
-
-#. module: numa_fsm
-#: model:ir.model.fields,help:numa_fsm.field_fsm_definition__activity_type_icon
-#: model:ir.model.fields,help:numa_fsm.field_fsm_instance__activity_type_icon
-msgid "Font awesome icon e.g. fa-tasks"
-msgstr ""
-
-#. module: numa_fsm
-#: model:ir.model.fields.selection,name:numa_fsm.selection__fsm_instance__state__init
-msgid "For Init"
-msgstr "Para inicializar"
+msgstr "Seguidores (Socios)"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__has_message
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__has_message
 msgid "Has Message"
-msgstr "Tiene mensaje"
+msgstr "Tiene Mensaje"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__id
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__id
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__id
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__id
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_timer__id
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__id
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__id
 msgid "ID"
-msgstr ""
+msgstr "ID"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__activity_exception_icon
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__activity_exception_icon
 msgid "Icon"
-msgstr ""
+msgstr "Icono"
 
 #. module: numa_fsm
 #: model:ir.model.fields,help:numa_fsm.field_fsm_definition__activity_exception_icon
 #: model:ir.model.fields,help:numa_fsm.field_fsm_instance__activity_exception_icon
 msgid "Icon to indicate an exception activity."
-msgstr ""
+msgstr "Icono para indicar una actividad de excepción."
 
 #. module: numa_fsm
 #: model:ir.model.fields,help:numa_fsm.field_fsm_definition__message_needaction
+#: model:ir.model.fields,help:numa_fsm.field_fsm_definition__message_unread
 #: model:ir.model.fields,help:numa_fsm.field_fsm_instance__message_needaction
+#: model:ir.model.fields,help:numa_fsm.field_fsm_instance__message_unread
 msgid "If checked, new messages require your attention."
-msgstr "Si está marcado, hay nuevos mensajes que requieren su atención"
+msgstr "Si está marcado, los nuevos mensajes requieren su atención."
 
 #. module: numa_fsm
 #: model:ir.model.fields,help:numa_fsm.field_fsm_definition__message_has_error
@@ -198,71 +224,58 @@ msgstr "Si está marcado, hay nuevos mensajes que requieren su atención"
 #: model:ir.model.fields,help:numa_fsm.field_fsm_instance__message_has_error
 #: model:ir.model.fields,help:numa_fsm.field_fsm_instance__message_has_sms_error
 msgid "If checked, some messages have a delivery error."
-msgstr "Si está marcado, algunos mensajes tienen errores de envio"
+msgstr "Si está marcado, algunos mensajes tienen un error de entrega."
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__name
-msgid "Instance ID"
-msgstr "ID de Instancia"
-
-#. module: numa_fsm
-#. odoo-python
-#: code:addons/numa_fsm/models/fsm.py:0
-msgid "Invalid meta command %s in line %d"
-msgstr "Meta comando inválido (%s) en la línea %d"
+#: model:ir.actions.act_window,name:numa_fsm.action_instance
+#: model:ir.ui.menu,name:numa_fsm.menu_instance
+msgid "Instances"
+msgstr "Instancias"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_is_follower
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_is_follower
 msgid "Is Follower"
-msgstr "Es seguidor"
+msgstr "Es Seguidor"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__json_compiled_definition
-msgid "JSON Compiled definition"
-msgstr "Definción compilada JSON"
-
-#. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__json_definition
-msgid "JSON Definition"
-msgstr "Definición JSON"
-
-#. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_timer__json_event
-msgid "JSON Event"
-msgstr "Evento JSON"
-
-#. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__json_instance_values
-msgid "JSON Instance Values"
-msgstr "Valores de instancia"
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition____last_update
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input____last_update
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance____last_update
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state____last_update
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition____last_update
+msgid "Last Modified on"
+msgstr "Última Modificación el"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__write_uid
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__write_uid
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__write_uid
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__write_uid
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_timer__write_uid
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__write_uid
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__write_uid
 msgid "Last Updated by"
-msgstr "Ultima actualización por"
+msgstr "Última Actualización por"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__write_date
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__write_date
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__write_date
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__write_date
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_timer__write_date
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__write_date
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__write_date
 msgid "Last Updated on"
-msgstr "Ultima actualización el"
+msgstr "Última Actualización el"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__logging
-msgid "Logging?"
-msgstr "Logging activado?"
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_main_attachment_id
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_main_attachment_id
+msgid "Main Attachment"
+msgstr "Adjunto Principal"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_has_error
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_has_error
 msgid "Message Delivery error"
-msgstr "Error en el envío de mensaje"
+msgstr "Error de Entrega de Mensaje"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_ids
@@ -271,131 +284,88 @@ msgid "Messages"
 msgstr "Mensajes"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__my_activity_date_deadline
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__my_activity_date_deadline
-msgid "My Activity Deadline"
-msgstr ""
-
-#. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__name
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__name
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__name
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__name
 msgid "Name"
 msgstr "Nombre"
-
-#. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__activity_calendar_event_id
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__activity_calendar_event_id
-msgid "Next Activity Calendar Event"
-msgstr ""
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__activity_date_deadline
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__activity_date_deadline
 msgid "Next Activity Deadline"
-msgstr ""
+msgstr "Fecha Límite de Próxima Actividad"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__activity_summary
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__activity_summary
 msgid "Next Activity Summary"
-msgstr ""
+msgstr "Resumen de Próxima Actividad"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__activity_type_id
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__activity_type_id
 msgid "Next Activity Type"
-msgstr ""
-
-#. module: numa_fsm
-#. odoo-python
-#: code:addons/numa_fsm/models/fsm.py:0
-msgid "No event name defined in line %d"
-msgstr "No se ha definido el nombre del evento en la línea %d"
-
-#. module: numa_fsm
-#. odoo-python
-#: code:addons/numa_fsm/models/fsm.py:0
-msgid "No extended FSM name in line %d"
-msgstr "No se ha definido el nombre de la FSM en línea %d"
-
-#. module: numa_fsm
-#. odoo-python
-#: code:addons/numa_fsm/models/fsm.py:0
-msgid "No state name defined in line %d"
-msgstr "No se ha definido el nombre del estado en la linea %d"
-
-#. module: numa_fsm
-#. odoo-python
-#: code:addons/numa_fsm/models/fsm.py:0
-msgid "Non valid parameter %s in line %d"
-msgstr "Parámetro inválido %s en la línea %d"
+msgstr "Tipo de Próxima Actividad"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_needaction_counter
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_needaction_counter
 msgid "Number of Actions"
-msgstr "Cuenta de acciones"
+msgstr "Número de Acciones"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_has_error_counter
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_has_error_counter
 msgid "Number of errors"
-msgstr "Cuenta de errores"
+msgstr "Número de errores"
 
 #. module: numa_fsm
 #: model:ir.model.fields,help:numa_fsm.field_fsm_definition__message_needaction_counter
 #: model:ir.model.fields,help:numa_fsm.field_fsm_instance__message_needaction_counter
 msgid "Number of messages requiring action"
-msgstr ""
+msgstr "Número de mensajes que requieren acción"
 
 #. module: numa_fsm
 #: model:ir.model.fields,help:numa_fsm.field_fsm_definition__message_has_error_counter
 #: model:ir.model.fields,help:numa_fsm.field_fsm_instance__message_has_error_counter
 msgid "Number of messages with delivery error"
-msgstr ""
+msgstr "Número de mensajes con error de entrega"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__parent_id
-msgid "Parent FSM"
-msgstr "FSM padre"
+msgid "Parent Definition"
+msgstr "Definición Padre"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__retained_events
-msgid "Posponed Events queue"
-msgstr "Cola de eventos pospuestos"
-
-#. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__rating_ids
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__rating_ids
-msgid "Ratings"
-msgstr ""
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__parent_id
+msgid "Parent Instance"
+msgstr "Instancia Padre"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__activity_user_id
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__activity_user_id
 msgid "Responsible User"
-msgstr "Usuario responsable"
-
-#. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__retained_instance_id
-msgid "Retained instance"
-msgstr "Instancia retenida"
-
-#. module: numa_fsm
-#: model:ir.model.fields.selection,name:numa_fsm.selection__fsm_instance__state__running
-msgid "Running"
-msgstr "En ejecución"
+msgstr "Usuario Responsable"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_has_sms_error
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_has_sms_error
 msgid "SMS Delivery error"
-msgstr ""
+msgstr "Error de Entrega de SMS"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__sequence
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__sequence
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__sequence
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__sequence
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__sequence
 msgid "Sequence"
 msgstr "Secuencia"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__start_state_id
+msgid "Start State"
+msgstr "Estado Inicial"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__state
@@ -403,55 +373,237 @@ msgid "State"
 msgstr "Estado"
 
 #. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__state_ids
+msgid "States"
+msgstr "Estados"
+
+#. module: numa_fsm
 #: model:ir.model.fields,help:numa_fsm.field_fsm_definition__activity_state
 #: model:ir.model.fields,help:numa_fsm.field_fsm_instance__activity_state
-msgid ""
-"Status based on activities\n"
-"Overdue: Due date is already passed\n"
-"Today: Activity date is today\n"
-"Planned: Future activities."
-msgstr ""
+msgid "Status based on activities\nOverdue: Due date is already passed\nToday: Activity date is today\nPlanned: Future activities."
+msgstr "Estado basado en actividades\nVencido: La fecha de vencimiento ya ha pasado\nHoy: La fecha de la actividad es hoy\nPlanificado: Actividades futuras."
 
 #. module: numa_fsm
-#: model:ir.model.fields.selection,name:numa_fsm.selection__fsm_instance__state__stopped
-msgid "Stopped"
-msgstr "Detenido"
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__from_state_id
+msgid "From State"
+msgstr "Desde Estado"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_timer__fsm_instance_id
-msgid "Target FSM instance"
-msgstr "Instancia FSM de destino"
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__to_state_id
+msgid "To State"
+msgstr "A Estado"
 
 #. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_event_entry__instance_id
-msgid "Target instance"
-msgstr "Instancia destino"
-
-#. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_timer__trigger_at
-msgid "Trigger at"
-msgstr ""
-
-#. module: numa_fsm
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__type
-#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__type
-msgid "Type"
-msgstr "Tipo"
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__transition_ids
+msgid "Transitions"
+msgstr "Transiciones"
 
 #. module: numa_fsm
 #: model:ir.model.fields,help:numa_fsm.field_fsm_definition__activity_exception_decoration
 #: model:ir.model.fields,help:numa_fsm.field_fsm_instance__activity_exception_decoration
 msgid "Type of the exception activity on record."
-msgstr ""
+msgstr "Tipo de la actividad de excepción en el registro."
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_unread
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_unread
+msgid "Unread Messages"
+msgstr "Mensajes no Leídos"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__message_unread_counter
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__message_unread_counter
+msgid "Unread Messages Counter"
+msgstr "Contador de Mensajes no Leídos"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__value
+msgid "Value"
+msgstr "Valor"
 
 #. module: numa_fsm
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_definition__website_message_ids
 #: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__website_message_ids
 msgid "Website Messages"
-msgstr ""
+msgstr "Mensajes del Sitio Web"
 
 #. module: numa_fsm
 #: model:ir.model.fields,help:numa_fsm.field_fsm_definition__website_message_ids
 #: model:ir.model.fields,help:numa_fsm.field_fsm_instance__website_message_ids
 msgid "Website communication history"
-msgstr ""
+msgstr "Historial de comunicación del sitio web"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__wizard_id
+msgid "Wizard"
+msgstr "Asistente"
+
+#. module: numa_fsm
+#: model:ir.model.fields.selection,name:numa_fsm.selection__fsm_instance__state__done
+msgid "Done"
+msgstr "Hecho"
+
+#. module: numa_fsm
+#: model:ir.model.fields.selection,name:numa_fsm.selection__fsm_instance__state__cancel
+msgid "Cancelled"
+msgstr "Cancelado"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__user_id
+msgid "Responsible"
+msgstr "Responsable"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__date
+msgid "Date"
+msgstr "Fecha"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__partner_id
+msgid "Partner"
+msgstr "Socio"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__note
+msgid "Note"
+msgstr "Nota"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.instance_form_view
+msgid "Notes"
+msgstr "Notas"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.instance_form_view
+msgid "Process"
+msgstr "Procesar"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.instance_form_view
+msgid "Cancel"
+msgstr "Cancelar"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.instance_form_view
+msgid "Set to Draft"
+msgstr "Establecer como Borrador"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__child_ids
+msgid "Child Instances"
+msgstr "Instancias Hijas"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_instance__form_input_ids
+msgid "Form Inputs"
+msgstr "Entradas de Formulario"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__instance_id
+msgid "Instance"
+msgstr "Instancia"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_form_input__state_id
+msgid "State"
+msgstr "Estado"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__button_text
+msgid "Button Text"
+msgstr "Texto del Botón"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__condition
+msgid "Condition"
+msgstr "Condición"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_transition__action
+msgid "Action"
+msgstr "Acción"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__is_start
+msgid "Is Start State"
+msgstr "Es Estado Inicial"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__is_end
+msgid "Is End State"
+msgstr "Es Estado Final"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__form_view
+msgid "Form View"
+msgstr "Vista de Formulario"
+
+#. module: numa_fsm
+#: model:ir.model.fields,field_description:numa_fsm.field_fsm_state__form_inputs
+msgid "Form Inputs"
+msgstr "Entradas de Formulario"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.error_page
+msgid "Error"
+msgstr "Error"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.error_page
+msgid "An error has occurred"
+msgstr "Ha ocurrido un error"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.error_on_id
+msgid "Invalid ID"
+msgstr "ID Inválido"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.error_on_id
+msgid "The requested ID does not exist or is not accessible"
+msgstr "El ID solicitado no existe o no es accesible"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.page_template
+msgid "Workflow"
+msgstr "Flujo de Trabajo"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.page_edit_template
+msgid "Edit Page"
+msgstr "Editar Página"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.page_edit_template
+msgid "Save"
+msgstr "Guardar"
+
+#. module: numa_fsm
+#: model_terms:ir.ui.view,arch_db:numa_fsm.page_edit_template
+msgid "Cancel"
+msgstr "Cancelar"
+
+#. module: numa_fsm
+#: code:addons/numa_fsm/controllers/main.py:0
+msgid "You should identify the workflow you want to see"
+msgstr "Debe identificar el flujo de trabajo que desea ver"
+
+#. module: numa_fsm
+#: code:addons/numa_fsm/controllers/main.py:0
+msgid "Workflow ID not found"
+msgstr "ID de flujo de trabajo no encontrado"
+
+#. module: numa_fsm
+#: code:addons/numa_fsm/controllers/main.py:0
+msgid "Nothing to show for this workflow"
+msgstr "No hay nada que mostrar para este flujo de trabajo"
+
+#. module: numa_fsm
+#: code:addons/numa_fsm/controllers/main.py:0
+msgid "You should identify the workflow and the event you want to process"
+msgstr "Debe identificar el flujo de trabajo y el evento que desea procesar"
+
+#. module: numa_fsm
+#: code:addons/numa_fsm/controllers/main.py:0
+msgid "You should identify the workflow you want to process"
+msgstr "Debe identificar el flujo de trabajo que desea procesar"
