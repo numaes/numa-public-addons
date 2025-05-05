@@ -102,7 +102,7 @@ class FSMInstance(models.Model):
                 subject=subject if subject else mail_template.name,
                 body=body_html,
                 attachment_ids=mail_template.attachment_ids.ids,
-                composition_mode='comment',
+                composition_mode='mass_mail',
                 model='res.partner',
                 res_id=self.partner_id.id,
                 use_active_domain=False,
@@ -111,7 +111,7 @@ class FSMInstance(models.Model):
                 auto_delete_message=False,
                 email_from='comerciales@alfyinversiones.com.ar',
             ))
-            mcm.send_mail()
+            mcm.with_context(mail_notify_force_send=False).send_mail()
 
 
         elif len(mail_template) > 1:
