@@ -9,6 +9,7 @@ from .common import PolyTestCommon
 
 _logger = logging.getLogger(__name__)
 
+@tagged('post_install', '-at_install')
 class TestStructure(PolyTestCommon):
     @classmethod
     def setUpClass(cls):
@@ -117,3 +118,155 @@ class TestStructure(PolyTestCommon):
 
         _logger.info(f'Ending successfully poly tests')
 
+    def test_bulk_create(self):
+        """Test creating multiple records at once."""
+        _logger.info(f'Starting bulk create tests')
+        t1_model = self.env['test.test1']
+        t2_model = self.env['test.test2']
+        t3_model = self.env['test.test3']
+        t4_model = self.env['test.test4']
+
+        # Clean up existing records
+        t1_model.search([]).unlink()
+        t2_model.search([]).unlink()
+        t3_model.search([]).unlink()
+        t4_model.search([]).unlink()
+
+        # Create multiple records at once
+        t1_records = t1_model.create([
+            {'a1': 'Bulk1', 'a2': 'Bulk2'},
+            {'a1': 'Bulk3', 'a2': 'Bulk4'},
+            {'a1': 'Bulk5', 'a2': 'Bulk6'},
+        ])
+
+        # Verify the records were created correctly
+        self.assertEqual(len(t1_records), 3)
+        self.assertEqual(t1_records[0].a1, 'Bulk1')
+        self.assertEqual(t1_records[0].a2, 'Bulk2')
+        self.assertEqual(t1_records[1].a1, 'Bulk3')
+        self.assertEqual(t1_records[1].a2, 'Bulk4')
+        self.assertEqual(t1_records[2].a1, 'Bulk5')
+        self.assertEqual(t1_records[2].a2, 'Bulk6')
+
+        # Create multiple records with inheritance
+        t2_records = t2_model.create([
+            {'a1': 'T2Bulk1', 'a2': 'T2Bulk2', 'a3': 'T2Bulk3'},
+            {'a1': 'T2Bulk4', 'a2': 'T2Bulk5', 'a3': 'T2Bulk6'},
+        ])
+
+        # Verify the records were created correctly
+        self.assertEqual(len(t2_records), 2)
+        self.assertEqual(t2_records[0].a1, 'T2Bulk1')
+        self.assertEqual(t2_records[0].a2, 'T2Bulk2')
+        self.assertEqual(t2_records[0].a3, 'T2Bulk3')
+        self.assertEqual(t2_records[0].test1_id.id, t2_records[0].id)
+        self.assertEqual(t2_records[0]._name, 'test.test2')
+        self.assertEqual(t2_records[0].test1_id._name, 'test.test1')
+
+        self.assertEqual(t2_records[1].a1, 'T2Bulk4')
+        self.assertEqual(t2_records[1].a2, 'T2Bulk5')
+        self.assertEqual(t2_records[1].a3, 'T2Bulk6')
+        self.assertEqual(t2_records[1].test1_id.id, t2_records[1].id)
+
+        # Create records with multi-inheritance
+        t4_records = t4_model.create([
+            {'a1': 'T4Bulk1', 'a2': 'T4Bulk2', 'a3': 'T4Bulk3', 'a4': 'T4Bulk4'},
+            {'a1': 'T4Bulk5', 'a2': 'T4Bulk6', 'a3': 'T4Bulk7', 'a4': 'T4Bulk8'},
+        ])
+
+        # Verify the records were created correctly
+        self.assertEqual(len(t4_records), 2)
+        self.assertEqual(t4_records[0].a1, 'T4Bulk1')
+        self.assertEqual(t4_records[0].a2, 'T4Bulk2')
+        self.assertEqual(t4_records[0].a3, 'T4Bulk3')
+        self.assertEqual(t4_records[0].a4, 'T4Bulk4')
+        self.assertEqual(t4_records[0].test2_id.id, t4_records[0].id)
+        self.assertEqual(t4_records[0].test3_id.id, t4_records[0].id)
+        self.assertEqual(t4_records[0]._name, 'test.test4')
+        self.assertEqual(t4_records[0].test2_id._name, 'test.test2')
+        self.assertEqual(t4_records[0].test3_id._name, 'test.test3')
+
+        self.assertEqual(t4_records[1].a1, 'T4Bulk5')
+        self.assertEqual(t4_records[1].a2, 'T4Bulk6')
+        self.assertEqual(t4_records[1].a3, 'T4Bulk7')
+        self.assertEqual(t4_records[1].a4, 'T4Bulk8')
+
+        _logger.info(f'Ending successfully bulk create tests')
+
+    def test_bulk_write(self):
+        """Test writing to multiple records at once."""
+        _logger.info(f'Starting bulk write tests')
+        t1_model = self.env['test.test1']
+        t2_model = self.env['test.test2']
+        t3_model = self.env['test.test3']
+        t4_model = self.env['test.test4']
+
+        # Clean up existing records
+        t1_model.search([]).unlink()
+        t2_model.search([]).unlink()
+        t3_model.search([]).unlink()
+        t4_model.search([]).unlink()
+
+        # Create records for testing
+        t1_records = t1_model.create([
+            {'a1': 'Write1', 'a2': 'Write2'},
+            {'a1': 'Write3', 'a2': 'Write4'},
+            {'a1': 'Write5', 'a2': 'Write6'},
+        ])
+
+        # Write to multiple records at once
+        t1_records.write({'a1': 'WrittenAll'})
+
+        # Verify the write was applied to all records
+        for record in t1_records:
+            self.assertEqual(record.a1, 'WrittenAll')
+
+        # Create records with inheritance
+        t2_records = t2_model.create([
+            {'a1': 'T2Write1', 'a2': 'T2Write2', 'a3': 'T2Write3'},
+            {'a1': 'T2Write4', 'a2': 'T2Write5', 'a3': 'T2Write6'},
+        ])
+
+        # Write to multiple records with inheritance
+        t2_records.write({
+            'a1': 'T2WrittenAll',
+            'a2': 'T2WrittenAll2',
+            'a3': 'T2WrittenAll3'
+        })
+
+        # Verify the write was applied to all records
+        for record in t2_records:
+            self.assertEqual(record.a1, 'T2WrittenAll')
+            self.assertEqual(record.a2, 'T2WrittenAll2')
+            self.assertEqual(record.a3, 'T2WrittenAll3')
+            self.assertEqual(record.test1_id.id, record.id)
+            self.assertEqual(record._name, 'test.test2')
+            self.assertEqual(record.test1_id._name, 'test.test1')
+
+        # Create records with multi-inheritance
+        t4_records = t4_model.create([
+            {'a1': 'T4Write1', 'a2': 'T4Write2', 'a3': 'T4Write3', 'a4': 'T4Write4'},
+            {'a1': 'T4Write5', 'a2': 'T4Write6', 'a3': 'T4Write7', 'a4': 'T4Write8'},
+        ])
+
+        # Write to multiple records with multi-inheritance
+        t4_records.write({
+            'a1': 'T4WrittenAll',
+            'a2': 'T4WrittenAll2',
+            'a3': 'T4WrittenAll3',
+            'a4': 'T4WrittenAll4'
+        })
+
+        # Verify the write was applied to all records
+        for record in t4_records:
+            self.assertEqual(record.a1, 'T4WrittenAll')
+            self.assertEqual(record.a2, 'T4WrittenAll2')
+            self.assertEqual(record.a3, 'T4WrittenAll3')
+            self.assertEqual(record.a4, 'T4WrittenAll4')
+            self.assertEqual(record.test2_id.id, record.id)
+            self.assertEqual(record.test3_id.id, record.id)
+            self.assertEqual(record._name, 'test.test4')
+            self.assertEqual(record.test2_id._name, 'test.test2')
+            self.assertEqual(record.test3_id._name, 'test.test3')
+
+        _logger.info(f'Ending successfully bulk write tests')
