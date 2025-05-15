@@ -111,8 +111,18 @@ class FSMInstance(models.Model):
                 auto_delete_message=False,
                 email_from='comerciales@alfyinversiones.com.ar',
             ))
-            mcm.with_context(mail_notify_force_send=False).send_mail()
+[]            mcm_id = mcm.id
 
+            _logger.info(f'Preparando envio mail {subject} a cliente {self.partner_id.display_name}')
+
+            def send_after_commit():
+                env = api.Environment(self.env.cr, self.env.uid, self.env.context)
+                mcm = env['mail.compose.message'].browse(mcm_id).exists()
+                if mcm:
+                    _logger.info(f'Enviando mail {subject} a cliente {self.partner_id.display_name}')
+                    mcm.send_mail()
+
+            self.env.cr.postcommit.add(send_after_commit)
 
         elif len(mail_template) > 1:
             self.message_post(
