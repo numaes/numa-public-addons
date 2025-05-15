@@ -15,6 +15,7 @@ allowing the definition and execution of complex workflows. It provides:
 The module is designed to be flexible and extensible, supporting various
 business process automation needs within the Odoo ecosystem.
 """
+from collections import OrderedDict
 
 import logging
 import uuid
@@ -287,6 +288,7 @@ class FSMDefinition(models.Model):
     _name = 'fsm.definition'
     _description = 'FSM Definition'
     _inherit = ['mail.thread', 'mail.activity.mixin']
+    _depends = OrderedDict()
 
     name = fields.Char('Name', required=True)
     text_definition = fields.Text('Definition')
@@ -596,6 +598,7 @@ class FSMFormInput(models.TransientModel):
         """
         _logger.info('Debug hook')
 
+# Worker pool configuration
 
 fsm_workers_config = config.get('fsm_workers')
 
@@ -607,6 +610,17 @@ else:
 
 # Create a thread pool executor for processing FSM events asynchronously
 fsm_executor = ThreadPoolExecutor(max_workers=fsm_workers)
+
+# Configure the thread pool size for FSM background services
+
+fsm_service_workers_config = config.get('fsm_service_workers')
+
+if not fsm_service_workers_config:
+    fsm_service_workers = DEFAULT_FSM_WORKERS
+else:
+    fsm_service_workers = int(fsm_workers_config)
+
+background_service_executor = ThreadPoolExecutor(max_workers=fsm_service_workers)
 
 
 def fsm_consume_event(db_name: str, _context: dict, instance_id: int, event: dict):
@@ -628,11 +642,11 @@ def fsm_consume_event(db_name: str, _context: dict, instance_id: int, event: dic
         to call from a thread pool without additional exception handling.
     """
     instance = None
-    try:
-        # Connect to the database
-        db = odoo.sql_db.db_connect(db_name)
-        threading.current_thread().dbname = db_name
-        with db.cursor() as cr:
+    # Connect to the database
+    db = odoo.sql_db.db_connect(db_name)
+    threading.current_thread().dbname = db_name
+    with db.cursor() as cr:
+        try:
             # Create a new environment with the cursor
             env = api.Environment(cr, SUPERUSER_ID, _context)
             # Get the FSM instance
@@ -641,14 +655,25 @@ def fsm_consume_event(db_name: str, _context: dict, instance_id: int, event: dic
                 # Prepare the environment and process the event
                 instance_env = instance.prepare_env()
                 instance.process_event(event, instance_env)
-    except Exception as e:
-        _logger.exception('Exception in FSM instance %s:' %
-                          (instance.display_name if instance else 'N/A'),
-                          exc_info=True,
-                          stack_info=True)
-    finally:
-        if hasattr(threading.current_thread(), 'dbname'):
-            del threading.current_thread().dbname
+
+        except Exception as e:
+            _logger.exception('Exception in FSM instance %s:' %
+                              (instance.display_name if instance else 'N/A'),
+                              exc_info=True,
+                              stack_info=True)
+            cr.rollback()
+            instance.message_post(
+                subject=f"Exception processing event",
+                body=Markup(
+                    f"<i>On event {event.get('name', 'N/D')}"
+                    f"for instance {instance.display_name}"
+                    f"unexpected exception <pre>{pprint.pformat(e)}</pre></i>"
+                )
+            )
+
+        finally:
+            if hasattr(threading.current_thread(), 'dbname'):
+                del threading.current_thread().dbname
 
 
 class FSMTimer(models.Model):
@@ -746,9 +771,8 @@ class FSMInstance(models.Model):
     _description = 'FSM Instance'
     _order = 'create_date desc'
     _inherit = ['mail.thread', 'mail.activity.mixin']
+    _depends = OrderedDict()
 
-    concrete_model = fields.Char('Concrete model', default='fsm.instance')
-    concrete_id = fields.Integer('Concrete ID')
     current_page = fields.Many2one('fsm.wf.page_template', 'Current page')
 
     name = fields.Char('Instance ID', default=lambda s: uuid.uuid4())
@@ -799,7 +823,7 @@ class FSMInstance(models.Model):
     def get_globals(self):
         self.ensure_one()
 
-        concrete_instance = self.env[self.concrete_model].browse(self.concrete_id).exists()
+        concrete_instance = self
 
         return dict(
             datetime=wrap_module(
@@ -915,12 +939,6 @@ class FSMInstance(models.Model):
                         f"unexpected exception <pre>{pprint.pformat(e)}</pre></i>"
                     )
                 )
-                raise exceptions.UserError(
-                    f"Processing event {event['name']}, "
-                    f"instance {fsm_instance.display_name}, "
-                    f"on state {fsm_instance.current_state}\n"
-                    f"Unexpected exception {e}"
-                )
 
     def send_event(self, event):
         """
@@ -944,8 +962,6 @@ class FSMInstance(models.Model):
         event_model = self.env['fsm.event_entry']
 
         for fsm_instance in self:
-            fsm_instance = self.env[fsm_instance.concrete_model].browse(fsm_instance.concrete_id).exists()
-
             def register_event():
                 # In case of several event receivers, prepare one task trigger per receiver
                 dbname = self.env.cr.dbname
@@ -962,6 +978,34 @@ class FSMInstance(models.Model):
                         fsm_instance.on_send_event(event)
 
             register_event()
+
+    def start_background_service(self, service: callable[models.Model]):
+        dbname = self.env.cr.dbname
+        _context = self.env.context
+
+        for instance in self:
+            def exec_service(instance_id):
+                db_registry = Registry(dbname)
+
+                with db_registry.cursor() as cr:
+                    env = api.Environment(cr, SUPERUSER_ID, _context)
+                    fsm_instance = env['fsm.instance'].browse(instance_id).exists()
+                    if fsm_instance:
+                        try:
+                            service(fsm_instance)
+                        except Exception as e:
+                            _logger.exception(e, exc_info=True)
+                            cr.rollback()
+
+                            fsm_instance.message_post(
+                                subject=f"Exception processing service",
+                                body=Markup(
+                                    f"<i>For instance {fsm_instance.display_name}"
+                                    f"unexpected exception <pre>{pprint.pformat(e)}</pre></i>"
+                                )
+                            )
+
+            background_service_executor.submit(exec_service, instance.id)
 
     def start(self):
         """
@@ -1297,9 +1341,18 @@ class FSMInstance(models.Model):
 
         concrete_subject = jinja_template.render(instance=fsm_instance)
 
-        target_object.message_notify(
-            subject=concrete_subject,
-            body=Markup(concrete_body),
-            attachment_ids=mail_template.attachment_ids.ids,
-            partner_ids=[fsm_instance.partner_id.id] if fsm_instance.partner_id else False,
-        )
+        target_model = target_object._name
+        target_id = target_object.id
+
+        @self.env.cr.postcommit.add
+        def send_mail_after_commit():
+            env = api.Environment(self.env.cr, self.env.uid, self.env.context)
+            target_object = env[target_model].browse(target_id).exists()
+            if target_object:
+                target_object.message_notify(
+                    subject=concrete_subject,
+                    body=Markup(concrete_body),
+                    attachment_ids=mail_template.attachment_ids.ids,
+                    partner_ids=[fsm_instance.partner_id.id] if fsm_instance.partner_id else False,
+                )
+

@@ -12,6 +12,7 @@
         'crm',
         'mail',
         'mass_mailing',
+        'numa_poly'
     ],
     'data': [
         "security/security.xml",
