@@ -1,13 +1,16 @@
 import logging
 import uuid
 from datetime import date, datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, Future
+from markupsafe import Markup
 
 import json
 import base64
 
 import odoo
-from odoo import api, _, exceptions
+from odoo import api, _, exceptions, SUPERUSER_ID
 from odoo import models, fields
+from odoo.modules.registry import Registry
 from odoo.exceptions import UserError
 from odoo.tools.safe_eval import safe_eval, wrap_module
 
@@ -248,6 +251,10 @@ class FSMEventEntry(models.Model):
     sequence = fields.Integer('Sequence')
 
 
+
+background_service_executor = ThreadPoolExecutor(max_workers=4)
+
+
 class FSMInstance(models.Model):
     _name = 'fsm.instance'
     _description = 'FSM Instance'
@@ -281,6 +288,35 @@ class FSMInstance(models.Model):
             fsm_instance.start()
 
         return fsm_instance
+
+    def start_background_service(self, service: callable[models.Model]):
+        dbname = self.env.cr.dbname
+        _context = self.env.context
+
+        for instance in self:
+            def exec_service(instance_id):
+                db_registry = Registry(dbname)
+
+                with db_registry.cursor() as cr:
+                    env = api.Environment(cr, SUPERUSER_ID, _context)
+                    fsm_instance = env['fsm.instance'].browse(instance_id).exists()
+                    if fsm_instance:
+                        try:
+                            service(fsm_instance)
+                        except Exception as e:
+                            _logger.exception(e, exc_info=True)
+                            cr.rollback()
+
+                            fsm_instance.message_post(
+                                subject=f"Exception processing service",
+                                body=Markup(
+                                    f"<i>For instance {fsm_instance.display_name}"
+                                    f"unexpected exception <pre>{pprint.pformat(e)}</pre></i>"
+                                )
+                            )
+
+            background_service_executor.submit(exec_service, instance.id)
+
 
     def prepare_env(self):
         self.ensure_one()
