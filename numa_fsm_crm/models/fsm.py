@@ -111,7 +111,7 @@ class FSMInstance(models.Model):
                 auto_delete_message=False,
                 email_from='comerciales@alfyinversiones.com.ar',
             ))
-[]            mcm_id = mcm.id
+            mcm_id = mcm.id
 
             _logger.info(f'Preparando envio mail {subject} a cliente {self.partner_id.display_name}')
 
