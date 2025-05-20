@@ -289,7 +289,7 @@ class FSMInstance(models.Model):
 
         return fsm_instance
 
-    def start_background_service(self, service: callable[models.Model]):
+    def start_background_service(self, service: callable):
         dbname = self.env.cr.dbname
         _context = self.env.context
 
@@ -297,12 +297,12 @@ class FSMInstance(models.Model):
             def exec_service(instance_id):
                 db_registry = Registry(dbname)
 
-                with db_registry.cursor() as cr:
+                with api.Environment.manage(), db_registry.cursor() as cr:
                     env = api.Environment(cr, SUPERUSER_ID, _context)
                     fsm_instance = env['fsm.instance'].browse(instance_id).exists()
                     if fsm_instance:
                         try:
-                            service(fsm_instance)
+                            service.__func__(fsm_instance)
                         except Exception as e:
                             _logger.exception(e, exc_info=True)
                             cr.rollback()
