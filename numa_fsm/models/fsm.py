@@ -979,7 +979,7 @@ class FSMInstance(models.Model):
 
             register_event()
 
-    def start_background_service(self, service: callable[models.Model]):
+    def start_background_service(self, service: callable):
         dbname = self.env.cr.dbname
         _context = self.env.context
 
@@ -992,7 +992,7 @@ class FSMInstance(models.Model):
                     fsm_instance = env['fsm.instance'].browse(instance_id).exists()
                     if fsm_instance:
                         try:
-                            service(fsm_instance)
+                            fsm_instance.__func__(fsm_instance)
                         except Exception as e:
                             _logger.exception(e, exc_info=True)
                             cr.rollback()
