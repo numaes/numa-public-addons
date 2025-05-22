@@ -315,7 +315,10 @@ class FSMInstance(models.Model):
                                 )
                             )
 
-            background_service_executor.submit(exec_service, instance.id)
+            def commit_service():
+                background_service_executor.submit(exec_service, instance.id)
+
+            self.env.cr.postcommit.add(commit_service)
 
 
     def prepare_env(self):
