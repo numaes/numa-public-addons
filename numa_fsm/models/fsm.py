@@ -1005,7 +1005,10 @@ class FSMInstance(models.Model):
                                 )
                             )
 
-            background_service_executor.submit(exec_service, instance.id)
+            instance_id = instance.id
+            @api.cr.postcommit.add
+            def trigger_service():
+                background_service_executor.submit(exec_service, instance_id)
 
     def start(self):
         """
