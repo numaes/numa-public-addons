@@ -390,7 +390,7 @@ class PolyBase(BaseModel):
             poly_base_id = get_next_id('ir.poly_base')
             for base_name in self._depend_models.keys():
                 current_id = get_next_id(base_name)
-                if current_id and current_id > poly_base_id:
+                if current_id and current_id > (poly_base_id or 0):
                     poly_base_id = current_id
                     self.env.cr.execute(f'''
                         ALTER SEQUENCE 'ir_poly_base_id_seq' RESTART WITH {current_id + 1};
