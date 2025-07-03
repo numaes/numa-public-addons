@@ -898,6 +898,21 @@ class PolyBase(BaseModel):
             poly_base_model.browse(self.ids).write(log_vals)
 
 
+    @api.model
+    def fields_get(self, allfields=None, attributes=None):
+        fields = super().fields_get(allfields=allfields, attributes=attributes)
+        if self._depends != None and list(self._depends.keys()):
+            # Ensure all dependent models are in the bases_to_create dict
+            depends_reverse = list(self._depends.keys())
+            depends_reverse.reverse()
+            for base in depends_reverse:
+                base_model = self.env[base]
+                for inherited_field in base_model.fields_get(allfields=allfields, attributes=attributes):
+                    if inherited_field not in fields:
+                        fields[inherited_field] = inherited_field
+        return fields
+
+
 class PolyModel(PolyBase):
     """
     Main super-class for regular database-persisted polymorphic models in Odoo.
