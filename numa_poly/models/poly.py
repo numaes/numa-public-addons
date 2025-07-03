@@ -349,7 +349,7 @@ class PolyBase(BaseModel):
         super()._setup_base()
 
         # Only build dependent model attributes if this is a polymorphic model
-        if self._depend_models != None:
+        if self._depend_models:
             self._build_dependant_model_attributes()
 
     def _register_hook(self):
@@ -471,7 +471,7 @@ class PolyBase(BaseModel):
 
         # Collect all fields from dependent models
         related_fields = {}
-        for model_name, model_field in reversed(self._depend_models.items()):
+        for model_name in reversed(self._depend_models.keys()):
             def add_subfields(mm):
                 """
                 Recursively add fields from a dependent model and its dependencies.
@@ -517,9 +517,8 @@ class PolyBase(BaseModel):
             add_subfields(model_name)
 
         # Create reference fields to all dependent models
-        related_bases = OrderedDict(
-            {base_model: base_field for base_model, base_field in self._depend_models.items()}.items())
-        for base_model, base_field in reversed(related_bases.items()):
+        related_bases = {}
+        for base_model, base_field in reversed(self._depend_models.items()):
             related_bases[base_model] = base_field
             set(base_field,
                 PolyReference(comodel_name=base_model,
@@ -597,6 +596,16 @@ class PolyBase(BaseModel):
 
             # Add the field to the model
             set(field_name, new_field, related_bases[model])
+
+        # Add _depends methods
+        #  (not fields, only if not already overloaded, in inverted _depends order, recursively)
+
+        for base in reversed(list(self._depend_models.keys())):
+            attributes = vars(self.pool[base])
+            for attribute_name, attribute_value in attributes.items():
+                if not isinstance(attribute_value, fields.Field) and \
+                   attribute_name not in vars(self):
+                    setattr(self, attribute_name, attribute_value)
 
         _logger.debug(f'_build_dependant_model_attributes finished')
 
