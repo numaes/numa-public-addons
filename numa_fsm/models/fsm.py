@@ -771,7 +771,7 @@ class FSMInstance(models.Model):
     _description = 'FSM Instance'
     _order = 'create_date desc'
     _inherit = ['mail.thread', 'mail.activity.mixin']
-    _depends = OrderedDict()
+    _depend_models = OrderedDict()
 
     current_page = fields.Many2one('fsm.wf.page_template', 'Current page')
 
