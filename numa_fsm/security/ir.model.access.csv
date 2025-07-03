@@ -5,7 +5,6 @@ access_workflow_mail,General access Workflow Mail template,model_fsm_wf_mail_tem
 access_workflow_form_input,General access Workflow Form Input,model_fsm_form_input,base.group_user,1,1,1,1
 
 access_fsm_timer,General accees FSM Timer,model_fsm_timer,base.group_user,1,1,1,1
-access_fsm_event_entry,General accees FSM Event Entry,model_fsm_event_entry,base.group_user,1,1,1,1
 access_fsm_instance,General accees FSM Instance,model_fsm_instance,base.group_user,1,1,1,1
 
 access_fsm_definition_admin,Admin accees FSM Definition,model_fsm_definition,administrator_group,1,1,1,1

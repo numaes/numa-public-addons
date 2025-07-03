@@ -779,8 +779,6 @@ class FSMInstance(models.Model):
     definition_id = fields.Many2one('fsm.definition', 'Definition', required=True)
     type = fields.Char(string='Type', related='definition_id.type', readonly=True)
     current_state = fields.Char('Current state', copy=False)
-    events_queue = fields.One2many('fsm.event_entry', 'instance_id', 'Events queue')
-    retained_events = fields.One2many('fsm.event_entry', 'retained_instance_id', 'Posponed Events queue')
 
     json_instance_values = fields.Text('JSON Instance Values')
 
@@ -958,8 +956,6 @@ class FSMInstance(models.Model):
         """
         # Send an event to potentially multiple receivers
         # Events will only be sent if the transaction commits
-
-        event_model = self.env['fsm.event_entry']
 
         for fsm_instance in self:
             def register_event():
