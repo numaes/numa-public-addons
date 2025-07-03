@@ -393,7 +393,7 @@ class PolyBase(BaseModel):
                 if current_id and current_id > (poly_base_id or 0):
                     poly_base_id = current_id
                     self.env.cr.execute(f'''
-                        ALTER SEQUENCE 'ir_poly_base_id_seq' RESTART WITH {current_id + 1};
+                        ALTER SEQUENCE IF EXISTS 'ir_poly_base_id_seq' RESTART WITH {current_id + 1};
                     ''')
 
     @classmethod
