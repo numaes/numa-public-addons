@@ -288,7 +288,7 @@ class FSMDefinition(models.Model):
     _name = 'fsm.definition'
     _description = 'FSM Definition'
     _inherit = ['mail.thread', 'mail.activity.mixin']
-    _depends = OrderedDict()
+    _depend_models = OrderedDict()
 
     name = fields.Char('Name', required=True)
     text_definition = fields.Text('Definition')
