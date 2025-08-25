@@ -3,4 +3,3 @@ requests
 Werkzeug
 lxml
 phonenumbers
-flanker
