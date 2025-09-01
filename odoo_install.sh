@@ -280,24 +280,25 @@ EOF
       cat <<EOF > ./dbbackup.sh
 # !/bin/bash
 # This script is public domain. Feel free to use or modify as you like.
-if [ $# -ne 2 ]; then
+if [ \$# -ne 2 ]; then
     echo "Usage:"
-    echo "     $0 <database>  <role>]"
+    echo "     \$0 <database>  <role>"
 else
 	BZIP2="/bin/bzip2"
 	GREP="/bin/grep"
-	ROLE="$2"
+	ROLE="\$2"
 	DUMPALL="pg_dumpall"
 	PGDUMP="pg_dump"
 	PSQL="psql"
-	DATE="$(date +%Y-%m-%d-%H-%M-%S)"
-	FILESTOREDIR="./data"
+	DATE="\$(date +%Y-%m-%d-%H-%M-%S)"
+	CWD=\$(pwd)
+	FILESTOREDIR="\$CWD/data"
 
 	# directory to save backups in, must be rwx by postgres user
-	BACKUPDIR="./database"
-	[ -d $BACKUPDIR ] || mkdir -p $BACKUPDIR
+	BACKUPDIR="\$CWD/database"
+	[ -d \$BACKUPDIR ] || mkdir -p \$BACKUPDIR
 
-	if [ ! -d $FILESTOREDIR ]; then
+	if [ ! -d \$FILESTOREDIR ]; then
 	   echo "You have no access to Odoo filestore. Run dbbackup with sudo!"
 	   exit
 	fi
@@ -307,26 +308,25 @@ else
 	# https://www.odoo.com/groups/community-59/community-15954813
 	# shellcheck disable=SC2006
 	# shellcheck disable=SC2006
-	DBS=`$PSQL -l -U "$ROLE" | grep "$ROLE" | cut -d '|' -f1`
-	DBS="$1"
+	DBS=`\$PSQL -l -U "\$ROLE" | grep "\$ROLE" | cut -d '|' -f1`
+	DBS="\$1"
 
 	# now backup the tables
-	CWD="$(pwd)"
-	# cd /tmp
-	for DB in $DBS; do
+	cd /tmp
+	for DB in \$DBS; do
 		# It would have been nice to do the next using pipe
 		# but pipe didnt now allow me to redirect pg_dump output to input tar
 		# at least I couldn't ;(
 		echo "Performing backup of $DB..."
-		[ -d $BACKUPDIR/$DB ] || mkdir -p $BACKUPDIR/$DB
+		[ -d \$BACKUPDIR/\$DB ] || mkdir -p \$BACKUPDIR/\$DB
 
-		if [ -d "$FILESTOREDIR/filestore/$DB" ]; then
-			$PGDUMP $DB -U -O $ROLE > dump.sql && tar cjf $BACKUPDIR/$DB/$DB-$DATE.tar.bz2 --transform "s,^filestore/$DB,filestore," dump.sql -C $FILESTOREDIR filestore/$DB && rm -rf dump.sql
+		if [ -d "\$FILESTOREDIR/filestore/\$DB" ]; then
+			\$PGDUMP \$DB -U -O \$ROLE > dump.sql && tar cjf \$BACKUPDIR/\$DB/\$DB-\$DATE.tar.bz2 --transform "s,^filestore/$DB,filestore," dump.sql -C \$FILESTOREDIR filestore/\$DB && rm -rf dump.sql
 		else
-			$PGDUMP $DB -U -O $ROLE > dump.sql && tar cjf $BACKUPDIR/$DB/$DB-$DATE.tar.bz2 dump.sql && rm -rf dump.sql
+			\$PGDUMP \$DB -U -O \$ROLE > dump.sql && tar cjf \$BACKUPDIR/\$DB/\$DB-\$DATE.tar.bz2 dump.sql && rm -rf dump.sql
 		fi
 	done
-	# cd $CWD
+	cd \$CWD
 fi
 EOF
       chmod +x ./dbbackup.sh
@@ -334,64 +334,62 @@ EOF
 
     if [ ! -f ./dbrestore.sh ]; then
       cat <<EOF > ./dbrestore.sh
-if [ $# -ne 3 ]; then
+if [ \$# -ne 3 ]; then
     echo "Usage:"
-    echo "     $0 <database>  <backup-file>  <role>]"
+    echo "     \$0 <database>  <backup-file>  <role>"
 else
-    DB="$1"
-    BACKUP_FILE="$2"
-    ROLE="$3"
+    DB="\$1"
+    BACKUP_FILE="\$2"
+    ROLE="\$3"
     DATA_PATH="./data"
     UNTARDIR="/tmp/untardir"
-    TODAY="$(date '+%Y-%m-%d %H:%M:%S')"
-    TODAY_PLUS_ONE_MONTH="$(date -d '+1 month' '+%Y-%m-%d %H:%M:%S')"
+    TODAY="\$(date '+%Y-%m-%d %H:%M:%S')"
+    TODAY_PLUS_ONE_MONTH="\$(date -d '+1 month' '+%Y-%m-%d %H:%M:%S')"
     UUID=$(cat /proc/sys/kernel/random/uuid)
     PSQL="psql"
 
-    if [ ! -d $DATA_PATH ]; then
+    if [ ! -d \$DATA_PATH ]; then
         echo "You have no access to Odoo filestore. Run command with sudo"
     else
-        # echo "Droping database $DB if exists"
-        # dropdb $DB -U $ROLE
+        echo "Droping database \$DB if exists"
+        dropdb \$DB -U \$ROLE
     fi
 
-		DBS=`$PSQL -l -U $ROLE | grep $ROLE | cut -d '|' -f1`
+		DBS=`\$PSQL -l -U \$ROLE | grep \$ROLE | cut -d '|' -f1`
 
+    if echo \$DBS | grep -w \$DB > /dev/null; then
+      echo "Existing database, aborting..."
+      exit 1
+    fi
 
-		if echo $DBS | grep -w $DB > /dev/null; then
-			echo "Existing database, aborting..."
-			exit 1
-		fi
+    echo "Creating empty database"
+    createdb -O \$ROLE -U \$ROLE \$DB --encoding=UNICODE -T template0
 
-        echo "Creating empty database"
-        createdb -O $ROLE -U $ROLE $DB --encoding=UNICODE -T template0
+    echo "Restoring database \$DB with file $BACKUP_FILE"
+    test -d \$UNTARDIR && rm -r \$UNTARDIR
+    mkdir \$UNTARDIR
+    tar -xjf \$BACKUP_FILE -C \$UNTARDIR
 
-        echo "Restoring database $DB with file $BACKUP_FILE"
-        test -d $UNTARDIR && rm -r $UNTARDIR
-        mkdir $UNTARDIR
-        tar -xjf $BACKUP_FILE -C $UNTARDIR
+    echo "Regenerating database ..."
+    psql -d \$DB -U \$ROLE >/dev/null < \$UNTARDIR/dump.sql
 
-        echo "Regenerating database ..."
-        psql -d $DB -U $ROLE >/dev/null < $UNTARDIR/dump.sql
-
-        echo "Creating a new id for the new database"
-        # psql -d $DB -U $ROLE -c "UPDATE ir_config_parameter set value='$UUID' where key='database.uuid'"
-        # psql -d $DB -U $ROLE -c "UPDATE ir_config_parameter set value='$TODAY' where key='database.create_date'"
-        # psql -d $DB -U $ROLE -c "UPDATE ir_config_parameter set value='$TODAY_PLUS_ONE_MONTH' where key='database.expiration_date'"
+    echo "Creating a new id for the new database"
+    # psql -d \$DB -U \$ROLE -c "UPDATE ir_config_parameter set value='\$UUID' where key='database.uuid'"
+    # psql -d \$DB -U \$ROLE -c "UPDATE ir_config_parameter set value='\$TODAY' where key='database.create_date'"
+    # psql -d \$DB -U \$ROLE -c "UPDATE ir_config_parameter set value='\$TODAY_PLUS_ONE_MONTH' where key='database.expiration_date'"
 
 		echo "Cleaning filestore"
-        test -d $DATA_PATH/filestore || mkdir -p $DATA_PATH/filestore
-        test -d $DATA_PATH/filestore/$DB || mkdir -p $DATA_PATH/filestore/$DB
-        # rm -r $DATA_PATH/filestore/$DB/*
-        if [ -d $UNTARDIR/filestore ]; then
-        	echo "Restoring filestore"
-            mv $UNTARDIR/filestore/* -t $DATA_PATH/filestore/$DB
-        fi
-
-        # chown -R odoo:odoo $DATA_PATH/filestore/$DB
-
-        rm -r $UNTARDIR
+    test -d \$DATA_PATH/filestore || mkdir -p \$DATA_PATH/filestore
+    test -d \$DATA_PATH/filestore/\$DB || mkdir -p \$DATA_PATH/filestore/\$DB
+    # rm -r \$DATA_PATH/filestore/\$DB/*
+    if [ -d \$UNTARDIR/filestore ]; then
+      echo "Restoring filestore"
+        mv \$UNTARDIR/filestore/* -t \$DATA_PATH/filestore/\$DB
     fi
+
+    # chown -R odoo:odoo \$DATA_PATH/filestore/\$DB
+
+    rm -r \$UNTARDIR
 fi
 EOF
       chmod +x ./dbrestore.sh
@@ -429,19 +427,13 @@ else
   echo "SSL/HTTPS isn't enabled due to choice of the user or because of a misconfiguration!"
 fi
 
-  cat <<EOF > ~/odoo
+  cat <<EOF > ~/$WEBSITE_NAME
 #odoo server
-upstream backend-qa-odoo {
+upstream backend-$WEBSITE_NAME {
  server localhost:$OE_PORT;
 }
-upstream backend-qa-odoo-im {
+upstream backend-$WEBSITE_NAME-im {
  server localhost:$LONGPOLLING_PORT;
-}
-upstream backend-odoo {
- server localhost:8169;
-}
-upstream backend-odoo-im {
- server localhost:8172;
 }
 map \$http_upgrade \$connection_upgrade {
   default upgrade;
@@ -531,84 +523,6 @@ server {
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
   }
-
-server {
-  listen 443 ssl;
-  server_name $WEBSITE_NAME;
-  proxy_read_timeout 900s;
-  proxy_connect_timeout 900s;
-  proxy_send_timeout 900s;
-
-  ssl_certificate /etc/letsencrypt/live/$WEBSITE_NAME/fullchain.pem; # managed by Certbot
-  ssl_certificate_key /etc/letsencrypt/live/$WEBSITE_NAME/privkey.pem; # managed by Certbot
-  ssl_session_timeout 30m;
-  ssl_protocols TLSv1.2;
-  ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-  ssl_prefer_server_ciphers off;
-  keepalive_timeout 60;
-
-
-  # Add Headers for odoo proxy mode
-  proxy_set_header X-Forwarded-Host \$host;
-  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto \$scheme;
-  proxy_set_header X-Real-IP \$remote_addr;
-  add_header X-Frame-Options "SAMEORIGIN";
-  add_header X-XSS-Protection "1; mode=block";
-  proxy_set_header X-Client-IP \$remote_addr;
-  proxy_set_header HTTP_X_FORWARDED_HOST \$remote_addr;
-
-  #   odoo    log files
-  access_log  /var/log/nginx/$OE_USER-access.log;
-  error_log   /var/log/nginx/$OE_USER-error.log;
-
-  #   increase    proxy   buffer  size
-  proxy_buffers   16  64k;
-  proxy_buffer_size   128k;
-
-  #   force   timeouts    if  the backend dies
-  proxy_next_upstream error   timeout invalid_header  http_500    http_502
-  http_503;
-
-  types {
-    text/less less;
-    text/scss scss;
-  }
-
-  #   enable  data    compression
-  gzip    on;
-  gzip_min_length 1100;
-  gzip_buffers    4   32k;
-  gzip_types  text/css text/scss text/plain text/xml application/xml application/json application/javascript;
-  gzip_vary   on;
-  client_header_buffer_size 4k;
-  large_client_header_buffers 4 64k;
-  client_max_body_size 0;
-
-  location / {
-    proxy_set_header X-Forwarded-Host \$host;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
-    proxy_set_header X-Real-IP \$remote_addr;
-    proxy_redirect off;
-    proxy_pass http://backend-odoo;
-
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
-
-  }
-
-  location /websocket {
-    proxy_pass http://backend-odoo-im;
-    proxy_set_header Upgrade \$http_upgrade;
-    proxy_set_header Connection \$connection_upgrade;
-    proxy_set_header X-Forwarded-Host \$host;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
-    proxy_set_header X-Real-IP \$remote_addr;
-
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
-  }
-
 }
 EOF
 
