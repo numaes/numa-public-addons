@@ -10,9 +10,9 @@ inheritance functionality. The models form a hierarchy where:
 
 This creates a diamond inheritance pattern:
     Test1
-   /     \
+   /     \\
 Test2   Test3
-   \     /
+   \\     /
     Test4
 
 These models are used for testing the polymorphic inheritance system.
