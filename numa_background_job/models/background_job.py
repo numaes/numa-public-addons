@@ -284,7 +284,7 @@ class BackgroundJob(models.Model):
         _logger.info(_("Cleaning up background jobs before %s") % lastWeek)
         jobsToUnlink = self.search(['|', ('initialized_on', '=', False), ('initialized_on', '<', lastWeek)])
         if jobsToUnlink:
-            _logger.info(_("Cleaning up %d background jobs") % len(jobsToUnlink))
+            _logger.info("Cleaning up %d background jobs" % len(jobsToUnlink))
             jobsToUnlink.unlink()
 
 
@@ -307,6 +307,8 @@ class BackgroundThread(threading.Thread):
             db = odoo.modules.registry.Registry(self.dbName)
             if db:
                 cr = db.cursor()
+                if 'lang' not in self.context:
+                    self.context['lang'] = 'en_US'
                 env = api.Environment(cr, self.uid, self.context)
                 bkJobObj = env['res.background_job']
                 bkJob = bkJobObj.browse(self.jobId)
@@ -319,7 +321,7 @@ class BackgroundThread(threading.Thread):
                         if method:
                             method(bkJob)
                             state, completionRate = bkJob.get_current_state()
-                            _logger.info(_("Ending with completion_rate: %d, state=%s") %
+                            _logger.info("Ending with completion_rate: %d, state=%s" %
                                          (completionRate, state))
 
                             if state == 'started' and completionRate >= 100:
