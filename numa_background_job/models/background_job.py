@@ -81,13 +81,14 @@ class BackgroundJob(models.Model):
         newJob = super(BackgroundJob, self).create(newVals)
         newJobId = newJob.id
 
-        self.env.cr.commit()
+        dbname = self.env.cr.dbname
+        user_id = self.env.user.id
+        context = self.env.context
 
-        BackgroundThread(self.env.cr.dbname,
-                         self.env.user.id,
-                         vals['name'],
-                         newJobId,
-                         context=self.env.context)
+        def trigger_background_thread():
+            threading.Thread(target=background_thread, args=(dbname, user_id, vals['name'], newJobId, context)).start()
+
+        self.env.cr.postcommit.add(trigger_background_thread)
 
         return newJob
 
@@ -287,62 +288,54 @@ class BackgroundJob(models.Model):
             jobsToUnlink.unlink()
 
 
-class BackgroundThread(threading.Thread):
-    def __init__(self, dbName, uid, jobName, jobId, context=None):
-        context = context or {}
-
-        super(BackgroundThread, self).__init__()
-
-        self.jobName = jobName
-        self.dbName = dbName
-        self.jobId = jobId
-        self.context = context
-        self.uid = uid
-        self.start()
-
-    def run(self):
-        with api.Environment.manage():
-            attemptCount = 0
-            while attemptCount < 10:
-                db = odoo.modules.registry.Registry(self.dbName)
-                if db:
-                    cr = db.cursor()
-                    env = api.Environment(cr, self.uid, self.context)
+def background_thread(dbName, uid, jobName, jobId, context=None):
+    context = context or {}
+    if not jobName:
+        jobName = 'BackgroundJob-%d' % jobId
+    with api.Environment.manage():
+        attemptCount = 0
+        while attemptCount < 10:
+            db = odoo.modules.registry.Registry(dbName)
+            if db:
+                with db.cursor() as cr:
+                    env = api.Environment(cr, uid, context)
                     bkJobObj = env['res.background_job']
-                    bkJob = bkJobObj.browse(self.jobId)
-                    if bkJob.exists():
-                        bkJob.start()
-                        try:
-                            modelObj = env[bkJob.model]
-                            modelInstance = modelObj.browse(bkJob.res_id)
-                            method = getattr(modelInstance, bkJob.method)
-                            if method:
-                                method(bkJob)
-                                state, completionRate = bkJob.get_current_state()
-                                _logger.info(_("Ending with completion_rate: %d, state=%s") %
-                                             (completionRate, state))
+                    bkJob = bkJobObj.browse(jobId)
+                    bkJob.start()
+                    try:
+                        modelObj = env[bkJob.model]
+                        modelInstance = modelObj.browse(bkJob.res_id)
+                        method = getattr(modelInstance, bkJob.method)
+                        if method:
+                            method(bkJob)
+                            state, completionRate = bkJob.get_current_state()
+                            _logger.info(_("Ending %s with completion_rate: %d, state=%s") %
+                                         (jobName, completionRate, state))
 
-                                if state == 'started' and completionRate >= 100:
-                                    bkJob.end()
-                            else:
-                                bkJob.abort(
-                                    statusMsg=_("No method defined!"))
-                        except Exception as e:
-                            exc_type, exc_value, exc_traceback = sys.exc_info()
-                            exceptionLines = traceback.format_exception(exc_type, exc_value, exc_traceback)
-
-                            cr.rollback()
-
-                            bkJob = bkJobObj.browse(self.jobId)
+                            if state == 'started':
+                                bkJob.end()
+                            cr.commit()
+                        else:
+                            _logger.error("%s: No method %s defined!" % (jobName, bkJob.method))
                             bkJob.abort(
-                                statusMsg=_('Unexpected exception!'),
-                                errorMsg='\n'.join(exceptionLines))
+                                statusMsg=_("No method %s defined!") % bkJob.method)
+                            cr.rollback()
+                            break
 
-                        cr.commit()
-                        cr.close()
-                        break
-                    else:
+                    except Exception as e:
+                        exc_type, exc_value, exc_traceback = sys.exc_info()
+                        exceptionLines = traceback.format_exception(exc_type, exc_value, exc_traceback)
+                        _logger.error("%s: Unexpected exception!" % jobName, exc_info=True)
+
                         cr.rollback()
-                        cr.close()
+
+                        bkJob = bkJobObj.browse(jobId)
+                        bkJob.abort(
+                            statusMsg=_('Unexpected exception: %s!' % str(e)),
+                            errorMsg='\n'.join(exceptionLines))
+
                         attemptCount += 1
-                        time.sleep(1)
+                        continue
+                break
+            else:
+                break
