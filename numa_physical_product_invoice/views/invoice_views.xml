@@ -30,6 +30,17 @@
                     <field name="price_qty"/>
                     <field name="unit_price_uom_id"/>
                 </xpath>
+                <xpath expr="//field[@name='invoice_line_ids']/list/field[@name='name']" position="after">
+                    <field name="unit_width" optional="hide"/>
+                    <field name="unit_length" optional="hide"/>
+                    <field name="unit_height" optional="hide"/>
+                    <field name="unit_surface" optional="hide"/>
+                    <field name="unit_weight" optional="hide"/>
+                    <field name="unit_volume" optional="hide"/>
+                    <field name="total_surface" optional="hide"/>
+                    <field name="total_weight" optional="hide"/>
+                    <field name="total_volume" optional="hide"/>
+                </xpath>
                 <xpath expr="//field[@name='invoice_line_ids']/list/field[@name='price_unit']" position="after">
                     <field name="price_base" invisible="1"/>
                     <field name="price_qty" attrs="{'invisible': [('price_base', '=', 'normal')]}"/>
