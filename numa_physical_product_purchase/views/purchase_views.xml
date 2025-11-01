@@ -26,7 +26,7 @@
                         </group>
                     </group>
                 </xpath>
-                <xpath expr="//div[@name='reminder']" position="after">
+                <xpath expr="//div[@name='reminder']/.." position="after">
                     <group string="Package Information" name="package_information">
                         <field name="po_weight"/>
                         <field name="po_volume"/>
