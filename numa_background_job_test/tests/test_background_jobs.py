@@ -1,4 +1,4 @@
 # -*- coding: utf-8 -*-
 
-import unittest2
+import unittest
 
