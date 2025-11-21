@@ -302,6 +302,7 @@ def background_thread(dbName, uid, name, jobId, context=None):
         if db:
             with db.cursor() as cr:
                 if 'lang' not in context:
+                    context = context.copy()
                     context['lang'] = 'en_US'
                 env = api.Environment(cr, uid, context)
                 bkJobObj = env['res.background_job']
