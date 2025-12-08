@@ -294,6 +294,20 @@ class FSMDefinition(models.Model):
     text_definition = fields.Text('Definition')
     json_compiled_definition = fields.Text('JSON Compiled definition')
 
+    # Visual Designer Schema (positions, zoom, topology)
+    # Stored as JSON text to avoid dependency on DB json column capabilities
+    json_ui_schema = fields.Text(
+        string='UI Schema (JSON)',
+        help='Visual layout schema for the FSM designer: nodes, connections, positions, zoom, etc.'
+    )
+
+    # Executable Logic Schema (Black Box with Outcomes)
+    # Defines transitions with code and named outcomes mapping to target states
+    json_logic_schema = fields.Text(
+        string='Logic Schema (JSON)',
+        help='Logic schema used by the FSM engine. Contains transitions with Python code and outcome-to-state mappings.'
+    )
+
     parent_id = fields.Many2one('fsm.definition', 'Parent FSM')
     children_ids = fields.One2many('fsm.definition', 'parent_id', 'Children FSMs')
 
@@ -908,6 +922,52 @@ class FSMInstance(models.Model):
                 for target_state in [fsm_instance.current_state, 'all']:
                     current_fsmd = fsm_instance.definition_id
                     while current_fsmd:
+                        # 1) Try outcome-based logic schema if present
+                        logic_schema = None
+                        if current_fsmd.json_logic_schema:
+                            try:
+                                logic_schema = json.loads(current_fsmd.json_logic_schema)
+                            except Exception:
+                                logic_schema = None
+
+                        handled = False
+                        if logic_schema and isinstance(logic_schema, dict):
+                            transitions = logic_schema.get('transitions') or {}
+                            state_transitions = transitions.get(target_state) or {}
+                            transition_def = state_transitions.get(event['name'])
+                            if transition_def:
+                                # Found outcome-based transition
+                                pospone = transition_def.get('pospone', False)
+                                if pospone:
+                                    fsm_instance.retain_event(event)
+                                else:
+                                    fsm_instance.before_event_process(event, env)
+                                    env['event'] = event
+                                    code_definition = transition_def.get('code') or ''
+                                    # Execute code. It may set env['outcome'] or variable outcome
+                                    exec(code_definition, global_objects, env)
+                                    # Normalize outcome: check env mapping or plain variable
+                                    outcome = env.get('outcome')
+                                    if outcome is None and 'outcome' in locals():
+                                        # locals() here refers to function scope; executed code won't put variables here
+                                        # So we only rely on env
+                                        outcome = None
+                                    # If outcome is provided, resolve and change state
+                                    if outcome is not None:
+                                        outcomes_map = (transition_def.get('outcomes') or {})
+                                        if outcome not in outcomes_map:
+                                            raise exceptions.UserError(_(
+                                                "Outcome '%s' not defined for transition %s/%s"
+                                            ) % (outcome, target_state, event['name']))
+                                        new_state = outcomes_map[outcome]
+                                        if new_state:
+                                            fsm_instance.change_state(new_state)
+                                    fsm_instance.after_event_process(event, env)
+                                handled = True
+                        if handled:
+                            break
+
+                        # 2) Fallback to legacy compiled definition
                         compiled_definition = json.loads(current_fsmd.json_compiled_definition)
                         env = fsm_instance.prepare_env()
                         if target_state in compiled_definition['states']:
