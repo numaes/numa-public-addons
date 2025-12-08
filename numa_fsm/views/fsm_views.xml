@@ -16,13 +16,19 @@
                             <field name="name" />
                         </group>
                         <notebook >
-                            <page name="definition" string="Definition">
+                            <page name="definition" string="Definition" invisible="1">
                                 <field name="type" invisible="True"/>
                                 <newline />
-                                <field name="text_definition"
+                                <field name="text_definition" invisible="1"
                                        widget="ace" options="{'mode': 'python'}" />
-                                <field name="json_compiled_definition" invisible="True"/>
-                                <field name="parent_id" invisible="True"/>
+                                <field name="json_compiled_definition" invisible="1"/>
+                                <field name="parent_id" invisible="1"/>
+                            </page>
+                            <page name="designer" string="Designer">
+                                <group>
+                                    <field name="json_logic_schema" invisible="1"/>
+                                    <field name="json_ui_schema" widget="fsm_diagram" nolabel="1" class="o_full_width"/>
+                                </group>
                             </page>
                             <page name="pages" string="Pages">
                                 <field name="pages" mode="list">

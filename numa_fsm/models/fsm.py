@@ -943,9 +943,18 @@ class FSMInstance(models.Model):
                                 else:
                                     fsm_instance.before_event_process(event, env)
                                     env['event'] = event
+                                    # Provide helper to set outcome from code
+                                    def _set_outcome(name):
+                                        env['outcome'] = name
+                                    env['set_outcome'] = _set_outcome
                                     code_definition = transition_def.get('code') or ''
                                     # Execute code. It may set env['outcome'] or variable outcome
-                                    exec(code_definition, global_objects, env)
+                                    try:
+                                        exec(code_definition, global_objects, env)
+                                    except Exception as ex:
+                                        raise exceptions.UserError(_(
+                                            "Error executing transition code for %s/%s: %s"
+                                        ) % (target_state, event['name'], str(ex)))
                                     # Normalize outcome: check env mapping or plain variable
                                     outcome = env.get('outcome')
                                     if outcome is None and 'outcome' in locals():
@@ -962,6 +971,12 @@ class FSMInstance(models.Model):
                                         new_state = outcomes_map[outcome]
                                         if new_state:
                                             fsm_instance.change_state(new_state)
+                                    else:
+                                        # No outcome set: keep state, but log warning for visibility
+                                        _logger.warning(
+                                            "FSM outcome-based transition produced no outcome: instance=%s state=%s event=%s",
+                                            fsm_instance.display_name, target_state, event.get('name')
+                                        )
                                     fsm_instance.after_event_process(event, env)
                                 handled = True
                         if handled:
