@@ -52,6 +52,12 @@ export class FSMGraphView extends Component {
             selected: null, // {type: 'node'|'edge', id}
             drag: { active: false, nodeId: null, offsetX: 0, offsetY: 0 },
             connect: { active: false, fromId: null, toPos: { x: 0, y: 0 } },
+            meta: {
+                debug_mode: null,
+                current_state: null,
+                is_simulation: false,
+                last_status: null,
+            },
         });
 
         this._panning = {
@@ -82,6 +88,18 @@ export class FSMGraphView extends Component {
                 ];
                 this.state.transform = { ...DEFAULTS.transform };
             }
+
+            // Debug/meta coming from record (fsm.instance or any model embedding this widget)
+            try {
+                const data = props.record && props.record.data ? props.record.data : {};
+                this.state.meta.debug_mode = data.debug_mode || null;
+                this.state.meta.current_state = data.current_state || null;
+                this.state.meta.is_simulation = !!data.is_simulation;
+                // Optional: allow integrators to compute/store the last log status in a field
+                this.state.meta.last_status = data.last_log_status || data._last_execution_status || null;
+            } catch (e) {
+                // ignore
+            }
         };
 
         onWillStart(() => initFromProps(this.props));
@@ -107,6 +125,33 @@ export class FSMGraphView extends Component {
             window.removeEventListener("mouseup", this.onMouseUp);
             window.removeEventListener("keydown", this.onKeyDown);
         });
+    }
+
+    // ------------------------------------------------------------------
+    // Styling helpers based on debug state
+    // ------------------------------------------------------------------
+    _isPaused() {
+        const dm = this.state.meta.debug_mode;
+        return dm === 'step' || dm === 'paused';
+    }
+
+    _isCurrentNode(node) {
+        const cs = this.state.meta.current_state;
+        if (!cs) return false;
+        // Prefer matching by label (state name). Fallback to id.
+        return (node.label && node.label === cs) || node.id === cs;
+    }
+
+    getNodeCss(node) {
+        const classes = [];
+        if (this._isCurrentNode(node)) {
+            if (this.state.meta.last_status === 'error') {
+                classes.push('error-current');
+            } else if (this._isPaused()) {
+                classes.push('paused-current');
+            }
+        }
+        return classes.join(' ');
     }
 
     getNodeById(id) {

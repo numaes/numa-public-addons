@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMGraphView">
-        <div t-ref="root" class="fsm-graph-root">
+        <div t-ref="root" class="fsm-graph-root" t-attf-class="#{state.meta.is_simulation ? 'simulation-env' : ''}">
             <div class="fsm-graph-main">
                 <div class="fsm-controls">
                     <button type="button" class="btn btn-primary" t-on-click="addState">Nuevo Estado</button>
@@ -34,11 +34,11 @@
                             <!-- Nodes layer: absolute HTML elements above SVG -->
                             <div class="fsm-graph-nodes">
                                 <t t-foreach="state.nodes" t-as="node" t-key="node.id">
-                                    <div t-if="node.type === 'state'" class="fsm-node fsm-state" t-attf-class="#{isSelectedNode(node) ? 'selected' : ''}" t-on-mousedown="onNodeMouseDown(node, _)" t-on-mouseup="onNodeMouseUp(node, _)" t-att-style="`left:${node.x}px; top:${node.y}px; width:140px; height:60px;`">
+                                    <div t-if="node.type === 'state'" class="fsm-node fsm-state" t-attf-class="#{(isSelectedNode(node) ? 'selected' : '') + ' ' + getNodeCss(node)}" t-on-mousedown="onNodeMouseDown(node, _)" t-on-mouseup="onNodeMouseUp(node, _)" t-att-style="`left:${node.x}px; top:${node.y}px; width:140px; height:60px;`">
                                         <div class="fsm-node-label" t-esc="node.label || node.id"/>
                                         <div class="fsm-port out" title="Conectar" t-on-mousedown.stop.prevent="onStartConnect(node, _)"/>
                                     </div>
-                                    <div t-if="node.type === 'decision'" class="fsm-node fsm-decision" t-attf-class="#{isSelectedNode(node) ? 'selected' : ''}" t-on-mousedown="onNodeMouseDown(node, _)" t-on-mouseup="onNodeMouseUp(node, _)" t-att-style="`left:${node.x}px; top:${node.y}px; width:100px; height:100px;`">
+                                    <div t-if="node.type === 'decision'" class="fsm-node fsm-decision" t-attf-class="#{(isSelectedNode(node) ? 'selected' : '') + ' ' + getNodeCss(node)}" t-on-mousedown="onNodeMouseDown(node, _)" t-on-mouseup="onNodeMouseUp(node, _)" t-att-style="`left:${node.x}px; top:${node.y}px; width:100px; height:100px;`">
                                         <div class="fsm-node-label" t-esc="node.label || node.id"/>
                                         <div class="fsm-port out" title="Conectar" t-on-mousedown.stop.prevent="onStartConnect(node, _)"/>
                                     </div>
