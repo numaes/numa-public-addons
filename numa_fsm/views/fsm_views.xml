@@ -144,17 +144,17 @@
                             <!-- Debugger Page -->
                             <page string="Debugger" name="debugger_page" invisible="debug_mode == 'off'">
                                 <group string="Pending Events Queue">
-                                    <field name="pending_debug_event_ids" mode="tree">
-                                        <tree editable="bottom" create="0" delete="0">
+                                    <field name="pending_debug_event_ids" mode="list">
+                                        <list editable="bottom" create="0" delete="0">
                                             <field name="id" string="#"/>
                                             <field name="state"/>
                                             <field name="event_payload"/>
-                                        </tree>
+                                        </list>
                                     </field>
                                 </group>
                                 <group string="Execution Trace">
-                                    <field name="execution_log_ids" mode="tree">
-                                        <tree create="0" delete="0">
+                                    <field name="execution_log_ids" mode="list">
+                                        <list create="0" delete="0">
                                             <field name="timestamp"/>
                                             <field name="event_name"/>
                                             <field name="from_state"/>
@@ -165,7 +165,7 @@
                                                     string="Simulate Replay"
                                                     class="btn-link fa fa-history"
                                                     title="Simulate Replay"/>
-                                        </tree>
+                                        </list>
                                     </field>
                                 </group>
                             </page>

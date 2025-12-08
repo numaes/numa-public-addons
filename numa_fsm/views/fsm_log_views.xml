@@ -3,11 +3,11 @@
     <data>
         <!-- Standalone views for FSM Execution Log with Replay button -->
 
-        <record id="fsm_execution_log_tree_view" model="ir.ui.view">
-            <field name="name">fsm.execution.log.tree</field>
+        <record id="fsm_execution_log_list_view" model="ir.ui.view">
+            <field name="name">fsm.execution.log.list</field>
             <field name="model">fsm.execution.log</field>
             <field name="arch" type="xml">
-                <tree string="Execution Logs" create="0" delete="0">
+                <list string="Execution Logs" create="0" delete="0">
                     <field name="timestamp"/>
                     <field name="instance_id"/>
                     <field name="event_name"/>
@@ -20,7 +20,7 @@
                             string="Simulate Replay"
                             class="btn-link fa fa-history"
                             title="Simulate Replay"/>
-                </tree>
+                </list>
             </field>
         </record>
 
