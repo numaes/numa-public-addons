@@ -830,6 +830,14 @@ class FSMInstance(models.Model):
         domain=[('state', '=', 'pending')]
     )
 
+    # Simulation marker: cloned instances created by replay tools
+    is_simulation = fields.Boolean(
+        string='Is Simulation',
+        default=False,
+        readonly=True,
+        help='Marks this instance as a simulation clone created by a replay operation.'
+    )
+
     def set_page(self, page_name):
         self.ensure_one()
         current_page = self.definition_id.pages.filtered(lambda s: s.name == page_name)
