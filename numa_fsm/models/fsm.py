@@ -942,7 +942,8 @@ class FSMInstance(models.Model):
                 except Exception:
                     input_snapshot = '{}'
 
-                if debug_mode == 'step':
+                # In step mode, intercept unless bypass flag is present in context
+                if debug_mode == 'step' and not self.env.context.get('debug_step_bypass'):
                     self.env['fsm.debug.event'].create({
                         'instance_id': fsm_instance.id,
                         'event_payload': json.dumps(event or {}),
@@ -1518,4 +1519,69 @@ class FSMInstance(models.Model):
                     attachment_ids=mail_template.attachment_ids.ids,
                     partner_ids=[fsm_instance.partner_id.id] if fsm_instance.partner_id else False,
                 )
+
+    # ------------------------------------------------------------------
+    # Debugging Controls (Step Over / Resume / Discard)
+    # NOTE: XML buttons will be added in a later sub-step
+    # ------------------------------------------------------------------
+    def action_debug_step_over(self):
+        """Process the oldest pending debug event once, bypassing interception."""
+        self.ensure_one()
+        pending = self.env['fsm.debug.event'].search([
+            ('instance_id', '=', self.id),
+            ('state', '=', 'pending'),
+        ], order='id asc', limit=1)
+        if not pending:
+            return
+        try:
+            payload = json.loads(pending.event_payload or '{}')
+        except Exception:
+            payload = {}
+        # Process using process_event with bypass flag
+        env = self.prepare_env()
+        self.with_context(debug_step_bypass=True).process_event(payload, env)
+        # Persist env changes
+        self.flush_env(env)
+        pending.state = 'processed'
+
+    def action_debug_resume(self):
+        """Switch to trace mode and process all pending debug events sequentially."""
+        self.ensure_one()
+        self.debug_mode = 'trace'
+        pendings = self.env['fsm.debug.event'].search([
+            ('instance_id', '=', self.id),
+            ('state', '=', 'pending'),
+        ], order='id asc')
+        for p in pendings:
+            try:
+                payload = json.loads(p.event_payload or '{}')
+            except Exception:
+                payload = {}
+            env = self.prepare_env()
+            self.with_context(debug_step_bypass=True).process_event(payload, env)
+            self.flush_env(env)
+            p.state = 'processed'
+
+    def action_debug_discard(self):
+        """Discard the oldest pending debug event and optionally log it."""
+        self.ensure_one()
+        pending = self.env['fsm.debug.event'].search([
+            ('instance_id', '=', self.id),
+            ('state', '=', 'pending'),
+        ], order='id asc', limit=1)
+        if not pending:
+            return
+        # Mark as discarded
+        pending.state = 'discarded'
+        # Optional: log discard
+        self.env['fsm.execution.log'].create({
+            'instance_id': self.id,
+            'event_name': (json.loads(pending.event_payload or '{}') or {}).get('name', 'N/A'),
+            'from_state': self.current_state,
+            'to_state': self.current_state,
+            'input_snapshot': pending.event_payload or '{}',
+            'output_snapshot': json.dumps({'discarded': True}),
+            'status': 'intercepted',
+            'log_type': 'warning',
+        })
 
