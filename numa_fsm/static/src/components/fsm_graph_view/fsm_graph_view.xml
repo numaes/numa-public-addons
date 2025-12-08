@@ -22,7 +22,7 @@
                                 </defs>
                                 <g>
                                     <t t-foreach="state.edges" t-as="edge" t-key="edge.id">
-                                        <path class="fsm-edge-path" t-attf-class="#{isSelectedEdge(edge) ? 'selected' : ''}" t-att-d="edgePath(edge)" marker-end="url(#fsmArrow)" t-on-click="onEdgeClick(edge, _)"/>
+                                        <path class="fsm-edge-path" t-attf-class="#{isSelectedEdge(edge) ? 'selected' : ''}" t-att-d="edgePath(edge)" marker-end="url(#fsmArrow)" t-on-click="(ev) => onEdgeClick(edge, ev)"/>
                                         <text class="fsm-edge-label" t-att-x="edgeMid(edge).x" t-att-y="edgeMid(edge).y">
                                             <t t-esc="edge.label or ''"/>
                                         </text>
