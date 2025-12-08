@@ -4,7 +4,7 @@
     'summary': "FSM base implementation",
     'author': "Gustavo Marino <gamarino@numaes.com>",
     'website': 'https://www.numaes.com',
-    'version': "18.0.0.2",
+    'version': "18.0.0.3",
     'category': "mailing",
     'depends': [
         'base',
