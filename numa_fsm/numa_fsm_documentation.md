@@ -114,6 +114,44 @@ File: `numa_fsm/tests/test_fsm_engine.py`.
 
 These tests validate the Outcome‑based engine without relying on the legacy compiled flow.
 
+## Debugging & Observability Suite
+Overview
+`numa_fsm` ships with an IDE‑like debugger for asynchronous FSM execution. It provides event interception, execution tracing, a pending events queue, and time‑travel simulation. Debugging is built into `fsm.instance` and can be controlled per instance or globally via the FSM definition.
+
+Execution Modes
+- Off: normal execution, no interception and no structured logs by default.
+- Trace Only: executes events normally and records `fsm.execution.log` entries capturing input/output snapshots, states, and status.
+- Step‑by‑Step / Pause: intercepts events before execution, enqueues them into `fsm.debug.event` with `state='pending'`, and returns immediately. Use UI actions to step over (process one), resume, or discard.
+
+Hot‑Fixing (Live Variable Editing)
+During a pause, you can edit the instance’s JSON memory (`json_instance_values`) directly from the `fsm.instance` form. The field is editable and uses force‑save so you can correct data “on the fly” before resuming or stepping over.
+
+Circuit Breaker (Global Pause)
+On `fsm.definition`, the field `execution_policy` controls a global safety mode:
+- Normal Run: standard behavior.
+- Pause All Instances: every event for instances of this definition is intercepted into the debug queue (even if instance `debug_mode` is Off). You can still process events via Step Over/Resume because the engine honors a context bypass flag used by these actions.
+
+References
+- Models: `fsm.execution.log` (structured logs), `fsm.debug.event` (pending/processed/discarded events)
+- Instance actions: `action_debug_step_over`, `action_debug_resume`, `action_debug_discard`
+- Views: Debugger tab on `fsm.instance` shows the queue and execution trace.
+
+## Time Travel Simulation (Replay)
+The “Simulate Replay” feature allows you to clone an instance at a specific log entry and re‑execute its event safely in a sandbox:
+1. From an `fsm.execution.log` entry, click “Simulate Replay”.
+2. The system creates a new `fsm.instance` with `is_simulation=True`.
+3. It restores `current_state` to the log’s `from_state` and reloads the environment from the `input_snapshot`.
+4. It re‑triggers the logged event once, bypassing interceptors and global pause.
+5. You are taken to the simulation record to inspect results, logs, and state.
+
+This enables safe validation of fixes or hypotheses without affecting production instances or data.
+
+## Visual Designer — Debug Feedback
+The OWL graph widget (`fsm_diagram`) provides visual cues during debugging and simulation when used on `fsm.instance` forms:
+- Paused current node: the node matching `current_state` is highlighted with an orange outline when `debug_mode` is `step` or `paused`.
+- Error cue: if the last execution status is error (when available), the current node is highlighted in red.
+- Simulation cue: when `is_simulation` is true, the canvas shows a blue striped “sandbox” style.
+
 ## Compatibility and Migration
 - If `json_logic_schema` is empty, the engine uses the existing legacy scheme (`json_compiled_definition`).
 - Quick migration: move the code of each legacy transition into the transition's `code` in `json_logic_schema`, and replace direct `change_state(..)` calls with `outcome = '...'` (and define `outcomes` with the target state).
