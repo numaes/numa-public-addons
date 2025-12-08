@@ -806,6 +806,22 @@ class FSMInstance(models.Model):
 
     logging = fields.Boolean('Logging?')
 
+    # Debugging Suite
+    debug_mode = fields.Selection(
+        selection=[('off', 'Off'), ('trace', 'Trace Only'), ('step', 'Step-by-Step / Pause')],
+        string='Debug Mode',
+        default='off',
+        tracking=True,
+    )
+    execution_log_ids = fields.One2many(
+        'fsm.execution.log', 'instance_id', string='Execution Logs'
+    )
+    pending_debug_event_ids = fields.One2many(
+        'fsm.debug.event', 'instance_id',
+        string='Pending Debug Events',
+        domain=[('state', '=', 'pending')]
+    )
+
     def set_page(self, page_name):
         self.ensure_one()
         current_page = self.definition_id.pages.filtered(lambda s: s.name == page_name)
@@ -909,6 +925,42 @@ class FSMInstance(models.Model):
 
         if fsm_instance.state == 'running':
             try:
+                before_state = fsm_instance.current_state
+                # Debug interception (step mode) — do not execute, enqueue debug event and log
+                try:
+                    debug_mode = fsm_instance.debug_mode or 'off'
+                except Exception:
+                    debug_mode = 'off'
+
+                # Prepare input snapshot
+                try:
+                    input_snapshot = json.dumps({
+                        'event': event,
+                        'env': env,
+                        'current_state': fsm_instance.current_state,
+                    })
+                except Exception:
+                    input_snapshot = '{}'
+
+                if debug_mode == 'step':
+                    self.env['fsm.debug.event'].create({
+                        'instance_id': fsm_instance.id,
+                        'event_payload': json.dumps(event or {}),
+                        'trigger_env': json.dumps(env or {}),
+                        'state': 'pending',
+                    })
+                    self.env['fsm.execution.log'].create({
+                        'instance_id': fsm_instance.id,
+                        'event_name': event.get('name') if isinstance(event, dict) else str(event),
+                        'from_state': fsm_instance.current_state,
+                        'to_state': fsm_instance.current_state,
+                        'input_snapshot': input_snapshot,
+                        'output_snapshot': json.dumps({'intercepted': True}),
+                        'status': 'intercepted',
+                        'log_type': 'info',
+                    })
+                    return env
+
                 if fsm_instance.logging:
                     fsm_instance.message_post(
                         subject=f"Processing event",
@@ -1000,10 +1052,47 @@ class FSMInstance(models.Model):
                                 break
                         current_fsmd = current_fsmd.parent_id
 
+                # Trace logging (success path)
+                if (fsm_instance.debug_mode or 'off') == 'trace':
+                    try:
+                        output_snapshot = json.dumps({
+                            'event': event,
+                            'env': env,
+                            'current_state': fsm_instance.current_state,
+                        })
+                    except Exception:
+                        output_snapshot = '{}'
+                    self.env['fsm.execution.log'].create({
+                        'instance_id': fsm_instance.id,
+                        'event_name': event.get('name') if isinstance(event, dict) else str(event),
+                        'from_state': before_state,
+                        'to_state': fsm_instance.current_state,
+                        'input_snapshot': input_snapshot,
+                        'output_snapshot': output_snapshot,
+                        'status': 'success',
+                        'log_type': 'info',
+                    })
+
                 return env
 
             except Exception as e:
                 _logger.exception(e, exc_info=True)
+                # Trace logging (error path)
+                try:
+                    self.env['fsm.execution.log'].create({
+                        'instance_id': fsm_instance.id,
+                        'event_name': event.get('name') if isinstance(event, dict) else str(event),
+                        'from_state': fsm_instance.current_state,
+                        'to_state': fsm_instance.current_state,
+                        'input_snapshot': input_snapshot if 'input_snapshot' in locals() else '{}',
+                        'output_snapshot': json.dumps({'error': True}),
+                        'status': 'error',
+                        'log_type': 'error',
+                        'error_msg': str(e),
+                    })
+                except Exception:
+                    # avoid masking original error if logging fails
+                    pass
                 fsm_instance.message_post(
                     subject=f"Exception processing event",
                     body=Markup(
