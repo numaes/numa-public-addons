@@ -308,6 +308,14 @@ class FSMDefinition(models.Model):
         help='Logic schema used by the FSM engine. Contains transitions with Python code and outcome-to-state mappings.'
     )
 
+    # Global execution policy (Circuit Breaker)
+    execution_policy = fields.Selection(
+        selection=[('run', 'Normal Run'), ('pause_all', 'Pause All Instances')],
+        default='run',
+        string='Execution Policy',
+        help='When set to "Pause All Instances", all events for instances of this definition will be intercepted into the debug queue.'
+    )
+
     parent_id = fields.Many2one('fsm.definition', 'Parent FSM')
     children_ids = fields.One2many('fsm.definition', 'parent_id', 'Children FSMs')
 
@@ -922,6 +930,44 @@ class FSMInstance(models.Model):
 
         global_objects = self.get_globals()
         fsm_instance = global_objects['fsm_instance']
+
+        # ------------------------------------------------------------------
+        # Circuit Breaker: Global policy on the definition pauses everything
+        # unless an explicit bypass flag is present in context.
+        # ------------------------------------------------------------------
+        try:
+            definition_policy = fsm_instance.definition_id.execution_policy or 'run'
+        except Exception:
+            definition_policy = 'run'
+
+        if definition_policy == 'pause_all' and not self.env.context.get('debug_step_bypass'):
+            # enqueue a debug event and log interception, then return without processing
+            try:
+                input_snapshot = json.dumps({
+                    'event': event,
+                    'env': env,
+                    'current_state': fsm_instance.current_state,
+                })
+            except Exception:
+                input_snapshot = '{}'
+
+            self.env['fsm.debug.event'].create({
+                'instance_id': fsm_instance.id,
+                'event_payload': json.dumps(event or {}),
+                'trigger_env': json.dumps(env or {}),
+                'state': 'pending',
+            })
+            self.env['fsm.execution.log'].create({
+                'instance_id': fsm_instance.id,
+                'event_name': event.get('name') if isinstance(event, dict) else str(event),
+                'from_state': fsm_instance.current_state,
+                'to_state': fsm_instance.current_state,
+                'input_snapshot': input_snapshot,
+                'output_snapshot': json.dumps({'intercepted': True, 'reason': 'pause_all'}),
+                'status': 'intercepted',
+                'log_type': 'warning',
+            })
+            return env
 
         if fsm_instance.state == 'running':
             try:

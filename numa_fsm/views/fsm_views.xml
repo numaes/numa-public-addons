@@ -30,6 +30,11 @@
                                     <field name="json_ui_schema" widget="fsm_diagram" nolabel="1" class="o_full_width"/>
                                 </group>
                             </page>
+                            <page name="advanced" string="Advanced">
+                                <group>
+                                    <field name="execution_policy"/>
+                                </group>
+                            </page>
                             <page name="pages" string="Pages">
                                 <field name="pages" mode="list">
                                     <list string="Pages">
@@ -132,7 +137,7 @@
                                     <newline />
                                     <field name="current_state" readonly="True"/>
                                     <field name="json_instance_values"
-                                           widget="ace" options="{'mode': 'python'}" />
+                                           widget="ace" options="{'mode': 'python'}" readonly="0" force_save="1"/>
                                     <field name="logging" />
                                 </group>
                             </page>
