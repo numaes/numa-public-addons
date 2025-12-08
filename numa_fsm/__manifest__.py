@@ -4,7 +4,7 @@
     'summary': "FSM base implementation",
     'author': "Gustavo Marino <gamarino@numaes.com>",
     'website': 'https://www.numaes.com',
-    'version': "18.0.0.1",
+    'version': "18.0.0.2",
     'category': "mailing",
     'depends': [
         'base',
@@ -21,6 +21,13 @@
         "views/fsm_templates.xml",
         "data/fsm_data.xml",
     ],
+    'assets': {
+        'web.assets_backend': [
+            'numa_fsm/static/src/components/fsm_graph_view/fsm_graph_view.js',
+            'numa_fsm/static/src/components/fsm_graph_view/fsm_graph_view.xml',
+            'numa_fsm/static/src/components/fsm_graph_view/fsm_graph_view.scss',
+        ],
+    },
     'installable': True,
     'license': 'LGPL-3',
 }

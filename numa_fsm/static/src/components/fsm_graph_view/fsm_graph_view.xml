@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="numa_fsm.FSMGraphView">
+        <div t-ref="root" class="fsm-graph-root">
+            <div t-ref="canvas" class="fsm-graph-canvas" t-att-style="`transform: translate(${state.transform.x}px, ${state.transform.y}px) scale(${state.transform.k});`">
+                <!-- SVG edges layer -->
+                <svg class="fsm-graph-edges" width="0" height="0" style="overflow: visible; position: absolute; inset: 0;">
+                    <defs>
+                        <marker id="fsmArrow" markerWidth="10" markerHeight="10" refX="10" refY="3" orient="auto" markerUnits="strokeWidth">
+                            <path d="M0,0 L0,6 L9,3 z" class="fsm-edge-arrow" />
+                        </marker>
+                    </defs>
+                    <g>
+                        <t t-foreach="state.edges" t-as="edge" t-key="edge.id">
+                            <path class="fsm-edge-path" t-att-d="edgePath(edge)" marker-end="url(#fsmArrow)"/>
+                            <text class="fsm-edge-label" t-att-x="edgeMid(edge).x" t-att-y="edgeMid(edge).y">
+                                <t t-esc="edge.label or ''"/>
+                            </text>
+                        </t>
+                    </g>
+                </svg>
+
+                <!-- Nodes layer: absolute HTML elements above SVG -->
+                <div class="fsm-graph-nodes">
+                    <t t-foreach="state.nodes" t-as="node" t-key="node.id">
+                        <div t-if="node.type === 'state'" class="fsm-node fsm-state" t-att-style="`left:${node.x}px; top:${node.y}px; width:140px; height:60px;`">
+                            <div class="fsm-node-label" t-esc="node.label || node.id"/>
+                        </div>
+                        <div t-if="node.type === 'decision'" class="fsm-node fsm-decision" t-att-style="`left:${node.x}px; top:${node.y}px; width:100px; height:100px;`">
+                            <div class="fsm-node-label" t-esc="node.label || node.id"/>
+                        </div>
+                    </t>
+                </div>
+            </div>
+        </div>
+    </t>
+</templates>
