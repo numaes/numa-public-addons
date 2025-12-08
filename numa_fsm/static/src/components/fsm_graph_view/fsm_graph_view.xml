@@ -34,13 +34,13 @@
                             <!-- Nodes layer: absolute HTML elements above SVG -->
                             <div class="fsm-graph-nodes">
                                 <t t-foreach="state.nodes" t-as="node" t-key="node.id">
-                                    <div t-if="node.type === 'state'" class="fsm-node fsm-state" t-attf-class="#{(isSelectedNode(node) ? 'selected' : '') + ' ' + getNodeCss(node)}" t-on-mousedown="onNodeMouseDown(node, _)" t-on-mouseup="onNodeMouseUp(node, _)" t-att-style="`left:${node.x}px; top:${node.y}px; width:140px; height:60px;`">
+                                    <div t-if="node.type === 'state'" class="fsm-node fsm-state" t-attf-class="#{(isSelectedNode(node) ? 'selected' : '') + ' ' + getNodeCss(node)}" t-on-mousedown="(ev) => onNodeMouseDown(node, ev)" t-on-mouseup="(ev) => onNodeMouseUp(node, ev)" t-att-style="`left:${node.x}px; top:${node.y}px; width:140px; height:60px;`">
                                         <div class="fsm-node-label" t-esc="node.label || node.id"/>
-                                        <div class="fsm-port out" title="Conectar" t-on-mousedown.stop.prevent="onStartConnect(node, _)"/>
+                                        <div class="fsm-port out" title="Conectar" t-on-mousedown.stop.prevent="(ev) => onStartConnect(node, ev)"/>
                                     </div>
-                                    <div t-if="node.type === 'decision'" class="fsm-node fsm-decision" t-attf-class="#{(isSelectedNode(node) ? 'selected' : '') + ' ' + getNodeCss(node)}" t-on-mousedown="onNodeMouseDown(node, _)" t-on-mouseup="onNodeMouseUp(node, _)" t-att-style="`left:${node.x}px; top:${node.y}px; width:100px; height:100px;`">
+                                    <div t-if="node.type === 'decision'" class="fsm-node fsm-decision" t-attf-class="#{(isSelectedNode(node) ? 'selected' : '') + ' ' + getNodeCss(node)}" t-on-mousedown="(ev) => onNodeMouseDown(node, ev)" t-on-mouseup="(ev) => onNodeMouseUp(node, ev)" t-att-style="`left:${node.x}px; top:${node.y}px; width:100px; height:100px;`">
                                         <div class="fsm-node-label" t-esc="node.label || node.id"/>
-                                        <div class="fsm-port out" title="Conectar" t-on-mousedown.stop.prevent="onStartConnect(node, _)"/>
+                                        <div class="fsm-port out" title="Conectar" t-on-mousedown.stop.prevent="(ev) => onStartConnect(node, ev)"/>
                                     </div>
                                 </t>
                             </div>
@@ -88,7 +88,7 @@
                                                 <t t-set="outs" t-value="node.outcomes or []"/>
                                                 <t t-foreach="outs" t-as="out" t-key="out + '_' + loop.index">
                                                     <div class="fsm-outcome-row">
-                                                        <input type="text" t-att-value="out" t-on-input="updateOutcome(node, loop.index0, _.target.value)"/>
+                                                        <input type="text" t-att-value="out" t-on-input="(ev) => updateOutcome(node, loop.index0, ev.target.value)"/>
                                                         <button type="button" class="btn btn-sm btn-outline-danger" t-on-click="removeOutcome(node, loop.index0)">−</button>
                                                     </div>
                                                 </t>
