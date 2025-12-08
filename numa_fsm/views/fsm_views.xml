@@ -160,6 +160,11 @@
                                             <field name="from_state"/>
                                             <field name="to_state"/>
                                             <field name="status"/>
+                                            <button name="action_replay_simulation"
+                                                    type="object"
+                                                    string="Simulate Replay"
+                                                    class="btn-link fa fa-history"
+                                                    title="Simulate Replay"/>
                                         </tree>
                                     </field>
                                 </group>

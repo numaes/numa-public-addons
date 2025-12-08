@@ -838,6 +838,35 @@ class FSMInstance(models.Model):
         help='Marks this instance as a simulation clone created by a replay operation.'
     )
 
+    # ------------------------------------------------------------------
+    # Cron: Cleanup old simulation instances
+    # ------------------------------------------------------------------
+    @api.model
+    def _cron_cleanup_simulations(self, batch_size=500):
+        """Delete simulation instances older than 24 hours.
+
+        This is intended to be run daily by ir.cron. It removes instances
+        created for replay/simulation where `is_simulation` is True and the
+        record `create_date` is older than 24 hours.
+        """
+        now = fields.Datetime.now()
+        threshold = now - timedelta(hours=24)
+        domain = [
+            ('is_simulation', '=', True),
+            ('create_date', '<', threshold),
+        ]
+        Instance = self.sudo().with_context(active_test=False)
+        while True:
+            sims = Instance.search(domain, limit=batch_size)
+            if not sims:
+                break
+            try:
+                sims.unlink()
+            except Exception as e:
+                _logger.warning('Error cleaning up simulation instances: %s', e)
+                # break to avoid infinite loop on errors
+                break
+
     def set_page(self, page_name):
         self.ensure_one()
         current_page = self.definition_id.pages.filtered(lambda s: s.name == page_name)

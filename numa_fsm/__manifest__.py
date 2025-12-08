@@ -17,9 +17,11 @@
         "security/security.xml",
         "security/ir.model.access.csv",
         "views/fsm_views.xml",
+        "views/fsm_log_views.xml",
         "views/menu_views.xml",
         "views/fsm_templates.xml",
         "data/fsm_data.xml",
+        "data/ir_cron.xml",
     ],
     'assets': {
         'web.assets_backend': [
