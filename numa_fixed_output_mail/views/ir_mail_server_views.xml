@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ir_mail_server_form_inherit_force_sender" model="ir.ui.view">
+        <field name="name">ir.mail_server.form.inherit.force.smtp.sender</field>
+        <field name="model">ir.mail_server</field>
+        <field name="inherit_id" ref="mail.ir_mail_server_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='smtp_user']" position="after">
+                <field name="force_smtp_sender"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
