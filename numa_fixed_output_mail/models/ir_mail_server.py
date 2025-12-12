@@ -85,7 +85,7 @@ class IrMailServer(models.Model):
             mail_server_id=mail_server_id,
             smtp_server=smtp_server,
             smtp_port=smtp_port,
-            smtp_user=smtp,
+            smtp_user=smtp_user,
             smtp_password=smtp_password,
             smtp_encryption=smtp_encryption,
             smtp_ssl_certificate=smtp_ssl_certificate,
