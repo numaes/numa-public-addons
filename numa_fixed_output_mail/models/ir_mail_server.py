@@ -74,8 +74,12 @@ class IrMailServer(models.Model):
         if mail_server_id:
             server = self.browse(mail_server_id)
         else:
-            # default to get default server from super; we still call super
-            server = None
+            default_server, mail_from = self._find_mail_server(message.get('From', ''))
+            if default_server:
+                server = default_server
+            else:
+                # default to get default server from super; we still call super
+                server = None
 
         if server and server.force_smtp_sender and server.smtp_user:
             message = server._force_sender_on_message(message)
