@@ -83,5 +83,13 @@ class IrMailServer(models.Model):
         return super(IrMailServer, self).send_email(
             message,
             mail_server_id=mail_server_id,
+            smtp_server=smtp_server,
+            smtp_port=smtp_port,
+            smtp_user=smtp,
+            smtp_password=smtp_password,
+            smtp_encryption=smtp_encryption,
+            smtp_ssl_certificate=smtp_ssl_certificate,
+            smtp_ssl_private_key=smtp_ssl_private_key,
+            smtp_debug=smtp_debug,
             smtp_session=smtp_session,
-            **kwargs)
+            )
