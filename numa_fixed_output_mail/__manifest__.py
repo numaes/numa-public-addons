@@ -10,10 +10,6 @@
     "data": [
         "views/ir_mail_server_views.xml"
     ],
-    "demo": [
-        "demo/demo_companies.xml",
-        "demo/demo_mail_servers.xml"
-    ],
     "application": False,
     "installable": True,
 }

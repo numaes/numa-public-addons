@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<odoo>
-    <record id="demo_company_alpha" model="res.company">
-        <field name="name">Alpha Corp</field>
-    </record>
-    <record id="demo_company_beta" model="res.company">
-        <field name="name">Beta LLC</field>
-    </record>
-</odoo>

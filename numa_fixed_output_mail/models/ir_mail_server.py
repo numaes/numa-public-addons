@@ -60,20 +60,28 @@ class IrMailServer(models.Model):
             _logger.exception("Failed to enforce SMTP sender headers; sending with original headers.")
         return message
 
-    def send_email(self, message, mail_server_id=None, smtp_session=None, **kwargs):
+    @api.model
+    def send_email(self, message, mail_server_id=None, smtp_server=None, smtp_port=None,
+                   smtp_user=None, smtp_password=None, smtp_encryption=None,
+                   smtp_ssl_certificate=None, smtp_ssl_private_key=None,
+                   smtp_debug=False, smtp_session=None):
+
         """Override to enforce headers prior to sending when flagged.
 
         Maintains standard behavior when not enabled or without smtp_user.
         """
         # Determine which server record is effectively used
-        server = self
-        if (not self or len(self) != 1) and mail_server_id:
+        if mail_server_id:
             server = self.browse(mail_server_id)
-        elif not self:
+        else:
             # default to get default server from super; we still call super
             server = None
 
         if server and server.force_smtp_sender and server.smtp_user:
             message = server._force_sender_on_message(message)
 
-        return super(IrMailServer, self).send_email(message, mail_server_id=mail_server_id, smtp_session=smtp_session, **kwargs)
+        return super(IrMailServer, self).send_email(
+            message,
+            mail_server_id=mail_server_id,
+            smtp_session=smtp_session,
+            **kwargs)

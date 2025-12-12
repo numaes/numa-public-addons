@@ -1,0 +1,35 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* numa_fixed_output_mail
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-12-12 20:47+0000\n"
+"PO-Revision-Date: 2025-12-12 20:47+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: \n"
+"Plural-Forms: \n"
+
+#. module: numa_fixed_output_mail
+#: model:ir.model.fields,field_description:numa_fixed_output_mail.field_ir_mail_server__force_smtp_sender
+msgid "Force SMTP Sender"
+msgstr "Forzar remitente en SMTP"
+
+#. module: numa_fixed_output_mail
+#: model:ir.model,name:numa_fixed_output_mail.model_ir_mail_server
+msgid "Mail Server"
+msgstr "Servidor de correo"
+
+#. module: numa_fixed_output_mail
+#: model:ir.model.fields,help:numa_fixed_output_mail.field_ir_mail_server__force_smtp_sender
+msgid ""
+"When enabled, outgoing messages sent via this server will use the SMTP user "
+"address as the From/Reply-To/Return-Path, preserving the original display "
+"name."
+msgstr "Al habilitarlo, los mensajes salientes por el servidor usarán el nombre del usuario SMTP como De/Responder a/Ruta de retorno, "
+"manteniendo el nombre a mostrar"
