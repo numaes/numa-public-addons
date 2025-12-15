@@ -450,11 +450,12 @@ class PolyExpression(expression):
                         else:
                             domain = field.determine_domain(model, operator, right)
 
-                for elem in domain_combine_anies(domain, model):
-                    push(elem, model, alias)
+                    for elem in domain_combine_anies(domain, model):
+                        push(elem, model, alias)
 
             elif len(path) > 1:
                 # Non-stored field should provide an implementation of search.
+                # Odoo 18: no todos los modelos definen _depend_models (ej: res.users)
                 if not field.search:
                     # field does not support search!
                     _logger.error("Non-stored field %s cannot be searched.", field, exc_info=True)
