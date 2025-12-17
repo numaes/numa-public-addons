@@ -25,7 +25,6 @@ class CRMWorkflow(models.Model):
 
     def workflow_local_link(self):
         self.ensure_one()
-
         return f'/crm_workflow/{self.name.replace("-", "_")}'
 
     def workflow_link(self):
@@ -34,12 +33,10 @@ class CRMWorkflow(models.Model):
             raise exceptions.UserError(
                 _('"web.base.url" system parameter not set! Please check it!')
             )
-
         return site_url + self.workflow_local_link()
 
     def send_mail_to_contact(self, mail_template_name, subject=None):
         self.ensure_one()
-
         self.action_send_template_mail(
             self.partner_id,
             mail_template_name,
@@ -51,5 +48,3 @@ class CRMWorkflow(models.Model):
             if instance.manual_operation_needed:
                 instance.manual_operation_needed = False
             instance.consume_event(dict(name='manualOperationCheck'))
-
-
