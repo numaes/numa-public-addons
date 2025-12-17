@@ -10,7 +10,14 @@
                  t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
 
                 <svg class="o_fsm_connections">
-                    <!-- ... -->
+                    <!-- Existing Connections -->
+                    <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
+                        <path t-att-d="getCurvePath(conn)" stroke="black" stroke-width="2" fill="none"/>
+                    </t>
+                    <!-- New Connection being drawn -->
+                    <path t-if="state.newConnection"
+                          t-att-d="'M ' + state.newConnection.x1 + ' ' + state.newConnection.y1 + ' L ' + state.newConnection.x2 + ' ' + state.newConnection.y2"
+                          stroke="grey" stroke-width="2" stroke-dasharray="5,5"/>
                 </svg>
 
                 <div class="o_fsm_nodes">
@@ -20,6 +27,7 @@
                             diagramScale="state.transform.k"
                             t-on-move.stop="onNodeMove"
                             t-on-dblclick.stop="() => this.onNodeDblClick(node.id)"
+                            t-on-port-mousedown.stop="(ev) => this.onPortMouseDown(ev.detail.event, node, ev.detail.portName)"
                         />
                     </t>
                 </div>

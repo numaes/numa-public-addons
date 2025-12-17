@@ -13,10 +13,16 @@ export class FSMTransitionEditor extends Component {
     };
 
     setup() {
+        // Convert outcomes object to array for easier editing
+        const outcomesArray = Object.keys(this.props.node.outcomes || {}).map(key => ({
+            name: key,
+            target: this.props.node.outcomes[key]
+        }));
+
         this.state = useState({
-            eventName: this.props.node.eventName || '',
+            eventName: this.props.node.label || '', // Use label as event name for transitions
             code: this.props.node.code || '',
-            outcomes: this.props.node.outcomes || {},
+            outcomes: outcomesArray,
         });
     }
 
@@ -24,12 +30,28 @@ export class FSMTransitionEditor extends Component {
         this.state.code = code;
     }
 
+    addOutcome() {
+        this.state.outcomes.push({ name: 'new_outcome', target: null });
+    }
+
+    removeOutcome(index) {
+        this.state.outcomes.splice(index, 1);
+    }
+
     save() {
+        // Convert array back to object
+        const outcomesObj = {};
+        this.state.outcomes.forEach(o => {
+            if (o.name) {
+                outcomesObj[o.name] = o.target;
+            }
+        });
+
         this.props.onSave({
             ...this.props.node,
-            eventName: this.state.eventName,
+            label: this.state.eventName,
             code: this.state.code,
-            outcomes: this.state.outcomes,
+            outcomes: outcomesObj,
         });
     }
 }

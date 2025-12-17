@@ -24,7 +24,18 @@
                         }"
                     />
                 </div>
-                <!-- Outcome management will be added here -->
+                <div class="mb-3">
+                    <label class="form-label">Outcomes</label>
+                    <div t-foreach="state.outcomes" t-as="outcome" t-key="outcome_index" class="input-group mb-2">
+                        <input type="text" class="form-control" placeholder="Outcome Name" t-model="outcome.name"/>
+                        <button class="btn btn-outline-danger" t-on-click="() => this.removeOutcome(outcome_index)">
+                            <i class="fa fa-trash"/>
+                        </button>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" t-on-click="addOutcome">
+                        <i class="fa fa-plus"/> Add Outcome
+                    </button>
+                </div>
             </div>
             <div class="o_fsm_editor_footer">
                 <button class="btn btn-primary" t-on-click="save">Save</button>

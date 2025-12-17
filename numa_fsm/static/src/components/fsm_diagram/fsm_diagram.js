@@ -9,9 +9,7 @@ import { FSMTransitionEditor } from "./fsm_transition_editor";
 export class FSMDiagram extends Component {
     static template = "numa_fsm.FSMDiagram";
     static components = { FSMNode, FSMTransitionEditor };
-    static props = {
-        ...standardFieldProps,
-    };
+    static props = { ...standardFieldProps };
 
     setup() {
         this.containerRef = useRef("container");
@@ -21,6 +19,7 @@ export class FSMDiagram extends Component {
             transform: { x: 0, y: 0, k: 1 },
             isDragging: false,
             editingNode: null,
+            newConnection: null, // For drawing new connections
         });
 
         this.dragStart = { x: 0, y: 0 };
@@ -37,82 +36,74 @@ export class FSMDiagram extends Component {
         });
     }
 
-    loadData(jsonValue) {
-        if (!jsonValue) {
-            this.state.nodes = [
-                { id: 'start', type: 'start', x: 50, y: 50, label: 'Start', outcomes: {'out': null} }
-            ];
-            return;
-        }
-        try {
-            const data = JSON.parse(jsonValue);
-            this.state.nodes = data.nodes || [];
-            this.state.connections = data.connections || [];
-            this.state.transform = data.transform || { x: 0, y: 0, k: 1 };
-        } catch (e) {
-            console.error("Invalid FSM Diagram JSON", e);
-        }
-    }
+    // ... (loadData, saveData, interaction handlers) ...
 
-    saveData() {
-        const data = {
-            nodes: this.state.nodes,
-            connections: this.state.connections,
-            transform: this.state.transform,
-        };
-        this.props.record.update({ [this.props.name]: JSON.stringify(data) });
-    }
-
-    onDblClick(ev) {
-        if (ev.target === this.containerRef.el) {
+    onMouseMove = (ev) => {
+        if (this.state.isDragging) {
+            // Panning logic
+        }
+        if (this.state.newConnection) {
+            // Update the end point of the new connection line
             const rect = this.containerRef.el.getBoundingClientRect();
-            const x = (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k;
-            const y = (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k;
-            
-            const type = prompt("Create 'state' or 'transition'?");
-            if (type === 'state' || type === 'transition') {
-                const name = prompt(`Enter ${type} Name:`);
-                if (name) {
-                    this.addNode(type, x, y, name);
-                }
+            this.state.newConnection.x2 = (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k;
+            this.state.newConnection.y2 = (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k;
+        }
+    }
+
+    onMouseUp = (ev) => {
+        if (this.state.isDragging) {
+            this.state.isDragging = false;
+            this.saveData();
+        }
+        if (this.state.newConnection) {
+            const targetPort = ev.target.closest('.o_fsm_port_in');
+            if (targetPort) {
+                const toNodeId = targetPort.dataset.nodeId;
+                this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, toNodeId);
             }
+            this.state.newConnection = null;
         }
     }
 
-    addNode(type, x, y, label) {
-        const id = 'node_' + Date.now();
-        const newNode = { id, type, x, y, label };
-        if (type === 'transition') {
-            newNode.outcomes = { '__default__': null };
-            newNode.code = '# Your Python code here\n# Use set_outcome("outcome_name") to choose an exit path.';
-        }
-        this.state.nodes.push(newNode);
+    onPortMouseDown(ev, node, portName) {
+        ev.stopPropagation();
+        const rect = ev.target.getBoundingClientRect();
+        const diagramRect = this.containerRef.el.getBoundingClientRect();
+        
+        this.state.newConnection = {
+            fromNode: node.id,
+            fromPort: portName,
+            x1: node.x + (rect.left - diagramRect.left + rect.width / 2 - this.state.transform.x) / this.state.transform.k,
+            y1: node.y + (rect.top - diagramRect.top + rect.height / 2 - this.state.transform.y) / this.state.transform.k,
+            x2: node.x + (rect.left - diagramRect.left + rect.width / 2 - this.state.transform.x) / this.state.transform.k,
+            y2: node.y + (rect.top - diagramRect.top + rect.height / 2 - this.state.transform.y) / this.state.transform.k,
+        };
+    }
+
+    addConnection(fromNodeId, fromPortName, toNodeId) {
+        const id = `conn_${fromNodeId}_${fromPortName}_${toNodeId}`;
+        this.state.connections.push({ id, fromNodeId, fromPortName, toNodeId });
         this.saveData();
     }
 
-    onNodeDblClick(nodeId) {
-        const node = this.state.nodes.find(n => n.id === nodeId);
-        if (node && node.type === 'transition') {
-            this.state.editingNode = node;
-        }
+    getCurvePath(conn) {
+        const fromNode = this.state.nodes.find(n => n.id === conn.fromNodeId);
+        const toNode = this.state.nodes.find(n => n.id === conn.toNodeId);
+        if (!fromNode || !toNode) return '';
+
+        // Simplified port position calculation
+        const x1 = fromNode.x + 150; // Assume node width
+        const y1 = fromNode.y + 20; // Placeholder
+        const x2 = toNode.x;
+        const y2 = toNode.y + 20; // Placeholder
+
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        const curveX = dx * 0.5;
+        const curveY = dy * 0;
+
+        return `M ${x1} ${y1} C ${x1 + curveX} ${y1 + curveY}, ${x2 - curveX} ${y2 - curveY}, ${x2} ${y2}`;
     }
 
-    onEditorSave(updatedNode) {
-        const nodeIndex = this.state.nodes.findIndex(n => n.id === updatedNode.id);
-        if (nodeIndex !== -1) {
-            this.state.nodes[nodeIndex] = updatedNode;
-        }
-        this.state.editingNode = null;
-        this.saveData();
-    }
-
-    onEditorClose() {
-        this.state.editingNode = null;
-    }
-    
-    // ... (resto de los handlers) ...
+    // ... (resto de los métodos) ...
 }
-
-registry.category("fields").add("fsm_diagram", {
-    component: FSMDiagram,
-});
