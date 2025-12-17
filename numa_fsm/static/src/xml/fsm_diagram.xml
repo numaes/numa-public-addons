@@ -6,6 +6,9 @@
                 <button class="btn btn-secondary btn-sm" t-on-click="validateDiagram">
                     <i class="fa fa-check"/> Validate
                 </button>
+                <button class="btn btn-secondary btn-sm" t-on-click="toggleHelp">
+                    <i class="fa fa-question-circle"/> Help
+                </button>
             </div>
             <div class="o_fsm_diagram_canvas"
                  t-ref="container"
@@ -37,6 +40,25 @@
             <t t-if="state.editingNode">
                 <!-- ... -->
             </t>
+
+            <!-- Help Modal -->
+            <div t-if="state.showHelp" class="o_fsm_help_modal">
+                <div class="o_fsm_help_content">
+                    <div class="o_fsm_help_header">
+                        <h3>Editor Help</h3>
+                        <button class="btn-close" t-on-click="toggleHelp"/>
+                    </div>
+                    <div class="o_fsm_help_body">
+                        <ul>
+                            <li><strong>Pan:</strong> Drag the background.</li>
+                            <li><strong>Zoom:</strong> Use the mouse wheel.</li>
+                            <li><strong>Create Node:</strong> Double-click on the background.</li>
+                            <li><strong>Edit Node:</strong> Double-click on a node.</li>
+                            <li><strong>Create Connection:</strong> Drag from an output port (right) to an input port (left).</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
         </div>
     </t>
 </templates>

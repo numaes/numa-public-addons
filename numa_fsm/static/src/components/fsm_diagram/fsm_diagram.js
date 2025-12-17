@@ -24,6 +24,7 @@ export class FSMDiagram extends Component {
             editingNode: null,
             editingNodeType: null,
             newConnection: null,
+            showHelp: false, // Help modal visibility
         });
 
         this.dragStart = { x: 0, y: 0 };
@@ -61,6 +62,10 @@ export class FSMDiagram extends Component {
             transform: this.state.transform,
         };
         this.props.record.update({ [this.props.name]: JSON.stringify(data) });
+    }
+
+    toggleHelp() {
+        this.state.showHelp = !this.state.showHelp;
     }
 
     // --- Interaction ---
