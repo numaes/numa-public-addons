@@ -9,20 +9,29 @@
             <div class="o_fsm_viewport"
                  t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
 
-                <!-- Connections Layer (SVG) -->
                 <svg class="o_fsm_connections">
-                    <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
-                        <!-- Connection rendering logic will go here -->
-                    </t>
+                    <!-- ... -->
                 </svg>
 
-                <!-- Nodes Layer (HTML) -->
                 <div class="o_fsm_nodes">
                     <t t-foreach="state.nodes" t-as="node" t-key="node.id">
-                        <FSMNode node="node" diagramScale="state.transform.k" t-on-move.stop="onNodeMove"/>
+                        <FSMNode
+                            node="node"
+                            diagramScale="state.transform.k"
+                            t-on-move.stop="onNodeMove"
+                            t-on-dblclick.stop="() => this.onNodeDblClick(node.id)"
+                        />
                     </t>
                 </div>
             </div>
+
+            <t t-if="state.editingNode">
+                <FSMTransitionEditor
+                    node="state.editingNode"
+                    onSave.bind="onEditorSave"
+                    onClose.bind="onEditorClose"
+                />
+            </t>
         </div>
     </t>
 </templates>

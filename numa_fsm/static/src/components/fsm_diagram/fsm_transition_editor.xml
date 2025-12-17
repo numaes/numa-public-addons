@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="numa_fsm.FSMTransitionEditor" owl="1">
+        <div class="o_fsm_editor_panel">
+            <div class="o_fsm_editor_header">
+                <h3>Edit Transition</h3>
+                <button class="btn-close" t-on-click="props.onClose"/>
+            </div>
+            <div class="o_fsm_editor_body">
+                <div class="mb-3">
+                    <label for="eventName" class="form-label">Event Name</label>
+                    <input type="text" class="form-control" id="eventName" t-model="state.eventName"/>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Code</label>
+                    <CodeEditor
+                        mode="'python'"
+                        value="state.code"
+                        onChange.bind="onCodeChange"
+                        options="{
+                            showLineNumbers: true,
+                            showFoldWidgets: true,
+                            showPrintMargin: false,
+                        }"
+                    />
+                </div>
+                <!-- Outcome management will be added here -->
+            </div>
+            <div class="o_fsm_editor_footer">
+                <button class="btn btn-primary" t-on-click="save">Save</button>
+                <button class="btn btn-secondary" t-on-click="props.onClose">Cancel</button>
+            </div>
+        </div>
+    </t>
+</templates>

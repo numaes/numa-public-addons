@@ -21,10 +21,13 @@
         'web.assets_backend': [
             'numa_fsm/static/src/components/fsm_diagram/fsm_diagram.scss',
             'numa_fsm/static/src/components/fsm_diagram/fsm_node.scss',
+            'numa_fsm/static/src/components/fsm_diagram/fsm_transition_editor.scss',
             'numa_fsm/static/src/components/fsm_diagram/fsm_diagram.js',
             'numa_fsm/static/src/components/fsm_diagram/fsm_node.js',
+            'numa_fsm/static/src/components/fsm_diagram/fsm_transition_editor.js',
             'numa_fsm/static/src/xml/fsm_diagram.xml',
             'numa_fsm/static/src/xml/fsm_node.xml',
+            'numa_fsm/static/src/xml/fsm_transition_editor.xml',
         ],
     },
     'installable': True,

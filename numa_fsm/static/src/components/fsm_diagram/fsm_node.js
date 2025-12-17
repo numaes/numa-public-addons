@@ -6,6 +6,7 @@ export class FSMNode extends Component {
     static template = "numa_fsm.FSMNode";
     static props = {
         node: { type: Object },
+        diagramScale: { type: Number },
     };
 
     setup() {
@@ -16,7 +17,7 @@ export class FSMNode extends Component {
     }
 
     onMouseDown(ev) {
-        ev.stopPropagation(); // Prevent container from panning
+        ev.stopPropagation();
         this.state.isDragging = true;
         this.dragStart = { x: ev.clientX, y: ev.clientY };
 
@@ -25,11 +26,13 @@ export class FSMNode extends Component {
                 const dx = moveEv.clientX - this.dragStart.x;
                 const dy = moveEv.clientY - this.dragStart.y;
                 
-                // We need to account for the current zoom level
-                const scale = this.props.node.diagramScale || 1; // This needs to be passed down
+                const scale = this.props.diagramScale || 1;
                 
-                this.props.node.x += dx / scale;
-                this.props.node.y += dy / scale;
+                const newX = this.props.node.x + (dx / scale);
+                const newY = this.props.node.y + (dy / scale);
+                
+                // Trigger move event to parent
+                this.trigger("move", { nodeId: this.props.node.id, x: newX, y: newY });
                 
                 this.dragStart = { x: moveEv.clientX, y: moveEv.clientY };
             }
@@ -39,7 +42,6 @@ export class FSMNode extends Component {
             this.state.isDragging = false;
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
-            this.trigger("move", { nodeId: this.props.node.id, x: this.props.node.x, y: this.props.node.y });
         };
 
         window.addEventListener("mousemove", onMouseMove);
