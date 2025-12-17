@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="numa_fsm.FSMNode" owl="1">
+        <div class="o_fsm_node"
+             t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'"
+             t-on-mousedown="onMouseDown">
+            <div class="o_fsm_node_header">
+                <t t-esc="props.node.label"/>
+            </div>
+            <div class="o_fsm_node_body">
+                <!-- Ports will go here -->
+            </div>
+        </div>
+    </t>
+</templates>

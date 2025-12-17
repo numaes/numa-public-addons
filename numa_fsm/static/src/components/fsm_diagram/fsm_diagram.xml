@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="numa_fsm.FSMDiagram" owl="1">
+        <div class="o_fsm_diagram_container"
+             t-ref="container"
+             t-on-mousedown="onMouseDown"
+             t-on-wheel="onWheel">
+            <div class="o_fsm_viewport"
+                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
+
+                <!-- Connections Layer (SVG) -->
+                <svg class="o_fsm_connections">
+                    <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
+                        <!-- Connection rendering logic will go here -->
+                    </t>
+                </svg>
+
+                <!-- Nodes Layer (HTML) -->
+                <div class="o_fsm_nodes">
+                    <t t-foreach="state.nodes" t-as="node" t-key="node.id">
+                        <FSMNode node="node" t-on-move="onNodeMove"/>
+                    </t>
+                </div>
+            </div>
+        </div>
+    </t>
+</templates>
