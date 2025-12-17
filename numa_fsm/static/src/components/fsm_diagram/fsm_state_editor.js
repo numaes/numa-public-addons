@@ -1,0 +1,35 @@
+/** @odoo-module **/
+
+import { Component, useState } from "@odoo/owl";
+
+export class FSMStateEditor extends Component {
+    static template = "numa_fsm.FSMStateEditor";
+    static props = {
+        node: Object,
+        onSave: Function,
+        onClose: Function,
+    };
+
+    setup() {
+        this.state = useState({
+            label: this.props.node.label || '',
+            events: [...(this.props.node.events || [])],
+        });
+    }
+
+    addEvent() {
+        this.state.events.push({ name: 'new_event' });
+    }
+
+    removeEvent(index) {
+        this.state.events.splice(index, 1);
+    }
+
+    save() {
+        this.props.onSave({
+            ...this.props.node,
+            label: this.state.label,
+            events: this.state.events,
+        });
+    }
+}

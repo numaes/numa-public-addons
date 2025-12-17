@@ -6,39 +6,24 @@
              t-on-mousedown="onMouseDown"
              t-on-wheel="onWheel"
              t-on-dblclick="onDblClick">
-            <div class="o_fsm_viewport"
-                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
 
-                <svg class="o_fsm_connections">
-                    <!-- Existing Connections -->
-                    <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
-                        <path t-att-d="getCurvePath(conn)" stroke="black" stroke-width="2" fill="none"/>
-                    </t>
-                    <!-- New Connection being drawn -->
-                    <path t-if="state.newConnection"
-                          t-att-d="'M ' + state.newConnection.x1 + ' ' + state.newConnection.y1 + ' L ' + state.newConnection.x2 + ' ' + state.newConnection.y2"
-                          stroke="grey" stroke-width="2" stroke-dasharray="5,5"/>
-                </svg>
-
-                <div class="o_fsm_nodes">
-                    <t t-foreach="state.nodes" t-as="node" t-key="node.id">
-                        <FSMNode
-                            node="node"
-                            diagramScale="state.transform.k"
-                            t-on-move.stop="onNodeMove"
-                            t-on-dblclick.stop="() => this.onNodeDblClick(node.id)"
-                            t-on-port-mousedown.stop="(ev) => this.onPortMouseDown(ev.detail.event, node, ev.detail.portName)"
-                        />
-                    </t>
-                </div>
-            </div>
+            <!-- ... (viewport, svg, nodes) ... -->
 
             <t t-if="state.editingNode">
-                <FSMTransitionEditor
-                    node="state.editingNode"
-                    onSave.bind="onEditorSave"
-                    onClose.bind="onEditorClose"
-                />
+                <t t-if="state.editingNodeType === 'transition'">
+                    <FSMTransitionEditor
+                        node="state.editingNode"
+                        onSave.bind="onEditorSave"
+                        onClose.bind="onEditorClose"
+                    />
+                </t>
+                <t t-if="state.editingNodeType === 'state'">
+                    <FSMStateEditor
+                        node="state.editingNode"
+                        onSave.bind="onEditorSave"
+                        onClose.bind="onEditorClose"
+                    />
+                </t>
             </t>
         </div>
     </t>

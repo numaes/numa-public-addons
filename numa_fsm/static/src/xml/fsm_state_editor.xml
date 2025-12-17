@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="numa_fsm.FSMStateEditor" owl="1">
+        <div class="o_fsm_editor_panel">
+            <div class="o_fsm_editor_header">
+                <h3>Edit State</h3>
+                <button class="btn-close" t-on-click="props.onClose"/>
+            </div>
+            <div class="o_fsm_editor_body">
+                <div class="mb-3">
+                    <label for="stateName" class="form-label">State Name</label>
+                    <input type="text" class="form-control" id="stateName" t-model="state.label"/>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Events (Outputs)</label>
+                    <div t-foreach="state.events" t-as="event" t-key="event_index" class="input-group mb-2">
+                        <input type="text" class="form-control" placeholder="Event Name" t-model="event.name"/>
+                        <button class="btn btn-outline-danger" t-on-click="() => this.removeEvent(event_index)">
+                            <i class="fa fa-trash"/>
+                        </button>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" t-on-click="addEvent">
+                        <i class="fa fa-plus"/> Add Event
+                    </button>
+                </div>
+            </div>
+            <div class="o_fsm_editor_footer">
+                <button class="btn btn-primary" t-on-click="save">Save</button>
+                <button class="btn btn-secondary" t-on-click="props.onClose">Cancel</button>
+            </div>
+        </div>
+    </t>
+</templates>
