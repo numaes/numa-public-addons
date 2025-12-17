@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState, useRef } from "@odoo/owl";
+import { Component, useState, useRef, onMounted, onUpdated } from "@odoo/owl";
 
 export class FSMNode extends Component {
     static template = "numa_fsm.FSMNode";
@@ -10,10 +10,26 @@ export class FSMNode extends Component {
     };
 
     setup() {
+        this.nodeRef = useRef("node");
         this.state = useState({
             isDragging: false,
         });
         this.dragStart = { x: 0, y: 0 };
+        this.lastHeight = 0;
+
+        onMounted(this.checkSize.bind(this));
+        onUpdated(this.checkSize.bind(this));
+    }
+
+    checkSize() {
+        if (this.nodeRef.el) {
+            const height = this.nodeRef.el.offsetHeight;
+            if (height !== this.lastHeight) {
+                this.lastHeight = height;
+                // Trigger resize event to parent to update connections
+                this.trigger("resize", { nodeId: this.props.node.id, height });
+            }
+        }
     }
 
     onMouseDown(ev) {
@@ -31,7 +47,6 @@ export class FSMNode extends Component {
                 const newX = this.props.node.x + (dx / scale);
                 const newY = this.props.node.y + (dy / scale);
                 
-                // Trigger move event to parent
                 this.trigger("move", { nodeId: this.props.node.id, x: newX, y: newY });
                 
                 this.dragStart = { x: moveEv.clientX, y: moveEv.clientY };

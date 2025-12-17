@@ -2,11 +2,12 @@
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMNode" owl="1">
         <div class="o_fsm_node"
+             t-ref="node"
              t-att-class="'o_fsm_node_' + props.node.type"
              t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'"
              t-on-mousedown="onMouseDown">
 
-            <!-- Input Port (for all except start) -->
+            <!-- Input Port -->
             <div t-if="props.node.type !== 'start'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>
 
             <div class="o_fsm_node_header">
@@ -15,14 +16,12 @@
             <div class="o_fsm_node_body">
                 <!-- Output Ports -->
                 <t t-if="props.node.type === 'state'">
-                    <!-- State nodes have events as outputs -->
                     <div t-foreach="props.node.events || []" t-as="event" t-key="event.name" class="o_fsm_port_out_wrapper">
                         <span><t t-esc="event.name"/></span>
                         <div class="o_fsm_port o_fsm_port_out" t-att-data-node-id="props.node.id" t-att-data-port-name="event.name"/>
                     </div>
                 </t>
                 <t t-if="props.node.type === 'transition' || props.node.type === 'start'">
-                    <!-- Transition nodes have outcomes as outputs -->
                     <div t-foreach="Object.keys(props.node.outcomes || {})" t-as="outcome" t-key="outcome" class="o_fsm_port_out_wrapper">
                         <span><t t-esc="outcome"/></span>
                         <div class="o_fsm_port o_fsm_port_out" t-att-data-node-id="props.node.id" t-att-data-port-name="outcome"/>
