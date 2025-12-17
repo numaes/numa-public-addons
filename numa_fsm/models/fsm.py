@@ -102,9 +102,9 @@ def compile_definition(source):
     states = {}
     line_number = 0
     state = 'outer_level'
-    
+
     # Temporary storage for outcomes of the current event being parsed
-    current_outcomes = {} 
+    current_outcomes = {}
 
     for line in (source or '').split('\n'):
         line_number += 1
@@ -125,7 +125,7 @@ def compile_definition(source):
                     parts = cleaned_line.split('->')
                     if len(parts) != 2:
                          raise exceptions.UserError(_('Invalid outcome syntax in line %d. Use: @outcome name -> state') % line_number)
-                    
+
                     outcome_name = parts[0].replace('@outcome', '').strip()
                     target_state = parts[1].strip()
                     current_outcomes[outcome_name] = target_state
@@ -138,10 +138,10 @@ def compile_definition(source):
                             states[cstate][event]['code'] = event_body
                             states[cstate][event]['pospone'] = pospone
                             states[cstate][event]['outcomes'] = current_outcomes.copy()
-                    
+
                     # Reset for next block
                     current_outcomes = {}
-                    
+
                     # Process the meta line that ended the block
                     if cleaned_line.startswith('@event'):
                         # ... (same logic as below) ...
@@ -160,8 +160,8 @@ def compile_definition(source):
                         state = 'collecting_event_body'
                     elif cleaned_line.startswith('@state'):
                         state = 'states_definition'
-                        # Re-process this line in the new state context? 
-                        # Easier to just duplicate the logic or use a 'reprocess' flag, 
+                        # Re-process this line in the new state context?
+                        # Easier to just duplicate the logic or use a 'reprocess' flag,
                         # but here we just jump to state_definition logic
                         tokenized_line = tokenize(cleaned_line)
                         if len(tokenized_line) < 2:
@@ -585,20 +585,20 @@ class FSMInstance(models.Model):
                                 else:
                                     fsm_instance.before_event_process(event, env)
                                     env['event'] = event
-                                    
+
                                     # --- Outcome Logic ---
                                     # Provide helper to set outcome from code
                                     def _set_outcome(name):
                                         env['outcome'] = name
                                     env['set_outcome'] = _set_outcome
-                                    
+
                                     code_definition = event_definition['code']
                                     exec(code_definition, global_objects, env)
-                                    
+
                                     # Check for outcome
                                     outcome = env.get('outcome')
                                     outcomes_map = event_definition.get('outcomes', {})
-                                    
+
                                     if outcome:
                                         if outcome in outcomes_map:
                                             new_state = outcomes_map[outcome]
@@ -606,7 +606,7 @@ class FSMInstance(models.Model):
                                         else:
                                             # Fallback or error? For now, log warning
                                             _logger.warning(f"Outcome '{outcome}' not found in map {outcomes_map} for event {event['name']}")
-                                    
+
                                     fsm_instance.after_event_process(event, env)
                                 break
                         current_fsmd = current_fsmd.parent_id
