@@ -1,19 +1,17 @@
 {
-    'application': True,
-    'name': "NUMA Polimorphic Models",
-    'author': "Gustavo Marino <gamarino@numaes.com>",
+    'name': 'Numa Poly',
+    'version': '18.0.1.0.0',
+    'summary': 'Polymorphic model inheritance for Odoo.',
+    'author': 'NUMA Extreme Systems',
     'website': 'https://www.numaes.com',
-    'version': "18.0.0.1",
-    'category': "base",
+    'license': 'LGPL-3',
+    'category': 'Extra Tools',
     'depends': [
         'base',
     ],
-    'data': [
-        "security/security.xml",
-        "security/ir.model.access.csv",
-        "views/poly_views.xml",
-        "views/menu_views.xml",
-    ],
+    'data': [],
     'installable': True,
-    'license': 'LGPL-3',
+    'doc': [
+        'readme/usage_guide.md',
+    ],
 }
