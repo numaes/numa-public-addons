@@ -7,11 +7,11 @@ access_workflow_form_input,General access Workflow Form Input,model_fsm_form_inp
 access_fsm_timer,General accees FSM Timer,model_fsm_timer,base.group_user,1,1,1,1
 access_fsm_instance,General accees FSM Instance,model_fsm_instance,base.group_user,1,1,1,1
 
-access_fsm_definition_admin,Admin accees FSM Definition,model_fsm_definition,administrator_group,1,1,1,1
-access_workflow_page_admin,Admin access Workflow Page template,model_fsm_wf_page_template,administrator_group,1,1,1,1
-access_workflow_mail_admin,Admin access Workflow Mail template,model_fsm_wf_mail_template,administrator_group,1,1,1,1
+access_fsm_definition_admin,Admin accees FSM Definition,model_fsm_definition,numa_fsm.administrator_group,1,1,1,1
+access_workflow_page_admin,Admin access Workflow Page template,model_fsm_wf_page_template,numa_fsm.administrator_group,1,1,1,1
+access_workflow_mail_admin,Admin access Workflow Mail template,model_fsm_wf_mail_template,numa_fsm.administrator_group,1,1,1,1
 
 access_fsm_execution_log_user,User access FSM Execution Log,model_fsm_execution_log,base.group_user,1,1,1,1
 access_fsm_debug_event_user,User access FSM Debug Event,model_fsm_debug_event,base.group_user,1,1,1,1
-access_fsm_execution_log_admin,Admin access FSM Execution Log,model_fsm_execution_log,administrator_group,1,1,1,1
-access_fsm_debug_event_admin,Admin access FSM Debug Event,model_fsm_debug_event,administrator_group,1,1,1,1
+access_fsm_execution_log_admin,Admin access FSM Execution Log,model_fsm_execution_log,numa_fsm.administrator_group,1,1,1,1
+access_fsm_debug_event_admin,Admin access FSM Debug Event,model_fsm_debug_event,numa_fsm.administrator_group,1,1,1,1
