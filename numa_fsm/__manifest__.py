@@ -12,6 +12,7 @@
         'numa_poly',
     ],
     'data': [
+        'security/security.xml',
         'security/ir.model.access.csv',
         'views/fsm_views.xml',
         'views/menu_views.xml',
