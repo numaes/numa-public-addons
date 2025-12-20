@@ -8,7 +8,6 @@
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 
     .o_fsm_node_header {
-        background-color: #f8f9fa;
         padding: 5px 10px;
         font-weight: bold;
         border-bottom: 1px solid #ccc;
@@ -43,5 +42,45 @@
         justify-content: space-between;
         align-items: center;
         padding: 2px 0;
+    }
+}
+
+// --- Visual Differentiation ---
+
+// States are ovals with a blue header
+.o_fsm_node_state {
+    border-radius: 50px; // Makes it oval
+    .o_fsm_node_header {
+        background-color: #e0e8f0; // Light blue
+    }
+}
+
+// Transitions are rectangles with a grey header
+.o_fsm_node_transition {
+    border-radius: 4px; // Standard rectangle
+    .o_fsm_node_header {
+        background-color: #f0f0f0; // Light grey
+    }
+}
+
+// Start node is a green circle
+.o_fsm_node_start {
+    border-radius: 50%;
+    width: 80px;
+    min-width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    .o_fsm_node_header {
+        border-bottom: none;
+        background-color: #d4edda; // Light green
+    }
+    .o_fsm_node_body {
+        display: none; // Hide body, ports will be on the edge
+    }
+    .o_fsm_port_out {
+        top: 50%;
+        transform: translateY(-50%);
     }
 }

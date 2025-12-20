@@ -17,11 +17,9 @@
                         mode="'python'"
                         value="state.code"
                         onChange.bind="onCodeChange"
-                        options="{
-                            showLineNumbers: true,
-                            showFoldWidgets: true,
-                            showPrintMargin: false,
-                        }"
+                        showLineNumbers="true"
+                        showFoldWidgets="true"
+                        showPrintMargin="false"
                     />
                 </div>
                 <div class="mb-3">

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="numa_fsm.FSMNodeCreator" owl="1">
+        <div class="o_fsm_modal">
+            <div class="o_fsm_modal_content">
+                <div class="o_fsm_modal_header">
+                    <h3>Create New Node</h3>
+                    <button class="btn-close" t-on-click="props.onClose"/>
+                </div>
+                <div class="o_fsm_modal_body">
+                    <div class="mb-3">
+                        <label for="nodeType" class="form-label">Node Type</label>
+                        <select class="form-select" id="nodeType" t-model="state.type">
+                            <option value="state">State</option>
+                            <option value="transition">Transition</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="nodeLabel" class="form-label">Name</label>
+                        <input type="text" class="form-control" id="nodeLabel" t-model="state.label"/>
+                    </div>
+                </div>
+                <div class="o_fsm_modal_footer">
+                    <button class="btn btn-primary" t-on-click="save">Create</button>
+                    <button class="btn btn-secondary" t-on-click="props.onClose">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </t>
+</templates>

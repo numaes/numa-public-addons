@@ -7,10 +7,11 @@ import { useService } from "@web/core/utils/hooks";
 import { FSMNode } from "./fsm_node";
 import { FSMTransitionEditor } from "./fsm_transition_editor";
 import { FSMStateEditor } from "./fsm_state_editor";
+import { FSMNodeCreator } from "./fsm_node_creator";
 
 export class FSMDiagram extends Component {
     static template = "numa_fsm.FSMDiagram";
-    static components = { FSMNode, FSMTransitionEditor, FSMStateEditor };
+    static components = { FSMNode, FSMTransitionEditor, FSMStateEditor, FSMNodeCreator };
     static props = { ...standardFieldProps };
 
     setup() {
@@ -25,6 +26,8 @@ export class FSMDiagram extends Component {
             editingNodeType: null,
             newConnection: null,
             showHelp: false,
+            isCreatingNode: false,
+            creatorPos: { x: 0, y: 0 },
         });
 
         this.dragStart = { x: 0, y: 0 };
@@ -70,7 +73,7 @@ export class FSMDiagram extends Component {
 
     // --- Interaction ---
     onMouseDown(ev) {
-        if (ev.button === 0 && ev.target === this.containerRef.el) {
+        if (ev.button === 0 && (ev.target.classList.contains('o_fsm_diagram_canvas') || ev.target.classList.contains('o_fsm_viewport'))) {
             this.state.isPanning = true;
             this.dragStart = { x: ev.clientX, y: ev.clientY };
         }
@@ -119,15 +122,13 @@ export class FSMDiagram extends Component {
     }
 
     onDblClick(ev) {
-        if (ev.target === this.containerRef.el) {
+        if (ev.target.classList.contains('o_fsm_diagram_canvas') || ev.target.classList.contains('o_fsm_viewport')) {
             const rect = this.containerRef.el.getBoundingClientRect();
-            const x = (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k;
-            const y = (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k;
-            const type = prompt("Create 'state' or 'transition'?");
-            if (type === 'state' || type === 'transition') {
-                const name = prompt(`Enter ${type} Name:`);
-                if (name) this.addNode(type, x, y, name);
-            }
+            this.state.creatorPos = {
+                x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
+                y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
+            };
+            this.state.isCreatingNode = true;
         }
     }
 
@@ -166,7 +167,6 @@ export class FSMDiagram extends Component {
         this.state.editingNodeType = null;
     }
 
-    // Updated to receive data object directly, not event
     onNodeMove({ nodeId, x, y }) {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
@@ -176,46 +176,11 @@ export class FSMDiagram extends Component {
         this.saveData();
     }
 
-    // Updated to receive data object directly, not event
     onNodeResize({ nodeId, height }) {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node && node.height !== height) node.height = height;
     }
 
-    // --- Connection Logic ---
-    // Updated to receive data object directly
-    onPortMouseDown({ event, portName }, node) {
-        // Note: node is passed via .bind in the template, event and portName come from the child
-        // But wait, in the template we did: onPortMouseDown.bind="onPortMouseDown"
-        // And in child: this.props.onPortMouseDown({ event: ev, portName: portName });
-        // So the first arg is the object { event, portName }.
-        // We need to find the node. The child doesn't pass the node object, only ID if we change it.
-        // Let's fix the child to pass nodeId or let the parent find it.
-        
-        // Actually, in the template loop:
-        // <FSMNode ... onPortMouseDown.bind="onPortMouseDown" ... />
-        // The 'node' variable in the loop is NOT automatically passed to onPortMouseDown unless we use an arrow function or bind it.
-        // In the previous XML fix, I used: onPortMouseDown.bind="onPortMouseDown".
-        // This means onPortMouseDown receives exactly what the child passes.
-        
-        // Let's fix onPortMouseDown to find the node from the child's context or pass nodeId from child.
-        // Better: In FSMNode, pass nodeId.
-        
-        // However, I can't change FSMNode right now easily without another write.
-        // Let's see what FSMNode passes: { event: ev, portName: portName }
-        // It does NOT pass nodeId.
-        
-        // I need to change FSMNode.js to pass nodeId as well.
-        // OR, I can change the XML to bind the node.
-        // <FSMNode ... onPortMouseDown="(data) => this.onPortMouseDown(data, node)" ... />
-        
-        // But I used .bind="onPortMouseDown" in the XML.
-        // So I must update FSMNode.js to pass nodeId.
-    }
-    
-    // Re-implementing onPortMouseDown to handle the data object
-    // I will update FSMNode.js in the next step to pass nodeId.
-    // For now, let's assume the payload is { event, portName, nodeId }
     onPortMouseDown({ event, portName, nodeId }) {
         event.stopPropagation();
         const node = this.state.nodes.find(n => n.id === nodeId);
@@ -226,6 +191,15 @@ export class FSMDiagram extends Component {
         const x1 = (rect.left - diagramRect.left + rect.width / 2 - this.state.transform.x) / this.state.transform.k;
         const y1 = (rect.top - diagramRect.top + rect.height / 2 - this.state.transform.y) / this.state.transform.k;
         this.state.newConnection = { fromNode: node.id, fromPort: portName, x1, y1, x2: x1, y2: y1 };
+    }
+
+    onNodeCreate(type, label, x, y) {
+        this.addNode(type, x, y, label);
+        this.state.isCreatingNode = false;
+    }
+
+    onNodeCreatorClose() {
+        this.state.isCreatingNode = false;
     }
 
     addConnection(fromNodeId, fromPortName, toNodeId) {
@@ -258,7 +232,6 @@ export class FSMDiagram extends Component {
         return `M ${x1} ${y1} C ${x1 + curveX} ${y1}, ${x2 - curveX} ${y2}, ${x2} ${y2}`;
     }
 
-    // --- Validation ---
     validateDiagram() {
         const errors = [];
         const connectedInputs = new Set(this.state.connections.map(c => c.toNodeId));
