@@ -46,16 +46,25 @@ export class FSMDiagram extends Component {
     }
 
     loadData(jsonValue) {
-        if (!jsonValue) {
-            this.state.nodes = [{ id: 'start', type: 'start', x: 50, y: 50, label: 'Start', outcomes: {'out': null}, height: 50 }];
-            return;
+        let data = {};
+        if (jsonValue) {
+            try {
+                data = JSON.parse(jsonValue);
+            } catch (e) {
+                console.error("Invalid FSM Diagram JSON", e);
+                data = {};
+            }
         }
-        try {
-            const data = JSON.parse(jsonValue);
-            this.state.nodes = data.nodes || [];
+
+        if (!data.nodes || data.nodes.length === 0) {
+            this.state.nodes = [{ id: 'start', type: 'start', x: 50, y: 150, label: 'Start', outcomes: {'out': null}, height: 50 }];
+            this.state.connections = [];
+            this.state.transform = { x: 0, y: 0, k: 1 };
+        } else {
+            this.state.nodes = data.nodes;
             this.state.connections = data.connections || [];
             this.state.transform = data.transform || { x: 0, y: 0, k: 1 };
-        } catch (e) { console.error("Invalid FSM Diagram JSON", e); }
+        }
     }
 
     saveData() {
@@ -71,7 +80,6 @@ export class FSMDiagram extends Component {
         this.state.showHelp = !this.state.showHelp;
     }
 
-    // --- Interaction ---
     onMouseDown(ev) {
         if (ev.button === 0 && (ev.target.classList.contains('o_fsm_diagram_canvas') || ev.target.classList.contains('o_fsm_viewport'))) {
             this.state.isPanning = true;
@@ -145,7 +153,6 @@ export class FSMDiagram extends Component {
         this.saveData();
     }
 
-    // --- Node & Editor Handlers ---
     onNodeDblClick(nodeId) {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
@@ -167,13 +174,15 @@ export class FSMDiagram extends Component {
         this.state.editingNodeType = null;
     }
 
-    onNodeMove({ nodeId, x, y }) {
+    onNodeMove({ nodeId, x, y, end }) {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
             node.x = x;
             node.y = y;
         }
-        this.saveData();
+        if (end) {
+            this.saveData();
+        }
     }
 
     onNodeResize({ nodeId, height }) {

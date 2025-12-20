@@ -10,6 +10,7 @@ export class FSMNode extends Component {
         onMove: { type: Function },
         onResize: { type: Function },
         onPortMouseDown: { type: Function },
+        onNodeDblClick: { type: Function },
     };
 
     setup() {
@@ -63,6 +64,10 @@ export class FSMNode extends Component {
             this.state.isDragging = false;
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
+            if (this.props.onMove) {
+                // Signal move end to save data
+                this.props.onMove({ nodeId: this.props.node.id, x: this.props.node.x, y: this.props.node.y, end: true });
+            }
         };
 
         window.addEventListener("mousemove", onMouseMove);
@@ -73,6 +78,12 @@ export class FSMNode extends Component {
         ev.stopPropagation();
         if (this.props.onPortMouseDown) {
             this.props.onPortMouseDown({ event: ev, portName: portName, nodeId: this.props.node.id });
+        }
+    }
+
+    onNodeDblClick() {
+        if (this.props.onNodeDblClick) {
+            this.props.onNodeDblClick(this.props.node.id);
         }
     }
 }
