@@ -13,6 +13,7 @@
                         <select class="form-select" id="nodeType" t-model="state.type">
                             <option value="state">State</option>
                             <option value="transition">Transition</option>
+                            <option value="end">End</option>
                         </select>
                     </div>
                     <div class="mb-3">

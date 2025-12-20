@@ -22,6 +22,11 @@
         padding: 15px;
         overflow-y: auto;
         flex-grow: 1;
+
+        .o_code_editor {
+            height: 200px !important;
+            border: 1px solid #ccc;
+        }
     }
 
     .o_fsm_editor_footer {

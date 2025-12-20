@@ -13,14 +13,18 @@ export class FSMTransitionEditor extends Component {
     };
 
     setup() {
-        // Convert outcomes object to array for easier editing
         const outcomesArray = Object.keys(this.props.node.outcomes || {}).map(key => ({
             name: key,
             target: this.props.node.outcomes[key]
         }));
+        
+        // Ensure __default__ exists
+        if (!outcomesArray.find(o => o.name === '__default__')) {
+            outcomesArray.unshift({ name: '__default__', target: null });
+        }
 
         this.state = useState({
-            eventName: this.props.node.label || '', // Use label as event name for transitions
+            eventName: this.props.node.label || '',
             code: this.props.node.code || '',
             outcomes: outcomesArray,
         });
@@ -35,11 +39,14 @@ export class FSMTransitionEditor extends Component {
     }
 
     removeOutcome(index) {
+        if (this.state.outcomes[index].name === '__default__') {
+            alert("Cannot remove default outcome.");
+            return;
+        }
         this.state.outcomes.splice(index, 1);
     }
 
     save() {
-        // Convert array back to object
         const outcomesObj = {};
         this.state.outcomes.forEach(o => {
             if (o.name) {
