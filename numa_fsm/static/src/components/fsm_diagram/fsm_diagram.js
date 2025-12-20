@@ -24,7 +24,7 @@ export class FSMDiagram extends Component {
             editingNode: null,
             editingNodeType: null,
             newConnection: null,
-            showHelp: false, // Help modal visibility
+            showHelp: false,
         });
 
         this.dragStart = { x: 0, y: 0 };
@@ -166,26 +166,62 @@ export class FSMDiagram extends Component {
         this.state.editingNodeType = null;
     }
 
-    onNodeMove(ev) {
-        const { nodeId, x, y } = ev.detail;
+    // Updated to receive data object directly, not event
+    onNodeMove({ nodeId, x, y }) {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
             node.x = x;
             node.y = y;
         }
-        this.saveData(); // Save on move end
+        this.saveData();
     }
 
-    onNodeResize(ev) {
-        const { nodeId, height } = ev.detail;
+    // Updated to receive data object directly, not event
+    onNodeResize({ nodeId, height }) {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node && node.height !== height) node.height = height;
     }
 
     // --- Connection Logic ---
-    onPortMouseDown(ev, node, portName) {
-        ev.stopPropagation();
-        const rect = ev.target.getBoundingClientRect();
+    // Updated to receive data object directly
+    onPortMouseDown({ event, portName }, node) {
+        // Note: node is passed via .bind in the template, event and portName come from the child
+        // But wait, in the template we did: onPortMouseDown.bind="onPortMouseDown"
+        // And in child: this.props.onPortMouseDown({ event: ev, portName: portName });
+        // So the first arg is the object { event, portName }.
+        // We need to find the node. The child doesn't pass the node object, only ID if we change it.
+        // Let's fix the child to pass nodeId or let the parent find it.
+        
+        // Actually, in the template loop:
+        // <FSMNode ... onPortMouseDown.bind="onPortMouseDown" ... />
+        // The 'node' variable in the loop is NOT automatically passed to onPortMouseDown unless we use an arrow function or bind it.
+        // In the previous XML fix, I used: onPortMouseDown.bind="onPortMouseDown".
+        // This means onPortMouseDown receives exactly what the child passes.
+        
+        // Let's fix onPortMouseDown to find the node from the child's context or pass nodeId from child.
+        // Better: In FSMNode, pass nodeId.
+        
+        // However, I can't change FSMNode right now easily without another write.
+        // Let's see what FSMNode passes: { event: ev, portName: portName }
+        // It does NOT pass nodeId.
+        
+        // I need to change FSMNode.js to pass nodeId as well.
+        // OR, I can change the XML to bind the node.
+        // <FSMNode ... onPortMouseDown="(data) => this.onPortMouseDown(data, node)" ... />
+        
+        // But I used .bind="onPortMouseDown" in the XML.
+        // So I must update FSMNode.js to pass nodeId.
+    }
+    
+    // Re-implementing onPortMouseDown to handle the data object
+    // I will update FSMNode.js in the next step to pass nodeId.
+    // For now, let's assume the payload is { event, portName, nodeId }
+    onPortMouseDown({ event, portName, nodeId }) {
+        event.stopPropagation();
+        const node = this.state.nodes.find(n => n.id === nodeId);
+        if (!node) return;
+
+        const rect = event.target.getBoundingClientRect();
         const diagramRect = this.containerRef.el.getBoundingClientRect();
         const x1 = (rect.left - diagramRect.left + rect.width / 2 - this.state.transform.x) / this.state.transform.k;
         const y1 = (rect.top - diagramRect.top + rect.height / 2 - this.state.transform.y) / this.state.transform.k;

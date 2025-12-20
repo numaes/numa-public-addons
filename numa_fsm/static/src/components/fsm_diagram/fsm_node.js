@@ -1,12 +1,15 @@
 /** @odoo-module **/
 
-import { Component, useState, useRef, onMounted, onUpdated } from "@odoo/owl";
+import { Component, useState, useRef, onMounted, onPatched } from "@odoo/owl";
 
 export class FSMNode extends Component {
     static template = "numa_fsm.FSMNode";
     static props = {
         node: { type: Object },
         diagramScale: { type: Number },
+        onMove: { type: Function },
+        onResize: { type: Function },
+        onPortMouseDown: { type: Function },
     };
 
     setup() {
@@ -18,7 +21,7 @@ export class FSMNode extends Component {
         this.lastHeight = 0;
 
         onMounted(this.checkSize.bind(this));
-        onUpdated(this.checkSize.bind(this));
+        onPatched(this.checkSize.bind(this));
     }
 
     checkSize() {
@@ -26,13 +29,14 @@ export class FSMNode extends Component {
             const height = this.nodeRef.el.offsetHeight;
             if (height !== this.lastHeight) {
                 this.lastHeight = height;
-                // Trigger resize event to parent to update connections
-                this.trigger("resize", { nodeId: this.props.node.id, height });
+                if (this.props.onResize) {
+                    this.props.onResize({ nodeId: this.props.node.id, height });
+                }
             }
         }
     }
 
-    onMouseDown(ev) {
+    onNodeMouseDown(ev) {
         ev.stopPropagation();
         this.state.isDragging = true;
         this.dragStart = { x: ev.clientX, y: ev.clientY };
@@ -47,7 +51,9 @@ export class FSMNode extends Component {
                 const newX = this.props.node.x + (dx / scale);
                 const newY = this.props.node.y + (dy / scale);
                 
-                this.trigger("move", { nodeId: this.props.node.id, x: newX, y: newY });
+                if (this.props.onMove) {
+                    this.props.onMove({ nodeId: this.props.node.id, x: newX, y: newY });
+                }
                 
                 this.dragStart = { x: moveEv.clientX, y: moveEv.clientY };
             }
@@ -61,5 +67,12 @@ export class FSMNode extends Component {
 
         window.addEventListener("mousemove", onMouseMove);
         window.addEventListener("mouseup", onMouseUp);
+    }
+
+    onPortMouseDown(ev, portName) {
+        ev.stopPropagation();
+        if (this.props.onPortMouseDown) {
+            this.props.onPortMouseDown({ event: ev, portName: portName, nodeId: this.props.node.id });
+        }
     }
 }
