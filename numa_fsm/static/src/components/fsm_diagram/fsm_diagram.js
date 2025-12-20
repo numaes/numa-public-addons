@@ -57,7 +57,7 @@ export class FSMDiagram extends Component {
         }
 
         if (!data.nodes || data.nodes.length === 0) {
-            this.state.nodes = [{ id: 'start', type: 'start', x: 50, y: 150, label: 'Start', outcomes: {'__default__': null}, height: 50 }];
+            this.state.nodes = [{ id: 'start', type: 'start', x: 50, y: 150, label: 'Start', outcomes: {'out': null}, height: 50 }];
             this.state.connections = [];
             this.state.transform = { x: 0, y: 0, k: 1 };
         } else {
@@ -143,13 +143,13 @@ export class FSMDiagram extends Component {
     addNode(type, x, y, label) {
         const id = 'node_' + Date.now();
         const newNode = { id, type, x, y, label, height: 50 };
-        if (type === 'transition' || type === 'start') {
+        if (type === 'transition') {
             newNode.outcomes = { '__default__': null };
             newNode.code = '# Your Python code here\n# Use set_outcome("outcome_name")';
         } else if (type === 'state') {
             newNode.events = [];
         } else if (type === 'end') {
-            newNode.label = 'End';
+            // End nodes have no outputs, only input
         }
         this.state.nodes.push(newNode);
         this.saveData();
@@ -158,6 +158,9 @@ export class FSMDiagram extends Component {
     onNodeDblClick(nodeId) {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
+            // Don't open editor for 'end' nodes
+            if (node.type === 'end') return;
+
             this.state.editingNode = node;
             this.state.editingNodeType = node.type;
         }

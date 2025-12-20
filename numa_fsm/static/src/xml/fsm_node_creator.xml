@@ -4,21 +4,39 @@
         <div class="o_fsm_modal">
             <div class="o_fsm_modal_content">
                 <div class="o_fsm_modal_header">
-                    <h3>Create New Node</h3>
+                    <h3>Add Node</h3>
                     <button class="btn-close" t-on-click="props.onClose"/>
                 </div>
                 <div class="o_fsm_modal_body">
-                    <div class="mb-3">
-                        <label for="nodeType" class="form-label">Node Type</label>
-                        <select class="form-select" id="nodeType" t-model="state.type">
-                            <option value="state">State</option>
-                            <option value="transition">Transition</option>
-                            <option value="end">End</option>
-                        </select>
+                    <div class="d-flex justify-content-around mb-4">
+                        <button class="btn btn-outline-primary d-flex flex-column align-items-center p-3"
+                                t-att-class="{active: state.type === 'state'}"
+                                t-on-click="() => this.setType('state')">
+                            <i class="fa fa-circle-o fa-2x mb-2"/>
+                            <span>State</span>
+                        </button>
+                        <button class="btn btn-outline-secondary d-flex flex-column align-items-center p-3"
+                                t-att-class="{active: state.type === 'transition'}"
+                                t-on-click="() => this.setType('transition')">
+                            <i class="fa fa-long-arrow-right fa-2x mb-2"/>
+                            <span>Transition</span>
+                        </button>
+                        <button class="btn btn-outline-danger d-flex flex-column align-items-center p-3"
+                                t-att-class="{active: state.type === 'end'}"
+                                t-on-click="() => this.setType('end')">
+                            <i class="fa fa-stop-circle-o fa-2x mb-2"/>
+                            <span>End</span>
+                        </button>
                     </div>
-                    <div class="mb-3">
-                        <label for="nodeLabel" class="form-label">Name</label>
-                        <input type="text" class="form-control" id="nodeLabel" t-model="state.label"/>
+
+                    <div class="mb-3" t-if="state.type === 'state'">
+                        <label for="nodeLabel" class="form-label">State Name</label>
+                        <input type="text" class="form-control" id="nodeLabel" t-model="state.label" placeholder="e.g. Waiting for Input"/>
+                    </div>
+
+                    <div class="mb-3" t-if="state.type === 'transition'">
+                        <label for="nodeLabel" class="form-label">Transition Name (Optional)</label>
+                        <input type="text" class="form-control" id="nodeLabel" t-model="state.label" placeholder="Auto-generated if empty"/>
                     </div>
                 </div>
                 <div class="o_fsm_modal_footer">

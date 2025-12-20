@@ -42,68 +42,90 @@
         justify-content: space-between;
         align-items: center;
         padding: 2px 0;
-        position: relative; // For positioning port
+        position: relative; // Ensure port positioning is relative to wrapper
     }
 }
 
 // --- Visual Differentiation ---
 
+// States are ovals with a blue header
 .o_fsm_node_state {
-    border-radius: 50px;
+    border-radius: 20px; // Slightly less rounded to accommodate content
     .o_fsm_node_header {
-        background-color: #e0e8f0;
+        background-color: #e0e8f0; // Light blue
+        border-top-left-radius: 20px;
+        border-top-right-radius: 20px;
     }
 }
 
+// Transitions are rectangles with a grey header
 .o_fsm_node_transition {
-    border-radius: 4px;
+    border-radius: 4px; // Standard rectangle
     .o_fsm_node_header {
-        background-color: #f0f0f0;
+        background-color: #f0f0f0; // Light grey
     }
 }
 
+// Start node is a green circle
 .o_fsm_node_start {
     border-radius: 50%;
-    width: 80px;
-    min-width: 80px;
-    height: 80px;
+    width: 100px; // Slightly larger
+    height: 100px;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    background-color: #d4edda; // Light green background for the whole node
+
     .o_fsm_node_header {
         border-bottom: none;
-        background-color: #d4edda; // Light green
+        background-color: transparent;
+        padding: 0;
+        text-align: center;
     }
+
     .o_fsm_node_body {
-        display: none;
+        padding: 0;
+        width: 100%;
     }
-    .o_fsm_port_out {
-        top: 50%;
-        transform: translateY(-50%);
-        right: -6px;
-        position: absolute;
+
+    // Position ports on the right edge of the circle
+    .o_fsm_port_out_wrapper {
+        justify-content: center;
+
+        span {
+            display: none; // Hide outcome name for start node to keep it clean
+        }
+
+        .o_fsm_port_out {
+            right: -6px; // Position on the edge
+            top: 50%;
+            transform: translateY(-50%);
+        }
     }
 }
 
+// End node is a red circle
 .o_fsm_node_end {
     border-radius: 50%;
     width: 80px;
-    min-width: 80px;
     height: 80px;
     display: flex;
     align-items: center;
     justify-content: center;
+    background-color: #f8d7da; // Light red
+
     .o_fsm_node_header {
         border-bottom: none;
-        background-color: #f8d7da; // Light red
+        background-color: transparent;
+        padding: 0;
     }
+
     .o_fsm_node_body {
         display: none;
     }
+
     .o_fsm_port_in {
-        top: 50%;
-        transform: translateY(-50%);
         left: -6px;
-        position: absolute;
     }
 }
