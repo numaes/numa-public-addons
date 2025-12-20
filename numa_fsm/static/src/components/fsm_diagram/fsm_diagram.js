@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState, useRef, onMounted, onWillUnmount } from "@odoo/owl";
+import { Component, useState, useRef, onMounted, onWillUnmount, useEffect } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { useService } from "@web/core/utils/hooks";
@@ -12,7 +12,11 @@ import { FSMNodeCreator } from "./fsm_node_creator";
 export class FSMDiagram extends Component {
     static template = "numa_fsm.FSMDiagram";
     static components = { FSMNode, FSMTransitionEditor, FSMStateEditor, FSMNodeCreator };
-    static props = { ...standardFieldProps };
+    static props = { 
+        ...standardFieldProps,
+        activeNodeId: { type: String, optional: true },
+        readonly: { type: Boolean, optional: true },
+    };
 
     setup() {
         this.notification = useService("notification");
@@ -28,29 +32,44 @@ export class FSMDiagram extends Component {
             showHelp: false,
             isCreatingNode: false,
             creatorPos: { x: 0, y: 0 },
+            isDirty: false,
         });
 
-        this.dragStart = { x: 0, y: 0 };
-        this.nodeWidth = 150;
+        this.initialData = null;
+
+        useEffect(() => {
+            this.loadData(this.props.value);
+        }, () => [this.props.value]);
 
         onMounted(() => {
-            this.loadData(this.props.value);
-            window.addEventListener("mousemove", this.onMouseMove);
-            window.addEventListener("mouseup", this.onMouseUp);
-            // Auto-fit on load if there are nodes
+            if (!this.props.readonly) {
+                window.addEventListener("mousemove", this.onMouseMove);
+                window.addEventListener("mouseup", this.onMouseUp);
+                window.addEventListener("beforeunload", this.onBeforeUnload);
+            }
             if (this.state.nodes.length > 0) {
-                // Small delay to ensure container has size
                 setTimeout(() => this.zoomToFit(), 100);
             }
         });
 
         onWillUnmount(() => {
-            window.removeEventListener("mousemove", this.onMouseMove);
-            window.removeEventListener("mouseup", this.onMouseUp);
+            if (!this.props.readonly) {
+                window.removeEventListener("mousemove", this.onMouseMove);
+                window.removeEventListener("mouseup", this.onMouseUp);
+                window.removeEventListener("beforeunload", this.onBeforeUnload);
+            }
         });
     }
 
+    onBeforeUnload = (ev) => {
+        if (this.state.isDirty) {
+            ev.preventDefault();
+            ev.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+        }
+    }
+
     loadData(jsonValue) {
+        this.initialData = jsonValue;
         let data = {};
         if (jsonValue) {
             try {
@@ -70,15 +89,38 @@ export class FSMDiagram extends Component {
             this.state.connections = data.connections || [];
             this.state.transform = data.transform || { x: 0, y: 0, k: 1 };
         }
+        this.state.isDirty = false;
+    }
+
+    updateData() {
+        if (this.props.readonly) return;
+        const currentData = JSON.stringify({
+            nodes: this.state.nodes,
+            connections: this.state.connections,
+            transform: this.state.transform,
+        });
+        // Compare current state with the initial one (as a string)
+        if (currentData !== this.initialData) {
+            this.state.isDirty = true;
+        }
     }
 
     saveData() {
+        if (this.props.readonly) return;
         const data = {
             nodes: this.state.nodes,
             connections: this.state.connections,
             transform: this.state.transform,
         };
-        this.props.record.update({ [this.props.name]: JSON.stringify(data) });
+        const jsonString = JSON.stringify(data);
+        this.props.record.update({ [this.props.name]: jsonString });
+        this.initialData = jsonString;
+        this.state.isDirty = false;
+        this.notification.add("Diagram saved!", { type: 'success' });
+    }
+
+    cancelChanges() {
+        this.loadData(this.initialData);
     }
 
     toggleHelp() {
@@ -87,7 +129,6 @@ export class FSMDiagram extends Component {
 
     zoomToFit() {
         if (this.state.nodes.length === 0) return;
-
         const container = this.containerRef.el;
         if (!container) return;
 
@@ -95,14 +136,13 @@ export class FSMDiagram extends Component {
         const containerWidth = container.clientWidth;
         const containerHeight = container.clientHeight;
 
-        // Calculate bounding box of all nodes
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 
         this.state.nodes.forEach(node => {
             minX = Math.min(minX, node.x);
             minY = Math.min(minY, node.y);
-            maxX = Math.max(maxX, node.x + this.nodeWidth); // Assume width
-            maxY = Math.max(maxY, node.y + (node.height || 100)); // Use height or default
+            maxX = Math.max(maxX, node.x + this.nodeWidth);
+            maxY = Math.max(maxY, node.y + (node.height || 100));
         });
 
         const contentWidth = maxX - minX;
@@ -110,23 +150,19 @@ export class FSMDiagram extends Component {
 
         if (contentWidth <= 0 || contentHeight <= 0) return;
 
-        // Calculate scale to fit
         const scaleX = (containerWidth - padding * 2) / contentWidth;
         const scaleY = (containerHeight - padding * 2) / contentHeight;
         let scale = Math.min(scaleX, scaleY);
+        scale = Math.min(Math.max(scale, 0.1), 1.5);
 
-        // Limit scale
-        scale = Math.min(Math.max(scale, 0.1), 1.5); // Don't zoom in too much if few nodes
-
-        // Center content
         const x = (containerWidth - contentWidth * scale) / 2 - minX * scale;
         const y = (containerHeight - contentHeight * scale) / 2 - minY * scale;
 
         this.state.transform = { x, y, k: scale };
     }
 
-    // --- Interaction ---
     onMouseDown(ev) {
+        if (this.props.readonly) return;
         if (ev.button === 0 && (ev.target.classList.contains('o_fsm_diagram_canvas') || ev.target.classList.contains('o_fsm_viewport'))) {
             this.state.isPanning = true;
             this.dragStart = { x: ev.clientX, y: ev.clientY };
@@ -134,6 +170,7 @@ export class FSMDiagram extends Component {
     }
 
     onMouseMove = (ev) => {
+        if (this.props.readonly) return;
         if (this.state.isPanning) {
             const dx = ev.clientX - this.dragStart.x;
             const dy = ev.clientY - this.dragStart.y;
@@ -149,9 +186,10 @@ export class FSMDiagram extends Component {
     }
 
     onMouseUp = (ev) => {
+        if (this.props.readonly) return;
         if (this.state.isPanning) {
             this.state.isPanning = false;
-            this.saveData();
+            this.updateData();
         }
         if (this.state.newConnection) {
             const targetPort = ev.target.closest('.o_fsm_port_in');
@@ -176,6 +214,7 @@ export class FSMDiagram extends Component {
     }
 
     onDblClick(ev) {
+        if (this.props.readonly) return;
         if (ev.target.classList.contains('o_fsm_diagram_canvas') || ev.target.classList.contains('o_fsm_viewport')) {
             const rect = this.containerRef.el.getBoundingClientRect();
             this.state.creatorPos = {
@@ -195,19 +234,17 @@ export class FSMDiagram extends Component {
         } else if (type === 'state') {
             newNode.events = [];
         } else if (type === 'end') {
-            // End nodes have no outputs, only input
+            // End nodes have no outputs
         }
         this.state.nodes.push(newNode);
-        this.saveData();
+        this.updateData();
     }
 
-    // --- Node & Editor Handlers ---
     onNodeDblClick(nodeId) {
+        if (this.props.readonly) return;
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
-            // Don't open editor for 'end' nodes
             if (node.type === 'end') return;
-
             this.state.editingNode = node;
             this.state.editingNodeType = node.type;
         }
@@ -218,7 +255,7 @@ export class FSMDiagram extends Component {
         if (nodeIndex !== -1) this.state.nodes[nodeIndex] = updatedNode;
         this.state.editingNode = null;
         this.state.editingNodeType = null;
-        this.saveData();
+        this.updateData();
     }
 
     onEditorClose() {
@@ -227,22 +264,25 @@ export class FSMDiagram extends Component {
     }
 
     onNodeMove({ nodeId, x, y, end }) {
+        if (this.props.readonly) return;
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
             node.x = x;
             node.y = y;
         }
         if (end) {
-            this.saveData();
+            this.updateData();
         }
     }
 
     onNodeResize({ nodeId, height }) {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node && node.height !== height) node.height = height;
+        this.updateData();
     }
 
     onPortMouseDown({ event, portName, nodeId }) {
+        if (this.props.readonly) return;
         event.stopPropagation();
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (!node) return;
@@ -267,7 +307,7 @@ export class FSMDiagram extends Component {
         this.state.connections = this.state.connections.filter(c => !(c.fromNodeId === fromNodeId && c.fromPortName === fromPortName));
         const id = `conn_${fromNodeId}_${fromPortName}_${toNodeId}`;
         this.state.connections.push({ id, fromNodeId, fromPortName, toNodeId });
-        this.saveData();
+        this.updateData();
     }
 
     getCurvePath(conn) {
@@ -294,6 +334,7 @@ export class FSMDiagram extends Component {
     }
 
     validateDiagram() {
+        if (this.props.readonly) return;
         const errors = [];
         const connectedInputs = new Set(this.state.connections.map(c => c.toNodeId));
         const connectedOutputs = new Set(this.state.connections.map(c => `${c.fromNodeId}-${c.fromPortName}`));
@@ -305,7 +346,7 @@ export class FSMDiagram extends Component {
                     errors.push(`Node '${node.label}' has an unconnected output port '${portName}'.`);
                 }
             }
-            if (node.type !== 'start' && !connectedInputs.has(node.id)) {
+            if (node.type !== 'start' && node.type !== 'end' && !connectedInputs.has(node.id)) {
                 errors.push(`Node '${node.label}' has no incoming connection.`);
             }
         }

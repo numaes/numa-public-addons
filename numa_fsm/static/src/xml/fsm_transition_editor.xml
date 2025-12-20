@@ -11,6 +11,10 @@
                     <label for="eventName" class="form-label">Event Name</label>
                     <input type="text" class="form-control" id="eventName" t-model="state.eventName"/>
                 </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="isBreakpoint" t-model="state.is_breakpoint"/>
+                    <label class="form-check-label" for="isBreakpoint">Is Breakpoint</label>
+                </div>
                 <div class="mb-3" style="height: 400px; display: flex; flex-direction: column;">
                     <label class="form-label">Code</label>
                     <div style="flex-grow: 1; border: 1px solid #ccc; position: relative;">

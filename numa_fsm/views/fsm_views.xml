@@ -3,30 +3,19 @@
     <data>
 
         <!-- FSM Definition -->
-
         <record model="ir.ui.view" id="definition_form_view">
             <field name="name">FSM Definition form</field>
             <field name="model">fsm.definition</field>
             <field name="arch" type="xml">
                 <form string="FSM Definition">
                     <sheet>
-                        <header >
-                        </header>
+                        <header/>
                         <group name="top">
                             <field name="name" />
                         </group>
-                        <notebook >
-                            <page name="definition" string="Definition" invisible="1">
-                                <field name="type" invisible="True"/>
-                                <newline />
-                                <field name="text_definition" invisible="1"
-                                       widget="ace" options="{'mode': 'python'}" />
-                                <field name="json_compiled_definition" invisible="1"/>
-                                <field name="parent_id" invisible="1"/>
-                            </page>
+                        <notebook>
                             <page name="designer" string="Designer">
                                 <group>
-                                    <field name="json_logic_schema" invisible="1"/>
                                     <field name="json_ui_schema" widget="fsm_diagram" nolabel="1" class="o_full_width"/>
                                 </group>
                             </page>
@@ -37,19 +26,17 @@
                             </page>
                             <page name="pages" string="Pages">
                                 <field name="pages" mode="list">
-                                    <list string="Pages">
+                                    <list>
                                         <field name="name"/>
-                                        <button name="open_page_template" type="object"
-                                                string="View"/>
+                                        <button name="open_page_template" type="object" string="View"/>
                                     </list>
                                 </field>
                             </page>
                             <page name="mail_templates" string="Mail templates">
                                 <field name="mail_templates" mode="list">
-                                    <list string="Mail Templates">
+                                    <list>
                                         <field name="name"/>
-                                        <button name="open_mail_template" type="object"
-                                                string="Edit"/>
+                                        <button name="open_mail_template" type="object" string="Edit"/>
                                     </list>
                                 </field>
                             </page>
@@ -78,7 +65,6 @@
                 <search string="FSM Definition search">
                     <field name="name" />
                     <field name="type" />
-                    <field name="text_definition" />
                     <group expand="0" name="group_by" string="Group By">
                         <filter string="type" name="group_type" context="{'group_by': 'type'}"/>
                     </group>
@@ -90,84 +76,56 @@
             <field name="name">Workflows</field>
             <field name="res_model">fsm.definition</field>
             <field name="view_mode">list,form</field>
-            <field name="domain">[('type', '=', 'CRM_Workflow')]</field>
-            <field name="context">{'default_type': 'CRM_Workflow'}</field>
         </record>
 
         <!-- FSM Instance -->
-
         <record model="ir.ui.view" id="instance_form_view">
             <field name="name">FSM Instance form</field>
             <field name="model">fsm.instance</field>
             <field name="arch" type="xml">
                 <form string="FSM Instance">
+                    <header>
+                        <button name="start" type="object" string="Start" invisible="state != 'init'"/>
+                        <button name="end" type="object" string="End" invisible="state != 'running'"/>
+                        <button name="action_debug_next_step" type="object" string="Next Step" class="btn-primary" invisible="state != 'paused'"/>
+                        <button name="action_debug_continue" type="object" string="Continue" class="btn-secondary" invisible="state != 'paused'"/>
+                        <field name="state" widget="statusbar" />
+                    </header>
                     <sheet>
-                        <header >
-                            <button name="start" type="object"
-                                    string="Start"
-                                    invisible="state != 'init'"/>
-                            <button name="end" type="object"
-                                    string="End"
-                                    invisible="state != 'running'"/>
-                            <button name="start_logging" type="object"
-                                    string="Start logging"
-                                    invisible="state != 'running' or logging"/>
-                            <button name="stop_logging" type="object"
-                                    string="Stop logging"
-                                    invisible="state != 'running' or not logging"/>
-                            <!-- Debugging Controls -->
-                            <button name="action_debug_step_over" type="object"
-                                    string="Step Over" class="btn-primary"
-                                    invisible="debug_mode == 'off' or debug_mode == 'trace'"/>
-                            <button name="action_debug_resume" type="object"
-                                    string="Resume (Play)" class="btn-secondary"
-                                    invisible="debug_mode == 'off' or debug_mode == 'trace'"/>
-                            <button name="action_debug_discard" type="object"
-                                    string="Discard Event"
-                                    invisible="debug_mode == 'off' or debug_mode == 'trace'"/>
-                            <field name="state" widget="statusbar" />
-                        </header>
-                        <group name="top">
+                        <group>
                             <field name="name" />
+                            <field name="definition_id" />
+                            <field name="debug_mode" widget="radio" options="{'horizontal': true}"/>
                         </group>
-                        <notebook >
+                        <notebook>
                             <page name="status" string="Status">
                                 <group>
-                                    <field name="definition_id" />
-                                    <newline />
-                                    <field name="current_state" readonly="True"/>
-                                    <field name="json_instance_values"
-                                           widget="ace" options="{'mode': 'python'}" readonly="0" force_save="1"/>
-                                    <field name="logging" />
+                                    <group string="Execution State">
+                                        <field name="current_state_id" readonly="1"/>
+                                        <field name="next_node_id" readonly="1"/>
+                                    </group>
+                                    <group string="Variables">
+                                        <field name="instance_variables" widget="ace" options="{'mode': 'json'}" readonly="1"/>
+                                        <field name="intermediate_variables" widget="ace" options="{'mode': 'json'}" readonly="1" invisible="not intermediate_variables"/>
+                                    </group>
                                 </group>
                             </page>
-                            <!-- Debugger Page -->
-                            <page string="Debugger" name="debugger_page" invisible="debug_mode == 'off'">
-                                <group string="Pending Events Queue">
-                                    <field name="pending_debug_event_ids" mode="list">
-                                        <list editable="bottom" create="0" delete="0">
-                                            <field name="id" string="#"/>
-                                            <field name="state"/>
-                                            <field name="event_payload"/>
-                                        </list>
-                                    </field>
+                            <page string="Debugger" name="debugger_page">
+                                <group>
+                                    <div class="alert alert-info" role="alert" invisible="state != 'paused'">
+                                        Execution Paused. Inspect variables and use 'Next Step' or 'Continue' to proceed.
+                                    </div>
                                 </group>
-                                <group string="Execution Trace">
-                                    <field name="execution_log_ids" mode="list">
-                                        <list create="0" delete="0">
-                                            <field name="timestamp"/>
-                                            <field name="event_name"/>
-                                            <field name="from_state"/>
-                                            <field name="to_state"/>
-                                            <field name="status"/>
-                                            <button name="action_replay_simulation"
-                                                    type="object"
-                                                    string="Simulate Replay"
-                                                    class="btn-link fa fa-history"
-                                                    title="Simulate Replay"/>
-                                        </list>
-                                    </field>
-                                </group>
+                                <field name="definition_id" invisible="1"/>
+                                <field name="current_state_id" invisible="1"/>
+                                <field name="next_node_id" invisible="1"/>
+                                <field name="definition_id.json_ui_schema"
+                                       widget="fsm_diagram"
+                                       nolabel="1"
+                                       class="o_full_width"
+                                       readonly="1"
+                                       active_node_id="state == 'paused' ? next_node_id : current_state_id"
+                                />
                             </page>
                         </notebook>
                     </sheet>
@@ -184,7 +142,7 @@
                     <field name="name" />
                     <field name="definition_id" />
                     <field name="state" />
-                    <field name="current_state" />
+                    <field name="current_state_id" />
                 </list>
             </field>
         </record>
@@ -197,15 +155,14 @@
                     <field name="name" />
                     <field name="definition_id" />
                     <field name="state" />
-                    <field name="current_state" />
+                    <field name="current_state_id" />
                     <group expand="0" name="filtered_by" string="Filtered By">
                         <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
-                        <filter string="Logging" name="logging" domain="[('logging', '=', True)]"/>
+                        <filter string="Paused" name="paused" domain="[('state', '=', 'paused')]"/>
                     </group>
                     <group expand="0" name="group_by" string="Group By">
                         <filter string="Definition" name="group_definition" context="{'group_by': 'definition_id'}"/>
                         <filter string="Instance State" name="group_state" context="{'group_by': 'state'}"/>
-                        <filter string="Current state" name="group_current_state" context="{'group_by': 'current_state'}"/>
                     </group>
                 </search>
             </field>
@@ -215,21 +172,16 @@
             <field name="name">Instances</field>
             <field name="res_model">fsm.instance</field>
             <field name="view_mode">list,form</field>
-            <field name="domain">[]</field>
-            <field name="context">{}</field>
         </record>
 
-                <!-- FSM Mail template -->
-
+        <!-- FSM Mail template -->
         <record model="ir.ui.view" id="mail_template_form_view">
             <field name="name">FSM Template form</field>
             <field name="model">fsm.wf.mail_template</field>
             <field name="arch" type="xml">
                 <form string="Mail template">
                     <sheet>
-                        <header >
-                        </header>
-                        <group name="definition" string="Definition">
+                        <group>
                             <field name="name" />
                             <field name="render_model" readonly="False" />
                             <field name="body_html" widget="ace" options="{'mode': 'html'}"/>
@@ -242,47 +194,16 @@
             </field>
         </record>
 
-        <record model="ir.ui.view" id="mail_template_html_edit">
-            <field name="name">FSM Mail Template form (HTML Edit)</field>
-            <field name="model">fsm.wf.mail_template</field>
-            <field name="priority">99</field>
-            <field name="arch" type="xml">
-                <form string="Mail template">
-                    <sheet>
-                        <header >
-                        </header>
-                        <group name="definition" string="Definition">
-                            <field name="name" />
-                            <field name="render_model" invisible="True"/>
-                            <field name="body_html" widget="html_composer_message" class="oe-bordered-editor"
-                                    placeholder="Write your message here..." force_save="1"
-                                    options="{
-                                            'dynamic_placeholder': true,
-                                            'dynamic_placeholder_model_reference_field': 'render_model',
-                                    }" />
-                        </group>
-                        <group name="attachments" string="Attachments">
-                            <field name="attachment_ids" />
-                        </group>
-                    </sheet>
-                </form>
-            </field>
-        </record>
-
         <!-- FSM Page template -->
-
         <record model="ir.ui.view" id="page_template_form_view">
             <field name="name">FSM Template form</field>
             <field name="model">fsm.wf.page_template</field>
             <field name="arch" type="xml">
                 <form string="Mail template">
                     <sheet>
-                        <header >
-                        </header>
-                        <group name="definition" string="Definition">
+                        <group>
                             <field name="name" />
-                            <field name="body"
-                                   widget="ace" options="{'mode': 'python'}"/>
+                            <field name="body" widget="ace" options="{'mode': 'python'}"/>
                         </group>
                     </sheet>
                 </form>

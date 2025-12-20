@@ -13,8 +13,6 @@ export class FSMTransitionEditor extends Component {
     };
 
     setup() {
-        // Convert outcomes object to array for easier editing
-        // Filter out __default__ as it is implicit
         const outcomesArray = Object.keys(this.props.node.outcomes || {})
             .filter(key => key !== '__default__')
             .map(key => ({
@@ -26,6 +24,7 @@ export class FSMTransitionEditor extends Component {
             eventName: this.props.node.label || '', 
             code: this.props.node.code || '',
             outcomes: outcomesArray,
+            is_breakpoint: this.props.node.is_breakpoint || false,
         });
     }
 
@@ -42,8 +41,7 @@ export class FSMTransitionEditor extends Component {
     }
 
     save() {
-        // Convert array back to object
-        const outcomesObj = { '__default__': null }; // Always include default
+        const outcomesObj = { '__default__': null };
         this.state.outcomes.forEach(o => {
             if (o.name) {
                 outcomesObj[o.name] = o.target;
@@ -55,6 +53,7 @@ export class FSMTransitionEditor extends Component {
             label: this.state.eventName,
             code: this.state.code,
             outcomes: outcomesObj,
+            is_breakpoint: this.state.is_breakpoint,
         });
     }
 }
