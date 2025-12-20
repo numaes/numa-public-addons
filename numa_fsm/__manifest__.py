@@ -10,13 +10,13 @@
         'base',
         'mail',
         'numa_poly',
+        'website_form',
     ],
     'data': [
         'security/security.xml',
         'security/ir.model.access.csv',
         'views/fsm_views.xml',
         'views/menu_views.xml',
-        # 'views/fsm_log_views.xml', # Obsolete
     ],
     'assets': {
         'web.assets_backend': [

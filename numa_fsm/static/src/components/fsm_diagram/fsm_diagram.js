@@ -99,8 +99,7 @@ export class FSMDiagram extends Component {
             connections: this.state.connections,
             transform: this.state.transform,
         });
-        // Compare current state with the initial one (as a string)
-        if (currentData !== this.initialData) {
+        if (JSON.stringify(JSON.parse(this.initialData || '{}')) !== JSON.stringify(JSON.parse(currentData))) {
             this.state.isDirty = true;
         }
     }

@@ -35,6 +35,7 @@ class FSMDefinition(models.Model):
     text_definition = fields.Text('Definition (Legacy)', deprecated=True)
     json_compiled_definition = fields.Text('JSON Compiled Definition', readonly=True)
     json_ui_schema = fields.Text(string='UI Schema (JSON)')
+    website_form_id = fields.Many2one('website.form', string='Website Form')
     
     execution_policy = fields.Selection(
         selection=[('run', 'Normal Run'), ('pause_all', 'Pause All Instances')],
