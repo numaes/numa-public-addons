@@ -37,6 +37,11 @@ export class FSMDiagram extends Component {
             this.loadData(this.props.value);
             window.addEventListener("mousemove", this.onMouseMove);
             window.addEventListener("mouseup", this.onMouseUp);
+            // Auto-fit on load if there are nodes
+            if (this.state.nodes.length > 0) {
+                // Small delay to ensure container has size
+                setTimeout(() => this.zoomToFit(), 100);
+            }
         });
 
         onWillUnmount(() => {
@@ -80,6 +85,47 @@ export class FSMDiagram extends Component {
         this.state.showHelp = !this.state.showHelp;
     }
 
+    zoomToFit() {
+        if (this.state.nodes.length === 0) return;
+
+        const container = this.containerRef.el;
+        if (!container) return;
+
+        const padding = 50;
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
+
+        // Calculate bounding box of all nodes
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        this.state.nodes.forEach(node => {
+            minX = Math.min(minX, node.x);
+            minY = Math.min(minY, node.y);
+            maxX = Math.max(maxX, node.x + this.nodeWidth); // Assume width
+            maxY = Math.max(maxY, node.y + (node.height || 100)); // Use height or default
+        });
+
+        const contentWidth = maxX - minX;
+        const contentHeight = maxY - minY;
+
+        if (contentWidth <= 0 || contentHeight <= 0) return;
+
+        // Calculate scale to fit
+        const scaleX = (containerWidth - padding * 2) / contentWidth;
+        const scaleY = (containerHeight - padding * 2) / contentHeight;
+        let scale = Math.min(scaleX, scaleY);
+
+        // Limit scale
+        scale = Math.min(Math.max(scale, 0.1), 1.5); // Don't zoom in too much if few nodes
+
+        // Center content
+        const x = (containerWidth - contentWidth * scale) / 2 - minX * scale;
+        const y = (containerHeight - contentHeight * scale) / 2 - minY * scale;
+
+        this.state.transform = { x, y, k: scale };
+    }
+
+    // --- Interaction ---
     onMouseDown(ev) {
         if (ev.button === 0 && (ev.target.classList.contains('o_fsm_diagram_canvas') || ev.target.classList.contains('o_fsm_viewport'))) {
             this.state.isPanning = true;
@@ -155,6 +201,7 @@ export class FSMDiagram extends Component {
         this.saveData();
     }
 
+    // --- Node & Editor Handlers ---
     onNodeDblClick(nodeId) {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
