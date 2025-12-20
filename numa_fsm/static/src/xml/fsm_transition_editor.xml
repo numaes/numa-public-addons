@@ -11,10 +11,17 @@
                     <label for="eventName" class="form-label">Event Name</label>
                     <input type="text" class="form-control" id="eventName" t-model="state.eventName"/>
                 </div>
-                <div class="mb-3">
+                <div class="mb-3" style="height: 400px; display: flex; flex-direction: column;">
                     <label class="form-label">Code</label>
-                    <!-- Fallback to textarea for stability -->
-                    <textarea class="form-control" rows="10" style="font-family: monospace;" t-model="state.code" placeholder="# Python code here..."/>
+                    <div style="flex-grow: 1; border: 1px solid #ccc; position: relative;">
+                        <CodeEditor
+                            mode="'python'"
+                            value="state.code"
+                            onChange.bind="onCodeChange"
+                            theme="'monokai'"
+                            class="'h-100 w-100'"
+                        />
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Outcomes</label>
