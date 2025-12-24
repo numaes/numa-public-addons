@@ -505,14 +505,14 @@ server {
     proxy_set_header X-Forwarded-Proto \$scheme;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_redirect off;
-    proxy_pass http://backend-qa-odoo;
+    proxy_pass http://backend-$WEBSITE_NAME;
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
 
   }
 
   location /websocket {
-    proxy_pass http://backend-qa-odoo-im;
+    proxy_pass http://backend-WEBSITE_NAME-im;
     proxy_set_header Upgrade \$http_upgrade;
     proxy_set_header Connection \$connection_upgrade;
     proxy_set_header X-Forwarded-Host \$host;
@@ -525,8 +525,8 @@ server {
 }
 EOF
 
-  sudo mv ~/odoo /etc/nginx/sites-available/
-  sudo ln -s /etc/nginx/sites-available/odoo /etc/nginx/sites-enabled/odoo
+  sudo mv ~/$WEBSITE_NAME /etc/nginx/sites-available/
+  sudo ln -s /etc/nginx/sites-available/$WEBSITE_NAME /etc/nginx/sites-enabled/$WEBSITE_NAME
   sudo rm /etc/nginx/sites-enabled/default
   sudo service nginx reload
   # Mejora: Usar sudo para escribir en el archivo de configuración
