@@ -418,14 +418,12 @@ fi
 if [ "$INSTALL_NGINX" = "True" ]; then
     # Mejora: Instalar letsencrypt-nginx si aún no lo está
     sudo apt install python3-pip python3-venv python3-wheel python3-dev libxslt1-dev libzip-dev libldap2-dev libsasl2-dev libssl-dev libffi-dev libxml2-dev libxmlsec1-dev build-essential wget git nodejs npm rtlcss libjpeg-dev zlib1g-dev -y;
-    sudo apt install python-rlPyCairo
-    sudo apt install certbot python3-certbot-nginx
+    sudo apt install nginx -y
+    sudo apt install letsencrypt -y
+    sudo apt install certbot python3-certbot-nginx -y
     sudo letsencrypt certonly --nginx -d "$WEBSITE_NAME" --noninteractive --agree-tos --email "$ADMIN_EMAIL" --redirect
     sudo service nginx reload
     echo "SSL/HTTPS is enabled!"
-else
-  echo "SSL/HTTPS isn't enabled due to choice of the user or because of a misconfiguration!"
-fi
 
   cat <<EOF > ~/$WEBSITE_NAME
 #odoo server
