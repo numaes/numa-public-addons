@@ -32,18 +32,18 @@ class FSMDefinition(models.Model):
     _depend_models = OrderedDict()
 
     name = fields.Char('Name', required=True)
-    text_definition = fields.Text('Definition (Legacy)', deprecated=True)
+    text_definition = fields.Text('Definition (Legacy)')
     json_compiled_definition = fields.Text('JSON Compiled Definition', readonly=True)
-    json_ui_schema = fields.Text(string='UI Schema (JSON)')
-    website_form_id = fields.Many2one('website.form', string='Website Form', deprecated=True)
+    json_ui_schema = fields.Json(string='UI Schema (JSON)')
+    website_form_id = fields.Many2one('website.form', string='Website Form')
     
     execution_policy = fields.Selection(
         selection=[('run', 'Normal Run'), ('pause_all', 'Pause All Instances')],
         default='run',
         string='Execution Policy'
     )
-    parent_id = fields.Many2one('fsm.definition', 'Parent FSM', deprecated=True)
-    children_ids = fields.One2many('fsm.definition', 'parent_id', 'Children FSMs', deprecated=True)
+    parent_id = fields.Many2one('fsm.definition', 'Parent FSM')
+    children_ids = fields.One2many('fsm.definition', 'parent_id', 'Children FSMs')
     pages = fields.Many2many('fsm.wf.page_template', 'wf_page_templates_rel', string='Pages')
     mail_templates = fields.Many2many('fsm.wf.mail_template', 'wf_mail_templates_rel', string='Mail templates')
     type = fields.Char('Type')
@@ -55,10 +55,10 @@ class FSMDefinition(models.Model):
                 continue
             
             try:
-                ui_data = json.loads(record.json_ui_schema)
+                ui_data = record.json_ui_schema if isinstance(record.json_ui_schema, dict) else json.loads(record.json_ui_schema or '{}')
                 nodes = ui_data.get('nodes', [])
                 connections = ui_data.get('connections', [])
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, TypeError):
                 continue
 
             compiled_nodes = {}
@@ -180,6 +180,7 @@ class FSMInstance(models.Model):
         string='Debug Mode', default='off', tracking=True
     )
     is_simulation = fields.Boolean(string='Is Simulation', default=False, readonly=True)
+    json_ui_schema = fields.Json(related='definition_id.json_ui_schema', readonly=True)
 
     def log(self, message):
         self.ensure_one()

@@ -120,7 +120,7 @@
                                 <field name="definition_id" invisible="1"/>
                                 <field name="current_state_id" invisible="1"/>
                                 <field name="next_node_id" invisible="1"/>
-                                <field name="definition_id.json_ui_schema"
+                                <field name="json_ui_schema"
                                        widget="fsm_diagram"
                                        nolabel="1"
                                        class="o_full_width"
