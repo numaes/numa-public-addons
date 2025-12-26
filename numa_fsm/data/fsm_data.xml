@@ -14,18 +14,6 @@
 		</record>
     </data>
 
-    <data noupdate="0">
-        <record id="numa_fsm.model_fsm_form_input" model="ir.model">
-          <field name="website_form_key">unrelated_identifier</field>
-          <field name="website_form_access">True</field>
-          <field name="website_form_label">Form input for workflows</field>
-        </record>
-        <function model="ir.model.fields" name="formbuilder_whitelist">
-          <value>fsm.form_input</value>
-          <value eval="[
-            'instance_id',
-            'unrelated_identifier',
-            ]"/>
-        </function>
+    <data noupdate="1">
     </data>
 </odoo>

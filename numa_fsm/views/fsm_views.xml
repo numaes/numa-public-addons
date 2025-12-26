@@ -12,7 +12,7 @@
                         <header/>
                         <group name="top">
                             <field name="name" />
-                            <field name="website_form_id" />
+                            <field name="website_form_id" invisible="1"/>
                         </group>
                         <notebook>
                             <page name="designer" string="Designer">

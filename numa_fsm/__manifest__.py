@@ -10,7 +10,7 @@
         'base',
         'mail',
         'numa_poly',
-        'website_form',
+        'website',
     ],
     'data': [
         'security/security.xml',

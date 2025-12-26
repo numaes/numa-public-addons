@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from odoo import http
 from odoo.http import request
-from odoo.addons.website_form.controllers.main import WebsiteForm
+from odoo.addons.website.controllers.form import WebsiteForm
 
 class FSMFormController(http.Controller):
 
@@ -23,7 +23,7 @@ class FSMFormController(http.Controller):
         # Dynamically build the form action URL to include our instance identifier
         form_action = f"/website/form/{form.model_id.model}?instance_uuid={instance_uuid}"
         
-        return request.render("website_form.form", {
+        return request.render("website.s_website_form", {
             'main_object': form,
             'website_form_action': form_action,
         })
