@@ -43,6 +43,22 @@
                     </t>
                 </div>
             </div>
+
+            <FSMNodeCreator t-if="state.isCreatingNode"
+                            x="state.creatorPos.x"
+                            y="state.creatorPos.y"
+                            onCreate="(type, label, x, y) => this.onNodeCreate(type, label, x, y)"
+                            onClose="() => this.onNodeCreatorClose()"/>
+
+            <FSMTransitionEditor t-if="state.editingNodeType === 'transition'"
+                                 node="state.editingNode"
+                                 onSave="(node) => this.onEditorSave(node)"
+                                 onClose="() => this.onEditorClose()"/>
+
+            <FSMStateEditor t-if="state.editingNodeType === 'state'"
+                            node="state.editingNode"
+                            onSave="(node) => this.onEditorSave(node)"
+                            onClose="() => this.onEditorClose()"/>
         </div>
     </t>
 </templates>

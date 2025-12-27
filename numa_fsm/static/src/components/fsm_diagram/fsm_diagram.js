@@ -277,7 +277,13 @@ export class FSMDiagram extends Component {
 
     onDblClick(ev) {
         if (this.props.readonly) return;
-        if (ev.target.classList.contains('o_fsm_diagram_canvas') || ev.target.classList.contains('o_fsm_viewport')) {
+        const target = ev.target;
+        const isBackground = target.classList.contains('o_fsm_diagram_container') || 
+                           target.classList.contains('o_fsm_viewport') || 
+                           target.classList.contains('o_fsm_connections') ||
+                           target.tagName === 'svg';
+
+        if (isBackground) {
             const rect = this.containerRef.el.getBoundingClientRect();
             this.state.creatorPos = {
                 x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
