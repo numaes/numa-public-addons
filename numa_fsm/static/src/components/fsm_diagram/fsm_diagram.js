@@ -223,7 +223,14 @@ export class FSMDiagram extends Component {
 
     onMouseDown(ev) {
         if (this.props.readonly) return;
-        if (ev.button === 0 && (ev.target.classList.contains('o_fsm_diagram_canvas') || ev.target.classList.contains('o_fsm_viewport') || ev.target.tagName === 'svg')) {
+        const target = ev.target;
+        const isBackground = target.classList.contains('o_fsm_diagram_container') || 
+                           target.classList.contains('o_fsm_viewport') || 
+                           target.classList.contains('o_fsm_connections') ||
+                           target.classList.contains('o_fsm_nodes') ||
+                           target.tagName === 'svg';
+
+        if (ev.button === 0 && isBackground) {
             if (!ev.shiftKey) {
                 this.state.selectedIds.clear();
             }
@@ -281,7 +288,9 @@ export class FSMDiagram extends Component {
         const isBackground = target.classList.contains('o_fsm_diagram_container') || 
                            target.classList.contains('o_fsm_viewport') || 
                            target.classList.contains('o_fsm_connections') ||
-                           target.tagName === 'svg';
+                           target.classList.contains('o_fsm_nodes') ||
+                           target.tagName === 'svg' ||
+                           target.tagName === 'DIV' && target.parentElement.classList.contains('o_fsm_diagram_container');
 
         if (isBackground) {
             const rect = this.containerRef.el.getBoundingClientRect();

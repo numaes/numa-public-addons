@@ -6,6 +6,18 @@
              t-on-mousedown="onMouseDown"
              t-on-wheel="onWheel"
              t-on-dblclick="onDblClick">
+            <div class="o_fsm_diagram_toolbar d-flex gap-2">
+                <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
+                    <i class="fa fa-expand"/>
+                </button>
+                <button class="btn btn-primary shadow-sm" t-on-click="validateDiagram" title="Validar Diagrama">
+                    <i class="fa fa-check"/> Validar
+                </button>
+                <button class="btn btn-info shadow-sm text-white" t-on-click="() => this.state.showHelp = true" title="Ayuda">
+                    <i class="fa fa-question-circle"/> Ayuda
+                </button>
+            </div>
+
             <div t-if="state.dataLoaded"
                  class="o_fsm_viewport"
                  t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
@@ -59,6 +71,31 @@
                             node="state.editingNode"
                             onSave="(node) => this.onEditorSave(node)"
                             onClose="() => this.onEditorClose()"/>
+
+            <!-- Help Modal -->
+            <div t-if="state.showHelp" class="o_fsm_help_modal" t-on-click="() => this.state.showHelp = false">
+                <div class="o_fsm_help_content shadow-lg" t-on-click.stop="">
+                    <div class="o_fsm_help_header">
+                        <h4 class="mb-0">Manual de Uso - Editor FSM</h4>
+                        <button class="btn-close" t-on-click="() => this.state.showHelp = false"></button>
+                    </div>
+                    <div class="o_fsm_help_body mt-3">
+                        <ul class="list-unstyled">
+                            <li class="mb-2"><i class="fa fa-mouse-pointer text-primary me-2"/> <strong>Click simple:</strong> Seleccionar elemento.</li>
+                            <li class="mb-2"><i class="fa fa-arrows-alt text-primary me-2"/> <strong>Arrastrar:</strong> Mover nodos (múltiples si están seleccionados).</li>
+                            <li class="mb-2"><i class="fa fa-plus-circle text-primary me-2"/> <strong>Doble Click Fondo:</strong> Crear nuevo Nodo/Transición/Fin.</li>
+                            <li class="mb-2"><i class="fa fa-edit text-primary me-2"/> <strong>Doble Click Nodo:</strong> Editar propiedades y código.</li>
+                            <li class="mb-2"><i class="fa fa-link text-primary me-2"/> <strong>Arrastrar desde Puerto:</strong> Crear nueva conexión.</li>
+                            <li class="mb-2"><i class="fa fa-trash text-danger me-2"/> <strong>Supr / Backspace:</strong> Borrar elementos seleccionados.</li>
+                            <li class="mb-2"><i class="fa fa-undo text-success me-2"/> <strong>Ctrl + Z:</strong> Deshacer último cambio.</li>
+                            <li class="mb-2"><i class="fa fa-search-plus text-primary me-2"/> <strong>Rueda Ratón:</strong> Zoom In/Out.</li>
+                        </ul>
+                    </div>
+                    <div class="text-end mt-3">
+                        <button class="btn btn-primary" t-on-click="() => this.state.showHelp = false">Entendido</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </t>
 </templates>
