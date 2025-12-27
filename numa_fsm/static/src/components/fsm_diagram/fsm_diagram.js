@@ -34,6 +34,7 @@ export class FSMDiagram extends Component {
             creatorPos: { x: 0, y: 0 },
             isDirty: false,
             selectedIds: new Set(),
+            dataLoaded: false,
         });
 
         this.history = [];
@@ -43,6 +44,7 @@ export class FSMDiagram extends Component {
 
         useEffect(() => {
             this.loadData(this.props.value);
+            this.state.dataLoaded = true;
         }, () => [this.props.value]);
 
         onMounted(() => {
@@ -54,7 +56,11 @@ export class FSMDiagram extends Component {
                 window.addEventListener("beforeunload", this.onBeforeUnload);
             }
             if (this.state.nodes.length > 0) {
-                setTimeout(() => this.zoomToFit(), 100);
+                setTimeout(() => {
+                    if (this.containerRef.el) {
+                        this.zoomToFit();
+                    }
+                }, 100);
             }
         });
 
@@ -67,6 +73,69 @@ export class FSMDiagram extends Component {
                 window.removeEventListener("beforeunload", this.onBeforeUnload);
             }
         });
+    }
+
+    loadData(value) {
+        if (!value) {
+            this.state.nodes = [];
+            this.state.connections = [];
+            return;
+        }
+        try {
+            const data = typeof value === 'string' ? JSON.parse(value) : value;
+            this.state.nodes = data.nodes || [];
+            this.state.connections = data.connections || [];
+            
+            // Initial data for comparison if needed
+            if (!this.initialData) {
+                this.initialData = JSON.stringify({ nodes: this.state.nodes, connections: this.state.connections });
+            }
+        } catch (e) {
+            console.error("Error parsing FSM data:", e);
+            this.state.nodes = [];
+            this.state.connections = [];
+        }
+    }
+
+    updateData() {
+        if (this.props.readonly) return;
+        const data = {
+            nodes: this.state.nodes,
+            connections: this.state.connections,
+        };
+        const value = JSON.stringify(data);
+        if (this.props.record && this.props.record.update) {
+            this.props.record.update({ [this.props.name]: value });
+        } else if (this.props.update) {
+            this.props.update(value);
+        }
+    }
+
+    zoomToFit() {
+        if (!this.containerRef.el || this.state.nodes.length === 0) return;
+
+        const rect = this.containerRef.el.getBoundingClientRect();
+        const padding = 50;
+        
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        
+        this.state.nodes.forEach(n => {
+            minX = Math.min(minX, n.x);
+            minY = Math.min(minY, n.y);
+            maxX = Math.max(maxX, n.x + this.nodeWidth);
+            maxY = Math.max(maxY, n.y + (n.height || 50));
+        });
+
+        const graphWidth = maxX - minX;
+        const graphHeight = maxY - minY;
+        
+        const scaleX = (rect.width - padding * 2) / graphWidth;
+        const scaleY = (rect.height - padding * 2) / graphHeight;
+        const k = Math.min(Math.max(Math.min(scaleX, scaleY), 0.1), 1.5);
+
+        this.state.transform.k = k;
+        this.state.transform.x = (rect.width / 2) - (k * (minX + graphWidth / 2));
+        this.state.transform.y = (rect.height / 2) - (k * (minY + graphHeight / 2));
     }
 
     onFSMNodeClick({ detail }) {
@@ -276,6 +345,9 @@ export class FSMDiagram extends Component {
             node.x += dx;
             node.y += dy;
         }
+        
+        // Trigger re-render of connections
+        this.state.nodes = [...this.state.nodes];
     }
 
     onNodeResize({ nodeId, height }) {

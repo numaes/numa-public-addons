@@ -6,7 +6,8 @@
              t-on-mousedown="onMouseDown"
              t-on-wheel="onWheel"
              t-on-dblclick="onDblClick">
-            <div class="o_fsm_viewport"
+            <div t-if="state.dataLoaded"
+                 class="o_fsm_viewport"
                  t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
 
                 <!-- Connections Layer (SVG) -->
@@ -34,7 +35,10 @@
                         <FSMNode node="node"
                                  diagramScale="state.transform.k"
                                  selected="state.selectedIds.has(node.id)"
-                                 t-on-move.stop="onNodeMove"
+                                 onMove="(args) => this.onNodeMove(args)"
+                                 onResize="(args) => this.onNodeResize(args)"
+                                 onPortMouseDown="(args) => this.onPortMouseDown(args)"
+                                 onNodeDblClick="(nodeId) => this.onNodeDblClick(nodeId)"
                                  t-on-click-object.stop="(ev) => this.onObjectClick(ev.detail.event, node.id)"/>
                     </t>
                 </div>
