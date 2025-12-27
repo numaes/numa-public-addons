@@ -80,8 +80,15 @@ export class FSMDiagram extends Component {
     }
 
     loadData(value) {
-        if (!value) {
-            this.state.nodes = [];
+        if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) {
+            this.state.nodes = [{
+                id: 'start_node',
+                type: 'start',
+                x: 100,
+                y: 100,
+                label: 'Inicio',
+                height: 50
+            }];
             this.state.connections = [];
             return;
         }
@@ -89,6 +96,17 @@ export class FSMDiagram extends Component {
             const data = typeof value === 'string' ? JSON.parse(value) : value;
             this.state.nodes = data.nodes || [];
             this.state.connections = data.connections || [];
+
+            if (this.state.nodes.length === 0) {
+                this.state.nodes = [{
+                    id: 'start_node',
+                    type: 'start',
+                    x: 100,
+                    y: 100,
+                    label: 'Inicio',
+                    height: 50
+                }];
+            }
             
             // Initial data for comparison if needed
             if (!this.initialData) {
@@ -294,7 +312,7 @@ export class FSMDiagram extends Component {
                            target.classList.contains('o_fsm_connections') ||
                            target.classList.contains('o_fsm_nodes') ||
                            target.tagName === 'svg' ||
-                           target.tagName === 'DIV' && target.parentElement.classList.contains('o_fsm_diagram_container');
+                           (target.tagName === 'DIV' && target.parentElement && target.parentElement.classList.contains('o_fsm_diagram_container'));
 
         if (isBackground) {
             const rect = this.containerRef.el.getBoundingClientRect();
