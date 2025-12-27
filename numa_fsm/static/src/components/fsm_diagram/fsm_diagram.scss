@@ -90,13 +90,15 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 20;
+    z-index: 2000;
 
     .o_fsm_help_content {
         background-color: white;
         padding: 20px;
         border-radius: 5px;
         width: 50%;
+        max-height: 90%;
+        overflow-y: auto;
     }
 
     .o_fsm_help_header {

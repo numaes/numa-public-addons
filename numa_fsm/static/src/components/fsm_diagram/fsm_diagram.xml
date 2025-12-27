@@ -13,7 +13,7 @@
                 <button class="btn btn-primary shadow-sm" t-on-click="validateDiagram" title="Validar Diagrama">
                     <i class="fa fa-check"/> Validar
                 </button>
-                <button class="btn btn-info shadow-sm text-white" t-on-click="() => toggleHelp(true)" title="Ayuda">
+                <button class="btn btn-info shadow-sm text-white" t-on-click="() => this.toggleHelp(true)" title="Ayuda">
                     <i class="fa fa-question-circle"/> Ayuda
                 </button>
             </div>
@@ -23,7 +23,7 @@
                  t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
 
                 <!-- Connections Layer (SVG) -->
-                <svg class="o_fsm_connections" t-on-dblclick="onDblClick">
+                <svg class="o_fsm_connections">
                     <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
                         <path t-att-d="getCurvePath(conn)"
                               t-att-class="{
@@ -42,7 +42,7 @@
                 </svg>
 
                 <!-- Nodes Layer (HTML) -->
-                <div class="o_fsm_nodes" t-on-dblclick="onDblClick">
+                <div class="o_fsm_nodes">
                     <t t-foreach="state.nodes" t-as="node" t-key="node.id">
                         <FSMNode node="node"
                                  diagramScale="state.transform.k"
@@ -73,11 +73,11 @@
                             onClose="() => this.onEditorClose()"/>
 
             <!-- Help Modal -->
-            <div t-if="state.showHelp" class="o_fsm_help_modal" t-on-click="() => toggleHelp(false)">
+            <div t-if="state.showHelp" class="o_fsm_help_modal" t-on-click="() => this.toggleHelp(false)">
                 <div class="o_fsm_help_content shadow-lg" t-on-click.stop="">
                     <div class="o_fsm_help_header">
                         <h4 class="mb-0">Manual de Uso - Editor FSM</h4>
-                        <button class="btn-close" t-on-click="() => toggleHelp(false)"></button>
+                        <button class="btn-close" t-on-click="() => this.toggleHelp(false)"></button>
                     </div>
                     <div class="o_fsm_help_body mt-3">
                         <ul class="list-unstyled">
@@ -92,7 +92,7 @@
                         </ul>
                     </div>
                     <div class="text-end mt-3">
-                        <button class="btn btn-primary" t-on-click="() => toggleHelp(false)">Entendido</button>
+                        <button class="btn btn-primary" t-on-click="() => this.toggleHelp(false)">Entendido</button>
                     </div>
                 </div>
             </div>

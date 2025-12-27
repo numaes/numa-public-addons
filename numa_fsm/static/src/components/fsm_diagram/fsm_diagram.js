@@ -44,7 +44,6 @@ export class FSMDiagram extends Component {
 
         useEffect(() => {
             this.loadData(this.props.value);
-            this.state.dataLoaded = true;
         }, () => [this.props.value]);
 
         onMounted(() => {
@@ -80,7 +79,7 @@ export class FSMDiagram extends Component {
     }
 
     loadData(value) {
-        if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) {
+        if (!value || (typeof value === 'object' && Object.keys(value).length === 0) || value === "{}") {
             this.state.nodes = [{
                 id: 'start_node',
                 type: 'start',
@@ -90,6 +89,7 @@ export class FSMDiagram extends Component {
                 height: 50
             }];
             this.state.connections = [];
+            this.state.dataLoaded = true;
             return;
         }
         try {
@@ -108,14 +108,24 @@ export class FSMDiagram extends Component {
                 }];
             }
             
+            this.state.dataLoaded = true;
+            
             // Initial data for comparison if needed
             if (!this.initialData) {
                 this.initialData = JSON.stringify({ nodes: this.state.nodes, connections: this.state.connections });
             }
         } catch (e) {
             console.error("Error parsing FSM data:", e);
-            this.state.nodes = [];
+            this.state.nodes = [{
+                id: 'start_node',
+                type: 'start',
+                x: 100,
+                y: 100,
+                label: 'Inicio',
+                height: 50
+            }];
             this.state.connections = [];
+            this.state.dataLoaded = true;
         }
     }
 
@@ -307,14 +317,13 @@ export class FSMDiagram extends Component {
     onDblClick(ev) {
         if (this.props.readonly) return;
         const target = ev.target;
-        const isBackground = target.classList.contains('o_fsm_diagram_container') || 
-                           target.classList.contains('o_fsm_viewport') || 
-                           target.classList.contains('o_fsm_connections') ||
-                           target.classList.contains('o_fsm_nodes') ||
-                           target.tagName === 'svg' ||
-                           (target.tagName === 'DIV' && target.parentElement && target.parentElement.classList.contains('o_fsm_diagram_container'));
-
-        if (isBackground) {
+        
+        // Robust check for background clicks
+        const isToolbar = target.closest('.o_fsm_diagram_toolbar');
+        const isNode = target.closest('.o_fsm_node');
+        const isConnection = target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'));
+        
+        if (!isToolbar && !isNode && !isConnection) {
             const rect = this.containerRef.el.getBoundingClientRect();
             this.state.creatorPos = {
                 x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
