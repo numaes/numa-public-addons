@@ -39,23 +39,17 @@ export class FSMNode extends Component {
     }
 
     onNodeMouseDown(ev) {
-        console.log('[FSMNode] onNodeMouseDown called, nodeId:', this.props.node.id);
-        console.log('[FSMNode] onNodeMouseDown - button:', ev.button);
         
         if (ev.button !== 0) {
-            console.log('[FSMNode] onNodeMouseDown - not left button, ignoring');
             return;
         }
         ev.stopPropagation();
-        console.log('[FSMNode] onNodeMouseDown - stopPropagation called');
         
         // Notify parent about the click for selection
-        console.log('[FSMNode] onNodeMouseDown - triggering fsm_node_click on bus');
         this.env.bus.trigger('fsm_node_click', { event: ev, nodeId: this.props.node.id });
 
         this.state.isDragging = true;
         this.dragStart = { x: ev.clientX, y: ev.clientY };
-        console.log('[FSMNode] onNodeMouseDown - started dragging from:', this.dragStart);
 
         const onMouseMove = (moveEv) => {
             if (this.state.isDragging) {
@@ -65,10 +59,8 @@ export class FSMNode extends Component {
                 const scale = this.props.diagramScale || 1;
                 
                 if (this.props.onMove) {
-                    console.log('[FSMNode] onMouseMove - calling onMove with dx:', dx / scale, 'dy:', dy / scale);
                     this.props.onMove({ nodeId: this.props.node.id, dx: dx / scale, dy: dy / scale });
                 } else {
-                    console.log('[FSMNode] onMouseMove - onMove prop is NOT defined!');
                 }
                 
                 this.dragStart = { x: moveEv.clientX, y: moveEv.clientY };
@@ -76,13 +68,11 @@ export class FSMNode extends Component {
         };
 
         const onMouseUp = () => {
-            console.log('[FSMNode] onMouseUp - ending drag');
             this.state.isDragging = false;
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
             if (this.props.onMove) {
                 // Signal move end to save data
-                console.log('[FSMNode] onMouseUp - calling onMove with end:true');
                 this.props.onMove({ nodeId: this.props.node.id, dx: 0, dy: 0, end: true });
             }
         };
@@ -92,7 +82,6 @@ export class FSMNode extends Component {
     }
 
     onPortMouseDown(ev, portName) {
-        console.log('[FSMNode] onPortMouseDown called, portName:', portName, 'nodeId:', this.props.node.id);
         ev.stopPropagation();
         if (this.props.onPortMouseDown) {
             this.props.onPortMouseDown({ event: ev, portName: portName, nodeId: this.props.node.id });
@@ -100,13 +89,9 @@ export class FSMNode extends Component {
     }
 
     onNodeDblClick() {
-        console.log('[FSMNode] onNodeDblClick called, nodeId:', this.props.node.id);
-        console.log('[FSMNode] onNodeDblClick - onNodeDblClick prop defined:', !!this.props.onNodeDblClick);
         if (this.props.onNodeDblClick) {
-            console.log('[FSMNode] onNodeDblClick - calling parent onNodeDblClick');
             this.props.onNodeDblClick(this.props.node.id);
         } else {
-            console.log('[FSMNode] onNodeDblClick - onNodeDblClick prop is NOT defined!');
         }
     }
 }
