@@ -9,24 +9,24 @@
             <div class="o_fsm_editor_body">
                 <div class="mb-3">
                     <label for="stateName" class="form-label">State Name</label>
-                    <input type="text" class="form-control" id="stateName" t-model="state.label"/>
+                    <input type="text" class="form-control" id="stateName" t-model="state.label" t-att-disabled="props.readonly"/>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Events (Outputs)</label>
                     <div t-foreach="state.events" t-as="event" t-key="event_index" class="input-group mb-2">
-                        <input type="text" class="form-control" placeholder="Event Name" t-model="event.name"/>
-                        <button class="btn btn-outline-danger" t-on-click="() => removeEvent(event_index)">
+                        <input type="text" class="form-control" placeholder="Event Name" t-model="event.name" t-att-disabled="props.readonly"/>
+                        <button class="btn btn-outline-danger" t-on-click="() => removeEvent(event_index)" t-if="!props.readonly">
                             <i class="fa fa-trash"/>
                         </button>
                     </div>
-                    <button class="btn btn-secondary btn-sm" t-on-click="addEvent">
+                    <button class="btn btn-secondary btn-sm" t-on-click="addEvent" t-if="!props.readonly">
                         <i class="fa fa-plus"/> Add Event
                     </button>
                 </div>
             </div>
             <div class="o_fsm_editor_footer">
-                <button class="btn btn-primary" t-on-click="save">Save</button>
-                <button class="btn btn-secondary" t-on-click="props.onClose">Cancel</button>
+                <button class="btn btn-primary" t-on-click="save" t-if="!props.readonly">Save</button>
+                <button class="btn btn-secondary" t-on-click="props.onClose"><t t-esc="props.readonly ? 'Close' : 'Cancel'"/></button>
             </div>
         </div>
     </t>

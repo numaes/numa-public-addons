@@ -8,6 +8,7 @@ export class FSMTransitionEditor extends Component {
     static components = { CodeEditor };
     static props = {
         node: Object,
+        readonly: { type: Boolean, optional: true },
         onSave: Function,
         onClose: Function,
     };

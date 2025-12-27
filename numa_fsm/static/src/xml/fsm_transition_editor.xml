@@ -9,10 +9,10 @@
             <div class="o_fsm_editor_body">
                 <div class="mb-3" t-if="props.node.type !== 'start'">
                     <label for="eventName" class="form-label">Event Name</label>
-                    <input type="text" class="form-control" id="eventName" t-model="state.eventName"/>
+                    <input type="text" class="form-control" id="eventName" t-model="state.eventName" t-att-disabled="props.readonly"/>
                 </div>
                 <div class="mb-3 form-check">
-                    <input type="checkbox" class="form-check-input" id="isBreakpoint" t-model="state.is_breakpoint"/>
+                    <input type="checkbox" class="form-check-input" id="isBreakpoint" t-model="state.is_breakpoint" t-att-disabled="props.readonly"/>
                     <label class="form-check-label" for="isBreakpoint">Is Breakpoint</label>
                 </div>
                 <div class="mb-3" style="height: 400px; display: flex; flex-direction: column;">
@@ -24,6 +24,7 @@
                             onChange.bind="onCodeChange"
                             theme="'monokai'"
                             class="'h-100 w-100'"
+                            readonly="props.readonly"
                         />
                     </div>
                 </div>
@@ -31,19 +32,19 @@
                     <label class="form-label">Outcomes</label>
                     <div class="text-muted mb-2"><small>Default outcome is always available.</small></div>
                     <div t-foreach="state.outcomes" t-as="outcome" t-key="outcome_index" class="input-group mb-2">
-                        <input type="text" class="form-control" placeholder="Outcome Name" t-model="outcome.name"/>
-                        <button class="btn btn-outline-danger" t-on-click="() => removeOutcome(outcome_index)">
+                        <input type="text" class="form-control" placeholder="Outcome Name" t-model="outcome.name" t-att-disabled="props.readonly"/>
+                        <button class="btn btn-outline-danger" t-on-click="() => removeOutcome(outcome_index)" t-if="!props.readonly">
                             <i class="fa fa-trash"/>
                         </button>
                     </div>
-                    <button class="btn btn-secondary btn-sm" t-on-click="addOutcome">
+                    <button class="btn btn-secondary btn-sm" t-on-click="addOutcome" t-if="!props.readonly">
                         <i class="fa fa-plus"/> Add Outcome
                     </button>
                 </div>
             </div>
             <div class="o_fsm_editor_footer">
-                <button class="btn btn-primary" t-on-click="save">Save</button>
-                <button class="btn btn-secondary" t-on-click="props.onClose">Cancel</button>
+                <button class="btn btn-primary" t-on-click="save" t-if="!props.readonly">Save</button>
+                <button class="btn btn-secondary" t-on-click="props.onClose"><t t-esc="props.readonly ? 'Close' : 'Cancel'"/></button>
             </div>
         </div>
     </t>

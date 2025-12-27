@@ -6,6 +6,7 @@ export class FSMStateEditor extends Component {
     static template = "numa_fsm.FSMStateEditor";
     static props = {
         node: Object,
+        readonly: { type: Boolean, optional: true },
         onSave: Function,
         onClose: Function,
     };
