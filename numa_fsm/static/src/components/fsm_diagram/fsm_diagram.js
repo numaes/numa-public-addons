@@ -74,8 +74,12 @@ export class FSMDiagram extends Component {
         });
     }
 
-    toggleHelp(show) {
-        this.state.showHelp = show;
+    showHelp = () => {
+        this.state.showHelp = true;
+    }
+
+    hideHelp = () => {
+        this.state.showHelp = false;
     }
 
     loadData(value) {
