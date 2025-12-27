@@ -86,7 +86,8 @@ export class FSMDiagram extends Component {
                 x: 100,
                 y: 100,
                 label: 'Inicio',
-                height: 50
+                height: 50,
+                outcomes: { '__default__': null }
             }];
             this.state.connections = [];
             this.state.dataLoaded = true;
@@ -104,7 +105,8 @@ export class FSMDiagram extends Component {
                     x: 100,
                     y: 100,
                     label: 'Inicio',
-                    height: 50
+                    height: 50,
+                    outcomes: { '__default__': null }
                 }];
             }
             
@@ -122,7 +124,8 @@ export class FSMDiagram extends Component {
                 x: 100,
                 y: 100,
                 label: 'Inicio',
-                height: 50
+                height: 50,
+                outcomes: { '__default__': null }
             }];
             this.state.connections = [];
             this.state.dataLoaded = true;

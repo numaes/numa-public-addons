@@ -32,7 +32,7 @@
                     <div class="text-muted mb-2"><small>Default outcome is always available.</small></div>
                     <div t-foreach="state.outcomes" t-as="outcome" t-key="outcome_index" class="input-group mb-2">
                         <input type="text" class="form-control" placeholder="Outcome Name" t-model="outcome.name"/>
-                        <button class="btn btn-outline-danger" t-on-click="() => this.removeOutcome(outcome_index)">
+                        <button class="btn btn-outline-danger" t-on-click="() => removeOutcome(outcome_index)">
                             <i class="fa fa-trash"/>
                         </button>
                     </div>

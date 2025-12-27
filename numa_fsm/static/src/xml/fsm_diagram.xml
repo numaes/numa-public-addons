@@ -1,25 +1,100 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMDiagram" owl="1">
-        <div class="o_fsm_diagram_container" style="height: 600px; background-color: #f0f0f0; position: relative; overflow: hidden;">
-            <div class="o_fsm_diagram_toolbar" style="position: absolute; top: 10px; left: 10px; z-index: 10;">
-                <button class="btn btn-primary btn-sm" t-if="state.isDirty" t-on-click="saveData">
-                    <i class="fa fa-save"/> Save
+        <div class="o_fsm_diagram_container"
+             t-ref="container"
+             t-on-mousedown="onMouseDown"
+             t-on-wheel="onWheel"
+             t-on-dblclick="onDblClick">
+            <div class="o_fsm_diagram_toolbar d-flex gap-2">
+                <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
+                    <i class="fa fa-expand"/>
                 </button>
-                <button class="btn btn-secondary btn-sm" t-if="state.isDirty" t-on-click="cancelChanges">
-                    <i class="fa fa-times"/> Cancel
+                <button class="btn btn-primary shadow-sm" t-on-click="validateDiagram" title="Validar Diagrama">
+                    <i class="fa fa-check"/> Validar
                 </button>
-                <button class="btn btn-secondary btn-sm" t-on-click="validateDiagram">
-                    <i class="fa fa-check"/> Validate
-                </button>
-                <button class="btn btn-secondary btn-sm" t-on-click="zoomToFit">
-                    <i class="fa fa-arrows-alt"/> Zoom to Fit
-                </button>
-                <button class="btn btn-secondary btn-sm" t-on-click="toggleHelp">
-                    <i class="fa fa-question-circle"/> Help
+                <button class="btn btn-info shadow-sm text-white" t-on-click="() => toggleHelp(true)" title="Ayuda">
+                    <i class="fa fa-question-circle"/> Ayuda
                 </button>
             </div>
-            <!-- ... (resto del template) ... -->
+
+            <div t-if="state.dataLoaded"
+                 class="o_fsm_viewport"
+                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
+
+                <!-- Connections Layer (SVG) -->
+                <svg class="o_fsm_connections">
+                    <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
+                        <path t-att-d="getCurvePath(conn)"
+                              t-att-class="{
+                                  'o_fsm_connection': true,
+                                  'o_fsm_connection_selected': state.selectedIds.has(conn.id)
+                              }"
+                              t-on-mousedown.stop="(ev) => onObjectClick(ev, conn.id)"/>
+                        <!-- Invisible wider path for easier clicking -->
+                        <path t-att-d="getCurvePath(conn)"
+                              class="o_fsm_connection_hitbox"
+                              t-on-mousedown.stop="(ev) => onObjectClick(ev, conn.id)"/>
+                    </t>
+                    <path t-if="state.newConnection"
+                          t-att-d="`M ${state.newConnection.x1} ${state.newConnection.y1} L ${state.newConnection.x2} ${state.newConnection.y2}`"
+                          class="o_fsm_new_connection"/>
+                </svg>
+
+                <!-- Nodes Layer (HTML) -->
+                <div class="o_fsm_nodes">
+                    <t t-foreach="state.nodes" t-as="node" t-key="node.id">
+                        <FSMNode node="node"
+                                 diagramScale="state.transform.k"
+                                 selected="state.selectedIds.has(node.id)"
+                                 onMove.bind="onNodeMove"
+                                 onResize.bind="onNodeResize"
+                                 onPortMouseDown.bind="onPortMouseDown"
+                                 onNodeDblClick.bind="onNodeDblClick"/>
+                    </t>
+                </div>
+            </div>
+
+            <FSMNodeCreator t-if="state.isCreatingNode"
+                            x="state.creatorPos.x"
+                            y="state.creatorPos.y"
+                            onSave.bind="onNodeCreate"
+                            onClose.bind="onNodeCreatorClose"/>
+
+            <FSMTransitionEditor t-if="state.editingNodeType === 'transition'"
+                                 node="state.editingNode"
+                                 onSave.bind="onEditorSave"
+                                 onClose.bind="onEditorClose"/>
+
+            <FSMStateEditor t-if="state.editingNodeType === 'state'"
+                            node="state.editingNode"
+                            onSave.bind="onEditorSave"
+                            onClose.bind="onEditorClose"/>
+
+            <!-- Help Modal -->
+            <div t-if="state.showHelp" class="o_fsm_help_modal" t-on-click="() => toggleHelp(false)">
+                <div class="o_fsm_help_content shadow-lg" t-on-click.stop="">
+                    <div class="o_fsm_help_header">
+                        <h4 class="mb-0">Manual de Uso - Editor FSM</h4>
+                        <button class="btn-close" t-on-click="() => toggleHelp(false)"></button>
+                    </div>
+                    <div class="o_fsm_help_body mt-3">
+                        <ul class="list-unstyled">
+                            <li class="mb-2"><i class="fa fa-mouse-pointer text-primary me-2"/> <strong>Click simple:</strong> Seleccionar elemento.</li>
+                            <li class="mb-2"><i class="fa fa-arrows-alt text-primary me-2"/> <strong>Arrastrar:</strong> Mover nodos (múltiples si están seleccionados).</li>
+                            <li class="mb-2"><i class="fa fa-plus-circle text-primary me-2"/> <strong>Doble Click Fondo:</strong> Crear nuevo Nodo/Transición/Fin.</li>
+                            <li class="mb-2"><i class="fa fa-edit text-primary me-2"/> <strong>Doble Click Nodo:</strong> Editar propiedades y código.</li>
+                            <li class="mb-2"><i class="fa fa-link text-primary me-2"/> <strong>Arrastrar desde Puerto:</strong> Crear nueva conexión.</li>
+                            <li class="mb-2"><i class="fa fa-trash text-danger me-2"/> <strong>Supr / Backspace:</strong> Borrar elementos seleccionados.</li>
+                            <li class="mb-2"><i class="fa fa-undo text-success me-2"/> <strong>Ctrl + Z:</strong> Deshacer último cambio.</li>
+                            <li class="mb-2"><i class="fa fa-search-plus text-primary me-2"/> <strong>Rueda Ratón:</strong> Zoom In/Out.</li>
+                        </ul>
+                    </div>
+                    <div class="text-end mt-3">
+                        <button class="btn btn-primary" t-on-click="() => toggleHelp(false)">Entendido</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </t>
 </templates>

@@ -15,7 +15,7 @@
                     <label class="form-label">Events (Outputs)</label>
                     <div t-foreach="state.events" t-as="event" t-key="event_index" class="input-group mb-2">
                         <input type="text" class="form-control" placeholder="Event Name" t-model="event.name"/>
-                        <button class="btn btn-outline-danger" t-on-click="() => this.removeEvent(event_index)">
+                        <button class="btn btn-outline-danger" t-on-click="() => removeEvent(event_index)">
                             <i class="fa fa-trash"/>
                         </button>
                     </div>

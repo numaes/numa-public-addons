@@ -26,7 +26,7 @@
                         <div class="o_fsm_port o_fsm_port_out"
                              t-att-data-node-id="props.node.id"
                              t-att-data-port-name="event.name"
-                             t-on-mousedown="(ev) => this.onPortMouseDown(ev, event.name)"/>
+                             t-on-mousedown="(ev) => onPortMouseDown(ev, event.name)"/>
                     </div>
                 </t>
                 <t t-if="props.node.type === 'transition' || props.node.type === 'start'">
@@ -35,7 +35,7 @@
                         <div class="o_fsm_port o_fsm_port_out"
                              t-att-data-node-id="props.node.id"
                              t-att-data-port-name="outcome"
-                             t-on-mousedown="(ev) => this.onPortMouseDown(ev, outcome)"/>
+                             t-on-mousedown="(ev) => onPortMouseDown(ev, outcome)"/>
                     </div>
                 </t>
             </div>
