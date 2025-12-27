@@ -39,13 +39,14 @@ export class FSMNode extends Component {
     }
 
     onNodeMouseDown(ev) {
-        
+        console.log("[FSMNode] onNodeMouseDown called", { nodeId: this.props.node.id, button: ev.button });
         if (ev.button !== 0) {
             return;
         }
         ev.stopPropagation();
         
         // Notify parent about the click for selection
+        console.log("[FSMNode] triggering fsm_node_click on bus");
         this.env.bus.trigger('fsm_node_click', { event: ev, nodeId: this.props.node.id });
 
         this.state.isDragging = true;
@@ -60,7 +61,6 @@ export class FSMNode extends Component {
                 
                 if (this.props.onMove) {
                     this.props.onMove({ nodeId: this.props.node.id, dx: dx / scale, dy: dy / scale });
-                } else {
                 }
                 
                 this.dragStart = { x: moveEv.clientX, y: moveEv.clientY };
@@ -68,11 +68,13 @@ export class FSMNode extends Component {
         };
 
         const onMouseUp = () => {
+            console.log("[FSMNode] onMouseUp - ending drag");
             this.state.isDragging = false;
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
             if (this.props.onMove) {
                 // Signal move end to save data
+                console.log("[FSMNode] calling onMove with end:true");
                 this.props.onMove({ nodeId: this.props.node.id, dx: 0, dy: 0, end: true });
             }
         };
@@ -91,7 +93,6 @@ export class FSMNode extends Component {
     onNodeDblClick() {
         if (this.props.onNodeDblClick) {
             this.props.onNodeDblClick(this.props.node.id);
-        } else {
         }
     }
 }
