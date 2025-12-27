@@ -21,7 +21,7 @@ class FSMFormController(http.Controller):
             return request.make_response("This FSM instance does not have an associated form.", status=500)
 
         # Dynamically build the form action URL to include our instance identifier
-        form_action = f"/website/form/{form.model_id.model}?instance_uuid={instance_uuid}"
+        form_action = f"/website/form/{form.model}?instance_uuid={instance_uuid}"
         
         return request.render("website.s_website_form", {
             'main_object': form,
