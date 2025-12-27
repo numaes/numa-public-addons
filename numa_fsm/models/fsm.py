@@ -151,9 +151,78 @@ fsm_executor = ThreadPoolExecutor(max_workers=DEFAULT_FSM_WORKERS)
 background_service_executor = ThreadPoolExecutor(max_workers=DEFAULT_FSM_WORKERS)
 
 class FSMTimer(models.Model):
+    """
+     Timer Model for FSM Workflows
+
+     This model stores timer-based events that need to be triggered at specific times
+     for FSM instances. Timers are used to implement delayed actions, timeouts, and
+     scheduled events within FSM workflows.
+
+     Timers are processed by a scheduled action that checks for timers that have
+     reached their trigger time and sends the associated events to the target
+     FSM instances.
+     """
     _name = 'fsm.timer'
     _description = 'FSM Timer'
-    # ... (code remains unchanged)
+    _order = 'trigger_at desc'
+    _rec_name = 'name'
+
+    name = fields.Char('Event name', required=True)
+    json_event = fields.Text('JSON Event')
+
+    fsm_instance_id = fields.Many2one('fsm.instance', 'Target FSM instance')
+    trigger_at = fields.Datetime('Trigger at')
+    database_name = fields.Char('Database name')
+
+    @api.model
+    def schedule_timers(self):
+        """
+        Process timers that have reached their trigger time.
+
+        This method is called by a scheduled action to check for timers that have
+        reached their trigger time. For each such timer, it sends the associated
+        event to the target FSM instance and then deletes the timer.
+
+        The event processing is done asynchronously using the FSM executor thread pool
+        to avoid blocking the scheduler.
+
+        Returns:
+            None
+        """
+        now = fields.Datetime.now()
+
+        triggered_timers = self.search([('trigger_at', '<', now)])
+        dbname = self.env.cr.dbname
+        _context = self.env.context
+
+        for timer in triggered_timers:
+            def trigger():
+                instance_id = timer.fsm_instance_id.id
+                event = json.loads(timer.json_event)
+                event['name'] = timer.name
+
+                last_event = timer.fsm_instance_id.events_queue[-1] if timer.fsm_instance_id.events_queue else None
+
+                timer.fsm_instance_id.events_queue = [(0, 0, {
+                    'name': event['name'],
+                    'json_definition': json.dumps(event),
+                    'sequence': last_event.sequence + 1 if last_event else 1,
+                })]
+
+                @self.env.cr.postcommit.add
+                def trigger_timer():
+                    db_registry = Registry(dbname)
+                    with db_registry.cursor() as cr:
+                        env = api.Environment(cr, SUPERUSER_ID, _context)
+                        fsm_instance = env['fsm.instance'].browse(instance_id).exists()
+                        fsm_executor.submit(fsm_consume_event, dbname, _context, fsm_instance.id, event)
+                        fsm_instance.on_send_event(event)
+
+            trigger()
+
+        if triggered_timers:
+            triggered_timers.unlink()
+
 
 class FSMInstance(models.Model):
     _name = 'fsm.instance'
