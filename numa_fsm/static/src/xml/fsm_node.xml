@@ -5,6 +5,7 @@
              t-ref="node"
              t-att-class="{
                 'o_fsm_node_active': props.activeNodeId === props.node.id,
+                'o_fsm_node_selected': props.selected,
                 ['o_fsm_node_' + props.node.type]: true
              }"
              t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'"

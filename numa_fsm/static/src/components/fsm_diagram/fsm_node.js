@@ -7,6 +7,7 @@ export class FSMNode extends Component {
     static props = {
         node: { type: Object },
         diagramScale: { type: Number },
+        selected: { type: Boolean, optional: true },
         onMove: { type: Function },
         onResize: { type: Function },
         onPortMouseDown: { type: Function },
@@ -38,7 +39,12 @@ export class FSMNode extends Component {
     }
 
     onNodeMouseDown(ev) {
+        if (ev.button !== 0) return;
         ev.stopPropagation();
+        
+        // Notify parent about the click for selection
+        this.env.bus.trigger('fsm_node_click', { event: ev, nodeId: this.props.node.id });
+
         this.state.isDragging = true;
         this.dragStart = { x: ev.clientX, y: ev.clientY };
 
@@ -49,11 +55,8 @@ export class FSMNode extends Component {
                 
                 const scale = this.props.diagramScale || 1;
                 
-                const newX = this.props.node.x + (dx / scale);
-                const newY = this.props.node.y + (dy / scale);
-                
                 if (this.props.onMove) {
-                    this.props.onMove({ nodeId: this.props.node.id, x: newX, y: newY });
+                    this.props.onMove({ nodeId: this.props.node.id, dx: dx / scale, dy: dy / scale });
                 }
                 
                 this.dragStart = { x: moveEv.clientX, y: moveEv.clientY };
@@ -66,7 +69,7 @@ export class FSMNode extends Component {
             window.removeEventListener("mouseup", onMouseUp);
             if (this.props.onMove) {
                 // Signal move end to save data
-                this.props.onMove({ nodeId: this.props.node.id, x: this.props.node.x, y: this.props.node.y, end: true });
+                this.props.onMove({ nodeId: this.props.node.id, dx: 0, dy: 0, end: true });
             }
         };
 

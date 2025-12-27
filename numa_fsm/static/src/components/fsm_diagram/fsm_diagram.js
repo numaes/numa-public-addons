@@ -33,7 +33,11 @@ export class FSMDiagram extends Component {
             isCreatingNode: false,
             creatorPos: { x: 0, y: 0 },
             isDirty: false,
+            selectedIds: new Set(),
         });
+
+        this.history = [];
+        this.nodeWidth = 180;
 
         this.initialData = null;
 
@@ -42,9 +46,11 @@ export class FSMDiagram extends Component {
         }, () => [this.props.value]);
 
         onMounted(() => {
+            this.env.bus.addEventListener('fsm_node_click', this.onFSMNodeClick.bind(this));
             if (!this.props.readonly) {
                 window.addEventListener("mousemove", this.onMouseMove);
                 window.addEventListener("mouseup", this.onMouseUp);
+                window.addEventListener("keydown", this.onKeyDown);
                 window.addEventListener("beforeunload", this.onBeforeUnload);
             }
             if (this.state.nodes.length > 0) {
@@ -53,116 +59,105 @@ export class FSMDiagram extends Component {
         });
 
         onWillUnmount(() => {
+            this.env.bus.removeEventListener('fsm_node_click', this.onFSMNodeClick.bind(this));
             if (!this.props.readonly) {
                 window.removeEventListener("mousemove", this.onMouseMove);
                 window.removeEventListener("mouseup", this.onMouseUp);
+                window.removeEventListener("keydown", this.onKeyDown);
                 window.removeEventListener("beforeunload", this.onBeforeUnload);
             }
         });
     }
 
-    onBeforeUnload = (ev) => {
-        if (this.state.isDirty) {
-            ev.preventDefault();
-            ev.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+    onFSMNodeClick({ detail }) {
+        this.onObjectClick(detail.event, detail.nodeId);
+    }
+
+    onKeyDown = (ev) => {
+        if (this.props.readonly) return;
+        
+        // Don't trigger if focus is in an input/textarea
+        if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+
+        if (ev.key === 'Delete' || ev.key === 'Backspace') {
+            this.deleteSelected();
+        } else if (ev.key === 'z' && (ev.ctrlKey || ev.metaKey)) {
+            this.undo();
         }
     }
 
-    loadData(jsonValue) {
-        this.initialData = jsonValue;
-        let data = {};
-        if (jsonValue) {
-            try {
-                data = JSON.parse(jsonValue);
-            } catch (e) {
-                console.error("Invalid FSM Diagram JSON", e);
-                data = {};
+    takeSnapshot() {
+        const snapshot = JSON.stringify({
+            nodes: this.state.nodes,
+            connections: this.state.connections,
+        });
+        if (this.history.length === 0 || this.history[this.history.length - 1] !== snapshot) {
+            this.history.push(snapshot);
+            if (this.history.length > 50) this.history.shift();
+        }
+    }
+
+    undo() {
+        if (this.history.length > 1) {
+            this.history.pop(); // Remove current state
+            const prevState = JSON.parse(this.history[this.history.length - 1]);
+            this.state.nodes = prevState.nodes;
+            this.state.connections = prevState.connections;
+            this.state.selectedIds.clear();
+            this.updateData();
+        } else if (this.history.length === 1) {
+            const prevState = JSON.parse(this.history[0]);
+            this.state.nodes = prevState.nodes;
+            this.state.connections = prevState.connections;
+            this.state.selectedIds.clear();
+            this.updateData();
+        }
+    }
+
+    onObjectClick(ev, id) {
+        if (this.props.readonly) return;
+        ev.stopPropagation();
+        
+        if (ev.shiftKey) {
+            if (this.state.selectedIds.has(id)) {
+                this.state.selectedIds.delete(id);
+            } else {
+                this.state.selectedIds.add(id);
+            }
+        } else {
+            if (!this.state.selectedIds.has(id)) {
+                this.state.selectedIds.clear();
+                this.state.selectedIds.add(id);
             }
         }
-
-        if (!data.nodes || data.nodes.length === 0) {
-            this.state.nodes = [{ id: 'start', type: 'start', x: 50, y: 150, label: 'Start', outcomes: {'out': null}, height: 50 }];
-            this.state.connections = [];
-            this.state.transform = { x: 0, y: 0, k: 1 };
-        } else {
-            this.state.nodes = data.nodes;
-            this.state.connections = data.connections || [];
-            this.state.transform = data.transform || { x: 0, y: 0, k: 1 };
-        }
-        this.state.isDirty = false;
     }
 
-    updateData() {
-        if (this.props.readonly) return;
-        const currentData = JSON.stringify({
-            nodes: this.state.nodes,
-            connections: this.state.connections,
-            transform: this.state.transform,
+    deleteSelected() {
+        if (this.state.selectedIds.size === 0) return;
+        this.takeSnapshot();
+        
+        const selectedIds = this.state.selectedIds;
+        
+        // Remove nodes
+        this.state.nodes = this.state.nodes.filter(n => !selectedIds.has(n.id));
+        
+        // Remove connections that are selected OR connected to selected nodes
+        this.state.connections = this.state.connections.filter(c => {
+            if (selectedIds.has(c.id)) return false;
+            if (selectedIds.has(c.fromNodeId) || selectedIds.has(c.toNodeId)) return false;
+            return true;
         });
-        if (JSON.stringify(JSON.parse(this.initialData || '{}')) !== JSON.stringify(JSON.parse(currentData))) {
-            this.state.isDirty = true;
-        }
-    }
-
-    saveData() {
-        if (this.props.readonly) return;
-        const data = {
-            nodes: this.state.nodes,
-            connections: this.state.connections,
-            transform: this.state.transform,
-        };
-        const jsonString = JSON.stringify(data);
-        this.props.record.update({ [this.props.name]: jsonString });
-        this.initialData = jsonString;
-        this.state.isDirty = false;
-        this.notification.add("Diagram saved!", { type: 'success' });
-    }
-
-    cancelChanges() {
-        this.loadData(this.initialData);
-    }
-
-    toggleHelp() {
-        this.state.showHelp = !this.state.showHelp;
-    }
-
-    zoomToFit() {
-        if (this.state.nodes.length === 0) return;
-        const container = this.containerRef.el;
-        if (!container) return;
-
-        const padding = 50;
-        const containerWidth = container.clientWidth;
-        const containerHeight = container.clientHeight;
-
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-        this.state.nodes.forEach(node => {
-            minX = Math.min(minX, node.x);
-            minY = Math.min(minY, node.y);
-            maxX = Math.max(maxX, node.x + this.nodeWidth);
-            maxY = Math.max(maxY, node.y + (node.height || 100));
-        });
-
-        const contentWidth = maxX - minX;
-        const contentHeight = maxY - minY;
-
-        if (contentWidth <= 0 || contentHeight <= 0) return;
-
-        const scaleX = (containerWidth - padding * 2) / contentWidth;
-        const scaleY = (containerHeight - padding * 2) / contentHeight;
-        let scale = Math.min(scaleX, scaleY);
-        scale = Math.min(Math.max(scale, 0.1), 1.5);
-
-        const x = (containerWidth - contentWidth * scale) / 2 - minX * scale;
-        const y = (containerHeight - contentHeight * scale) / 2 - minY * scale;
-
-        this.state.transform = { x, y, k: scale };
+        
+        this.state.selectedIds.clear();
+        this.updateData();
     }
 
     onMouseDown(ev) {
         if (this.props.readonly) return;
-        if (ev.button === 0 && (ev.target.classList.contains('o_fsm_diagram_canvas') || ev.target.classList.contains('o_fsm_viewport'))) {
+        if (ev.button === 0 && (ev.target.classList.contains('o_fsm_diagram_canvas') || ev.target.classList.contains('o_fsm_viewport') || ev.target.tagName === 'svg')) {
+            if (!ev.shiftKey) {
+                this.state.selectedIds.clear();
+            }
             this.state.isPanning = true;
             this.dragStart = { x: ev.clientX, y: ev.clientY };
         }
@@ -188,7 +183,6 @@ export class FSMDiagram extends Component {
         if (this.props.readonly) return;
         if (this.state.isPanning) {
             this.state.isPanning = false;
-            this.updateData();
         }
         if (this.state.newConnection) {
             const targetPort = ev.target.closest('.o_fsm_port_in');
@@ -225,6 +219,7 @@ export class FSMDiagram extends Component {
     }
 
     addNode(type, x, y, label) {
+        this.takeSnapshot();
         const id = 'node_' + Date.now();
         const newNode = { id, type, x, y, label, height: 50 };
         if (type === 'transition') {
@@ -250,6 +245,7 @@ export class FSMDiagram extends Component {
     }
 
     onEditorSave(updatedNode) {
+        this.takeSnapshot();
         const nodeIndex = this.state.nodes.findIndex(n => n.id === updatedNode.id);
         if (nodeIndex !== -1) this.state.nodes[nodeIndex] = updatedNode;
         this.state.editingNode = null;
@@ -262,22 +258,32 @@ export class FSMDiagram extends Component {
         this.state.editingNodeType = null;
     }
 
-    onNodeMove({ nodeId, x, y, end }) {
+    onNodeMove({ nodeId, dx, dy, end }) {
         if (this.props.readonly) return;
-        const node = this.state.nodes.find(n => n.id === nodeId);
-        if (node) {
-            node.x = x;
-            node.y = y;
-        }
+        
+        const isSelected = this.state.selectedIds.has(nodeId);
+        const nodesToMove = isSelected ? 
+            this.state.nodes.filter(n => this.state.selectedIds.has(n.id)) : 
+            [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
+
         if (end) {
+            this.takeSnapshot();
             this.updateData();
+            return;
+        }
+
+        for (const node of nodesToMove) {
+            node.x += dx;
+            node.y += dy;
         }
     }
 
     onNodeResize({ nodeId, height }) {
         const node = this.state.nodes.find(n => n.id === nodeId);
-        if (node && node.height !== height) node.height = height;
-        this.updateData();
+        if (node && node.height !== height) {
+            node.height = height;
+            this.updateData();
+        }
     }
 
     onPortMouseDown({ event, portName, nodeId }) {
@@ -303,6 +309,7 @@ export class FSMDiagram extends Component {
     }
 
     addConnection(fromNodeId, fromPortName, toNodeId) {
+        this.takeSnapshot();
         this.state.connections = this.state.connections.filter(c => !(c.fromNodeId === fromNodeId && c.fromPortName === fromPortName));
         const id = `conn_${fromNodeId}_${fromPortName}_${toNodeId}`;
         this.state.connections.push({ id, fromNodeId, fromPortName, toNodeId });
@@ -340,20 +347,29 @@ export class FSMDiagram extends Component {
 
         for (const node of this.state.nodes) {
             const outputs = node.type === 'state' ? (node.events || []).map(e => e.name) : Object.keys(node.outcomes || {});
+            
+            // Check for unconnected outputs
             for (const portName of outputs) {
                 if (!connectedOutputs.has(`${node.id}-${portName}`)) {
-                    errors.push(`Node '${node.label}' has an unconnected output port '${portName}'.`);
+                    errors.push(`Nodo '${node.label}' tiene un resultado '${portName}' sin conexión.`);
                 }
             }
-            if (node.type !== 'start' && node.type !== 'end' && !connectedInputs.has(node.id)) {
-                errors.push(`Node '${node.label}' has no incoming connection.`);
+
+            // Check for nodes without inputs (except start)
+            if (node.type !== 'start' && !connectedInputs.has(node.id)) {
+                errors.push(`Nodo '${node.label}' no tiene conexiones de entrada.`);
+            }
+
+            // Transition and state MUST have at least one output (except end which has none)
+            if (node.type !== 'end' && outputs.length === 0) {
+                errors.push(`Nodo '${node.label}' debe tener al menos un resultado.`);
             }
         }
 
         if (errors.length > 0) {
-            this.notification.add(errors.join('\n'), { type: 'danger', title: 'Validation Errors' });
+            this.notification.add(errors.join('\n'), { type: 'danger', title: 'Errores de Validación' });
         } else {
-            this.notification.add("Diagram is valid!", { type: 'success' });
+            this.notification.add("¡El diagrama es válido!", { type: 'success' });
         }
     }
 }

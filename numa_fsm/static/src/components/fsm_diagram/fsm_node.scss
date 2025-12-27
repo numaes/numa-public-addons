@@ -13,6 +13,11 @@
         animation: fsm-pulse 1.5s infinite;
     }
 
+    &.o_fsm_node_selected {
+        border-color: #00A09D;
+        box-shadow: 0 0 0 3px rgba(0, 160, 157, 0.4);
+    }
+
     .o_fsm_node_header {
         padding: 5px 10px;
         font-weight: bold;

@@ -12,14 +12,30 @@
                 <!-- Connections Layer (SVG) -->
                 <svg class="o_fsm_connections">
                     <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
-                        <!-- Connection rendering logic will go here -->
+                        <path t-att-d="getCurvePath(conn)"
+                              t-att-class="{
+                                  'o_fsm_connection': true,
+                                  'o_fsm_connection_selected': state.selectedIds.has(conn.id)
+                              }"
+                              t-on-mousedown.stop="(ev) => this.onObjectClick(ev, conn.id)"/>
+                        <!-- Invisible wider path for easier clicking -->
+                        <path t-att-d="getCurvePath(conn)"
+                              class="o_fsm_connection_hitbox"
+                              t-on-mousedown.stop="(ev) => this.onObjectClick(ev, conn.id)"/>
                     </t>
+                    <path t-if="state.newConnection"
+                          t-att-d="`M ${state.newConnection.x1} ${state.newConnection.y1} L ${state.newConnection.x2} ${state.newConnection.y2}`"
+                          class="o_fsm_new_connection"/>
                 </svg>
 
                 <!-- Nodes Layer (HTML) -->
                 <div class="o_fsm_nodes">
                     <t t-foreach="state.nodes" t-as="node" t-key="node.id">
-                        <FSMNode node="node" diagramScale="state.transform.k" t-on-move.stop="onNodeMove"/>
+                        <FSMNode node="node"
+                                 diagramScale="state.transform.k"
+                                 selected="state.selectedIds.has(node.id)"
+                                 t-on-move.stop="onNodeMove"
+                                 t-on-click-object.stop="(ev) => this.onObjectClick(ev.detail.event, node.id)"/>
                     </t>
                 </div>
             </div>
