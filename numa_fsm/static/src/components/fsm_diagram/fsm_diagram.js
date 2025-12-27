@@ -75,6 +75,10 @@ export class FSMDiagram extends Component {
         });
     }
 
+    toggleHelp(show) {
+        this.state.showHelp = show;
+    }
+
     loadData(value) {
         if (!value) {
             this.state.nodes = [];
