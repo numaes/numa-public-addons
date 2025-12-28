@@ -325,13 +325,23 @@ export class FSMDiagram extends Component {
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isNode = target.closest('.o_fsm_node');
         const isConnection = (target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'))) || target.closest('svg.o_fsm_connections path');
-        const isBackground = !isToolbar && !isNode && !isConnection;
+        const isEditor = target.closest('.o_fsm_editors');
+        const isBackground = !isToolbar && !isNode && !isConnection && !isEditor;
+
+        console.log("[FSMDiagram] onMouseDown", {
+            target: target.tagName,
+            classes: target.className,
+            isBackground,
+            isNode: !!isNode,
+            isPanning: this.state.isPanning
+        });
 
         if (ev.button === 0) {
             if (isBackground) {
                 // Manual double click detection for background
                 const now = Date.now();
                 if (this.lastBgClickTime && (now - this.lastBgClickTime < 300)) {
+                    console.log("[FSMDiagram] background double click detected");
                     this.onDblClick(ev);
                     this.lastBgClickTime = 0;
                     return;
@@ -343,12 +353,12 @@ export class FSMDiagram extends Component {
                 }
                 this.state.isPanning = true;
                 this.dragStart = { x: ev.clientX, y: ev.clientY };
+                console.log("[FSMDiagram] starting pan at", this.dragStart);
                 
                 // Focusing the container manually to capture keyboard events
                 if (this.containerRef.el) {
                     this.containerRef.el.focus();
                 }
-                ev.preventDefault(); // Prevent standard browser selection/drag
             }
         }
     }
@@ -445,6 +455,7 @@ export class FSMDiagram extends Component {
     }
 
     addNode(type, x, y, label) {
+        console.log("[FSMDiagram] addNode", { type, label, x, y });
         if (this.isReadonly) return;
         this.takeSnapshot();
         const id = 'node_' + Date.now();
@@ -545,7 +556,9 @@ export class FSMDiagram extends Component {
         if (this.isReadonly) {
             return;
         }
-        event.stopPropagation();
+        if (event && event.stopPropagation) {
+            event.stopPropagation();
+        }
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (!node) return;
 

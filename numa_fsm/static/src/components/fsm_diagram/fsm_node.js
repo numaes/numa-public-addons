@@ -43,13 +43,18 @@ export class FSMNode extends Component {
     }
 
     onNodeMouseDown(ev) {
+        console.log("[FSMNode] onNodeMouseDown", { nodeId: this.props.node.id, button: ev.button });
         if (ev.button !== 0) {
             return;
         }
 
+        // STOP propagation to prevent FSMDiagram from seeing this as a background click
+        ev.stopPropagation();
+
         // Manual double click detection
         const now = Date.now();
         if (this.lastClickTime && (now - this.lastClickTime < 300)) {
+            console.log("[FSMNode] double click detected", this.props.node.id);
             this.onNodeDblClick();
             this.lastClickTime = 0;
             return;
@@ -71,8 +76,8 @@ export class FSMNode extends Component {
                 
                 const scale = this.props.diagramScale || 1;
                 
-                if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-                    // console.log("[FSMNode] dragging", { dx, dy, scale });
+                if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
+                    console.log("[FSMNode] dragging", this.props.node.id, { dx, dy, scale });
                     if (this.props.onMove) {
                         this.props.onMove({ nodeId: this.props.node.id, dx: dx / scale, dy: dy / scale });
                     }

@@ -27,11 +27,10 @@ export class FSMNodeCreator extends Component {
         let label = this.state.label;
         
         if (this.state.type === 'end') {
-            label = 'End';
+            label = label || 'End';
         } else if (this.state.type === 'transition' && !label) {
             label = 'T_' + Math.floor(Math.random() * 1000);
         } else if (this.state.type === 'state' && !label) {
-            // Require label for states? Or auto-generate? Let's require it for now or default
             label = 'State_' + Math.floor(Math.random() * 1000);
         }
 

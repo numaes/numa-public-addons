@@ -31,6 +31,7 @@
     height: 100%;
     transform-origin: 0 0;
     pointer-events: none;
+    user-select: none;
     & > * {
         pointer-events: all;
     }
