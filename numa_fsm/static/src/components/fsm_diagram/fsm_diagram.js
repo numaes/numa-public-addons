@@ -224,7 +224,7 @@ export class FSMDiagram extends Component {
     onFSMNodeClick = (ev) => {
         // En Odoo 18 / OWL, los eventos del bus a menudo vienen con los datos en el primer argumento o en ev.detail
         const detail = ev.detail || ev;
-        console.log("[FSMDiagram] onFSMNodeClick - received event from bus", detail);
+        // console.log("[FSMDiagram] onFSMNodeClick - received event from bus", detail);
         this.onObjectClick(detail.event, detail.nodeId);
     }
 
@@ -327,18 +327,17 @@ export class FSMDiagram extends Component {
         const isConnection = (target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'))) || target.closest('svg.o_fsm_connections path');
         const isBackground = !isToolbar && !isNode && !isConnection;
 
-        console.log("[FSMDiagram] onMouseDown", {
-            readonly: isReadOnlyState,
-            target: target.tagName,
-            classList: Array.from(target.classList || []),
-            targetClasses: target.className,
-            isBackground,
-            button: ev.button
-        });
-
         if (ev.button === 0) {
             if (isBackground) {
-                console.log("[FSMDiagram] onMouseDown - Background clicked, clearing selection and starting pan");
+                // Manual double click detection for background
+                const now = Date.now();
+                if (this.lastBgClickTime && (now - this.lastBgClickTime < 300)) {
+                    this.onDblClick(ev);
+                    this.lastBgClickTime = 0;
+                    return;
+                }
+                this.lastBgClickTime = now;
+
                 if (!ev.shiftKey) {
                     this.state.selectedIds.clear();
                 }
@@ -349,6 +348,7 @@ export class FSMDiagram extends Component {
                 if (this.containerRef.el) {
                     this.containerRef.el.focus();
                 }
+                ev.preventDefault(); // Prevent standard browser selection/drag
             }
         }
     }
@@ -357,10 +357,12 @@ export class FSMDiagram extends Component {
         if (this.state.isPanning) {
             const dx = ev.clientX - this.dragStart.x;
             const dy = ev.clientY - this.dragStart.y;
-            this.state.transform.x += dx;
-            this.state.transform.y += dy;
-            this.dragStart = { x: ev.clientX, y: ev.clientY };
-            // console.log("[FSMDiagram] onMouseMove - Panning to", this.state.transform.x, this.state.transform.y);
+            if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+                this.state.transform.x += dx;
+                this.state.transform.y += dy;
+                this.dragStart = { x: ev.clientX, y: ev.clientY };
+                // console.log("[FSMDiagram] panning", { x: this.state.transform.x, y: this.state.transform.y });
+            }
         }
         if (this.state.newConnection) {
             if (this.isReadonly) {
@@ -418,17 +420,17 @@ export class FSMDiagram extends Component {
         // If it's not a toolbar, node or connection, it's background
         const isBackground = !isToolbar && !isNode && !isConnection;
 
-        console.log("[FSMDiagram] onDblClick", {
-            readonly: isReadOnlyState,
-            target: target.tagName,
-            isBackground,
-            isNode: !!isNode,
-            isConnection: !!isConnection
-        });
+        // console.log("[FSMDiagram] onDblClick", {
+        //     readonly: isReadOnlyState,
+        //     target: target.tagName,
+        //     isBackground,
+        //     isNode: !!isNode,
+        //     isConnection: !!isConnection
+        // });
 
         if (isBackground) {
             if (isReadOnlyState) {
-                console.log("[FSMDiagram] onDblClick - BLOCKED because readonly");
+                // console.log("[FSMDiagram] onDblClick - BLOCKED because readonly");
                 return;
             }
             if (!this.containerRef.el) return;
@@ -438,7 +440,7 @@ export class FSMDiagram extends Component {
                 y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
             };
             this.state.isCreatingNode = true;
-            console.log("[FSMDiagram] onDblClick - Opening node creator at", this.state.creatorPos);
+            // console.log("[FSMDiagram] onDblClick - Opening node creator at", this.state.creatorPos);
         }
     }
 
@@ -460,12 +462,11 @@ export class FSMDiagram extends Component {
     }
 
     onNodeDblClick(nodeId) {
-        console.log("[FSMDiagram] onNodeDblClick called", { nodeId });
         const node = this.state.nodes.find(n => n.id === nodeId);
         
         if (node) {
-            console.log("[FSMDiagram] Opening editor for node", node.id, "type", node.type);
-            this.state.editingNode = JSON.parse(JSON.stringify(node)); // Deep copy to ensure no shared refs
+            // Use reactive assignment to ensure OWL detects the change
+            this.state.editingNode = Object.assign({}, node); 
             this.state.editingNodeType = node.type;
         } else {
             console.warn("[FSMDiagram] Node not found for dblclick:", nodeId);
@@ -495,7 +496,7 @@ export class FSMDiagram extends Component {
 
     onNodeMove({ nodeId, dx, dy, end }) {
         if (end) {
-            console.log("[FSMDiagram] onNodeMove END", { nodeId, readonly: this.isReadonly });
+            // console.log("[FSMDiagram] onNodeMove END", { nodeId, readonly: this.isReadonly });
             if (!this.isReadonly) {
                 this.takeSnapshot();
                 this.updateData();
@@ -509,38 +510,26 @@ export class FSMDiagram extends Component {
             [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
 
         if (nodesToMove.length > 0) {
+            // console.log("[FSMDiagram] moving nodes", nodesToMove.length, { dx, dy });
             for (const node of nodesToMove) {
                 node.x += dx;
                 node.y += dy;
             }
             
-            // Use requestAnimationFrame for smoother and more stable UI updates
-            if (!this._renderConnectionFrame) {
-                this._renderConnectionFrame = requestAnimationFrame(() => {
-                    // Update nodes reference ONLY when it changes visibly
-                    this.state.nodes = [...this.state.nodes];
-                    this._renderConnectionFrame = null;
-                });
-            }
+            // Mark as dirty to trigger re-render of connections
+            this.state.isDirty = !this.state.isDirty;
         }
     }
 
     onNodeResize({ nodeId, height }) {
-        console.log("[FSMDiagram] onNodeResize", { nodeId, height, readonly: this.isReadonly });
+        // console.log("[FSMDiagram] onNodeResize", { nodeId, height, readonly: this.isReadonly });
         if (this.isReadonly) {
             return;
         }
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node && node.height !== height) {
             node.height = height;
-            
-            if (!this._renderConnectionFrame) {
-                this._renderConnectionFrame = requestAnimationFrame(() => {
-                    // Update nodes reference ONLY when it changes visibly
-                    this.state.nodes = [...this.state.nodes];
-                    this._renderConnectionFrame = null;
-                });
-            }
+            this.state.isDirty = !this.state.isDirty;
             this.updateData();
         }
     }

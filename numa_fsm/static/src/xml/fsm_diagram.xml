@@ -21,6 +21,7 @@
 
             <div t-if="state.dataLoaded"
                  class="o_fsm_viewport"
+                 t-on-dblclick="onDblClick"
                  t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
 
                 <!-- Connections Layer (SVG) -->
@@ -60,23 +61,25 @@
                 </div>
             </div>
 
-            <FSMNodeCreator t-if="state.isCreatingNode"
-                            x="state.creatorPos.x"
-                            y="state.creatorPos.y"
-                            onSave.bind="onNodeCreate"
-                            onClose.bind="onNodeCreatorClose"/>
+            <div class="o_fsm_editors">
+                <FSMNodeCreator t-if="state.isCreatingNode"
+                                x="state.creatorPos.x"
+                                y="state.creatorPos.y"
+                                onSave.bind="onNodeCreate"
+                                onClose.bind="onNodeCreatorClose"/>
 
-            <FSMTransitionEditor t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'"
-                                 node="state.editingNode"
-                                 readonly="isReadonly"
-                                 onSave.bind="onEditorSave"
-                                 onClose.bind="onEditorClose"/>
+                <FSMTransitionEditor t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'"
+                                     node="state.editingNode"
+                                     readonly="isReadonly"
+                                     onSave.bind="onEditorSave"
+                                     onClose.bind="onEditorClose"/>
 
-            <FSMStateEditor t-if="state.editingNodeType === 'state'"
-                            node="state.editingNode"
-                            readonly="isReadonly"
-                            onSave.bind="onEditorSave"
-                            onClose.bind="onEditorClose"/>
+                <FSMStateEditor t-if="state.editingNodeType === 'state'"
+                                node="state.editingNode"
+                                readonly="isReadonly"
+                                onSave.bind="onEditorSave"
+                                onClose.bind="onEditorClose"/>
+            </div>
 
             <!-- Help Modal -->
             <div t-if="state.showHelp" class="o_fsm_help_modal" t-on-click="hideHelp">
