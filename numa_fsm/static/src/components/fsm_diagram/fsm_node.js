@@ -42,19 +42,19 @@ export class FSMNode extends Component {
         }
     }
 
-    onPortMouseDown(ev, portName) {
+    onPortMouseDown = (ev, portName) => {
         if (this.props.onPortMouseDown) {
             this.props.onPortMouseDown({ event: ev, portName: portName, nodeId: this.props.node.id });
         }
     }
 
-    onPointerEnter(ev) {
+    onPointerEnter = (ev) => {
         if (this.props.onPointerEnter) {
             this.props.onPointerEnter();
         }
     }
 
-    onPointerLeave(ev) {
+    onPointerLeave = (ev) => {
         if (this.props.onPointerLeave) {
             this.props.onPointerLeave();
         }
