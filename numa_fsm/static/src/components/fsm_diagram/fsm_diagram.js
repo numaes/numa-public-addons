@@ -328,20 +328,11 @@ export class FSMDiagram extends Component {
         const isEditor = target.closest('.o_fsm_editors');
         const isBackground = !isToolbar && !isNode && !isConnection && !isEditor;
 
-        console.log("[FSMDiagram] onMouseDown", {
-            target: target.tagName,
-            classes: target.className,
-            isBackground,
-            isNode: !!isNode,
-            isPanning: this.state.isPanning
-        });
-
         if (ev.button === 0) {
             if (isBackground) {
                 // Manual double click detection for background
                 const now = Date.now();
                 if (this.lastBgClickTime && (now - this.lastBgClickTime < 300)) {
-                    console.log("[FSMDiagram] background double click detected");
                     this.onDblClick(ev);
                     this.lastBgClickTime = 0;
                     return;
@@ -353,7 +344,6 @@ export class FSMDiagram extends Component {
                 }
                 this.state.isPanning = true;
                 this.dragStart = { x: ev.clientX, y: ev.clientY };
-                console.log("[FSMDiagram] starting pan at", this.dragStart);
                 
                 // Focusing the container manually to capture keyboard events
                 if (this.containerRef.el) {
@@ -387,13 +377,7 @@ export class FSMDiagram extends Component {
     }
 
     onMouseUp = (ev) => {
-        console.log("[FSMDiagram] onMouseUp", {
-            isPanning: this.state.isPanning,
-            hasNewConn: !!this.state.newConnection,
-            readonly: this.isReadonly
-        });
         if (this.state.isPanning) {
-            console.log("[FSMDiagram] onMouseUp - stopping pan");
             this.state.isPanning = false;
         }
         if (this.state.newConnection) {
@@ -430,17 +414,8 @@ export class FSMDiagram extends Component {
         // If it's not a toolbar, node or connection, it's background
         const isBackground = !isToolbar && !isNode && !isConnection;
 
-        // console.log("[FSMDiagram] onDblClick", {
-        //     readonly: isReadOnlyState,
-        //     target: target.tagName,
-        //     isBackground,
-        //     isNode: !!isNode,
-        //     isConnection: !!isConnection
-        // });
-
         if (isBackground) {
             if (isReadOnlyState) {
-                // console.log("[FSMDiagram] onDblClick - BLOCKED because readonly");
                 return;
             }
             if (!this.containerRef.el) return;
@@ -450,7 +425,6 @@ export class FSMDiagram extends Component {
                 y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
             };
             this.state.isCreatingNode = true;
-            // console.log("[FSMDiagram] onDblClick - Opening node creator at", this.state.creatorPos);
         }
     }
 
@@ -473,21 +447,12 @@ export class FSMDiagram extends Component {
     }
 
     onNodeDblClick(nodeId) {
-        console.log("[FSMDiagram] onNodeDblClick start", { nodeId });
         const node = this.state.nodes.find(n => n.id === nodeId);
         
         if (node) {
-            console.log("[FSMDiagram] onNodeDblClick - node found", JSON.parse(JSON.stringify(node)));
-            // Use reactive assignment to ensure OWL detects the change
-            // DEEP CLONE to avoid any proxy issues or direct mutations
+            // DEEP CLONE to avoid any proxy issues or direct mutations from editors
             this.state.editingNode = JSON.parse(JSON.stringify(node)); 
             this.state.editingNodeType = node.type;
-            console.log("[FSMDiagram] onNodeDblClick - state updated", {
-                editingNode: JSON.parse(JSON.stringify(this.state.editingNode)),
-                editingNodeType: this.state.editingNodeType
-            });
-        } else {
-            console.warn("[FSMDiagram] Node not found for dblclick:", nodeId);
         }
     }
 
@@ -514,7 +479,6 @@ export class FSMDiagram extends Component {
 
     onNodeMove({ nodeId, dx, dy, end }) {
         if (end) {
-            // console.log("[FSMDiagram] onNodeMove END", { nodeId, readonly: this.isReadonly });
             if (!this.isReadonly) {
                 this.takeSnapshot();
                 this.updateData();
@@ -528,7 +492,6 @@ export class FSMDiagram extends Component {
             [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
 
         if (nodesToMove.length > 0) {
-            // console.log("[FSMDiagram] moving nodes", nodesToMove.length, { dx, dy });
             for (const node of nodesToMove) {
                 node.x += dx;
                 node.y += dy;
@@ -540,7 +503,6 @@ export class FSMDiagram extends Component {
     }
 
     onNodeResize({ nodeId, height }) {
-        // console.log("[FSMDiagram] onNodeResize", { nodeId, height, readonly: this.isReadonly });
         if (this.isReadonly) {
             return;
         }

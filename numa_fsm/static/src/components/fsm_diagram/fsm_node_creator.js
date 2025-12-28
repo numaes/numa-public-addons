@@ -14,13 +14,19 @@ export class FSMNodeCreator extends Component {
     setup() {
         this.state = useState({
             type: 'state',
-            label: '',
+            label: 'State_' + Math.floor(Math.random() * 1000),
         });
     }
 
     setType(type) {
         this.state.type = type;
-        this.state.label = ''; // Reset label on type change
+        if (type === 'end') {
+            this.state.label = 'End';
+        } else if (type === 'transition') {
+            this.state.label = 'T_' + Math.floor(Math.random() * 1000);
+        } else {
+            this.state.label = 'State_' + Math.floor(Math.random() * 1000);
+        }
     }
 
     save() {

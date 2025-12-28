@@ -57,6 +57,12 @@
             </div>
 
             <div class="o_fsm_editors">
+                <FSMNodeCreator t-if="state.isCreatingNode"
+                                x="state.creatorPos.x"
+                                y="state.creatorPos.y"
+                                onSave.bind="onNodeCreate"
+                                onClose.bind="onNodeCreatorClose"/>
+
                 <t t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'">
                     <FSMTransitionEditor node="state.editingNode"
                                          readonly="isReadonly"
@@ -69,11 +75,6 @@
                                     onSave.bind="onEditorSave"
                                     onClose.bind="onEditorClose"/>
                 </t>
-                <FSMNodeCreator t-if="state.isCreatingNode"
-                                x="state.creatorPos.x"
-                                y="state.creatorPos.y"
-                                onSave.bind="onNodeCreate"
-                                onClose.bind="onNodeCreatorClose"/>
             </div>
 
             <!-- Help Modal -->

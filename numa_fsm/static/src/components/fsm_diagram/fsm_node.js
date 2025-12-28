@@ -43,7 +43,6 @@ export class FSMNode extends Component {
     }
 
     onNodeMouseDown(ev) {
-        console.log("[FSMNode] onNodeMouseDown", { nodeId: this.props.node.id, button: ev.button });
         if (ev.button !== 0) {
             return;
         }
@@ -54,7 +53,6 @@ export class FSMNode extends Component {
         // Manual double click detection
         const now = Date.now();
         if (this.lastClickTime && (now - this.lastClickTime < 300)) {
-            console.log("[FSMNode] double click detected", this.props.node.id);
             this.onNodeDblClick();
             this.lastClickTime = 0;
             return;
@@ -67,7 +65,6 @@ export class FSMNode extends Component {
         // Start dragging
         this.state.isDragging = true;
         this.dragStart = { x: ev.clientX, y: ev.clientY };
-        console.log("[FSMNode] drag started at", this.dragStart);
 
         const onMouseMove = (moveEv) => {
             if (this.state.isDragging) {
@@ -76,8 +73,7 @@ export class FSMNode extends Component {
                 
                 const scale = this.props.diagramScale || 1;
                 
-                if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
-                    console.log("[FSMNode] dragging", this.props.node.id, { dx, dy, scale });
+                if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
                     if (this.props.onMove) {
                         this.props.onMove({ nodeId: this.props.node.id, dx: dx / scale, dy: dy / scale });
                     }
@@ -87,19 +83,17 @@ export class FSMNode extends Component {
         };
 
         const onMouseUp = (upEv) => {
-            console.log("[FSMNode] onMouseUp - ending drag");
             this.state.isDragging = false;
             window.removeEventListener("mousemove", onMouseMove);
             window.removeEventListener("mouseup", onMouseUp);
             if (this.props.onMove) {
                 // Signal move end to save data
-                console.log("[FSMNode] calling onMove with end:true");
                 this.props.onMove({ nodeId: this.props.node.id, dx: 0, dy: 0, end: true });
             }
         };
 
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", onMouseUp);
+        window.addEventListener("mousemove", onMouseMove, { capture: true });
+        window.addEventListener("mouseup", onMouseUp, { capture: true });
     }
 
     onPortMouseDown(ev, portName) {
