@@ -50,21 +50,19 @@ class FSMDefinition(models.Model):
 
     def compile_ui_schema_to_definition(self):
         for record in self:
-            _logger.info("Compiling UI Schema for FSM Definition %s", record.id)
-            if not record.json_ui_schema:
+            ui_schema = record.json_ui_schema
+            if not ui_schema:
                 record.json_compiled_definition = '{}'
                 continue
             
             try:
-                ui_data = record.json_ui_schema
+                ui_data = ui_schema
                 if isinstance(ui_data, str):
                     ui_data = json.loads(ui_data or '{}')
                 
                 nodes = ui_data.get('nodes', [])
                 connections = ui_data.get('connections', [])
-                _logger.debug("Nodes count: %s, Connections count: %s", len(nodes), len(connections))
-            except (json.JSONDecodeError, TypeError) as e:
-                _logger.error("Error decoding json_ui_schema for record %s: %s", record.id, str(e))
+            except (json.JSONDecodeError, TypeError):
                 continue
 
             compiled_nodes = {}

@@ -312,13 +312,16 @@ export class FSMDiagram extends Component {
         }
     }
 
-    updateData = () => {
+    updateData = async () => {
         if (this.isReadonly) return;
         const data = { nodes: this.state.nodes, connections: this.state.connections };
         const jsonVal = JSON.stringify(data);
-        this.props.record.update({ [this.props.name]: jsonVal });
-        // En Odoo 18, marcamos el campo como sucio para asegurar que se guarde al presionar "Guardar"
-        if (this.props.record.model && this.props.record.model.root) {
+        
+        // Actualizar el valor en el registro. En Odoo 18, esto debería marcar el registro como sucio automáticamente.
+        await this.props.record.update({ [this.props.name]: jsonVal });
+        
+        // Si el registro no se marca como sucio, forzamos el estado dirty en el modelo raíz
+        if (this.props.record.model && this.props.record.model.root && !this.props.record.model.root.isDirty) {
             this.props.record.model.root.isDirty = true;
         }
     }
