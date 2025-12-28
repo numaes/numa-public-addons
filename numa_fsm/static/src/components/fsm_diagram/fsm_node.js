@@ -14,8 +14,8 @@ export class FSMNode extends Component {
         onResize: { type: Function, optional: true },
         onPortMouseDown: { type: Function, optional: true },
         onNodeDblClick: { type: Function, optional: true },
-        onPointerEnter: { type: Function, optional: true },
-        onPointerLeave: { type: Function, optional: true },
+        onMouseEnter: { type: Function, optional: true },
+        onMouseLeave: { type: Function, optional: true },
     };
 
     setup() {
@@ -48,15 +48,15 @@ export class FSMNode extends Component {
         }
     }
 
-    onPointerEnter = (ev) => {
-        if (this.props.onPointerEnter) {
-            this.props.onPointerEnter();
+    onMouseEnter = (ev) => {
+        if (this.props.onMouseEnter) {
+            this.props.onMouseEnter();
         }
     }
 
-    onPointerLeave = (ev) => {
-        if (this.props.onPointerLeave) {
-            this.props.onPointerLeave();
+    onMouseLeave = (ev) => {
+        if (this.props.onMouseLeave) {
+            this.props.onMouseLeave();
         }
     }
 }

@@ -12,8 +12,8 @@
                 ['o_fsm_node_' + props.node.type]: true
              }"
              t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'"
-             t-on-pointerenter="onPointerEnter"
-             t-on-pointerleave="onPointerLeave">
+             t-on-mouseenter="onMouseEnter"
+             t-on-mouseleave="onMouseLeave">
 
             <div t-if="props.node.type !== 'start'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>
 

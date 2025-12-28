@@ -353,6 +353,7 @@ export class FSMDiagram extends Component {
         const BODY_PADDING = 10;
         const PORT_HEIGHT = 20;
         const NODE_WIDTH = 180;
+        const BORDER_OFFSET = 1;
 
         let x1, y1;
         if (fromNode.type === 'start') {
@@ -367,7 +368,7 @@ export class FSMDiagram extends Component {
             }
             if (portIndex === -1) portIndex = 0;
             x1 = fromNode.x + NODE_WIDTH;
-            y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
+            y1 = fromNode.y + BORDER_OFFSET + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
         }
 
         this.state.newConnection = { fromNode: nodeId, fromPort: portName, x1, y1, x2: x1, y2: y1 };
@@ -428,6 +429,7 @@ export class FSMDiagram extends Component {
         const BODY_PADDING = 10;
         const PORT_HEIGHT = 20;
         const NODE_WIDTH = 180;
+        const BORDER_OFFSET = 1;
 
         let x1, y1;
         if (fromNode.type === 'start') {
@@ -442,7 +444,7 @@ export class FSMDiagram extends Component {
             }
             if (portIndex === -1) portIndex = 0;
             x1 = fromNode.x + NODE_WIDTH;
-            y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
+            y1 = fromNode.y + BORDER_OFFSET + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
         }
 
         const x2 = toNode.x;
@@ -459,11 +461,27 @@ export class FSMDiagram extends Component {
         const dx = x2 - x1;
         const curveX = Math.max(Math.abs(dx) * 0.5, 50);
         
-        return `M ${x1} ${y1} C ${x1 + curveX} ${y1}, ${x2 - curveX} ${y2}, ${x2} ${y2}`;
+        // Use Math.round for clean rendering
+        const rx1 = Math.round(x1);
+        const ry1 = Math.round(y1);
+        const rx2 = Math.round(x2);
+        const ry2 = Math.round(y2);
+        const rcx1 = Math.round(x1 + curveX);
+        const rcx2 = Math.round(x2 - curveX);
+
+        return `M ${rx1} ${ry1} C ${rcx1} ${ry1}, ${rcx2} ${ry2}, ${rx2} ${ry2}`;
     }
     
     showHelp = () => { this.state.showHelp = true; }
     hideHelp = () => { this.state.showHelp = false; }
+
+    onElementPointerEnter = (id) => {
+        this.state.hoveredId = id;
+    }
+
+    onElementPointerLeave = () => {
+        this.state.hoveredId = null;
+    }
 
     validateDiagram = () => {
         let errors = [];

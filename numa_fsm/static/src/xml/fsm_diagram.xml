@@ -27,8 +27,8 @@
                         <svg class="o_fsm_connections">
                             <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
                                 <g class="o_fsm_connection_group"
-                                   t-on-pointerenter="() => state.hoveredId = conn.id"
-                                   t-on-pointerleave="() => state.hoveredId = null">
+                                   t-on-mouseenter="() => onElementPointerEnter(conn.id)"
+                                   t-on-mouseleave="onElementPointerLeave">
                                     <path t-att-d="getCurvePath(conn)"
                                           t-att-data-conn-id="conn.id"
                                           t-att-class="{
@@ -55,8 +55,8 @@
                                          hovered="state.hoveredId === node.id"
                                          isConnecting="state.connectingTargetId === node.id"
                                          onPortMouseDown="onPortMouseDown"
-                                         onPointerEnter="() => state.hoveredId = node.id"
-                                         onPointerLeave="() => state.hoveredId = null"/>
+                                         onMouseEnter="() => onElementPointerEnter(node.id)"
+                                         onMouseLeave="onElementPointerLeave"/>
                             </t>
                         </div>
                     </t>

@@ -7,7 +7,7 @@
     cursor: move;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     transition: box-shadow 0.2s ease-in-out;
-    pointer-events: all;
+    pointer-events: auto;
     box-sizing: border-box;
 
     &.o_fsm_node_active {
@@ -18,7 +18,7 @@
     &:hover, &.o_fsm_node_hover {
         border-color: #714B67 !important;
         box-shadow: 0 0 0 2px #714B67, 0 4px 12px rgba(113, 75, 103, 0.4) !important;
-        z-index: 1000 !important;
+        z-index: 1100 !important; // Mayor que el editor si es necesario
     }
 
     &.o_fsm_node_selected {
@@ -154,7 +154,7 @@
     &:hover, &.o_fsm_node_hover {
         border-color: #714B67 !important;
         box-shadow: 0 0 0 2px #714B67, 0 0 15px rgba(113, 75, 103, 0.6) !important;
-        z-index: 1000 !important;
+        z-index: 1100 !important;
     }
     .o_fsm_node_header {
         border-bottom: none;
