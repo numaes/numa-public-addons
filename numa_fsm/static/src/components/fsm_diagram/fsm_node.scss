@@ -135,12 +135,21 @@
     background-color: #d4edda;
 
     .o_fsm_node_header {
-        display: none;
+        border-bottom: none;
+        background: transparent;
+        height: auto;
+        padding: 0;
+        text-align: center;
+        width: 100%;
+        font-size: 14px;
+        color: #1e7e34;
     }
 
     .o_fsm_node_body {
         padding: 0;
         width: 100%;
+        display: flex;
+        justify-content: center;
     }
 
     .o_fsm_port_out_wrapper {
@@ -168,7 +177,14 @@
     background-color: #f8d7da;
 
     .o_fsm_node_header {
-        display: none;
+        border-bottom: none;
+        background: transparent;
+        height: auto;
+        padding: 0;
+        text-align: center;
+        width: 100%;
+        font-size: 14px;
+        color: #721c24;
     }
 
     .o_fsm_node_body {

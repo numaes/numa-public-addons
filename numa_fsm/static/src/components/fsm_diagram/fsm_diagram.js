@@ -480,7 +480,7 @@ export class FSMDiagram extends Component {
         let x1, y1;
         if (fromNode.type === 'start') {
             // Start node is circular 100x100, port is exactly at the middle right
-            x1 = fromNode.x + 100;
+            x1 = fromNode.x + 98; // Adjusted slightly left to better align with the port center visual
             y1 = fromNode.y + 50;
         } else {
             let portIndex = 0;
@@ -504,7 +504,7 @@ export class FSMDiagram extends Component {
 
         // Destination: port is at left: -6px, top: 50%
         // We target the exact left edge of the node (x2) and vertical center
-        const x2 = toNode.x;
+        const x2 = toNode.x + 2; // Adjusted slightly right to hit port center better
         let nodeHeight = toNode.height;
         
         // Fallback for default heights if onNodeResize hasn't triggered yet
@@ -517,17 +517,19 @@ export class FSMDiagram extends Component {
             }
         }
         
-        const y2 = toNode.y + (nodeHeight / 2);
-
-        if (conn.id === this.state.connections[0]?.id) {
-            console.log(`[FSMDiagram] getCurvePath first connection: (${x1}, ${y1}) -> (${x2}, ${y2})`);
-        }
+        const y2 = toNode.y + (nodeHeight / 2) + 1; // Adjusted 1px down to compensate for alignment issue
 
         const dx = x2 - x1;
         const curveX = Math.max(Math.abs(dx) * 0.5, 50);
 
-        // Sub-pixel precision for perfect alignment with physical ports
-        const path = `M ${x1} ${y1} C ${x1 + curveX} ${y1}, ${x2 - curveX} ${y2}, ${x2} ${y2}`;
+        // Integer rounding for pixel-perfect alignment on non-retina screens/standard zooms
+        const rx1 = Math.round(x1);
+        const ry1 = Math.round(y1);
+        const rx2 = Math.round(x2);
+        const ry2 = Math.round(y2);
+        const rcX = Math.round(curveX);
+
+        const path = `M ${rx1} ${ry1} C ${rx1 + rcX} ${ry1}, ${rx2 - rcX} ${ry2}, ${rx2} ${ry2}`;
         return path;
     }
     
