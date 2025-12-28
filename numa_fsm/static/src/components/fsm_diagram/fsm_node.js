@@ -43,6 +43,7 @@ export class FSMNode extends Component {
     }
 
     onNodeMouseDown(ev) {
+        console.log("[FSMNode] onNodeMouseDown called", { nodeId: this.props.node.id, button: ev.button });
         if (ev.button !== 0) {
             return;
         }
@@ -61,9 +62,11 @@ export class FSMNode extends Component {
         this.lastClickTime = now;
         
         // Notify parent about the click for selection
+        console.log("[FSMNode] triggering fsm_node_click on bus");
         this.env.bus.trigger('fsm_node_click', { event: ev, nodeId: this.props.node.id });
 
         // Start dragging
+        console.log("[FSMNode] drag started at", { x: ev.clientX, y: ev.clientY });
         this.state.isDragging = true;
         this.dragStart = { x: ev.clientX, y: ev.clientY };
 
@@ -84,12 +87,13 @@ export class FSMNode extends Component {
         };
 
         const onMouseUp = (upEv) => {
-            console.log("[FSMNode] onMouseUp", { nodeId: this.props.node.id });
+            console.log("[FSMNode] onMouseUp - ending drag", { nodeId: this.props.node.id });
             this.state.isDragging = false;
             window.removeEventListener("mousemove", onMouseMove, { capture: true });
             window.removeEventListener("mouseup", onMouseUp, { capture: true });
             if (this.props.onMove) {
                 // Signal move end to save data
+                console.log("[FSMNode] calling onMove with end:true");
                 this.props.onMove({ nodeId: this.props.node.id, dx: 0, dy: 0, end: true });
             }
         };

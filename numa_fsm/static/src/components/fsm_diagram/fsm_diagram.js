@@ -22,22 +22,35 @@ export class FSMDiagram extends Component {
         // ULTIMATE BYPASS FOR ODOO 18
         const record = this.props.record;
         
+        const check = {
+            result: false,
+            propsReadonly: this.props.readonly,
+            recordMode: record?.mode,
+            recordIsReadonly: record?.isReadonly,
+            resModel: record?.resModel,
+            resId: record?.resId,
+        };
+
         // If explicitly set to readonly in the record mode, honor it
         if (record?.mode === 'readonly') {
-            return true;
+            check.result = true;
+        } else {
+            // FORCE FALSE for specific models unless record is explicitly readonly
+            const forceEditableModels = ['fsm.definition', 'conversation.bot'];
+            if (record?.resModel && forceEditableModels.includes(record.resModel)) {
+                check.result = false;
+            } else {
+                // Default to false if we are not sure, to allow interaction
+                check.result = false;
+            }
         }
 
-        // FORCE FALSE for specific models unless record is explicitly readonly
-        const forceEditableModels = ['fsm.definition', 'conversation.bot'];
-        if (record?.resModel && forceEditableModels.includes(record.resModel)) {
-            return false;
-        }
-
-        // Default to false if we are not sure, to allow interaction
-        return false;
+        console.log("[FSMDiagram] isReadonly deep check:", check);
+        return check.result;
     }
 
     setup() {
+        console.log("[FSMDiagram] setup start");
         this.notification = useService("notification");
         this.containerRef = useRef("container");
         this.state = useState({
@@ -306,6 +319,7 @@ export class FSMDiagram extends Component {
 
     onMouseDown(ev) {
         const target = ev.target;
+        const classes = target.className || "";
         
         // Background elements that should trigger pan or clear selection
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
@@ -317,11 +331,21 @@ export class FSMDiagram extends Component {
         // Use standard background check for click management
         const isBackground = !isToolbar && !isNode && !isPort && !isEditor && !isConnection;
 
+        console.log("[FSMDiagram] onMouseDown", { 
+            target: target.tagName, 
+            classes, 
+            isBackground, 
+            isNode: !!isNode, 
+            button: ev.button,
+            isPanning: this.state.isPanning
+        });
+
         if (ev.button === 0) {
             if (isBackground) {
                 // Manual double click detection for background
                 const now = Date.now();
                 if (this.lastBgClickTime && (now - this.lastBgClickTime < 300)) {
+                    console.log("[FSMDiagram] background double click detected");
                     this.onDblClick(ev);
                     this.lastBgClickTime = 0;
                     return;
@@ -329,8 +353,10 @@ export class FSMDiagram extends Component {
                 this.lastBgClickTime = now;
 
                 if (!ev.shiftKey) {
+                    console.log("[FSMDiagram] clearing selection");
                     this.state.selectedIds.clear();
                 }
+                console.log("[FSMDiagram] starting pan at", { x: ev.clientX, y: ev.clientY });
                 this.state.isPanning = true;
                 this.dragStart = { x: ev.clientX, y: ev.clientY };
                 
@@ -346,6 +372,7 @@ export class FSMDiagram extends Component {
         if (this.state.isPanning) {
             const dx = ev.clientX - this.dragStart.x;
             const dy = ev.clientY - this.dragStart.y;
+            // console.log("[FSMDiagram] panning move", { dx, dy });
             if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
                 this.state.transform.x += dx;
                 this.state.transform.y += dy;
@@ -366,7 +393,13 @@ export class FSMDiagram extends Component {
     }
 
     onMouseUp = (ev) => {
+        console.log("[FSMDiagram] onMouseUp", { 
+            isPanning: this.state.isPanning, 
+            hasNewConn: !!this.state.newConnection,
+            readonly: this.isReadonly
+        });
         if (this.state.isPanning) {
+            console.log("[FSMDiagram] onMouseUp - stopping pan");
             this.state.isPanning = false;
         }
         if (this.state.newConnection) {
@@ -394,6 +427,7 @@ export class FSMDiagram extends Component {
 
     onDblClick(ev) {
         const target = ev.target;
+        const classes = target.className || "";
         
         // Robust check for background clicks
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
@@ -404,6 +438,13 @@ export class FSMDiagram extends Component {
         // If it's not a toolbar, node, connection or editor, it's background
         const isBackground = !isToolbar && !isNode && !isConnection && !isEditor;
 
+        console.log("[FSMDiagram] onDblClick", { 
+            target: target.tagName, 
+            classes, 
+            isBackground, 
+            readonly: this.isReadonly 
+        });
+
         if (isBackground) {
             if (!this.containerRef.el) return;
             const rect = this.containerRef.el.getBoundingClientRect();
@@ -411,6 +452,7 @@ export class FSMDiagram extends Component {
                 x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
                 y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
             };
+            console.log("[FSMDiagram] opening node creator at", this.state.creatorPos);
             this.state.isCreatingNode = true;
         }
     }
@@ -434,9 +476,11 @@ export class FSMDiagram extends Component {
     }
 
     onNodeDblClick(nodeId) {
+        console.log("[FSMDiagram] onNodeDblClick", { nodeId });
         const node = this.state.nodes.find(n => n.id === nodeId);
         
         if (node) {
+            console.log("[FSMDiagram] opening editor for node", node.label);
             // DEEP CLONE to avoid any proxy issues or direct mutations from editors
             this.state.editingNode = JSON.parse(JSON.stringify(node)); 
             this.state.editingNodeType = node.type;
@@ -465,8 +509,10 @@ export class FSMDiagram extends Component {
     }
 
     onNodeMove({ nodeId, dx, dy, end }) {
+        const isReadOnlyState = this.isReadonly;
         if (end) {
-            if (!this.isReadonly) {
+            console.log("[FSMDiagram] onNodeMove END", { nodeId, readonly: isReadOnlyState });
+            if (!isReadOnlyState) {
                 this.takeSnapshot();
                 this.updateData();
             }
@@ -479,7 +525,7 @@ export class FSMDiagram extends Component {
             [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
 
         if (nodesToMove.length > 0) {
-            console.log("[FSMDiagram] moving nodes count:", nodesToMove.length);
+            console.log("[FSMDiagram] onNodeMove", { nodeId, dx, dy, end, readonly: isReadOnlyState });
             for (const node of nodesToMove) {
                 node.x += dx;
                 node.y += dy;
@@ -491,7 +537,10 @@ export class FSMDiagram extends Component {
     }
 
     onNodeResize({ nodeId, height }) {
-        if (this.isReadonly) {
+        const isReadOnlyState = this.isReadonly;
+        console.log("[FSMDiagram] onNodeResize", { nodeId, height, readonly: isReadOnlyState });
+        if (isReadOnlyState) {
+            console.log("[FSMDiagram] onNodeResize - BLOCKED because readonly");
             return;
         }
         const node = this.state.nodes.find(n => n.id === nodeId);
