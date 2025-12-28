@@ -3,7 +3,7 @@
     background-color: white;
     border: 1px solid #ccc;
     border-radius: 4px;
-    min-width: 150px;
+    width: 180px;
     cursor: move;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     transition: box-shadow 0.2s ease-in-out;
@@ -20,9 +20,11 @@
     }
 
     .o_fsm_node_header {
+        height: 30px;
         padding: 5px 10px;
         font-weight: bold;
         border-bottom: 1px solid #ccc;
+        box-sizing: border-box;
     }
 
     .o_fsm_node_body {
@@ -67,6 +69,8 @@
         justify-content: space-between;
         align-items: center;
         padding: 2px 0;
+        height: 20px;
+        box-sizing: border-box;
         position: relative;
     }
 }

@@ -338,9 +338,10 @@ export class FSMDiagram extends Component {
         const padding = 50;
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         this.state.nodes.forEach(n => {
+            const w = n.type === 'start' ? 100 : (n.type === 'end' ? 80 : 180);
             minX = Math.min(minX, n.x);
             minY = Math.min(minY, n.y);
-            maxX = Math.max(maxX, n.x + 180);
+            maxX = Math.max(maxX, n.x + w);
             maxY = Math.max(maxY, n.y + (n.height || 50));
         });
         const graphWidth = maxX - minX;
@@ -407,7 +408,7 @@ export class FSMDiagram extends Component {
             x, 
             y, 
             label: label || (type === 'state' ? 'New State' : 'New Transition'), 
-            height: 50 
+            height: type === 'start' ? 100 : (type === 'end' ? 80 : 50)
         };
         if (type === 'transition' || type === 'start') {
             newNode.outcomes = { '__default__': null };
@@ -454,24 +455,31 @@ export class FSMDiagram extends Component {
         const toNode = this.state.nodes.find(n => n.id === conn.toNodeId);
         if (!fromNode || !toNode) return '';
 
-        let portIndex = 0;
-        if (fromNode.type === 'state') {
-            portIndex = (fromNode.events || []).findIndex(e => e.name === conn.fromPortName);
+        let x1, y1;
+        if (fromNode.type === 'start') {
+            x1 = fromNode.x + 100;
+            y1 = fromNode.y + 50;
         } else {
-            portIndex = Object.keys(fromNode.outcomes || {}).indexOf(conn.fromPortName);
-        }
-        
-        const headerHeight = 30, portHeight = 20;
-        const yOffset = headerHeight + 10 + (portIndex * portHeight) + (portHeight / 2);
+            let portIndex = 0;
+            if (fromNode.type === 'state') {
+                portIndex = (fromNode.events || []).findIndex(e => e.name === conn.fromPortName);
+            } else {
+                portIndex = Object.keys(fromNode.outcomes || {}).indexOf(conn.fromPortName);
+            }
+            if (portIndex === -1) portIndex = 0;
 
-        const x1 = fromNode.x + 180; // nodeWidth
-        const y1 = fromNode.y + yOffset;
+            const headerHeight = 30, portHeight = 20;
+            const yOffset = headerHeight + 10 + (portIndex * portHeight) + (portHeight / 2);
+            x1 = fromNode.x + 180; // Match CSS width
+            y1 = fromNode.y + yOffset;
+        }
+
         const x2 = toNode.x;
-        const y2 = toNode.y + ((toNode.height || 50) / 2); 
+        const y2 = toNode.y + ((toNode.height || (toNode.type === 'end' ? 80 : 50)) / 2);
 
         const dx = x2 - x1;
         const curveX = Math.max(Math.abs(dx) * 0.5, 50);
-        
+
         return `M ${x1} ${y1} C ${x1 + curveX} ${y1}, ${x2 - curveX} ${y2}, ${x2} ${y2}`;
     }
     
