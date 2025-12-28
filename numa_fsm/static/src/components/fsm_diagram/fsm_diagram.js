@@ -4,23 +4,11 @@ import { Component, useState, useRef, onMounted, onWillStart, useEffect } from "
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { useService } from "@web/core/utils/hooks";
-import { makeDraggableHook } from "@web/core/utils/draggable_hook_builder_owl";
+import { useDraggable } from "@web/core/utils/draggable";
 import { FSMNode } from "./fsm_node";
 import { FSMTransitionEditor } from "./fsm_transition_editor";
 import { FSMStateEditor } from "./fsm_state_editor";
 import { FSMNodeCreator } from "./fsm_node_creator";
-
-const useFSMDraggable = makeDraggableHook({
-    name: "useFSMDraggable",
-    onElementClick: ({ originalEvent, element }) => {
-        const component = originalEvent.target.closest(".o_field_fsm_diagram").__owl__.component;
-        if (originalEvent.detail === 2) { // Is a double click
-            component.onDblClick(originalEvent);
-        } else {
-            component.onClick(originalEvent);
-        }
-    },
-});
 
 export class FSMDiagram extends Component {
     static template = "numa_fsm.FSMDiagram";
@@ -32,9 +20,13 @@ export class FSMDiagram extends Component {
 
     get isReadonly() {
         const record = this.props.record;
-        if (record?.mode === 'readonly') return true;
+        if (record?.mode === 'readonly') {
+            return true;
+        }
         const forceEditableModels = ['fsm.definition', 'conversation.bot'];
-        if (record?.resModel && forceEditableModels.includes(record.resModel)) return false;
+        if (record?.resModel && forceEditableModels.includes(record.resModel)) {
+            return false;
+        }
         return this.props.readonly;
     }
 
@@ -56,7 +48,7 @@ export class FSMDiagram extends Component {
 
         this.dragMode = null;
 
-        useFSMDraggable({
+        useDraggable({
             ref: this.containerRef,
             elements: ".o_fsm_node, .o_fsm_viewport",
             ignore: ".o_fsm_port, button, input",
@@ -82,8 +74,16 @@ export class FSMDiagram extends Component {
         this.dragMode = null;
         if (element.classList.contains('o_fsm_node')) {
             this.dragMode = 'drag_node';
+            const nodeId = element.dataset.nodeId;
+            if (!originalEvent.shiftKey && !this.state.selectedIds.has(nodeId)) {
+                this.state.selectedIds.clear();
+            }
+            this.state.selectedIds.add(nodeId);
         } else if (element.classList.contains('o_fsm_viewport')) {
             this.dragMode = 'pan';
+            if (!originalEvent.shiftKey) {
+                this.state.selectedIds.clear();
+            }
         }
     }
 
@@ -110,45 +110,6 @@ export class FSMDiagram extends Component {
         this.dragMode = null;
     }
 
-    onClick = (ev) => {
-        const target = ev.target;
-        const isNode = target.closest('.o_fsm_node');
-        const isBackground = target.classList.contains('o_fsm_viewport');
-
-        if (isNode) {
-            const nodeId = isNode.dataset.nodeId;
-            if (!ev.shiftKey && !this.state.selectedIds.has(nodeId)) {
-                this.state.selectedIds.clear();
-            }
-            if (this.state.selectedIds.has(nodeId)) {
-                this.state.selectedIds.delete(nodeId);
-            } else {
-                this.state.selectedIds.add(nodeId);
-            }
-        } else if (isBackground) {
-            if (!ev.shiftKey) {
-                this.state.selectedIds.clear();
-            }
-        }
-    }
-
-    onDblClick = (ev) => {
-        const target = ev.target;
-        const isNode = target.closest('.o_fsm_node');
-        const isBackground = target.classList.contains('o_fsm_viewport');
-
-        if (isNode) {
-            this.onNodeDblClick(isNode.dataset.nodeId);
-        } else if (isBackground && !this.isReadonly) {
-            const rect = this.containerRef.el.getBoundingClientRect();
-            this.state.creatorPos = {
-                x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
-                y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
-            };
-            this.state.isCreatingNode = true;
-        }
-    }
-    
     loadData = (value) => {
         try {
             const data = (value && typeof value === 'string' && value.trim() !== "{}") ? JSON.parse(value) : (value || {});
@@ -202,6 +163,23 @@ export class FSMDiagram extends Component {
         const newScale = this.state.transform.k * (1 + delta * zoomIntensity);
         if (newScale >= 0.1 && newScale <= 3) {
             this.state.transform.k = newScale;
+        }
+    }
+
+    onDblClick = (ev) => {
+        const target = ev.target;
+        const isNode = target.closest('.o_fsm_node');
+        const isBackground = target.classList.contains('o_fsm_viewport');
+
+        if (isNode) {
+            this.onNodeDblClick(isNode.dataset.nodeId);
+        } else if (isBackground && !this.isReadonly) {
+            const rect = this.containerRef.el.getBoundingClientRect();
+            this.state.creatorPos = {
+                x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
+                y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
+            };
+            this.state.isCreatingNode = true;
         }
     }
 
