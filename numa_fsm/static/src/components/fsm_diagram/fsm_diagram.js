@@ -107,38 +107,9 @@ export class FSMDiagram extends Component {
 
         // Port Click logic (starting a connection)
         if (isPort && isPort.classList.contains('o_fsm_port_out')) {
-            ev.preventDefault();
-            ev.stopPropagation();
-            if (target.setPointerCapture && ev.pointerId !== undefined) {
-                try { target.setPointerCapture(ev.pointerId); } catch (e) {}
-            }
             const nodeId = isPort.dataset.nodeId;
             const portName = isPort.dataset.portName;
-            const fromNode = this.state.nodes.find(n => n.id === nodeId);
-            
-            const HEADER_HEIGHT = 30;
-            const BODY_PADDING = 10;
-            const PORT_HEIGHT = 20;
-            const NODE_WIDTH = 180;
-
-            let x1, y1;
-            if (fromNode.type === 'start') {
-                x1 = fromNode.x + 100;
-                y1 = fromNode.y + 50;
-            } else {
-                let portIndex = 0;
-                if (fromNode.type === 'state') {
-                    portIndex = (fromNode.events || []).findIndex(e => e.name === portName);
-                } else {
-                    portIndex = Object.keys(fromNode.outcomes || {}).indexOf(portName);
-                }
-                if (portIndex === -1) portIndex = 0;
-                x1 = fromNode.x + NODE_WIDTH;
-                y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
-            }
-
-            this.state.newConnection = { fromNode: nodeId, fromPort: portName, x1, y1, x2: x1, y2: y1 };
-            this.dragState = { type: 'connection', startX: ev.clientX, startY: ev.clientY };
+            this.onPortMouseDown({ event: ev, portName, nodeId });
             return;
         }
 
@@ -373,6 +344,40 @@ export class FSMDiagram extends Component {
         }
     }
 
+    onPortMouseDown = ({ event, portName, nodeId }) => {
+        event.preventDefault();
+        event.stopPropagation();
+        
+        const fromNode = this.state.nodes.find(n => n.id === nodeId);
+        const HEADER_HEIGHT = 30;
+        const BODY_PADDING = 10;
+        const PORT_HEIGHT = 20;
+        const NODE_WIDTH = 180;
+
+        let x1, y1;
+        if (fromNode.type === 'start') {
+            x1 = fromNode.x + 100;
+            y1 = fromNode.y + 50;
+        } else {
+            let portIndex = 0;
+            if (fromNode.type === 'state') {
+                portIndex = (fromNode.events || []).findIndex(e => e.name === portName);
+            } else {
+                portIndex = Object.keys(fromNode.outcomes || {}).indexOf(portName);
+            }
+            if (portIndex === -1) portIndex = 0;
+            x1 = fromNode.x + NODE_WIDTH;
+            y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
+        }
+
+        this.state.newConnection = { fromNode: nodeId, fromPort: portName, x1, y1, x2: x1, y2: y1 };
+        this.dragState = { type: 'connection', startX: event.clientX, startY: event.clientY };
+        
+        if (event.target.setPointerCapture && event.pointerId !== undefined) {
+            try { event.target.setPointerCapture(event.pointerId); } catch (e) {}
+        }
+    }
+
     onNodeDblClick = (nodeId) => {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
@@ -402,7 +407,7 @@ export class FSMDiagram extends Component {
     onNodeResize = ({ nodeId, height }) => {
         const nodeIndex = this.state.nodes.findIndex(n => n.id === nodeId);
         if (nodeIndex !== -1 && this.state.nodes[nodeIndex].height !== height) {
-            this.state.nodes[nodeIndex].height = height;
+            this.state.nodes = this.state.nodes.map(n => n.id === nodeId ? { ...n, height } : n);
         }
     }
 
@@ -447,9 +452,10 @@ export class FSMDiagram extends Component {
         } else if (toNode.type === 'end') {
             y2 = toNode.y + 40;
         } else {
-            const portsCount = toNode.type === 'state' ? (toNode.events?.length || 0) : Object.keys(toNode.outcomes || {}).length;
-            const bodyHeight = BODY_PADDING + (portsCount * PORT_HEIGHT) + BODY_PADDING;
-            y2 = toNode.y + HEADER_HEIGHT + (bodyHeight / 2);
+            // All other nodes have input port at 50% total height
+            // We use the reported height or a safe default of 50
+            const h = toNode.height || 50;
+            y2 = toNode.y + (h / 2);
         }
 
         const dx = x2 - x1;
