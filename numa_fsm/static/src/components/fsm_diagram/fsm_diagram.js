@@ -19,13 +19,21 @@ export class FSMDiagram extends Component {
 
     get isReadonly() {
         const record = this.props.record;
-        if (record?.mode === 'readonly') return true;
         
-        const forceEditableModels = ['fsm.definition', 'conversation.bot', 'conversation.analysis.report'];
-        if (record?.resModel && (forceEditableModels.includes(record.resModel) || record.resModel.startsWith('fsm.'))) {
-            return false;
+        // Forced readonly if in production state
+        if (record?.data?.state === 'production') {
+            return true;
         }
-        return !!this.props.readonly;
+
+        // Si estamos en un modelo de FSM o Bot, forzamos editabilidad a menos que el registro esté explícitamente bloqueado
+        const forceEditableModels = ['fsm.definition', 'conversation.bot', 'conversation.analysis.report'];
+        const isForceModel = record?.resModel && (forceEditableModels.includes(record.resModel) || record.resModel.startsWith('fsm.'));
+        
+        if (isForceModel) {
+            return record.mode === 'readonly' && this.props.readonly;
+        }
+        
+        return record?.mode === 'readonly' || !!this.props.readonly;
     }
 
     setup() {
@@ -107,30 +115,27 @@ export class FSMDiagram extends Component {
 
         // Port Click logic (starting a connection)
         if (isPort && isPort.classList.contains('o_fsm_port_out')) {
+            if (this.isReadonly) return;
             const nodeId = isPort.dataset.nodeId;
             const portName = isPort.dataset.portName;
             this.onPortMouseDown({ event: ev, portName, nodeId });
             return;
         }
 
-        ev.preventDefault();
-        ev.stopPropagation();
-
-        if (target.setPointerCapture && ev.pointerId !== undefined) {
-            try { target.setPointerCapture(ev.pointerId); } catch (e) {}
-        }
-
+        // Double click detection
         const startX = ev.clientX;
         const startY = ev.clientY;
         const now = Date.now();
-
-        // Double click detection
         if (this.lastClick && (now - this.lastClick.time < 300) && (Math.abs(startX - this.lastClick.x) < 5) && (Math.abs(startY - this.lastClick.y) < 5)) {
              this.onDblClick(ev);
              this.lastClick = null;
              return;
         }
         this.lastClick = { x: startX, y: startY, time: now };
+
+        if (target.setPointerCapture && ev.pointerId !== undefined) {
+            try { target.setPointerCapture(ev.pointerId); } catch (e) {}
+        }
 
         if (nodeEl) {
             const nodeId = nodeEl.dataset.nodeId;
@@ -315,14 +320,16 @@ export class FSMDiagram extends Component {
     updateData = async () => {
         if (this.isReadonly) return;
         const data = { nodes: this.state.nodes, connections: this.state.connections };
-        const jsonVal = JSON.stringify(data);
         
-        // Actualizar el valor en el registro. En Odoo 18, esto debería marcar el registro como sucio automáticamente.
-        await this.props.record.update({ [this.props.name]: jsonVal });
-        
-        // Si el registro no se marca como sucio, forzamos el estado dirty en el modelo raíz
-        if (this.props.record.model && this.props.record.model.root && !this.props.record.model.root.isDirty) {
-            this.props.record.model.root.isDirty = true;
+        try {
+            await this.props.record.update({ [this.props.name]: data });
+            if (this.props.record.model && this.props.record.model.root) {
+                this.props.record.model.root.isDirty = true;
+            }
+        } catch (err) {
+            // Fallback for non-json fields or older odoo expectations
+            const jsonVal = JSON.stringify(data);
+            await this.props.record.update({ [this.props.name]: jsonVal });
         }
     }
 
@@ -541,6 +548,20 @@ export class FSMDiagram extends Component {
         this.onEditorClose();
         this.updateData();
     };
+
+    onValidateClick = async () => {
+        try {
+            await this.props.record.model.root.save();
+            await this.props.record.model.orm.call(
+                'fsm.definition',
+                'action_validate',
+                [this.props.record.resId]
+            );
+            await this.props.record.model.root.load();
+        } catch (err) {
+            // Error handled by odoo
+        }
+    }
 }
 
 registry.category("fields").add("fsm_diagram", { component: FSMDiagram });

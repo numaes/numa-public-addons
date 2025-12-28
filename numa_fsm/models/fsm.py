@@ -37,6 +37,14 @@ class FSMDefinition(models.Model):
     json_ui_schema = fields.Json(string='UI Schema (JSON)')
     website_form_id = fields.Many2one('ir.model', string='Website Form')
     
+    state = fields.Selection(
+        selection=[('draft', 'Draft'), ('test', 'Test'), ('production', 'Production')],
+        default='draft',
+        string='State',
+        tracking=True
+    )
+    is_verified = fields.Boolean('Is Verified', default=False, tracking=True)
+    
     execution_policy = fields.Selection(
         selection=[('run', 'Normal Run'), ('pause_all', 'Pause All Instances')],
         default='run',
@@ -89,17 +97,13 @@ class FSMDefinition(models.Model):
                 if not from_node: continue
                 
                 if from_node['type'] in ['start', 'transition']:
-                    # Outcomes initialization for safety
                     if 'outcomes' not in from_node:
                         from_node['outcomes'] = {}
-                    
                     from_node['outcomes'][conn.get('fromPortName')] = conn.get('toNodeId')
                 
                 elif from_node['type'] == 'state':
-                    # Events initialization for safety
                     if 'events' not in from_node:
                         from_node['events'] = []
-                        
                     event = next((e for e in from_node['events'] if e.get('name') == conn.get('fromPortName')), None)
                     if event:
                         event['target_transition_id'] = conn.get('toNodeId')
@@ -121,10 +125,151 @@ class FSMDefinition(models.Model):
         return records
 
     def write(self, vals):
+        # Reset verification if diagram fields change
+        if 'json_ui_schema' in vals or 'json_compiled_definition' in vals or 'text_definition' in vals:
+            vals['is_verified'] = False
+            
         res = super().write(vals)
         if 'json_ui_schema' in vals:
             self.compile_ui_schema_to_definition()
         return res
+
+    def action_validate(self):
+        """
+        Integrity check for the FSM diagram.
+        Marks the diagram as verified if all nodes (except start/end) have inputs and outputs.
+        """
+        for record in self:
+            ui_data = record.json_ui_schema
+            if not ui_data:
+                raise exceptions.UserError(_("No hay un diagrama para validar."))
+            
+            if isinstance(ui_data, str):
+                ui_data = json.loads(ui_data)
+            
+            nodes = ui_data.get('nodes', [])
+            conns = ui_data.get('connections', [])
+            errors = []
+
+            # Basic logic verification
+            has_start = any(n.get('type') == 'start' for n in nodes)
+            if not has_start:
+                errors.append(_("El diagrama debe tener un nodo de Inicio."))
+
+            for node in nodes:
+                node_id = node.get('id')
+                node_label = node.get('label', node_id)
+                if node.get('type') == 'start':
+                    if not any(c.get('fromNodeId') == node_id for c in conns):
+                        errors.append(_("El nodo de Inicio debe estar conectado."))
+                elif node.get('type') == 'state':
+                    if not any(c.get('toNodeId') == node_id for c in conns):
+                        errors.append(_("El estado '%s' no tiene entradas.") % node_label)
+                    events = node.get('events', [])
+                    for evt in events:
+                        if not any(c.get('fromNodeId') == node_id and c.get('fromPortName') == evt.get('name') for c in conns):
+                            errors.append(_("El evento '%s' del estado '%s' no está conectado.") % (evt.get('name'), node_label))
+                elif node.get('type') == 'transition':
+                    if not any(c.get('toNodeId') == node_id for c in conns):
+                        errors.append(_("La transición '%s' no tiene entradas.") % node_label)
+                    outcomes = node.get('outcomes', {})
+                    for out in outcomes:
+                        if not any(c.get('fromNodeId') == node_id and c.get('fromPortName') == out for c in conns):
+                            errors.append(_("El resultado '%s' de la transición '%s' no está conectado.") % (out, node_label))
+
+            if errors:
+                raise exceptions.ValidationError("\n".join(errors))
+            
+            record.is_verified = True
+            record.message_post(body=_("Diagrama verificado exitosamente."))
+
+    def action_set_production(self):
+        for record in self:
+            if not record.is_verified:
+                # We log a warning as requested, or we could raise a confirm dialog in a real UI context.
+                # For now, following instructions: force production but warn.
+                _logger.warning("Pasando a producción un FSM no verificado: %s", record.name)
+                record.message_post(body=_("Advertencia: El diagrama se pasó a producción sin verificación previa."), 
+                                  message_type='notification')
+            record.state = 'production'
+
+    def action_set_draft(self):
+        self.write({'state': 'draft'})
+
+    def action_set_test(self):
+        self.write({'state': 'test'})
+
+    def _generate_visual_from_logic(self):
+        """
+        Generates a basic grid layout for the UI schema if only logical definition exists.
+        """
+        for record in self:
+            if record.json_ui_schema or not record.json_compiled_definition:
+                continue
+            
+            try:
+                logic = json.loads(record.json_compiled_definition)
+                nodes_logic = logic.get('nodes', {})
+                
+                ui_nodes = []
+                ui_conns = []
+                
+                x, y = 100, 100
+                col_count = 0
+                
+                # Logic to distribute nodes in a simple grid
+                for node_id, node_data in nodes_logic.items():
+                    ui_nodes.append({
+                        'id': node_id,
+                        'type': node_data.get('type', 'state'),
+                        'label': node_data.get('label', node_id),
+                        'x': x,
+                        'y': y,
+                        'code': node_data.get('code', ''),
+                        'events': node_data.get('events', []),
+                        'outcomes': node_data.get('outcomes', {}),
+                        'height': 100 if node_data.get('type') == 'start' else (80 if node_data.get('type') == 'end' else 50)
+                    })
+                    
+                    # Basic grid logic
+                    x += 250
+                    col_count += 1
+                    if col_count >= 4:
+                        x = 100
+                        y += 200
+                        col_count = 0
+
+                # Reconstruct connections from outcomes and events
+                for node_id, node_data in nodes_logic.items():
+                    if node_data.get('type') in ['start', 'transition']:
+                        outcomes = node_data.get('outcomes', {})
+                        for port, target_id in outcomes.items():
+                            if target_id:
+                                ui_conns.append({
+                                    'id': f'conn_{node_id}_{port}_{target_id}',
+                                    'fromNodeId': node_id,
+                                    'fromPortName': port,
+                                    'toNodeId': target_id
+                                })
+                    elif node_data.get('type') == 'state':
+                        events = node_data.get('events', [])
+                        for evt in events:
+                            target_id = evt.get('target_transition_id')
+                            port = evt.get('name')
+                            if target_id:
+                                ui_conns.append({
+                                    'id': f'conn_{node_id}_{port}_{target_id}',
+                                    'fromNodeId': node_id,
+                                    'fromPortName': port,
+                                    'toNodeId': target_id
+                                })
+
+                record.json_ui_schema = {
+                    'nodes': ui_nodes,
+                    'connections': ui_conns
+                }
+            except Exception as e:
+                _logger.error("Error generating visual layout: %s", str(e))
 
 class WorkFlowMailTemplate(models.Model):
     _name = 'fsm.wf.mail_template'

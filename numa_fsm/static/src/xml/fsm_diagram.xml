@@ -12,12 +12,15 @@
                     <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
                         <i class="fa fa-expand"/>
                     </button>
-                    <button class="btn btn-primary shadow-sm" t-on-click="validateDiagram" title="Validar Diagrama">
+                    <button class="btn btn-primary shadow-sm" t-on-click="onValidateClick" title="Validar Diagrama">
                         <i class="fa fa-check"/> Validar
                     </button>
                     <button class="btn btn-info shadow-sm text-white" t-on-click="showHelp" title="Ayuda">
                         <i class="fa fa-question-circle"/> Ayuda
                     </button>
+                    <div t-if="props.record.data.is_verified" class="badge rounded-pill bg-success d-flex align-items-center px-3 shadow-sm" title="Verificado">
+                        <i class="fa fa-shield me-1"/> Verificado
+                    </div>
                 </div>
 
                 <div class="o_fsm_viewport"

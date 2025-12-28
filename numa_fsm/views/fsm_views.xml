@@ -8,10 +8,24 @@
             <field name="model">fsm.definition</field>
             <field name="arch" type="xml">
                 <form string="FSM Definition">
+                    <header>
+                        <button name="action_validate" type="object" string="Validate" class="btn-primary" invisible="is_verified"/>
+                        <button name="action_set_test" type="object" string="Set to Test" invisible="state != 'draft'"/>
+                        <button name="action_set_production" type="object" string="Set to Production" class="btn-success" invisible="state != 'test'"/>
+                        <button name="action_set_draft" type="object" string="Back to Draft" invisible="state == 'draft'"/>
+                        <field name="state" widget="statusbar" statusbar_visible="draft,test,production"/>
+                    </header>
                     <sheet>
-                        <header/>
+                        <div class="oe_button_box" name="button_box">
+                            <button class="oe_stat_button" icon="fa-check-shield" invisible="not is_verified">
+                                <div class="o_stat_info">
+                                    <span class="o_stat_text text-success">Verified</span>
+                                </div>
+                            </button>
+                        </div>
                         <group name="top">
                             <field name="name" />
+                            <field name="is_verified" invisible="1"/>
                             <field name="website_form_id" invisible="1"/>
                         </group>
                         <notebook>
