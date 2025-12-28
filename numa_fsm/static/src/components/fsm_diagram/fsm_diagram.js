@@ -97,6 +97,9 @@ export class FSMDiagram extends Component {
         });
 
         onWillUnmount(() => {
+            if (this._renderConnectionFrame) {
+                cancelAnimationFrame(this._renderConnectionFrame);
+            }
             this.env.bus.removeEventListener('fsm_node_click', this.onFSMNodeClick);
         });
     }
@@ -214,7 +217,7 @@ export class FSMDiagram extends Component {
     }
 
     onFSMNodeClick = ({ detail }) => {
-        console.log("[FSMDiagram] onFSMNodeClick - received event from bus", detail);
+        // console.log("[FSMDiagram] onFSMNodeClick - received event from bus", detail);
         // Important: detail.event might have already bubbled up or been stopped.
         // We handle selection here.
         this.onObjectClick(detail.event, detail.nodeId);
@@ -267,7 +270,7 @@ export class FSMDiagram extends Component {
     }
 
     onObjectClick(ev, id) {
-        console.log("[FSMDiagram] onObjectClick", { id, shiftKey: ev ? ev.shiftKey : false });
+        // console.log("[FSMDiagram] onObjectClick", { id, shiftKey: ev ? ev.shiftKey : false });
         if (ev && ev.stopPropagation) {
             ev.stopPropagation();
         }
@@ -282,7 +285,7 @@ export class FSMDiagram extends Component {
             this.state.selectedIds.clear();
             this.state.selectedIds.add(id);
         }
-        console.log("[FSMDiagram] selectedIds after click:", Array.from(this.state.selectedIds));
+        // console.log("[FSMDiagram] selectedIds after click:", Array.from(this.state.selectedIds));
     }
 
     deleteSelected() {
@@ -327,6 +330,7 @@ export class FSMDiagram extends Component {
                 this.state.isPanning = true;
                 this.dragStart = { x: ev.clientX, y: ev.clientY };
                 
+                // Focusing the container manually to capture keyboard events
                 if (this.containerRef.el) {
                     this.containerRef.el.focus();
                 }
@@ -356,13 +360,12 @@ export class FSMDiagram extends Component {
     }
 
     onMouseUp = (ev) => {
-        const isReadOnlyState = this.isReadonly;
         if (this.state.isPanning) {
             this.state.isPanning = false;
         }
         if (this.state.newConnection) {
             const targetPort = ev.target.closest('.o_fsm_port_in');
-            if (targetPort && !isReadOnlyState) {
+            if (targetPort && !this.isReadonly) {
                 const toNodeId = targetPort.dataset.nodeId;
                 if (toNodeId !== this.state.newConnection.fromNode) {
                      this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, toNodeId);
@@ -409,6 +412,7 @@ export class FSMDiagram extends Component {
     }
 
     addNode(type, x, y, label) {
+        if (this.isReadonly) return;
         this.takeSnapshot();
         const id = 'node_' + Date.now();
         const newNode = { id, type, x, y, label, height: 50 };
@@ -425,7 +429,7 @@ export class FSMDiagram extends Component {
     }
 
     onNodeDblClick(nodeId) {
-        const isReadOnlyState = this.isReadonly;
+        // const isReadOnlyState = this.isReadonly;
         const node = this.state.nodes.find(n => n.id === nodeId);
         
         if (node) {
@@ -438,8 +442,7 @@ export class FSMDiagram extends Component {
     }
 
     onEditorSave(updatedNode) {
-        const isReadOnlyState = this.isReadonly;
-        if (isReadOnlyState) {
+        if (this.isReadonly) {
             this.state.editingNode = null;
             this.state.editingNodeType = null;
             return;
@@ -460,10 +463,8 @@ export class FSMDiagram extends Component {
     }
 
     onNodeMove({ nodeId, dx, dy, end }) {
-        const isReadOnlyState = this.isReadonly;
-        
         if (end) {
-            if (!isReadOnlyState) {
+            if (!this.isReadonly) {
                 this.takeSnapshot();
                 this.updateData();
             }
@@ -481,26 +482,38 @@ export class FSMDiagram extends Component {
                 node.y += dy;
             }
             
-            // Trigger re-render of connections
-            this.state.nodes = [...this.state.nodes];
+            // Use requestAnimationFrame for smoother and more stable UI updates
+            if (!this._renderConnectionFrame) {
+                this._renderConnectionFrame = requestAnimationFrame(() => {
+                    // Update nodes reference ONLY when it changes visibly
+                    this.state.nodes = [...this.state.nodes];
+                    this._renderConnectionFrame = null;
+                });
+            }
         }
     }
 
     onNodeResize({ nodeId, height }) {
-        const isReadOnlyState = this.isReadonly;
-        if (isReadOnlyState) {
+        if (this.isReadonly) {
             return;
         }
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node && node.height !== height) {
             node.height = height;
+            
+            if (!this._renderConnectionFrame) {
+                this._renderConnectionFrame = requestAnimationFrame(() => {
+                    // Update nodes reference ONLY when it changes visibly
+                    this.state.nodes = [...this.state.nodes];
+                    this._renderConnectionFrame = null;
+                });
+            }
             this.updateData();
         }
     }
 
     onPortMouseDown({ event, portName, nodeId }) {
-        const isReadOnlyState = this.isReadonly;
-        if (isReadOnlyState) {
+        if (this.isReadonly) {
             return;
         }
         event.stopPropagation();
@@ -515,10 +528,8 @@ export class FSMDiagram extends Component {
     }
 
     onNodeCreate(type, label, x, y) {
-        const isReadOnlyState = this.isReadonly;
-        if (isReadOnlyState) {
-            return;
-        }
+        // const isReadOnlyState = this.isReadonly;
+        // The addNode itself checks for snapshot/data update which is blocked if readonly
         this.addNode(type, x, y, label);
         this.state.isCreatingNode = false;
     }

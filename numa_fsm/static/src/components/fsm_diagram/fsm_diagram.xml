@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMDiagram" owl="1">
-        <div class="o_fsm_diagram_container"
+        <div class="o_fsm_diagram_container overflow-hidden"
              t-ref="container"
+             tabindex="0"
              t-on-mousedown="onMouseDown"
              t-on-wheel="onWheel"
              t-on-dblclick="onDblClick">
