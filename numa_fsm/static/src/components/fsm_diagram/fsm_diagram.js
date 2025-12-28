@@ -457,6 +457,7 @@ export class FSMDiagram extends Component {
 
         let x1, y1;
         if (fromNode.type === 'start') {
+            // Start node is circular 100x100, port is exactly at the middle right
             x1 = fromNode.x + 100;
             y1 = fromNode.y + 50;
         } else {
@@ -468,22 +469,27 @@ export class FSMDiagram extends Component {
             }
             if (portIndex === -1) portIndex = 0;
 
-            const headerHeight = 30, portHeight = 20, bodyPadding = 10;
-            // Center of the port is at body start + padding + index * portHeight + half portHeight
-            const yOffset = headerHeight + bodyPadding + (portIndex * portHeight) + (portHeight / 2);
-            x1 = fromNode.x + 180; 
+            const headerHeight = 30;
+            const bodyPaddingTop = 10;
+            const portWrapperHeight = 20;
+            
+            // The center of the port is at header + padding + (index * wrapperHeight) + (wrapperHeight / 2)
+            const yOffset = headerHeight + bodyPaddingTop + (portIndex * portWrapperHeight) + (portWrapperHeight / 2);
+            
+            x1 = fromNode.x + 180;
             y1 = fromNode.y + yOffset;
         }
 
         const x2 = toNode.x;
-        // In-port is always at 50% height of the node
+        // In-port is always at 50% height of the node, transform: translateY(-50%)
         const nodeHeight = toNode.height || (toNode.type === 'start' ? 100 : (toNode.type === 'end' ? 80 : 50));
         const y2 = toNode.y + (nodeHeight / 2);
 
         const dx = x2 - x1;
         const curveX = Math.max(Math.abs(dx) * 0.5, 50);
 
-        return `M ${x1} ${y1} C ${x1 + curveX} ${y1}, ${x2 - curveX} ${y2}, ${x2} ${y2}`;
+        // We use Math.round to avoid sub-pixel offsets that cause visual jumps
+        return `M ${Math.round(x1)} ${Math.round(y1)} C ${Math.round(x1 + curveX)} ${Math.round(y1)}, ${Math.round(x2 - curveX)} ${Math.round(y2)}, ${Math.round(x2)} ${Math.round(y2)}`;
     }
     
     showHelp = () => {
