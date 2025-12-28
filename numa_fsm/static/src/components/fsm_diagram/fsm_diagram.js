@@ -24,8 +24,8 @@ export class FSMDiagram extends Component {
             result = true;
         } else {
             // Force editability for definition models unless explicitly in readonly mode
-            const forceEditableModels = ['fsm.definition', 'conversation.bot'];
-            if (record?.resModel && forceEditableModels.includes(record.resModel)) {
+            const forceEditableModels = ['fsm.definition', 'conversation.bot', 'conversation.analysis.report'];
+            if (record?.resModel && (forceEditableModels.includes(record.resModel) || record.resModel.startsWith('fsm.'))) {
                 result = false;
             } else {
                 result = this.props.readonly;
@@ -33,12 +33,11 @@ export class FSMDiagram extends Component {
         }
         
         // DEBUG: If it's still readonly but we are in fsm.definition, bypass it.
-        if (result && record?.resModel === 'fsm.definition' && record?.mode !== 'readonly') {
+        if (result && (record?.resModel === 'fsm.definition' || record?.resModel === 'conversation.bot') && record?.mode !== 'readonly') {
             result = false;
         }
 
-        console.log("[FSMDiagram] isReadonly deep check:", {
-            result,
+        console.log("[FSMDiagram] isReadonly result:", result, "deep check:", {
             recordMode: record?.mode,
             resModel: record?.resModel,
             propsReadonly: this.props.readonly,
@@ -71,6 +70,7 @@ export class FSMDiagram extends Component {
         });
 
         onMounted(() => {
+            console.log("[FSMDiagram] onMounted");
             if (this.state.nodes.length > 0) {
                 setTimeout(() => {
                     if (this.containerRef.el) {
@@ -78,15 +78,20 @@ export class FSMDiagram extends Component {
                     }
                 }, 100);
             }
-            window.addEventListener('mousemove', this.onGlobalMouseMove);
-            window.addEventListener('mouseup', this.onGlobalMouseUp);
-            window.addEventListener('keydown', this.onKeyDown);
+            this.boundMouseMove = this.onGlobalMouseMove.bind(this);
+            this.boundMouseUp = this.onGlobalMouseUp.bind(this);
+            this.boundKeyDown = this.onKeyDown.bind(this);
+
+            window.addEventListener('mousemove', this.boundMouseMove);
+            window.addEventListener('mouseup', this.boundMouseUp);
+            window.addEventListener('keydown', this.boundKeyDown);
         });
 
         onWillUnmount(() => {
-            window.removeEventListener('mousemove', this.onGlobalMouseMove);
-            window.removeEventListener('mouseup', this.onGlobalMouseUp);
-            window.removeEventListener('keydown', this.onKeyDown);
+            console.log("[FSMDiagram] onWillUnmount");
+            window.removeEventListener('mousemove', this.boundMouseMove);
+            window.removeEventListener('mouseup', this.boundMouseUp);
+            window.removeEventListener('keydown', this.boundKeyDown);
         });
     }
 
@@ -125,11 +130,13 @@ export class FSMDiagram extends Component {
              console.log("[FSMDiagram] Manual double click detected");
              this.onDblClick(ev);
              this.lastClick = null;
+             // ev.preventDefault(); // Might be needed?
              return;
         }
         this.lastClick = { x: startX, y: startY, time: now };
 
         if (nodeEl) {
+            ev.preventDefault();
             const nodeId = nodeEl.dataset.nodeId;
             console.log("[FSMDiagram] Node selected for drag:", nodeId);
             if (!ev.shiftKey && !this.state.selectedIds.has(nodeId)) {
@@ -150,6 +157,7 @@ export class FSMDiagram extends Component {
             if (connId) this.state.selectedIds.add(connId);
             this.dragState = null;
         } else {
+            ev.preventDefault();
             if (!ev.shiftKey) this.state.selectedIds.clear();
             console.log("[FSMDiagram] Starting pan");
             this.dragState = {
@@ -164,17 +172,16 @@ export class FSMDiagram extends Component {
 
     onGlobalMouseMove = (ev) => {
         if (!this.dragState) return;
+        // console.log("[FSMDiagram] onGlobalMouseMove", this.dragState.type);
 
         const dx = ev.clientX - this.dragState.startX;
         const dy = ev.clientY - this.dragState.startY;
         
         if (this.dragState.type === 'pan') {
-            console.log("[FSMDiagram] Panning, dx, dy:", dx, dy);
             this.state.transform.x = this.dragState.initialX + dx;
             this.state.transform.y = this.dragState.initialY + dy;
-        } else if (this.dragState.type === 'node' && !this.isReadonly) {
+        } else if (this.dragState.type === 'node') {
             const k = this.state.transform.k;
-            console.log("[FSMDiagram] Dragging nodes, dx, dy:", dx, dy);
             this.state.nodes = this.state.nodes.map(node => {
                 if (this.state.selectedIds.has(node.id)) {
                     const initial = this.dragState.initialNodes.find(n => n.id === node.id);
@@ -190,12 +197,13 @@ export class FSMDiagram extends Component {
 
     onGlobalMouseUp = () => {
         if (!this.dragState) return;
+        const dragType = this.dragState.type;
         console.log("[FSMDiagram] onGlobalMouseUp", {
-            type: this.dragState.type,
+            type: dragType,
             nodeId: this.dragState.nodeId,
             readonly: this.isReadonly
         });
-        if (this.dragState.type === 'node' && !this.isReadonly) {
+        if (dragType === 'node' && !this.isReadonly) {
             this.updateData();
         }
         this.dragState = null;
@@ -329,16 +337,14 @@ export class FSMDiagram extends Component {
             if (!this.isReadonly) this.updateData();
             return;
         }
-        const nodesToMove = this.state.selectedIds.has(nodeId)
-            ? this.state.nodes.filter(n => this.state.selectedIds.has(n.id))
-            : [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
         
-        if (nodesToMove.length === 0) return;
-
-        for (const node of nodesToMove) {
-            node.x += dx;
-            node.y += dy;
-        }
+        // Use functional mapping for better reactiveness
+        this.state.nodes = this.state.nodes.map(node => {
+            if (this.state.selectedIds.has(node.id) || node.id === nodeId) {
+                return { ...node, x: node.x + dx, y: node.y + dy };
+            }
+            return node;
+        });
         this.state.isDirty = !this.state.isDirty; // Trigger re-render for connections
     }
     
@@ -348,6 +354,7 @@ export class FSMDiagram extends Component {
         if (node) {
             this.state.editingNode = JSON.parse(JSON.stringify(node)); // Deep copy for editing
             this.state.editingNodeType = node.type;
+            console.log("[FSMDiagram] opening editor for", node.type);
         }
     }
 
@@ -355,13 +362,20 @@ export class FSMDiagram extends Component {
         if (this.isReadonly) return;
         const id = `node_${Date.now()}`;
         console.log("[FSMDiagram] addNode", { type, label, x, y, id });
-        const newNode = { id, type, x, y, label, height: 50 };
-        if (type === 'transition') {
+        const newNode = { 
+            id, 
+            type, 
+            x, 
+            y, 
+            label: label || (type === 'state' ? 'New State' : 'New Transition'), 
+            height: 50 
+        };
+        if (type === 'transition' || type === 'start') {
             newNode.outcomes = { '__default__': null };
         } else if (type === 'state') {
             newNode.events = [];
         }
-        this.state.nodes.push(newNode);
+        this.state.nodes = [...this.state.nodes, newNode];
         this.updateData();
         this.state.isCreatingNode = false;
     }
@@ -370,7 +384,10 @@ export class FSMDiagram extends Component {
         if (this.isReadonly) return;
         const nodeIndex = this.state.nodes.findIndex(n => n.id === nodeId);
         if (nodeIndex !== -1 && this.state.nodes[nodeIndex].height !== height) {
-            this.state.nodes[nodeIndex] = { ...this.state.nodes[nodeIndex], height };
+            // Immutable update to trigger connection re-render
+            const newNodes = [...this.state.nodes];
+            newNodes[nodeIndex] = { ...newNodes[nodeIndex], height };
+            this.state.nodes = newNodes;
             this.updateData();
         }
     }
@@ -492,7 +509,7 @@ export class FSMDiagram extends Component {
         if (this.isReadonly) return;
         const nodeIndex = this.state.nodes.findIndex(n => n.id === updatedNode.id);
         if (nodeIndex !== -1) {
-            this.state.nodes[nodeIndex] = { ...updatedNode };
+            this.state.nodes = this.state.nodes.map(n => n.id === updatedNode.id ? { ...updatedNode } : n);
         }
         this.state.editingNode = null;
         this.state.editingNodeType = null;
