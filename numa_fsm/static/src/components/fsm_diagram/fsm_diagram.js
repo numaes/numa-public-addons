@@ -44,14 +44,16 @@ export class FSMDiagram extends Component {
             creatorPos: { x: 0, y: 0 },
             isDirty: false,
             selectedIds: new Set(),
+            dataLoaded: false,
         });
 
         this.dragMode = null;
+        this.lastClickInfo = { time: 0, target: null };
 
         useDraggable({
             ref: this.containerRef,
             elements: ".o_fsm_node, .o_fsm_viewport",
-            ignore: ".o_fsm_port, button, input, .o_fsm_node_header, .o_fsm_node_body",
+            ignore: ".o_fsm_port, button, input",
             onDragStart: this.onDragStart,
             onDrag: this.onDrag,
             onDragEnd: this.onDragEnd,
@@ -62,7 +64,7 @@ export class FSMDiagram extends Component {
         useEffect(() => this.loadData(this.props.value), () => [this.props.value]);
 
         onMounted(() => {
-            if (this.state.nodes.length > 0) {
+            if (this.state.dataLoaded && this.state.nodes.length > 0) {
                 setTimeout(() => {
                     if (this.containerRef.el) this.zoomToFit();
                 }, 100);
@@ -71,6 +73,18 @@ export class FSMDiagram extends Component {
     }
 
     onDragStart = ({ originalEvent, element }) => {
+        const now = Date.now();
+        if (element === this.lastClickInfo.target && (now - this.lastClickInfo.time < 300)) {
+            if (element.classList.contains('o_fsm_node')) {
+                this.onNodeDblClick(element.dataset.nodeId);
+            } else if (element.classList.contains('o_fsm_viewport')) {
+                this.onBackgroundDblClick(originalEvent);
+            }
+            this.lastClickInfo = { time: 0, target: null };
+            return false; // Prevent drag
+        }
+        this.lastClickInfo = { time: now, target: element };
+
         this.dragMode = null;
         if (element.classList.contains('o_fsm_node')) {
             this.dragMode = 'drag_node';
@@ -112,7 +126,7 @@ export class FSMDiagram extends Component {
 
     loadData = (value) => {
         try {
-            const data = (value && typeof value === 'string') ? JSON.parse(value) : (value || {});
+            const data = (value && typeof value === 'string' && value.trim() !== "{}") ? JSON.parse(value) : (value || {});
             this.state.nodes = data.nodes || [];
             this.state.connections = data.connections || [];
             if (this.state.nodes.length === 0) {
@@ -120,10 +134,12 @@ export class FSMDiagram extends Component {
                     id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', height: 100, outcomes: { '__default__': null }
                 });
             }
+            this.state.dataLoaded = true;
         } catch (e) {
             console.error("Error parsing FSM data:", e);
             this.state.nodes = [];
             this.state.connections = [];
+            this.state.dataLoaded = true;
         }
     }
 
@@ -166,21 +182,14 @@ export class FSMDiagram extends Component {
         }
     }
 
-    onDblClick = (ev) => {
-        const target = ev.target;
-        const isNode = target.closest('.o_fsm_node');
-        const isBackground = target.classList.contains('o_fsm_viewport');
-
-        if (isNode) {
-            this.onNodeDblClick(isNode.dataset.nodeId);
-        } else if (isBackground && !this.isReadonly) {
-            const rect = this.containerRef.el.getBoundingClientRect();
-            this.state.creatorPos = {
-                x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
-                y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
-            };
-            this.state.isCreatingNode = true;
-        }
+    onBackgroundDblClick = (ev) => {
+        if (this.isReadonly) return;
+        const rect = this.containerRef.el.getBoundingClientRect();
+        this.state.creatorPos = {
+            x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
+            y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
+        };
+        this.state.isCreatingNode = true;
     }
 
     onNodeMove = ({ nodeId, dx, dy, end }) => {
