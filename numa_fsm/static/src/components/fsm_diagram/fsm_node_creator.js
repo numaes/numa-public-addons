@@ -18,7 +18,7 @@ export class FSMNodeCreator extends Component {
         });
     }
 
-    setType(type) {
+    setType = (type) => {
         this.state.type = type;
         if (type === 'end') {
             this.state.label = 'End';
@@ -29,7 +29,7 @@ export class FSMNodeCreator extends Component {
         }
     }
 
-    save() {
+    save = () => {
         let label = this.state.label;
         
         if (this.state.type === 'end') {

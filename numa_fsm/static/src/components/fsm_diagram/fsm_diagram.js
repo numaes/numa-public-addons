@@ -80,8 +80,32 @@ export class FSMDiagram extends Component {
         const isPort = target.closest('.o_fsm_port');
         const isConnection = target.closest('.o_fsm_connection_hitbox') || target.closest('.o_fsm_connection');
 
-        if (isToolbar || isEditor || isPort) return;
+        if (isToolbar || isEditor) return;
         
+        // Ensure container has focus for keyboard events
+        if (this.containerRef.el) {
+            this.containerRef.el.focus();
+        }
+
+        if (isPort) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            if (target.setPointerCapture && ev.pointerId !== undefined) {
+                try { target.setPointerCapture(ev.pointerId); } catch (e) {}
+            }
+            const nodeId = isPort.dataset.nodeId;
+            const portName = isPort.dataset.portName;
+            
+            const rect = isPort.getBoundingClientRect();
+            const diagramRect = this.containerRef.el.getBoundingClientRect();
+            const x1 = (rect.left - diagramRect.left + rect.width / 2 - this.state.transform.x) / this.state.transform.k;
+            const y1 = (rect.top - diagramRect.top + rect.height / 2 - this.state.transform.y) / this.state.transform.k;
+
+            this.state.newConnection = { fromNode: nodeId, fromPort: portName, x1, y1, x2: x1, y2: y1 };
+            this.dragState = { type: 'connection', startX: ev.clientX, startY: ev.clientY };
+            return;
+        }
+
         // Prevent default browser behavior (text selection, etc)
         ev.preventDefault();
         // Stop propagation to avoid multiple handlers triggering
@@ -97,25 +121,12 @@ export class FSMDiagram extends Component {
         // Clean previous drag state if any
         this.dragState = null;
 
-        console.log("[FSMDiagram] onMouseDown", {
-            target: target.tagName,
-            classes: target.className,
-            isNode: !!nodeEl,
-            button: ev.button
-        });
-
-        // Ensure container has focus
-        if (this.containerRef.el) {
-            this.containerRef.el.focus();
-        }
-
         const startX = ev.clientX;
         const startY = ev.clientY;
         const now = Date.now();
 
         // Manual double click detection
         if (this.lastClick && (now - this.lastClick.time < 300) && (Math.abs(startX - this.lastClick.x) < 5) && (Math.abs(startY - this.lastClick.y) < 5)) {
-             console.log("[FSMDiagram] Manual double click detected");
              this.onDblClick(ev);
              this.lastClick = null;
              return;
@@ -124,7 +135,6 @@ export class FSMDiagram extends Component {
 
         if (nodeEl) {
             const nodeId = nodeEl.dataset.nodeId;
-            console.log("[FSMDiagram] Node selected for drag:", nodeId);
             if (!ev.shiftKey && !this.state.selectedIds.has(nodeId)) {
                 this.state.selectedIds.clear();
             }
@@ -144,7 +154,6 @@ export class FSMDiagram extends Component {
             this.dragState = null;
         } else {
             if (!ev.shiftKey) this.state.selectedIds.clear();
-            console.log("[FSMDiagram] Starting pan");
             this.dragState = {
                 type: 'pan',
                 startX,
@@ -187,6 +196,13 @@ export class FSMDiagram extends Component {
                 return node;
             });
             this.state.isDirty = !this.state.isDirty;
+        } else if (this.dragState.type === 'connection') {
+            const rect = this.containerRef.el.getBoundingClientRect();
+            this.state.newConnection = {
+                ...this.state.newConnection,
+                x2: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
+                y2: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
+            };
         }
     }
 
@@ -203,16 +219,22 @@ export class FSMDiagram extends Component {
         const dx = ev.clientX - this.dragState.startX;
         const dy = ev.clientY - this.dragState.startY;
 
-        console.log("[FSMDiagram] onGlobalMouseUp", {
-            type: dragType,
-            dx,
-            dy
-        });
-        
         if (dragType === 'node' && !this.isReadonly) {
             if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
                 this.updateData();
             }
+        } else if (dragType === 'connection' && !this.isReadonly) {
+            // Find port under pointer
+            const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
+            const targetPort = elements.find(el => el.closest('.o_fsm_port_in'))?.closest('.o_fsm_port_in');
+            
+            if (targetPort) {
+                const toNodeId = targetPort.dataset.nodeId;
+                if (toNodeId !== this.state.newConnection.fromNode) {
+                    this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, toNodeId);
+                }
+            }
+            this.state.newConnection = null;
         }
         this.dragState = null;
     }
@@ -357,22 +379,19 @@ export class FSMDiagram extends Component {
     }
     
     onNodeDblClick = (nodeId) => {
-        console.log("[FSMDiagram] onNodeDblClick", nodeId);
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
-            this.state.editingNode = Object.assign({}, node); // shallow copy is usually enough and safer for OWL
+            this.state.editingNode = Object.assign({}, node); 
             if (node.outcomes) this.state.editingNode.outcomes = Object.assign({}, node.outcomes);
             if (node.events) this.state.editingNode.events = node.events.map(e => Object.assign({}, e));
             
             this.state.editingNodeType = node.type;
-            console.log("[FSMDiagram] opening editor for", node.type);
         }
     }
 
     onNodeCreate = (type, label, x, y) => {
         if (this.isReadonly) return;
         const id = `node_${Date.now()}`;
-        console.log("[FSMDiagram] addNode", { type, label, x, y, id });
         const newNode = { 
             id, 
             type, 
@@ -404,55 +423,7 @@ export class FSMDiagram extends Component {
     }
 
     onPortMouseDown = ({ event, portName, nodeId }) => {
-        console.log(`[FSMDiagram] onPortMouseDown: Port '${portName}' on node ${nodeId} clicked.`);
-        if (this.isReadonly) {
-            console.log("[FSMDiagram] onPortMouseDown: Readonly mode, skipping connection start.");
-            return;
-        }
-        event.stopPropagation(); // Prevent drag/pan from starting
-        const node = this.state.nodes.find(n => n.id === nodeId);
-        if (!node) {
-            console.warn(`[FSMDiagram] onPortMouseDown: Node ${nodeId} not found.`);
-            return;
-        }
-
-        const rect = event.target.getBoundingClientRect();
-        const diagramRect = this.containerRef.el.getBoundingClientRect();
-        const x1 = (rect.left - diagramRect.left + rect.width / 2 - this.state.transform.x) / this.state.transform.k;
-        const y1 = (rect.top - diagramRect.top + rect.height / 2 - this.state.transform.y) / this.state.transform.k;
-        
-        this.state.newConnection = { fromNode: node.id, fromPort: portName, x1, y1, x2: x1, y2: y1 };
-        console.log("[FSMDiagram] onPortMouseDown: Starting new connection:", this.state.newConnection);
-
-        const onMouseMove = (moveEv) => {
-            const newRect = this.containerRef.el.getBoundingClientRect();
-            this.state.newConnection.x2 = (moveEv.clientX - newRect.left - this.state.transform.x) / this.state.transform.k;
-            this.state.newConnection.y2 = (moveEv.clientY - newRect.top - this.state.transform.y) / this.state.transform.k;
-            // console.log("[FSMDiagram] onPortMouseDown: Connection drawing, x2, y2:", this.state.newConnection.x2, this.state.newConnection.y2);
-        };
-
-        const onMouseUp = (upEv) => {
-            console.log("[FSMDiagram] onPortMouseDown: Connection mouseUp detected.");
-            const targetPort = upEv.target.closest('.o_fsm_port_in');
-            if (targetPort) {
-                const toNodeId = targetPort.dataset.nodeId;
-                if (toNodeId !== this.state.newConnection.fromNode) {
-                     this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, toNodeId);
-                     console.log(`[FSMDiagram] onPortMouseDown: Connection added from ${this.state.newConnection.fromNode} to ${toNodeId}.`);
-                } else {
-                    console.log("[FSMDiagram] onPortMouseDown: Cannot connect node to itself.");
-                }
-            } else {
-                console.log("[FSMDiagram] onPortMouseDown: No target port found for connection.");
-            }
-            this.state.newConnection = null;
-            window.removeEventListener('mousemove', onMouseMove);
-            window.removeEventListener('mouseup', onMouseUp);
-            console.log("[FSMDiagram] onPortMouseDown: Mousemove/mouseup listeners removed.");
-        };
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', onMouseUp);
+        // Obsolete, handled in onMouseDown for better event lifecycle management in Odoo 18
     }
 
     addConnection = (fromNodeId, fromPortName, toNodeId) => {
