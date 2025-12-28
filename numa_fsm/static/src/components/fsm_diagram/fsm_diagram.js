@@ -480,7 +480,7 @@ export class FSMDiagram extends Component {
         let x1, y1;
         if (fromNode.type === 'start') {
             // Start node is circular 100x100, port is exactly at the middle right
-            x1 = fromNode.x + 98; // Adjusted slightly left to better align with the port center visual
+            x1 = fromNode.x + 100;
             y1 = fromNode.y + 50;
         } else {
             let portIndex = 0;
@@ -495,7 +495,7 @@ export class FSMDiagram extends Component {
             const bodyPaddingTop = 10;
             const portWrapperHeight = 20;
             
-            // Precise calculation: header (30) + padding (10) + wrapper offset (index * 20) + wrapper center (10)
+        // Precise calculation: header (30) + padding (10) + wrapper offset (index * 20) + wrapper center (10)
             const yOffset = headerHeight + bodyPaddingTop + (portIndex * portWrapperHeight) + (portWrapperHeight / 2);
 
             x1 = fromNode.x + 180;
@@ -517,6 +517,10 @@ export class FSMDiagram extends Component {
             }
         }
         
+        // The port is at top: 50%, which includes the border.
+        // For circular nodes, the center is exactly height/2.
+        // For rectangular nodes, the header is 30px, body padding 10px + 10px.
+        // If the node has many outcomes, the center shifts.
         const y2 = toNode.y + (nodeHeight / 2);
 
         const dx = x2 - x1;
