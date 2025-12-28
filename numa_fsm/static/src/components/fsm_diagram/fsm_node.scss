@@ -17,8 +17,8 @@
 
     &:hover, &.o_fsm_node_hover {
         border-color: #714B67 !important;
-        box-shadow: 0 4px 12px rgba(113, 75, 103, 0.3) !important;
-        z-index: 100;
+        box-shadow: 0 0 0 2px #714B67, 0 4px 12px rgba(113, 75, 103, 0.4) !important;
+        z-index: 1000 !important;
     }
 
     &.o_fsm_node_selected {
@@ -153,8 +153,8 @@
 
     &:hover, &.o_fsm_node_hover {
         border-color: #714B67 !important;
-        box-shadow: 0 0 15px rgba(113, 75, 103, 0.5) !important;
-        z-index: 100;
+        box-shadow: 0 0 0 2px #714B67, 0 0 15px rgba(113, 75, 103, 0.6) !important;
+        z-index: 1000 !important;
     }
     .o_fsm_node_header {
         border-bottom: none;

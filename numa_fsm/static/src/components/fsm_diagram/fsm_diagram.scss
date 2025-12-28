@@ -34,17 +34,28 @@
     transform-origin: 0 0;
     user-select: none;
     pointer-events: none;
+    overflow: visible;
 
     .o_fsm_connections {
         position: absolute;
-        width: 100%;
-        height: 100%;
+        top: 0;
+        left: 0;
+        width: 1px;
+        height: 1px;
         pointer-events: none;
         z-index: 5;
+        overflow: visible;
 
         .o_fsm_connection_group {
             pointer-events: stroke;
             cursor: pointer;
+
+            &:hover {
+                .o_fsm_connection {
+                    stroke: #714B67 !important;
+                    stroke-width: 6 !important;
+                }
+            }
         }
 
         path {
@@ -53,25 +64,14 @@
     }
 
     .o_fsm_nodes {
-        position: relative;
+        position: absolute;
+        top: 0;
+        left: 0;
         pointer-events: none;
         z-index: 10;
 
         .o_fsm_node {
             pointer-events: all;
-        }
-    }
-}
-
-
-.o_fsm_connection_group {
-    pointer-events: stroke;
-    cursor: pointer;
-
-    &:hover {
-        .o_fsm_connection {
-            stroke: #714B67 !important;
-            stroke-width: 6 !important;
         }
     }
 }
@@ -85,13 +85,13 @@
 }
 
 .o_fsm_connection_selected {
-    stroke: #00A09D;
-    stroke-width: 4;
+    stroke: #00A09D !important;
+    stroke-width: 4 !important;
+}
 
-    &:hover, &.o_fsm_connection_hover {
-        stroke: #007a77;
-        stroke-width: 6;
-    }
+.o_fsm_connection_hover {
+    stroke: #714B67 !important;
+    stroke-width: 6 !important;
 }
 
 .o_fsm_connection_hitbox {

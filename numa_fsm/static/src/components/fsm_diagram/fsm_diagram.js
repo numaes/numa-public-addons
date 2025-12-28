@@ -459,13 +459,7 @@ export class FSMDiagram extends Component {
         const dx = x2 - x1;
         const curveX = Math.max(Math.abs(dx) * 0.5, 50);
         
-        const sx1 = Math.round(x1);
-        const sy1 = Math.round(y1);
-        const sx2 = Math.round(x2);
-        const sy2 = Math.round(y2);
-        const scx = Math.round(curveX);
-        
-        return `M ${sx1} ${sy1} C ${sx1 + scx} ${sy1}, ${sx2 - scx} ${sy2}, ${sx2} ${sy2}`;
+        return `M ${x1} ${y1} C ${x1 + curveX} ${y1}, ${x2 - curveX} ${y2}, ${x2} ${y2}`;
     }
     
     showHelp = () => { this.state.showHelp = true; }
