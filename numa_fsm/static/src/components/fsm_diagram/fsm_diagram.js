@@ -468,14 +468,17 @@ export class FSMDiagram extends Component {
             }
             if (portIndex === -1) portIndex = 0;
 
-            const headerHeight = 30, portHeight = 20;
-            const yOffset = headerHeight + 10 + (portIndex * portHeight) + (portHeight / 2);
-            x1 = fromNode.x + 180; // Match CSS width
+            const headerHeight = 30, portHeight = 20, bodyPadding = 10;
+            // Center of the port is at body start + padding + index * portHeight + half portHeight
+            const yOffset = headerHeight + bodyPadding + (portIndex * portHeight) + (portHeight / 2);
+            x1 = fromNode.x + 180; 
             y1 = fromNode.y + yOffset;
         }
 
         const x2 = toNode.x;
-        const y2 = toNode.y + ((toNode.height || (toNode.type === 'end' ? 80 : 50)) / 2);
+        // In-port is always at 50% height of the node
+        const nodeHeight = toNode.height || (toNode.type === 'start' ? 100 : (toNode.type === 'end' ? 80 : 50));
+        const y2 = toNode.y + (nodeHeight / 2);
 
         const dx = x2 - x1;
         const curveX = Math.max(Math.abs(dx) * 0.5, 50);
