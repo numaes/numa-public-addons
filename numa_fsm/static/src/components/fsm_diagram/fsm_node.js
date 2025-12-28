@@ -22,8 +22,12 @@ export class FSMNode extends Component {
         this.dragStart = { x: 0, y: 0 };
         this.lastHeight = 0;
 
-        onMounted(this.checkSize.bind(this));
-        onPatched(this.checkSize.bind(this));
+        onMounted(() => {
+            this.checkSize();
+        });
+        onPatched(() => {
+            this.checkSize();
+        });
     }
 
     checkSize() {

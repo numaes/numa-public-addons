@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState, useRef, onMounted, onWillUnmount, useEffect, useExternalListener } from "@odoo/owl";
+import { Component, useState, useRef, onMounted, onWillStart, onWillUnmount, useEffect, useExternalListener } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { useService } from "@web/core/utils/hooks";
@@ -69,6 +69,10 @@ export class FSMDiagram extends Component {
 
         this.initialData = null;
 
+        onWillStart(async () => {
+            this.loadData(this.props.value);
+        });
+
         useEffect(() => {
             this.loadData(this.props.value);
         }, () => [this.props.value]);
@@ -76,11 +80,10 @@ export class FSMDiagram extends Component {
         useExternalListener(window, "mousemove", this.onMouseMove);
         useExternalListener(window, "mouseup", this.onMouseUp);
         useExternalListener(window, "keydown", this.onKeyDown);
-        useExternalListener(window, "beforeunload", this.onBeforeUnload);
 
         onMounted(() => {
             console.log("[FSMDiagram] onMounted start");
-            this.env.bus.addEventListener('fsm_node_click', this.onFSMNodeClick.bind(this));
+            this.env.bus.addEventListener('fsm_node_click', this.onFSMNodeClick);
             
             if (this.state.nodes.length > 0) {
                 setTimeout(() => {
@@ -94,7 +97,7 @@ export class FSMDiagram extends Component {
         });
 
         onWillUnmount(() => {
-            this.env.bus.removeEventListener('fsm_node_click', this.onFSMNodeClick.bind(this));
+            this.env.bus.removeEventListener('fsm_node_click', this.onFSMNodeClick);
         });
     }
 
@@ -210,7 +213,7 @@ export class FSMDiagram extends Component {
         this.state.transform.y = (rect.height / 2) - (k * (minY + graphHeight / 2));
     }
 
-    onFSMNodeClick({ detail }) {
+    onFSMNodeClick = ({ detail }) => {
         console.log("[FSMDiagram] onFSMNodeClick - received event from bus", detail);
         // Important: detail.event might have already bubbled up or been stopped.
         // We handle selection here.
