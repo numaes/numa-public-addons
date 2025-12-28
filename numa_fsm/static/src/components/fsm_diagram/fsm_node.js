@@ -43,7 +43,6 @@ export class FSMNode extends Component {
         if (ev.button !== 0) {
             return;
         }
-        ev.stopPropagation();
         
         // Notify parent about the click for selection
         console.log("[FSMNode] triggering fsm_node_click on bus");
@@ -60,19 +59,20 @@ export class FSMNode extends Component {
                 
                 const scale = this.props.diagramScale || 1;
                 
-                if (this.props.onMove) {
-                    this.props.onMove({ nodeId: this.props.node.id, dx: dx / scale, dy: dy / scale });
+                if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+                    if (this.props.onMove) {
+                        this.props.onMove({ nodeId: this.props.node.id, dx: dx / scale, dy: dy / scale });
+                    }
+                    this.dragStart = { x: moveEv.clientX, y: moveEv.clientY };
                 }
-                
-                this.dragStart = { x: moveEv.clientX, y: moveEv.clientY };
             }
         };
 
-        const onMouseUp = () => {
+        const onMouseUp = (upEv) => {
             console.log("[FSMNode] onMouseUp - ending drag");
             this.state.isDragging = false;
-            window.removeEventListener("mousemove", onMouseMove);
-            window.removeEventListener("mouseup", onMouseUp);
+            window.removeEventListener("mousemove", onMouseMove, true);
+            window.removeEventListener("mouseup", onMouseUp, true);
             if (this.props.onMove) {
                 // Signal move end to save data
                 console.log("[FSMNode] calling onMove with end:true");
@@ -80,8 +80,8 @@ export class FSMNode extends Component {
             }
         };
 
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", onMouseUp);
+        window.addEventListener("mousemove", onMouseMove, true);
+        window.addEventListener("mouseup", onMouseUp, true);
     }
 
     onPortMouseDown(ev, portName) {

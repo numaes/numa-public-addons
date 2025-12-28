@@ -10,7 +10,7 @@
              }"
              t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'"
              t-on-mousedown="onNodeMouseDown"
-             t-on-dblclick.stop="onNodeDblClick">
+             t-on-dblclick="onNodeDblClick">
 
             <div t-if="props.node.type !== 'start' &amp;&amp; props.node.type !== 'end'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>
             <div t-if="props.node.type === 'end'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>
