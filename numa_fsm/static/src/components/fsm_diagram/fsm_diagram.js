@@ -58,6 +58,8 @@ export class FSMDiagram extends Component {
             connections: [],
             transform: { x: 0, y: 0, k: 1 },
             isPanning: false,
+            isDraggingNode: false,
+            draggingNodeId: null,
             editingNode: null,
             editingNodeType: null,
             newConnection: null,
@@ -276,7 +278,7 @@ export class FSMDiagram extends Component {
     }
 
     onObjectClick(ev, id) {
-        console.log("[FSMDiagram] onObjectClick", { id, shiftKey: ev ? ev.shiftKey : false });
+        // console.log("[FSMDiagram] onObjectClick", { id, shiftKey: ev ? ev.shiftKey : false });
         if (ev && ev.stopPropagation) {
             ev.stopPropagation();
         }
@@ -336,11 +338,44 @@ export class FSMDiagram extends Component {
             classes, 
             isBackground, 
             isNode: !!isNode, 
+            isPort: !!isPort,
+            isConnection: !!isConnection,
             button: ev.button,
-            isPanning: this.state.isPanning
+            isPanning: this.state.isPanning,
+            isDraggingNode: this.state.isDraggingNode
         });
 
         if (ev.button === 0) {
+            if (isConnection) {
+                const connId = isConnection.dataset.connectionId || isConnection.getAttribute('data-connection-id');
+                if (connId) {
+                    this.onObjectClick(ev, connId);
+                }
+                return;
+            }
+
+            if (isPort) {
+                // Let FSMNode handle port click via props or we can handle it here if needed
+                // But FSMNode has t-on-mousedown for ports, so it should work if it calls onPortMouseDown
+                return; 
+            }
+
+            if (isNode) {
+                const nodeId = isNode.dataset.nodeId || isNode.getAttribute('data-node-id');
+                console.log("[FSMDiagram] starting node drag", { nodeId });
+                this.state.isDraggingNode = true;
+                this.state.draggingNodeId = nodeId;
+                this.dragStart = { x: ev.clientX, y: ev.clientY };
+                
+                // Trigger selection
+                this.onObjectClick(ev, nodeId);
+                
+                if (this.containerRef.el) {
+                    this.containerRef.el.focus();
+                }
+                return;
+            }
+
             if (isBackground) {
                 // Manual double click detection for background
                 const now = Date.now();
@@ -372,10 +407,22 @@ export class FSMDiagram extends Component {
         if (this.state.isPanning) {
             const dx = ev.clientX - this.dragStart.x;
             const dy = ev.clientY - this.dragStart.y;
-            // console.log("[FSMDiagram] panning move", { dx, dy });
             if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
                 this.state.transform.x += dx;
                 this.state.transform.y += dy;
+                this.dragStart = { x: ev.clientX, y: ev.clientY };
+            }
+        }
+        if (this.state.isDraggingNode) {
+            const dx = ev.clientX - this.dragStart.x;
+            const dy = ev.clientY - this.dragStart.y;
+            if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+                this.onNodeMove({
+                    nodeId: this.state.draggingNodeId,
+                    dx: dx / this.state.transform.k,
+                    dy: dy / this.state.transform.k,
+                    end: false
+                });
                 this.dragStart = { x: ev.clientX, y: ev.clientY };
             }
         }
@@ -388,20 +435,37 @@ export class FSMDiagram extends Component {
             const rect = this.containerRef.el.getBoundingClientRect();
             this.state.newConnection.x2 = (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k;
             this.state.newConnection.y2 = (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k;
-            // console.log("[FSMDiagram] new connection mousemove", { x2: this.state.newConnection.x2, y2: this.state.newConnection.y2 });
         }
     }
 
     onMouseUp = (ev) => {
+        const isSelectedConnection = ev.target.closest('path.o_fsm_connection') || ev.target.closest('path.o_fsm_connection_hitbox');
+
         console.log("[FSMDiagram] onMouseUp", { 
             isPanning: this.state.isPanning, 
+            isDraggingNode: this.state.isDraggingNode,
             hasNewConn: !!this.state.newConnection,
-            readonly: this.isReadonly
+            readonly: this.isReadonly,
+            isSelectedConnection: !!isSelectedConnection
         });
+
         if (this.state.isPanning) {
             console.log("[FSMDiagram] onMouseUp - stopping pan");
             this.state.isPanning = false;
         }
+
+        if (this.state.isDraggingNode) {
+            console.log("[FSMDiagram] onMouseUp - stopping node drag", { nodeId: this.state.draggingNodeId });
+            this.onNodeMove({
+                nodeId: this.state.draggingNodeId,
+                dx: 0,
+                dy: 0,
+                end: true
+            });
+            this.state.isDraggingNode = false;
+            this.state.draggingNodeId = null;
+        }
+
         if (this.state.newConnection) {
             const targetPort = ev.target.closest('.o_fsm_port_in');
             if (targetPort && !this.isReadonly) {
@@ -525,7 +589,7 @@ export class FSMDiagram extends Component {
             [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
 
         if (nodesToMove.length > 0) {
-            console.log("[FSMDiagram] onNodeMove", { nodeId, dx, dy, end, readonly: isReadOnlyState });
+            // console.log("[FSMDiagram] onNodeMove", { nodeId, dx, dy, end, readonly: isReadOnlyState });
             for (const node of nodesToMove) {
                 node.x += dx;
                 node.y += dy;
@@ -556,13 +620,14 @@ export class FSMDiagram extends Component {
             console.log("[FSMDiagram] onPortMouseDown BLOCKED because readonly");
             return;
         }
+        const target = event.target;
         if (event && event.stopPropagation) {
             event.stopPropagation();
         }
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (!node) return;
 
-        const rect = event.target.getBoundingClientRect();
+        const rect = target.getBoundingClientRect();
         const diagramRect = this.containerRef.el.getBoundingClientRect();
         const x1 = (rect.left - diagramRect.left + rect.width / 2 - this.state.transform.x) / this.state.transform.k;
         const y1 = (rect.top - diagramRect.top + rect.height / 2 - this.state.transform.y) / this.state.transform.k;

@@ -3,6 +3,7 @@
     <t t-name="numa_fsm.FSMNode" owl="1">
         <div class="o_fsm_node"
              t-ref="node"
+             t-att-data-node-id="props.node.id"
              t-att-class="{
                 'o_fsm_node_active': props.activeNodeId === props.node.id,
                 'o_fsm_node_selected': props.selected,

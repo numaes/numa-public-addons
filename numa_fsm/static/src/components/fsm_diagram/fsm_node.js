@@ -48,58 +48,19 @@ export class FSMNode extends Component {
             return;
         }
 
-        // STOP propagation to prevent FSMDiagram from seeing this as a background click
-        ev.stopPropagation();
-
         // Manual double click detection
         const now = Date.now();
         if (this.lastClickTime && (now - this.lastClickTime < 300)) {
             console.log("[FSMNode] double click detected", { nodeId: this.props.node.id });
+            ev.stopPropagation();
             this.onNodeDblClick();
             this.lastClickTime = 0;
             return;
         }
         this.lastClickTime = now;
         
-        // Notify parent about the click for selection
-        console.log("[FSMNode] triggering fsm_node_click on bus");
-        this.env.bus.trigger('fsm_node_click', { event: ev, nodeId: this.props.node.id });
-
-        // Start dragging
-        console.log("[FSMNode] drag started at", { x: ev.clientX, y: ev.clientY });
-        this.state.isDragging = true;
-        this.dragStart = { x: ev.clientX, y: ev.clientY };
-
-        const onMouseMove = (moveEv) => {
-            if (this.state.isDragging) {
-                const dx = moveEv.clientX - this.dragStart.x;
-                const dy = moveEv.clientY - this.dragStart.y;
-                
-                const scale = this.props.diagramScale || 1;
-                
-                if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
-                    if (this.props.onMove) {
-                        this.props.onMove({ nodeId: this.props.node.id, dx: dx / scale, dy: dy / scale });
-                    }
-                    this.dragStart = { x: moveEv.clientX, y: moveEv.clientY };
-                }
-            }
-        };
-
-        const onMouseUp = (upEv) => {
-            console.log("[FSMNode] onMouseUp - ending drag", { nodeId: this.props.node.id });
-            this.state.isDragging = false;
-            window.removeEventListener("mousemove", onMouseMove, { capture: true });
-            window.removeEventListener("mouseup", onMouseUp, { capture: true });
-            if (this.props.onMove) {
-                // Signal move end to save data
-                console.log("[FSMNode] calling onMove with end:true");
-                this.props.onMove({ nodeId: this.props.node.id, dx: 0, dy: 0, end: true });
-            }
-        };
-
-        window.addEventListener("mousemove", onMouseMove, { capture: true });
-        window.addEventListener("mouseup", onMouseUp, { capture: true });
+        // We no longer handle dragging here. 
+        // We let it bubble to FSMDiagram.onMouseDown
     }
 
     onPortMouseDown(ev, portName) {
