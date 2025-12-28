@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMDiagram" owl="1">
-        <div class="o_fsm_diagram_container overflow-hidden"
+        <div class="o_fsm_diagram_container o_field_fsm_diagram"
              t-ref="container"
              tabindex="0"
-             t-on-wheel="onWheel"
-             t-on-dblclick="onDblClick">
+             t-on-wheel="onWheel">
             <div class="o_fsm_diagram_toolbar d-flex gap-2">
                 <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
                     <i class="fa fa-expand"/>
@@ -44,10 +43,7 @@
                         <FSMNode node="node"
                                  diagramScale="state.transform.k"
                                  selected="state.selectedIds.has(node.id)"
-                                 onMove="onNodeMove"
-                                 onResize="onNodeResize"
-                                 onPortMouseDown="onPortMouseDown"
-                                 onNodeDblClick="onNodeDblClick"/>
+                                 onPortMouseDown="onPortMouseDown"/>
                     </t>
                 </div>
             </div>
