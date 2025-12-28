@@ -34,6 +34,14 @@ export class FSMDiagram extends Component {
             record: record
         });
 
+        // ESTRATEGIA AGRESIVA PARA ODOO 18:
+        // Si estamos en el modelo fsm.definition, asumimos que NO es readonly 
+        // a menos que el record esté explícitamente en modo 'readonly'.
+        if (record?.resModel === 'fsm.definition') {
+            if (recordMode === 'readonly') return true;
+            return false;
+        }
+
         const result = (() => {
             // Priority 1: If we are in 'edit' or 'create' mode, we MUST NOT be readonly
             if (recordMode === 'edit' || recordMode === 'create') {
@@ -41,16 +49,6 @@ export class FSMDiagram extends Component {
             }
             if (recordMode === 'readonly') {
                 return true;
-            }
-
-            // Priority 2: Special case for fsm.definition - usually editable if we are in a form
-            if (record?.resModel === 'fsm.definition') {
-                // If we have no mode, but we are in fsm.definition, check if it's a false positive
-                if (propsReadonly === true && recordMode === undefined) {
-                    // Try to guess based on other record properties if available
-                    // In Odoo 18, sometimes fields are marked readonly in the view but the record is editable
-                    return false; 
-                }
             }
 
             // Priority 3: record.isReadonly property
@@ -332,13 +330,14 @@ export class FSMDiagram extends Component {
         // Background elements that should trigger pan or clear selection
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isNode = target.closest('.o_fsm_node');
-        const isConnection = target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'));
+        const isConnection = (target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'))) || target.closest('svg.o_fsm_connections path');
         const isBackground = !isToolbar && !isNode && !isConnection;
 
         console.log("[FSMDiagram] onMouseDown", {
             readonly: isReadOnlyState,
             target: target.tagName,
             classList: Array.from(target.classList),
+            targetClasses: target.className,
             isBackground,
             button: ev.button
         });
@@ -415,8 +414,9 @@ export class FSMDiagram extends Component {
         // Robust check for background clicks
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isNode = target.closest('.o_fsm_node');
-        const isConnection = target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'));
+        const isConnection = (target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'))) || target.closest('svg.o_fsm_connections path');
 
+        // If it's not a toolbar, node or connection, it's background
         const isBackground = !isToolbar && !isNode && !isConnection;
 
         console.log("[FSMDiagram] onDblClick", {
@@ -426,7 +426,8 @@ export class FSMDiagram extends Component {
             isConnection: !!isConnection,
             isBackground,
             target: target.tagName,
-            classList: Array.from(target.classList)
+            classList: Array.from(target.classList),
+            targetClasses: target.className
         });
 
         if (isBackground) {
@@ -471,7 +472,9 @@ export class FSMDiagram extends Component {
             }
             this.state.editingNode = { ...node }; // Create a copy to avoid direct mutation
             this.state.editingNodeType = node.type;
-            console.log("[FSMDiagram] opening editor for", node.type);
+            console.log("[FSMDiagram] opening editor for", node.type, "id:", nodeId);
+        } else {
+            console.warn("[FSMDiagram] node not found for nodeId:", nodeId);
         }
     }
 
