@@ -84,13 +84,13 @@ export class FSMDiagram extends Component {
             this.loadData(this.props.value);
         }, () => [this.props.value]);
 
-        useExternalListener(window, "mousemove", this.onMouseMove);
-        useExternalListener(window, "mouseup", this.onMouseUp);
         useExternalListener(window, "keydown", this.onKeyDown);
 
         onMounted(() => {
             console.log("[FSMDiagram] onMounted start");
             this.env.bus.addEventListener('fsm_node_click', this.onFSMNodeClick);
+            window.addEventListener("mousemove", this.onMouseMove);
+            window.addEventListener("mouseup", this.onMouseUp);
 
             if (this.state.nodes.length > 0) {
                 setTimeout(() => {
@@ -109,6 +109,8 @@ export class FSMDiagram extends Component {
                 cancelAnimationFrame(this._renderConnectionFrame);
             }
             this.env.bus.removeEventListener('fsm_node_click', this.onFSMNodeClick);
+            window.removeEventListener("mousemove", this.onMouseMove);
+            window.removeEventListener("mouseup", this.onMouseUp);
         });
     }
 
