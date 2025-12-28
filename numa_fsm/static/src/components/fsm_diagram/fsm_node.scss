@@ -138,8 +138,10 @@
 
 .o_fsm_node_start {
     border-radius: 50%;
-    width: 100px;
-    height: 100px;
+    width: 100px !important;
+    height: 100px !important;
+    min-width: 100px;
+    min-height: 100px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -180,13 +182,11 @@
 
     .o_fsm_port_out_wrapper {
         width: 0;
-        display: flex;
-        justify-content: center;
+        height: 0;
         padding: 0;
         position: absolute;
-        top: 50px; // Centro exacto del círculo de 100px
-        right: 0;
-        height: 0;
+        top: 50%;
+        left: 100%;
 
         span {
             display: none;
