@@ -103,6 +103,8 @@ export class FSMDiagram extends Component {
         const isPort = target.closest('.o_fsm_port');
         const isConnection = target.closest('.o_fsm_connection_hitbox') || target.closest('.o_fsm_connection');
 
+        if (isToolbar || isEditor || isPort) return;
+        
         console.log("[FSMDiagram] onMouseDown", {
             target: target.tagName,
             classes: target.className,
@@ -113,8 +115,6 @@ export class FSMDiagram extends Component {
             button: ev.button,
             readonly: this.isReadonly
         });
-
-        if (isToolbar || isEditor || isPort) return;
 
         // Ensure container has focus for keyboard events
         if (this.containerRef.el) {
@@ -130,13 +130,13 @@ export class FSMDiagram extends Component {
              console.log("[FSMDiagram] Manual double click detected");
              this.onDblClick(ev);
              this.lastClick = null;
-             // ev.preventDefault(); // Might be needed?
              return;
         }
         this.lastClick = { x: startX, y: startY, time: now };
 
         if (nodeEl) {
             ev.preventDefault();
+            ev.stopPropagation();
             const nodeId = nodeEl.dataset.nodeId;
             console.log("[FSMDiagram] Node selected for drag:", nodeId);
             if (!ev.shiftKey && !this.state.selectedIds.has(nodeId)) {
@@ -152,6 +152,8 @@ export class FSMDiagram extends Component {
                 initialNodes: this.state.nodes.filter(n => this.state.selectedIds.has(n.id)).map(n => ({ id: n.id, x: n.x, y: n.y })),
             };
         } else if (isConnection) {
+            ev.preventDefault();
+            ev.stopPropagation();
             const connId = isConnection.dataset.connId;
             if (!ev.shiftKey) this.state.selectedIds.clear();
             if (connId) this.state.selectedIds.add(connId);
@@ -172,14 +174,16 @@ export class FSMDiagram extends Component {
 
     onGlobalMouseMove = (ev) => {
         if (!this.dragState) return;
-        // console.log("[FSMDiagram] onGlobalMouseMove", this.dragState.type);
-
+        
         const dx = ev.clientX - this.dragState.startX;
         const dy = ev.clientY - this.dragState.startY;
         
         if (this.dragState.type === 'pan') {
-            this.state.transform.x = this.dragState.initialX + dx;
-            this.state.transform.y = this.dragState.initialY + dy;
+            this.state.transform = {
+                ...this.state.transform,
+                x: this.dragState.initialX + dx,
+                y: this.dragState.initialY + dy
+            };
         } else if (this.dragState.type === 'node') {
             const k = this.state.transform.k;
             this.state.nodes = this.state.nodes.map(node => {
@@ -195,16 +199,24 @@ export class FSMDiagram extends Component {
         }
     }
 
-    onGlobalMouseUp = () => {
+    onGlobalMouseUp = (ev) => {
         if (!this.dragState) return;
         const dragType = this.dragState.type;
         console.log("[FSMDiagram] onGlobalMouseUp", {
             type: dragType,
             nodeId: this.dragState.nodeId,
-            readonly: this.isReadonly
+            readonly: this.isReadonly,
+            dx: ev.clientX - this.dragState.startX,
+            dy: ev.clientY - this.dragState.startY
         });
+        
+        const dx = ev.clientX - this.dragState.startX;
+        const dy = ev.clientY - this.dragState.startY;
+
         if (dragType === 'node' && !this.isReadonly) {
-            this.updateData();
+            if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                this.updateData();
+            }
         }
         this.dragState = null;
     }
@@ -352,7 +364,10 @@ export class FSMDiagram extends Component {
         console.log("[FSMDiagram] onNodeDblClick", nodeId);
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
-            this.state.editingNode = JSON.parse(JSON.stringify(node)); // Deep copy for editing
+            this.state.editingNode = Object.assign({}, node); // shallow copy is usually enough and safer for OWL
+            if (node.outcomes) this.state.editingNode.outcomes = Object.assign({}, node.outcomes);
+            if (node.events) this.state.editingNode.events = node.events.map(e => Object.assign({}, e));
+            
             this.state.editingNodeType = node.type;
             console.log("[FSMDiagram] opening editor for", node.type);
         }
