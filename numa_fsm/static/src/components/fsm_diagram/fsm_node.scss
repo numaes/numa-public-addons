@@ -15,20 +15,19 @@
         animation: fsm-pulse 1.5s infinite;
     }
 
+    &:hover, &.o_fsm_node_hover {
+        border-color: #714B67 !important;
+        box-shadow: 0 4px 12px rgba(113, 75, 103, 0.3) !important;
+        z-index: 100;
+    }
+
     &.o_fsm_node_selected {
         border-color: #00A09D;
         box-shadow: 0 0 0 3px rgba(0, 160, 157, 0.4);
 
         &:hover, &.o_fsm_node_hover {
-            box-shadow: 0 0 0 4px rgba(0, 160, 157, 0.6);
-            border-color: #007a77;
-        }
-    }
-
-    &:hover, &.o_fsm_node_hover {
-        &:not(.o_fsm_node_selected) {
-            border-color: #714B67;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            box-shadow: 0 0 0 4px rgba(0, 160, 157, 0.6) !important;
+            border-color: #007a77 !important;
         }
     }
 
@@ -175,18 +174,18 @@
         display: flex;
         justify-content: center;
         pointer-events: none;
-        position: relative;
-        height: 0; // El puerto se posicionará respecto al contenedor de 100x100
+        position: static;
+        height: 0;
     }
 
     .o_fsm_port_out_wrapper {
-        width: 100%;
+        width: 0;
         display: flex;
         justify-content: center;
         padding: 0;
         position: absolute;
-        top: 50px; // Centro del círculo de 100px
-        left: 0;
+        top: 50px; // Centro exacto del círculo de 100px
+        right: 0;
         height: 0;
 
         span {
