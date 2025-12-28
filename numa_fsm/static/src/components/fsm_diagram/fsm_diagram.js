@@ -40,14 +40,16 @@ export class FSMDiagram extends Component {
             newConnection: null,
             isCreatingNode: false,
             creatorPos: { x: 0, y: 0 },
-            isDirty: false,
             selectedIds: new Set(),
             dataLoaded: false,
             connectingTargetId: null,
             hoveredId: null,
+            showHelp: false,
         });
 
         this.dragState = null;
+        this.historyStack = [];
+        this.maxHistory = 50;
 
         onWillStart(async () => {
             await this.loadData(this.props.value);
@@ -68,10 +70,27 @@ export class FSMDiagram extends Component {
         useExternalListener(document, "keydown", this.onKeyDown);
     }
 
+    takeSnapshot() {
+        if (this.historyStack.length >= this.maxHistory) {
+            this.historyStack.shift();
+        }
+        this.historyStack.push(JSON.stringify({
+            nodes: this.state.nodes,
+            connections: this.state.connections
+        }));
+    }
+
+    undo = () => {
+        if (this.isReadonly || this.historyStack.length === 0) return;
+        const snapshot = this.historyStack.pop();
+        const data = JSON.parse(snapshot);
+        this.state.nodes = data.nodes;
+        this.state.connections = data.connections;
+        this.state.selectedIds.clear();
+        this.updateData();
+    }
+
     onMouseDown = (ev) => {
-        // Clear hover state on click
-        this.state.hoveredId = null;
-        
         const target = ev.target;
         const nodeEl = target.closest('.o_fsm_node');
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
@@ -80,16 +99,14 @@ export class FSMDiagram extends Component {
         const isConnection = target.closest('.o_fsm_connection_hitbox') || target.closest('.o_fsm_connection');
 
         if (isToolbar || isEditor) return;
-
-        // Only handle primary button
         if (ev.button !== 0) return;
         
-        // Ensure container has focus for keyboard events
         if (this.containerRef.el) {
             this.containerRef.el.focus();
         }
 
-        if (isPort) {
+        // Port Click logic (starting a connection)
+        if (isPort && isPort.classList.contains('o_fsm_port_out')) {
             ev.preventDefault();
             ev.stopPropagation();
             if (target.setPointerCapture && ev.pointerId !== undefined) {
@@ -97,8 +114,8 @@ export class FSMDiagram extends Component {
             }
             const nodeId = isPort.dataset.nodeId;
             const portName = isPort.dataset.portName;
-            
             const fromNode = this.state.nodes.find(n => n.id === nodeId);
+            
             const HEADER_HEIGHT = 30;
             const BODY_PADDING = 10;
             const PORT_HEIGHT = 20;
@@ -116,7 +133,6 @@ export class FSMDiagram extends Component {
                     portIndex = Object.keys(fromNode.outcomes || {}).indexOf(portName);
                 }
                 if (portIndex === -1) portIndex = 0;
-
                 x1 = fromNode.x + NODE_WIDTH;
                 y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
             }
@@ -126,26 +142,18 @@ export class FSMDiagram extends Component {
             return;
         }
 
-        // Prevent default browser behavior (text selection, etc)
         ev.preventDefault();
-        // Stop propagation to avoid multiple handlers triggering
         ev.stopPropagation();
 
-        // Capture pointer for robust dragging in Odoo 18
         if (target.setPointerCapture && ev.pointerId !== undefined) {
-            try {
-                target.setPointerCapture(ev.pointerId);
-            } catch (e) {}
+            try { target.setPointerCapture(ev.pointerId); } catch (e) {}
         }
-
-        // Clean previous drag state if any
-        this.dragState = null;
 
         const startX = ev.clientX;
         const startY = ev.clientY;
         const now = Date.now();
 
-        // Manual double click detection
+        // Double click detection
         if (this.lastClick && (now - this.lastClick.time < 300) && (Math.abs(startX - this.lastClick.x) < 5) && (Math.abs(startY - this.lastClick.y) < 5)) {
              this.onDblClick(ev);
              this.lastClick = null;
@@ -186,16 +194,10 @@ export class FSMDiagram extends Component {
 
     onGlobalMouseMove = (ev) => {
         if (!this.dragState) return;
-        
-        // Prevent default to avoid scrolling/selection during drag
         ev.preventDefault();
 
-        const clientX = ev.clientX;
-        const clientY = ev.clientY;
-        const dx = clientX - this.dragState.startX;
-        const dy = clientY - this.dragState.startY;
-        
-        if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+        const dx = ev.clientX - this.dragState.startX;
+        const dy = ev.clientY - this.dragState.startY;
         
         if (this.dragState.type === 'pan') {
             this.state.transform = {
@@ -210,7 +212,7 @@ export class FSMDiagram extends Component {
                 if (this.state.selectedIds.has(node.id)) {
                     const initial = this.dragState.initialNodes.find(n => n.id === node.id);
                     if (initial) {
-                        return { ...node, x: initial.x + (dx / k), y: initial.y + (dy / k) };
+                        return { ...node, x: Math.round(initial.x + (dx / k)), y: Math.round(initial.y + (dy / k)) };
                     }
                 }
                 return node;
@@ -221,13 +223,8 @@ export class FSMDiagram extends Component {
             const x2 = (ev.clientX - rect.left - this.state.transform.x) / k;
             const y2 = (ev.clientY - rect.top - this.state.transform.y) / k;
 
-            this.state.newConnection = {
-                ...this.state.newConnection,
-                x2,
-                y2
-            };
+            this.state.newConnection = { ...this.state.newConnection, x2, y2 };
 
-            // Enhanced feedback: show target node highlighting
             const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
             const targetNodeEl = elements.find(el => el.closest('.o_fsm_node'))?.closest('.o_fsm_node');
             const targetNodeId = targetNodeEl?.dataset?.nodeId;
@@ -243,40 +240,33 @@ export class FSMDiagram extends Component {
     onGlobalMouseUp = (ev) => {
         const target = ev.target;
         if (target && target.releasePointerCapture && ev.pointerId !== undefined) {
-            try {
-                target.releasePointerCapture(ev.pointerId);
-            } catch (e) {}
+            try { target.releasePointerCapture(ev.pointerId); } catch (e) {}
         }
 
         if (!this.dragState) return;
         const dragType = this.dragState.type;
-        const dx = ev.clientX - this.dragState.startX;
-        const dy = ev.clientY - this.dragState.startY;
 
         if (dragType === 'node' && !this.isReadonly) {
+            const dx = ev.clientX - this.dragState.startX;
+            const dy = ev.clientY - this.dragState.startY;
             if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                this.takeSnapshot();
                 this.updateData();
             }
         } else if (dragType === 'connection' && !this.isReadonly) {
-            // Find port or node under pointer
             const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
-            
-            // Priority 1: Direct port hit
             let targetNodeId = elements.find(el => el.closest('.o_fsm_port_in'))?.closest('.o_fsm_port_in')?.dataset.nodeId;
             
-            // Priority 2: Node body hit (as per user request: "asumir su entrada")
             if (!targetNodeId) {
                 const targetNodeEl = elements.find(el => el.closest('.o_fsm_node'))?.closest('.o_fsm_node');
-                // Don't connect to start node or node without input
                 if (targetNodeEl && targetNodeEl.dataset.nodeId !== 'start_node') {
                     targetNodeId = targetNodeEl.dataset.nodeId;
                 }
             }
             
-            if (targetNodeId) {
-                if (targetNodeId !== this.state.newConnection.fromNode) {
-                    this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, targetNodeId);
-                }
+            if (targetNodeId && targetNodeId !== this.state.newConnection.fromNode) {
+                this.takeSnapshot();
+                this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, targetNodeId);
             }
             this.state.newConnection = null;
             this.state.connectingTargetId = null;
@@ -285,23 +275,25 @@ export class FSMDiagram extends Component {
     }
 
     onKeyDown = (ev) => {
-        if (ev.key === 'Delete' || ev.key === 'Backspace') {
-            if (this.isReadonly) return;
-            const selectedNodes = this.state.nodes.filter(n => this.state.selectedIds.has(n.id));
+        if ((ev.key === 'Delete' || ev.key === 'Backspace') && !this.isReadonly) {
+            const selectedNodes = this.state.nodes.filter(n => this.state.selectedIds.has(n.id) && n.type !== 'start');
             const selectedConns = this.state.connections.filter(c => this.state.selectedIds.has(c.id));
             
             if (selectedNodes.length > 0 || selectedConns.length > 0) {
-                // Remove connections associated with deleted nodes
+                this.takeSnapshot();
                 const nodeIds = new Set(selectedNodes.map(n => n.id));
                 this.state.connections = this.state.connections.filter(c => 
                     !this.state.selectedIds.has(c.id) && 
                     !nodeIds.has(c.fromNodeId) && 
                     !nodeIds.has(c.toNodeId)
                 );
-                this.state.nodes = this.state.nodes.filter(n => !this.state.selectedIds.has(n.id));
+                this.state.nodes = this.state.nodes.filter(n => !this.state.selectedIds.has(n.id) || n.type === 'start');
                 this.state.selectedIds.clear();
                 this.updateData();
             }
+        } else if (ev.key === 'z' && (ev.ctrlKey || ev.metaKey)) {
+            ev.preventDefault();
+            this.undo();
         }
     }
 
@@ -309,13 +301,6 @@ export class FSMDiagram extends Component {
         const target = ev.target;
         const nodeEl = target.closest('.o_fsm_node');
         const isBackground = !nodeEl && (target.closest('.o_fsm_viewport') || target.closest('.o_fsm_diagram_container') || target.tagName === 'svg' || target.tagName === 'path');
-
-            target: target.tagName,
-            classes: target.className,
-            isNode: !!nodeEl,
-            isBackground,
-            readonly: this.isReadonly
-        });
 
         if (nodeEl) {
             this.onNodeDblClick(nodeEl.dataset.nodeId);
@@ -332,7 +317,6 @@ export class FSMDiagram extends Component {
     loadData = (value) => {
         try {
             const data = (value && typeof value === 'string' && value.trim() !== "{}") ? JSON.parse(value) : (value || {});
-
             this.state.nodes = data.nodes || [];
             this.state.connections = data.connections || [];
 
@@ -343,7 +327,7 @@ export class FSMDiagram extends Component {
             }
             this.state.dataLoaded = true;
         } catch (e) {
-            this.state.nodes = [];
+            this.state.nodes = [{ id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null } }];
             this.state.connections = [];
             this.state.dataLoaded = true;
         }
@@ -356,12 +340,7 @@ export class FSMDiagram extends Component {
     }
 
     zoomToFit = () => {
-        if (!this.containerRef.el) {
-            return;
-        }
-        if (this.state.nodes.length === 0) {
-            return;
-        }
+        if (!this.containerRef.el || this.state.nodes.length === 0) return;
         const rect = this.containerRef.el.getBoundingClientRect();
         const padding = 50;
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -376,7 +355,7 @@ export class FSMDiagram extends Component {
         const graphHeight = maxY - minY;
         const scaleX = graphWidth > 0 ? (rect.width - padding * 2) / graphWidth : 1;
         const scaleY = graphHeight > 0 ? (rect.height - padding * 2) / graphHeight : 1;
-        const k = Math.min(Math.max(Math.min(scaleX, scaleY), 0.1), 1.5); // Constrain scale
+        const k = Math.min(Math.max(Math.min(scaleX, scaleY), 0.1), 1.5);
         this.state.transform = {
             k,
             x: (rect.width / 2) - (k * (minX + graphWidth / 2)),
@@ -391,46 +370,23 @@ export class FSMDiagram extends Component {
         const newScale = this.state.transform.k * (1 + delta * zoomIntensity);
         if (newScale >= 0.1 && newScale <= 3) {
             this.state.transform.k = newScale;
-        } else {
         }
     }
 
-    onNodeMove = ({ nodeId, dx, dy, end }) => {
-        if (this.isReadonly && !end) return;
-        if (end) {
-            if (!this.isReadonly) this.updateData();
-            return;
-        }
-        
-        // Use functional mapping for better reactiveness
-        this.state.nodes = this.state.nodes.map(node => {
-            if (this.state.selectedIds.has(node.id) || node.id === nodeId) {
-                return { ...node, x: node.x + dx, y: node.y + dy };
-            }
-            return node;
-        });
-    }
-    
     onNodeDblClick = (nodeId) => {
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
-            this.state.editingNode = Object.assign({}, node); 
-            if (node.outcomes) this.state.editingNode.outcomes = Object.assign({}, node.outcomes);
-            if (node.events) this.state.editingNode.events = (node.events || []).map(e => Object.assign({}, e));
-            
+            this.state.editingNode = JSON.parse(JSON.stringify(node));
             this.state.editingNodeType = node.type;
         }
     }
 
     onNodeCreate = (type, label, x, y) => {
         if (this.isReadonly) return;
+        this.takeSnapshot();
         const id = `node_${Date.now()}`;
         const newNode = { 
-            id, 
-            type, 
-            x, 
-            y, 
-            label: label || (type === 'state' ? 'New State' : 'New Transition'), 
+            id, type, x: Math.round(x), y: Math.round(y), label,
             height: type === 'start' ? 100 : (type === 'end' ? 80 : 50)
         };
         if (type === 'transition' || type === 'start') {
@@ -444,25 +400,14 @@ export class FSMDiagram extends Component {
     }
     
     onNodeResize = ({ nodeId, height }) => {
-        if (this.isReadonly) return;
         const nodeIndex = this.state.nodes.findIndex(n => n.id === nodeId);
         if (nodeIndex !== -1 && this.state.nodes[nodeIndex].height !== height) {
-            // Immutable update to trigger connection re-render
-            const newNodes = [...this.state.nodes];
-            newNodes[nodeIndex] = { ...newNodes[nodeIndex], height };
-            this.state.nodes = newNodes;
+            this.state.nodes[nodeIndex].height = height;
         }
-    }
-
-    onPortMouseDown = ({ event, portName, nodeId }) => {
-        // Obsolete, handled in onMouseDown for better event lifecycle management in Odoo 18
     }
 
     addConnection = (fromNodeId, fromPortName, toNodeId) => {
-        if (this.isReadonly) {
-            return;
-        }
-        // Remove existing connection from the same port if any
+        if (this.isReadonly) return;
         const filteredConns = this.state.connections.filter(c => !(c.fromNodeId === fromNodeId && c.fromPortName === fromPortName));
         const id = `conn_${fromNodeId}_${fromPortName}_${toNodeId}`;
         this.state.connections = [...filteredConns, { id, fromNodeId, fromPortName, toNodeId }];
@@ -491,20 +436,17 @@ export class FSMDiagram extends Component {
                 portIndex = Object.keys(fromNode.outcomes || {}).indexOf(conn.fromPortName);
             }
             if (portIndex === -1) portIndex = 0;
-
             x1 = fromNode.x + NODE_WIDTH;
             y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
         }
 
-        let x2 = toNode.x;
+        const x2 = toNode.x;
         let y2;
-
         if (toNode.type === 'start') {
             y2 = toNode.y + 50;
         } else if (toNode.type === 'end') {
-            y2 = toNode.y + 40; // 80 / 2
+            y2 = toNode.y + 40;
         } else {
-            // Target is center of the body vertically
             const portsCount = toNode.type === 'state' ? (toNode.events?.length || 0) : Object.keys(toNode.outcomes || {}).length;
             const bodyHeight = BODY_PADDING + (portsCount * PORT_HEIGHT) + BODY_PADDING;
             y2 = toNode.y + HEADER_HEIGHT + (bodyHeight / 2);
@@ -512,43 +454,54 @@ export class FSMDiagram extends Component {
 
         const dx = x2 - x1;
         const curveX = Math.max(Math.abs(dx) * 0.5, 50);
-
-        const path = `M ${Math.round(x1)} ${Math.round(y1)} C ${Math.round(x1 + curveX)} ${Math.round(y1)}, ${Math.round(x2 - curveX)} ${Math.round(y2)}, ${Math.round(x2)} ${Math.round(y2)}`;
-        return path;
+        return `M ${Math.round(x1)} ${Math.round(y1)} C ${Math.round(x1 + curveX)} ${Math.round(y1)}, ${Math.round(x2 - curveX)} ${Math.round(y2)}, ${Math.round(x2)} ${Math.round(y2)}`;
     }
     
-    showHelp = () => {
-        this.state.showHelp = true;
-    }
-    hideHelp = () => {
-        this.state.showHelp = false;
-    }
+    showHelp = () => { this.state.showHelp = true; }
+    hideHelp = () => { this.state.showHelp = false; }
+
     validateDiagram = () => {
-        this.notification.add("Validation not implemented yet.", { type: 'info' });
+        let errors = [];
+        const nodes = this.state.nodes;
+        const conns = this.state.connections;
+
+        nodes.forEach(node => {
+            if (node.type === 'start') {
+                const hasOut = conns.some(c => c.fromNodeId === node.id);
+                if (!hasOut) errors.push("El nodo de Inicio debe estar conectado.");
+            } else if (node.type === 'state') {
+                const hasIn = conns.some(c => c.toNodeId === node.id);
+                if (!hasIn) errors.push(`El estado "${node.label}" no tiene entradas.`);
+                (node.events || []).forEach(evt => {
+                    const connected = conns.some(c => c.fromNodeId === node.id && c.fromPortName === evt.name);
+                    if (!connected) errors.push(`El evento "${evt.name}" del estado "${node.label}" no está conectado.`);
+                });
+            } else if (node.type === 'transition') {
+                const hasIn = conns.some(c => c.toNodeId === node.id);
+                if (!hasIn) errors.push(`La transición "${node.label}" no tiene entradas.`);
+                Object.keys(node.outcomes || {}).forEach(out => {
+                    const connected = conns.some(c => c.fromNodeId === node.id && c.fromPortName === out);
+                    if (!connected) errors.push(`El resultado "${out}" de la transición "${node.label}" no está conectado.`);
+                });
+            }
+        });
+
+        if (errors.length > 0) {
+            this.notification.add(errors.join("\n"), { type: 'danger', sticky: true, title: "Errores de Validación" });
+        } else {
+            this.notification.add("¡Diagrama válido!", { type: 'success' });
+        }
     }
-    onNodeCreatorClose = () => {
-        this.state.isCreatingNode = false;
-    }
-    onEditorClose = () => {
-        this.state.editingNode = null;
-        this.state.editingNodeType = null;
-    }
+
+    onNodeCreatorClose = () => { this.state.isCreatingNode = false; }
+    onEditorClose = () => { this.state.editingNode = null; this.state.editingNodeType = null; }
     onEditorSave = (updatedNode) => {
         if (this.isReadonly) return;
-        const nodeIndex = this.state.nodes.findIndex(n => n.id === updatedNode.id);
-        if (nodeIndex !== -1) {
-            this.state.nodes = this.state.nodes.map(n => n.id === updatedNode.id ? { ...updatedNode } : n);
-        }
-        this.state.editingNode = null;
-        this.state.editingNodeType = null;
+        this.takeSnapshot();
+        this.state.nodes = this.state.nodes.map(n => n.id === updatedNode.id ? { ...updatedNode } : n);
+        this.onEditorClose();
         this.updateData();
     };
-
-    onFSMNodeClick = (ev) => {
-        // Simple click handled via onMouseDown for better event integration in Odoo 18
-    }
 }
 
-registry.category("fields").add("fsm_diagram", {
-    component: FSMDiagram,
-});
+registry.category("fields").add("fsm_diagram", { component: FSMDiagram });
