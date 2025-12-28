@@ -52,6 +52,7 @@ export class FSMNode extends Component {
         console.log("[FSMNode] triggering fsm_node_click on bus");
         this.env.bus.trigger('fsm_node_click', { event: ev, nodeId: this.props.node.id });
 
+        // Start dragging
         this.state.isDragging = true;
         this.dragStart = { x: ev.clientX, y: ev.clientY };
         console.log("[FSMNode] drag started at", this.dragStart);
@@ -75,8 +76,8 @@ export class FSMNode extends Component {
         const onMouseUp = (upEv) => {
             console.log("[FSMNode] onMouseUp - ending drag");
             this.state.isDragging = false;
-            window.removeEventListener("mousemove", onMouseMove, true);
-            window.removeEventListener("mouseup", onMouseUp, true);
+            window.removeEventListener("mousemove", onMouseMove, { capture: true });
+            window.removeEventListener("mouseup", onMouseUp, { capture: true });
             if (this.props.onMove) {
                 // Signal move end to save data
                 console.log("[FSMNode] calling onMove with end:true");
@@ -84,8 +85,8 @@ export class FSMNode extends Component {
             }
         };
 
-        window.addEventListener("mousemove", onMouseMove, true);
-        window.addEventListener("mouseup", onMouseUp, true);
+        window.addEventListener("mousemove", onMouseMove, { capture: true });
+        window.addEventListener("mouseup", onMouseUp, { capture: true });
     }
 
     onPortMouseDown(ev, portName) {

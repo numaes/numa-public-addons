@@ -24,7 +24,9 @@
                  t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
 
                 <!-- Connections Layer (SVG) -->
-                <svg class="o_fsm_connections">
+                <svg class="o_fsm_connections"
+                     t-on-mousedown="onMouseDown"
+                     t-on-dblclick="onDblClick">
                     <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
                         <path t-att-d="getCurvePath(conn)"
                               t-att-class="{
@@ -43,7 +45,9 @@
                 </svg>
 
                 <!-- Nodes Layer (HTML) -->
-                <div class="o_fsm_nodes">
+                <div class="o_fsm_nodes"
+                     t-on-mousedown="onMouseDown"
+                     t-on-dblclick="onDblClick">
                     <t t-foreach="state.nodes" t-as="node" t-key="node.id">
                         <FSMNode node="node"
                                  diagramScale="state.transform.k"
