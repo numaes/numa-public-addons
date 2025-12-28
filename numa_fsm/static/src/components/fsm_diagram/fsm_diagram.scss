@@ -57,15 +57,20 @@
     transition: stroke 0.2s, stroke-width 0.2s;
     cursor: pointer;
 
-    &:hover {
+    &:hover:not(.o_fsm_connection_selected) {
         stroke: #714B67;
-        stroke-width: 3;
+        stroke-width: 4;
     }
 }
 
 .o_fsm_connection_selected {
     stroke: #00A09D;
     stroke-width: 4;
+
+    &:hover {
+        stroke: #007a77;
+        stroke-width: 6;
+    }
 }
 
 .o_fsm_connection_hitbox {

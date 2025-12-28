@@ -47,6 +47,7 @@
                                 <FSMNode node="node"
                                          diagramScale="state.transform.k"
                                          selected="state.selectedIds.has(node.id)"
+                                         isConnecting="state.connectingTargetId === node.id"
                                          onPortMouseDown="onPortMouseDown"/>
                             </t>
                         </div>

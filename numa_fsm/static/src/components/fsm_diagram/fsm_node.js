@@ -8,6 +8,7 @@ export class FSMNode extends Component {
         node: { type: Object },
         diagramScale: { type: Number },
         selected: { type: Boolean, optional: true },
+        isConnecting: { type: Boolean, optional: true },
         onMove: { type: Function, optional: true },
         onResize: { type: Function, optional: true },
         onPortMouseDown: { type: Function, optional: true },

@@ -44,6 +44,7 @@ export class FSMDiagram extends Component {
             isDirty: false,
             selectedIds: new Set(),
             dataLoaded: false,
+            connectingTargetId: null,
         });
 
         this.dragState = null;
@@ -205,6 +206,17 @@ export class FSMDiagram extends Component {
                 x2: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
                 y2: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
             };
+
+            // Enhanced feedback: show target node highlighting
+            const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
+            const targetNodeEl = elements.find(el => el.closest('.o_fsm_node'))?.closest('.o_fsm_node');
+            const targetNodeId = targetNodeEl?.dataset.nodeId;
+            
+            if (targetNodeId && targetNodeId !== this.state.newConnection.fromNode) {
+                this.state.connectingTargetId = targetNodeId;
+            } else {
+                this.state.connectingTargetId = null;
+            }
         }
     }
 
@@ -227,23 +239,34 @@ export class FSMDiagram extends Component {
             }
         } else if (dragType === 'connection' && !this.isReadonly) {
             console.log("[FSMDiagram] onGlobalMouseUp: dragType connection, searching target port");
-            // Find port under pointer
+            // Find port or node under pointer
             const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
             console.log("[FSMDiagram] elements at point:", elements.map(el => `${el.tagName}.${el.className}`));
-            const targetPort = elements.find(el => el.closest('.o_fsm_port_in'))?.closest('.o_fsm_port_in');
             
-            if (targetPort) {
-                const toNodeId = targetPort.dataset.nodeId;
-                console.log("[FSMDiagram] targetPort found", { toNodeId });
-                if (toNodeId !== this.state.newConnection.fromNode) {
-                    this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, toNodeId);
+            // Priority 1: Direct port hit
+            let targetNodeId = elements.find(el => el.closest('.o_fsm_port_in'))?.closest('.o_fsm_port_in')?.dataset.nodeId;
+            
+            // Priority 2: Node body hit (as per user request: "asumir su entrada")
+            if (!targetNodeId) {
+                const targetNodeEl = elements.find(el => el.closest('.o_fsm_node'))?.closest('.o_fsm_node');
+                // Don't connect to start node or node without input
+                if (targetNodeEl && targetNodeEl.dataset.nodeId !== 'start_node') {
+                    targetNodeId = targetNodeEl.dataset.nodeId;
+                }
+            }
+            
+            if (targetNodeId) {
+                console.log("[FSMDiagram] target node found for connection", { targetNodeId });
+                if (targetNodeId !== this.state.newConnection.fromNode) {
+                    this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, targetNodeId);
                 } else {
                     console.log("[FSMDiagram] Connection to self blocked");
                 }
             } else {
-                console.log("[FSMDiagram] No targetPort found");
+                console.log("[FSMDiagram] No target found for connection");
             }
             this.state.newConnection = null;
+            this.state.connectingTargetId = null;
         }
         this.dragState = null;
     }

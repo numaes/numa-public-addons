@@ -17,6 +17,22 @@
     &.o_fsm_node_selected {
         border-color: #00A09D;
         box-shadow: 0 0 0 3px rgba(0, 160, 157, 0.4);
+
+        &:hover {
+            box-shadow: 0 0 0 4px rgba(0, 160, 157, 0.6);
+            border-color: #007a77;
+        }
+    }
+
+    &:hover:not(.o_fsm_node_selected) {
+        border-color: #714B67;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+
+    &.o_fsm_node_connecting {
+        border-color: #00A09D;
+        box-shadow: 0 0 15px rgba(0, 160, 157, 0.8);
+        transform: scale(1.02);
     }
 
     .o_fsm_node_header {
