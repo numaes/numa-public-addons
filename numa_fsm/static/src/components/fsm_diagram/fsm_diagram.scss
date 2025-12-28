@@ -5,6 +5,7 @@
     background-color: #f0f0f0;
     overflow: hidden;
     user-select: none;
+    touch-action: none;
     &:focus {
         outline: none;
     }

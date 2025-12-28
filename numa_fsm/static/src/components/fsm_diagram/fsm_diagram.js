@@ -69,17 +69,11 @@ export class FSMDiagram extends Component {
     }
 
     onMouseDown = (ev) => {
+        // Only handle primary button
+        if (ev.button !== 0) return;
+
         const target = ev.target;
         
-        // Capture pointer for robust dragging in Odoo 18
-        if (target.setPointerCapture && ev.pointerId !== undefined) {
-            try {
-                target.setPointerCapture(ev.pointerId);
-            } catch (e) {
-                // Ignore capture errors on non-element targets or invalid IDs
-            }
-        }
-
         const nodeEl = target.closest('.o_fsm_node');
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isEditor = target.closest('.o_fsm_editors');
@@ -88,12 +82,26 @@ export class FSMDiagram extends Component {
 
         if (isToolbar || isEditor || isPort) return;
         
+        // Prevent default browser behavior (text selection, etc)
+        ev.preventDefault();
+        // Stop propagation to avoid multiple handlers triggering
+        ev.stopPropagation();
+
+        // Capture pointer for robust dragging in Odoo 18
+        if (target.setPointerCapture && ev.pointerId !== undefined) {
+            try {
+                target.setPointerCapture(ev.pointerId);
+            } catch (e) {}
+        }
+
+        // Clean previous drag state if any
+        this.dragState = null;
+
         console.log("[FSMDiagram] onMouseDown", {
             target: target.tagName,
             classes: target.className,
             isNode: !!nodeEl,
-            button: ev.button,
-            existingDrag: !!this.dragState
+            button: ev.button
         });
 
         // Ensure container has focus
@@ -150,12 +158,15 @@ export class FSMDiagram extends Component {
     onGlobalMouseMove = (ev) => {
         if (!this.dragState) return;
         
+        // Prevent default to avoid scrolling/selection during drag
+        ev.preventDefault();
+
         const clientX = ev.clientX;
         const clientY = ev.clientY;
         const dx = clientX - this.dragState.startX;
         const dy = clientY - this.dragState.startY;
         
-        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+        if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
         
         if (this.dragState.type === 'pan') {
             this.state.transform = {
@@ -180,6 +191,13 @@ export class FSMDiagram extends Component {
     }
 
     onGlobalMouseUp = (ev) => {
+        const target = ev.target;
+        if (target && target.releasePointerCapture && ev.pointerId !== undefined) {
+            try {
+                target.releasePointerCapture(ev.pointerId);
+            } catch (e) {}
+        }
+
         if (!this.dragState) return;
         const dragType = this.dragState.type;
         const dx = ev.clientX - this.dragState.startX;
@@ -187,10 +205,6 @@ export class FSMDiagram extends Component {
 
         console.log("[FSMDiagram] onGlobalMouseUp", {
             type: dragType,
-            startX: this.dragState.startX,
-            startY: this.dragState.startY,
-            clientX: ev.clientX,
-            clientY: ev.clientY,
             dx,
             dy
         });
