@@ -93,7 +93,7 @@ export class FSMNode extends Component {
     }
 
     onNodeDblClick() {
-        console.log("[FSMNode] onNodeDblClick", { nodeId: this.props.node.id });
+        console.log("[FSMNode] onNodeDblClick start", { nodeId: this.props.node.id });
         if (this.props.onNodeDblClick) {
             console.log("[FSMNode] calling props.onNodeDblClick");
             this.props.onNodeDblClick(this.props.node.id);
