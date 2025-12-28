@@ -51,6 +51,7 @@ export class FSMNode extends Component {
 
         this.state.isDragging = true;
         this.dragStart = { x: ev.clientX, y: ev.clientY };
+        console.log("[FSMNode] drag started at", this.dragStart);
 
         const onMouseMove = (moveEv) => {
             if (this.state.isDragging) {
@@ -84,6 +85,7 @@ export class FSMNode extends Component {
     }
 
     onPortMouseDown(ev, portName) {
+        console.log("[FSMNode] onPortMouseDown", { portName, nodeId: this.props.node.id });
         ev.stopPropagation();
         if (this.props.onPortMouseDown) {
             this.props.onPortMouseDown({ event: ev, portName: portName, nodeId: this.props.node.id });
@@ -91,8 +93,12 @@ export class FSMNode extends Component {
     }
 
     onNodeDblClick() {
+        console.log("[FSMNode] onNodeDblClick", { nodeId: this.props.node.id });
         if (this.props.onNodeDblClick) {
+            console.log("[FSMNode] calling props.onNodeDblClick");
             this.props.onNodeDblClick(this.props.node.id);
+        } else {
+            console.warn("[FSMNode] props.onNodeDblClick is missing");
         }
     }
 }

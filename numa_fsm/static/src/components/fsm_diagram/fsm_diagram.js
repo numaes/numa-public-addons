@@ -21,32 +21,46 @@ export class FSMDiagram extends Component {
     get isReadonly() {
         // In Odoo 18, the record mode is the most reliable way to check if we can edit.
         // props.readonly might be true even if we are in edit mode in some contexts.
-        const recordMode = this.props.record?.mode; // 'readonly', 'edit', 'create'
+        const record = this.props.record;
+        const recordMode = record?.mode; // 'readonly', 'edit', 'create'
         const propsReadonly = this.props.readonly;
-        const recordIsReadonly = this.props.record?.isReadonly;
+        const recordIsReadonly = record?.isReadonly;
 
-        console.log("[FSMDiagram] isReadonly check:", {
-            propsReadonly,
-            recordMode,
-            recordIsReadonly,
-            resId: this.props.record?.resId
-        });
+        const result = (() => {
+            // Priority 1: record.mode (Explicitly check for edit/create)
+            if (recordMode === 'edit' || recordMode === 'create') {
+                return false;
+            }
+            if (recordMode === 'readonly') {
+                return true;
+            }
 
-        // Priority 1: record.mode (Explicitly check for edit/create)
-        if (recordMode === 'edit' || recordMode === 'create') {
+            // Priority 2: record.isReadonly property (Standard Odoo 18 property)
+            if (recordIsReadonly !== undefined) {
+                return recordIsReadonly;
+            }
+
+            // Priority 3: props.readonly (Fallback to what the view says)
+            // BUG FIX: If it's a fsm.definition and we have a resId, we are likely in edit/create
+            // and props.readonly might be a false positive from Odoo's field wrapper.
+            if (record?.resModel === 'fsm.definition' && propsReadonly === true) {
+                // If it's fsm.definition, we usually want to edit it unless explicitly readonly.
+                // However, let's be careful. If recordMode is undefined, we might be in an unexpected state.
+                // Let's check if we have an id.
+                if (record?.resId) {
+                    // It's an existing record.
+                    return false; 
+                }
+            }
+
+            if (propsReadonly !== undefined) {
+                return propsReadonly;
+            }
+
             return false;
-        }
-        if (recordMode === 'readonly') {
-            return true;
-        }
+        })();
 
-        // Priority 2: props.readonly (Fallback to what the view says)
-        if (propsReadonly !== undefined) {
-            return propsReadonly;
-        }
-
-        // Priority 3: record.isReadonly property
-        return recordIsReadonly ?? false;
+        return result;
     }
 
     setup() {
@@ -79,10 +93,7 @@ export class FSMDiagram extends Component {
 
         onMounted(() => {
             this.env.bus.addEventListener('fsm_node_click', this.onFSMNodeClick.bind(this));
-            // Always add window listeners, but check isReadonly inside the handlers if needed
-            // Actually, for better UX, we only add them if we expect to be able to edit
-            // But sometimes the initial state is readonly and then changes to edit
-            // In Odoo 18, it's better to add them and check state inside.
+            
             window.addEventListener("mousemove", this.onMouseMove);
             window.addEventListener("mouseup", this.onMouseUp);
             window.addEventListener("keydown", this.onKeyDown);
@@ -107,17 +118,14 @@ export class FSMDiagram extends Component {
     }
 
     showHelp = () => {
-        console.log("[FSMDiagram] showHelp called");
         this.state.showHelp = true;
     }
 
     hideHelp = () => {
-        console.log("[FSMDiagram] hideHelp called");
         this.state.showHelp = false;
     }
 
     loadData(value) {
-        console.log("[FSMDiagram] loadData called with value:", value);
         if (!value || (typeof value === 'object' && Object.keys(value).length === 0) || value === "{}") {
             this.state.nodes = [{
                 id: 'start_node',
@@ -125,7 +133,7 @@ export class FSMDiagram extends Component {
                 x: 100,
                 y: 100,
                 label: 'Inicio',
-                height: 50,
+                height: 100, // Increased height for start node
                 outcomes: { '__default__': null }
             }];
             this.state.connections = [];
@@ -144,9 +152,15 @@ export class FSMDiagram extends Component {
                     x: 100,
                     y: 100,
                     label: 'Inicio',
-                    height: 50,
+                    height: 100, // Increased height for start node
                     outcomes: { '__default__': null }
                 }];
+            } else {
+                // Ensure start node has correct height if it's there
+                const startNode = this.state.nodes.find(n => n.type === 'start');
+                if (startNode && (!startNode.height || startNode.height < 100)) {
+                    startNode.height = 100;
+                }
             }
             
             this.state.dataLoaded = true;
@@ -173,9 +187,7 @@ export class FSMDiagram extends Component {
 
     updateData() {
         const isReadOnlyState = this.isReadonly;
-        console.log("[FSMDiagram] updateData called", { readonly: isReadOnlyState });
         if (isReadOnlyState) {
-            console.log("[FSMDiagram] updateData - BLOCKED because readonly");
             return;
         }
         const data = {
@@ -183,7 +195,6 @@ export class FSMDiagram extends Component {
             connections: this.state.connections,
         };
         const value = JSON.stringify(data);
-        console.log("[FSMDiagram] updateData - updating record with value length:", value.length);
         if (this.props.record && this.props.record.update) {
             this.props.record.update({ [this.props.name]: value });
         } else if (this.props.update) {
@@ -219,13 +230,11 @@ export class FSMDiagram extends Component {
     }
 
     onFSMNodeClick({ detail }) {
-        console.log("[FSMDiagram] onFSMNodeClick detail:", { nodeId: detail.nodeId });
         this.onObjectClick(detail.event, detail.nodeId);
     }
 
     onKeyDown = (ev) => {
         const isReadOnlyState = this.isReadonly;
-        console.log("[FSMDiagram] onKeyDown called", { key: ev.key, readonly: isReadOnlyState });
         if (isReadOnlyState) return;
         
         // Don't trigger if focus is in an input/textarea
@@ -251,9 +260,7 @@ export class FSMDiagram extends Component {
 
     undo() {
         const isReadOnlyState = this.isReadonly;
-        console.log("[FSMDiagram] undo called", { historyLength: this.history.length, readonly: isReadOnlyState });
         if (isReadOnlyState) {
-            console.log("[FSMDiagram] undo - BLOCKED because readonly");
             return;
         }
         if (this.history.length > 1) {
@@ -273,7 +280,6 @@ export class FSMDiagram extends Component {
     }
 
     onObjectClick(ev, id) {
-        const isReadOnlyState = this.isReadonly;
         ev.stopPropagation();
         
         if (ev.shiftKey) {
@@ -283,18 +289,14 @@ export class FSMDiagram extends Component {
                 this.state.selectedIds.add(id);
             }
         } else {
-            if (!this.state.selectedIds.has(id)) {
-                this.state.selectedIds.clear();
-                this.state.selectedIds.add(id);
-            }
+            this.state.selectedIds.clear();
+            this.state.selectedIds.add(id);
         }
     }
 
     deleteSelected() {
         const isReadOnlyState = this.isReadonly;
-        console.log("[FSMDiagram] deleteSelected called", { selectedCount: this.state.selectedIds.size, readonly: isReadOnlyState });
         if (isReadOnlyState) {
-            console.log("[FSMDiagram] deleteSelected - BLOCKED because readonly");
             return;
         }
         if (this.state.selectedIds.size === 0) return;
@@ -319,19 +321,28 @@ export class FSMDiagram extends Component {
     onMouseDown(ev) {
         const isReadOnlyState = this.isReadonly;
         const target = ev.target;
-        const isBackground = target.classList.contains('o_fsm_diagram_container') || 
-                           target.classList.contains('o_fsm_viewport') || 
-                           target.classList.contains('o_fsm_connections') ||
-                           target.classList.contains('o_fsm_nodes') ||
-                           target.tagName === 'svg';
+        
+        // Background elements that should trigger pan or clear selection
+        const isToolbar = target.closest('.o_fsm_diagram_toolbar');
+        const isNode = target.closest('.o_fsm_node');
+        const isConnection = target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'));
 
-        if (ev.button === 0 && isBackground) {
-            if (!ev.shiftKey) {
-                this.state.selectedIds.clear();
+        const isBackground = !isToolbar && !isNode && !isConnection;
+
+        if (ev.button === 0) {
+            if (isBackground) {
+                if (!ev.shiftKey) {
+                    this.state.selectedIds.clear();
+                }
+                // Pan is allowed even in readonly mode
+                this.state.isPanning = true;
+                this.dragStart = { x: ev.clientX, y: ev.clientY };
+                
+                // Set focus to the container to receive keyboard events
+                if (this.containerRef.el) {
+                    this.containerRef.el.focus();
+                }
             }
-            // Pan is allowed even in readonly mode
-            this.state.isPanning = true;
-            this.dragStart = { x: ev.clientX, y: ev.clientY };
         }
     }
 
@@ -357,7 +368,6 @@ export class FSMDiagram extends Component {
 
     onMouseUp = (ev) => {
         const isReadOnlyState = this.isReadonly;
-        console.log("[FSMDiagram] onMouseUp called", { isPanning: this.state.isPanning, hasNewConn: !!this.state.newConnection, readonly: isReadOnlyState });
         if (this.state.isPanning) {
             this.state.isPanning = false;
         }
@@ -368,8 +378,6 @@ export class FSMDiagram extends Component {
                 if (toNodeId !== this.state.newConnection.fromNode) {
                      this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, toNodeId);
                 }
-            } else if (targetPort && isReadOnlyState) {
-                console.log("[FSMDiagram] ignoring connection creation because readonly");
             }
             this.state.newConnection = null;
         }
@@ -380,6 +388,7 @@ export class FSMDiagram extends Component {
         const zoomIntensity = 0.1;
         const delta = ev.deltaY < 0 ? 1 : -1;
         const newScale = this.state.transform.k + (delta * zoomIntensity);
+        console.log("[FSMDiagram] onWheel", { delta, newScale });
         if (newScale >= 0.1 && newScale <= 3) {
             this.state.transform.k = newScale;
         }
@@ -393,9 +402,22 @@ export class FSMDiagram extends Component {
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isNode = target.closest('.o_fsm_node');
         const isConnection = target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'));
-        
-        if (!isToolbar && !isNode && !isConnection) {
+
+        const isBackground = !isToolbar && !isNode && !isConnection;
+
+        console.log("[FSMDiagram] onDblClick", {
+            readonly: isReadOnlyState,
+            isToolbar: !!isToolbar,
+            isNode: !!isNode,
+            isConnection: !!isConnection,
+            isBackground,
+            target: target.tagName,
+            classList: Array.from(target.classList)
+        });
+
+        if (isBackground) {
             if (isReadOnlyState) {
+                console.log("[FSMDiagram] onDblClick - BLOCKED because readonly");
                 return;
             }
             const rect = this.containerRef.el.getBoundingClientRect();
@@ -403,6 +425,7 @@ export class FSMDiagram extends Component {
                 x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
                 y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
             };
+            console.log("[FSMDiagram] onDblClick - opening node creator at", this.state.creatorPos);
             this.state.isCreatingNode = true;
         }
     }
@@ -425,31 +448,20 @@ export class FSMDiagram extends Component {
 
     onNodeDblClick(nodeId) {
         const isReadOnlyState = this.isReadonly;
-        console.log("[FSMDiagram] onNodeDblClick called", { nodeId, isReadOnlyState });
         const node = this.state.nodes.find(n => n.id === nodeId);
         
         if (node) {
             if (node.type === 'end') {
-                console.log("[FSMDiagram] onNodeDblClick - ignoring end node");
                 return;
             }
-            this.state.editingNode = node;
+            this.state.editingNode = { ...node }; // Create a copy to avoid direct mutation
             this.state.editingNodeType = node.type;
-            console.log("[FSMDiagram] setting editing state:", { 
-                type: node.type, 
-                nodeId: node.id,
-                isReadonly: isReadOnlyState 
-            });
-        } else {
-            console.error("[FSMDiagram] onNodeDblClick - node not found:", nodeId);
         }
     }
 
     onEditorSave(updatedNode) {
         const isReadOnlyState = this.isReadonly;
-        console.log("[FSMDiagram] onEditorSave called", { nodeId: updatedNode.id, readonly: isReadOnlyState });
         if (isReadOnlyState) {
-            console.log("[FSMDiagram] onEditorSave - BLOCKED because readonly");
             this.state.editingNode = null;
             this.state.editingNodeType = null;
             return;
@@ -478,6 +490,11 @@ export class FSMDiagram extends Component {
             return;
         }
 
+        // We allow moving nodes visually even in readonly, 
+        // but it won't be saved (blocked in updateData/end).
+        // Actually, let's block it if readonly to avoid confusion, 
+        // but maybe the user wants to reorganize for viewing.
+        // Given the logs, let's be strict if isReadOnlyState is really true.
         if (isReadOnlyState) {
             return;
         }
@@ -487,13 +504,15 @@ export class FSMDiagram extends Component {
             this.state.nodes.filter(n => this.state.selectedIds.has(n.id)) : 
             [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
 
-        for (const node of nodesToMove) {
-            node.x += dx;
-            node.y += dy;
+        if (nodesToMove.length > 0) {
+            for (const node of nodesToMove) {
+                node.x += dx;
+                node.y += dy;
+            }
+            
+            // Trigger re-render of connections
+            this.state.nodes = [...this.state.nodes];
         }
-        
-        // Trigger re-render of connections
-        this.state.nodes = [...this.state.nodes];
     }
 
     onNodeResize({ nodeId, height }) {
@@ -526,6 +545,7 @@ export class FSMDiagram extends Component {
 
     onNodeCreate(type, label, x, y) {
         const isReadOnlyState = this.isReadonly;
+        console.log("[FSMDiagram] onNodeCreate", { type, label, x, y, readonly: isReadOnlyState });
         if (isReadOnlyState) {
             return;
         }
@@ -579,6 +599,11 @@ export class FSMDiagram extends Component {
         const connectedInputs = new Set(this.state.connections.map(c => c.toNodeId));
         const connectedOutputs = new Set(this.state.connections.map(c => `${c.fromNodeId}-${c.fromPortName}`));
 
+        console.log("[FSMDiagram] validateDiagram", { 
+            nodes: this.state.nodes.length, 
+            connections: this.state.connections.length 
+        });
+
         for (const node of this.state.nodes) {
             const outputs = node.type === 'state' ? (node.events || []).map(e => e.name) : Object.keys(node.outcomes || {});
             
@@ -601,8 +626,10 @@ export class FSMDiagram extends Component {
         }
 
         if (errors.length > 0) {
+            console.log("[FSMDiagram] validateDiagram - errors found", errors);
             this.notification.add(errors.join('\n'), { type: 'danger', title: 'Errores de Validación' });
         } else {
+            console.log("[FSMDiagram] validateDiagram - success");
             this.notification.add("¡El diagrama es válido!", { type: 'success' });
         }
     }
