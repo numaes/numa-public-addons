@@ -4,7 +4,8 @@
         <div class="o_fsm_diagram_container overflow-hidden"
              t-ref="container"
              tabindex="0"
-             t-on-wheel="onWheel">
+             t-on-wheel="onWheel"
+             t-on-dblclick="onDblClick">
             <div class="o_fsm_diagram_toolbar d-flex gap-2">
                 <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
                     <i class="fa fa-expand"/>
