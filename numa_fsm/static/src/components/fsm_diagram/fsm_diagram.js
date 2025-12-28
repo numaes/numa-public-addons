@@ -462,12 +462,19 @@ export class FSMDiagram extends Component {
     }
 
     onNodeDblClick(nodeId) {
+        console.log("[FSMDiagram] onNodeDblClick start", { nodeId });
         const node = this.state.nodes.find(n => n.id === nodeId);
         
         if (node) {
+            console.log("[FSMDiagram] onNodeDblClick - node found", JSON.parse(JSON.stringify(node)));
             // Use reactive assignment to ensure OWL detects the change
-            this.state.editingNode = Object.assign({}, node); 
+            // DEEP CLONE to avoid any proxy issues or direct mutations
+            this.state.editingNode = JSON.parse(JSON.stringify(node)); 
             this.state.editingNodeType = node.type;
+            console.log("[FSMDiagram] onNodeDblClick - state updated", {
+                editingNode: JSON.parse(JSON.stringify(this.state.editingNode)),
+                editingNodeType: this.state.editingNodeType
+            });
         } else {
             console.warn("[FSMDiagram] Node not found for dblclick:", nodeId);
         }

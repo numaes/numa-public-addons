@@ -62,23 +62,23 @@
             </div>
 
             <div class="o_fsm_editors">
+                <t t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'">
+                    <FSMTransitionEditor node="state.editingNode"
+                                         readonly="isReadonly"
+                                         onSave.bind="onEditorSave"
+                                         onClose.bind="onEditorClose"/>
+                </t>
+                <t t-if="state.editingNodeType === 'state'">
+                    <FSMStateEditor node="state.editingNode"
+                                    readonly="isReadonly"
+                                    onSave.bind="onEditorSave"
+                                    onClose.bind="onEditorClose"/>
+                </t>
                 <FSMNodeCreator t-if="state.isCreatingNode"
                                 x="state.creatorPos.x"
                                 y="state.creatorPos.y"
                                 onSave.bind="onNodeCreate"
                                 onClose.bind="onNodeCreatorClose"/>
-
-                <FSMTransitionEditor t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'"
-                                     node="state.editingNode"
-                                     readonly="isReadonly"
-                                     onSave.bind="onEditorSave"
-                                     onClose.bind="onEditorClose"/>
-
-                <FSMStateEditor t-if="state.editingNodeType === 'state'"
-                                node="state.editingNode"
-                                readonly="isReadonly"
-                                onSave.bind="onEditorSave"
-                                onClose.bind="onEditorClose"/>
             </div>
 
             <!-- Help Modal -->

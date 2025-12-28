@@ -90,9 +90,9 @@
 .o_fsm_editors {
     position: absolute;
     top: 0;
-    left: 0;
-    width: 0;
-    height: 0;
+    right: 0;
+    width: 400px;
+    height: 100%;
     z-index: 1000;
     pointer-events: none;
     & > * {
