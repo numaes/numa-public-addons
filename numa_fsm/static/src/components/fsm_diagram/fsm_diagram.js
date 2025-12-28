@@ -54,9 +54,8 @@ export class FSMDiagram extends Component {
         });
 
         this.dragMode = null; // 'pan' or 'drag_node'
-        this.lastClickInfo = { time: 0, target: null }; // For double-click detection
 
-        // Use the standard Odoo useDraggable hook
+        // Use the standard Odoo useDraggable hook for drag operations only
         useDraggable({
             ref: this.containerRef,
             elements: ".o_fsm_node, .o_fsm_viewport", // Make nodes and viewport draggable
@@ -76,19 +75,13 @@ export class FSMDiagram extends Component {
             await this.loadData(this.props.value);
         });
 
-        // This useEffect was causing double load, removed as per previous analysis.
-        // Data should only be loaded once on onWillStart or when props.value explicitly changes.
-        // If props.value changes, loadData will be called.
-        useEffect(() => {
-            console.log("[FSMDiagram] useEffect for props.value: Value changed, reloading data.");
-            this.loadData(this.props.value);
-        }, () => [this.props.value]);
-
+        // Removed useEffect for props.value as it caused double load.
+        // Data should only be loaded once on onWillStart or explicitly when needed.
 
         onMounted(() => {
             console.log("[FSMDiagram] onMounted: Component is now in the DOM.");
-            if (this.state.dataLoaded && this.state.nodes.length > 0) {
-                console.log("[FSMDiagram] onMounted: Data loaded, scheduling zoomToFit.");
+            if (this.state.nodes.length > 0) { // Check nodes.length directly
+                console.log("[FSMDiagram] onMounted: Nodes found, scheduling zoomToFit.");
                 setTimeout(() => {
                     if (this.containerRef.el) {
                         this.zoomToFit();
@@ -97,30 +90,13 @@ export class FSMDiagram extends Component {
                     }
                 }, 100);
             } else {
-                console.log("[FSMDiagram] onMounted: No data or nodes to zoom to fit.");
+                console.log("[FSMDiagram] onMounted: No nodes to zoom to fit.");
             }
         });
     }
 
     onDragStart = ({ originalEvent, element }) => {
         console.log(`[FSMDiagram] onDragStart: Fired on element '${element.className}'. Original event:`, originalEvent);
-
-        // --- Double-click detection logic ---
-        const now = Date.now();
-        if (element === this.lastClickInfo.target && (now - this.lastClickInfo.time < 300)) {
-            console.log("[FSMDiagram] onDragStart: Double click detected!");
-            if (element.classList.contains('o_fsm_node')) {
-                console.log(`[FSMDiagram] onDragStart: Double click on node ${element.dataset.nodeId}.`);
-                this.onNodeDblClick(element.dataset.nodeId);
-            } else if (element.classList.contains('o_fsm_viewport')) {
-                console.log("[FSMDiagram] onDragStart: Double click on background (viewport).");
-                this.onBackgroundDblClick(originalEvent);
-            }
-            this.lastClickInfo = { time: 0, target: null }; // Reset for next click sequence
-            return false; // Prevent drag from starting for a double-click
-        }
-        this.lastClickInfo = { time: now, target: element };
-        // --- End double-click detection logic ---
 
         this.dragMode = null; // Reset drag mode
         if (element.classList.contains('o_fsm_node')) {
@@ -173,6 +149,51 @@ export class FSMDiagram extends Component {
         console.log("[FSMDiagram] onDragEnd: dragMode reset to null.");
     }
 
+    onClick = (ev) => {
+        console.log("[FSMDiagram] onClick: Event fired.", { target: ev.target });
+        const target = ev.target;
+        const isNode = target.closest('.o_fsm_node');
+        const isBackground = target.classList.contains('o_fsm_viewport');
+
+        if (isNode) {
+            const nodeId = isNode.dataset.nodeId;
+            console.log(`[FSMDiagram] onClick: Detected on node ${nodeId}.`);
+            if (!ev.shiftKey && !this.state.selectedIds.has(nodeId)) {
+                this.state.selectedIds.clear();
+            }
+            if (this.state.selectedIds.has(nodeId)) {
+                this.state.selectedIds.delete(nodeId);
+            } else {
+                this.state.selectedIds.add(nodeId);
+            }
+        } else if (isBackground) {
+            console.log("[FSMDiagram] onClick: Detected on background.");
+            if (!ev.shiftKey) {
+                this.state.selectedIds.clear();
+            }
+        }
+    }
+
+    onDblClick = (ev) => {
+        console.log("[FSMDiagram] onDblClick: Event fired.", { target: ev.target });
+        const target = ev.target;
+        const isNode = target.closest('.o_fsm_node');
+        const isBackground = target.classList.contains('o_fsm_viewport');
+
+        if (isNode) {
+            console.log(`[FSMDiagram] onDblClick: Detected on node ${isNode.dataset.nodeId}.`);
+            this.onNodeDblClick(isNode.dataset.nodeId);
+        } else if (isBackground && !this.isReadonly) {
+            console.log("[FSMDiagram] onDblClick: Detected on background.");
+            const rect = this.containerRef.el.getBoundingClientRect();
+            this.state.creatorPos = {
+                x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
+                y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
+            };
+            this.state.isCreatingNode = true;
+        }
+    }
+    
     loadData = (value) => {
         console.log("[FSMDiagram] loadData: Received value:", value);
         try {
@@ -185,11 +206,11 @@ export class FSMDiagram extends Component {
             if (this.state.nodes.length === 0) {
                 console.log("[FSMDiagram] loadData: No nodes found, creating initial start node.");
                 this.state.nodes.push({
-                    id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', height: 100, outcomes: { '__default__': null }
+                    id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null }
                 });
             }
             this.state.dataLoaded = true;
-            console.log(`[FSMDiagram] loadData: Finished. State has ${this.state.nodes.length} nodes. dataLoaded: ${this.state.dataLoaded}.`);
+            console.log(`[FSMDiagram] loadData: Finished. State has ${this.state.nodes.length} nodes. dataLoaded: ${this.state.dataLoaded}`);
         } catch (e) {
             console.error("[FSMDiagram] loadData: Error parsing FSM data:", e);
             this.state.nodes = [];
@@ -225,7 +246,7 @@ export class FSMDiagram extends Component {
         this.state.nodes.forEach(n => {
             minX = Math.min(minX, n.x);
             minY = Math.min(minY, n.y);
-            maxX = Math.max(maxX, n.x + 180); // Assuming nodeWidth is 180
+            maxX = Math.max(maxX, n.x + 180);
             maxY = Math.max(maxY, n.y + (n.height || 50));
         });
         const graphWidth = maxX - minX;
@@ -253,25 +274,6 @@ export class FSMDiagram extends Component {
         } else {
             console.log("[FSMDiagram] onWheel: Scale out of bounds, not applying.");
         }
-    }
-
-    onBackgroundDblClick = (ev) => {
-        console.log("[FSMDiagram] onBackgroundDblClick: Event fired.", { target: ev.target });
-        if (this.isReadonly) {
-            console.log("[FSMDiagram] onBackgroundDblClick: Readonly mode, skipping.");
-            return;
-        }
-        if (!this.containerRef.el) {
-            console.warn("[FSMDiagram] onBackgroundDblClick: containerRef.el is null.");
-            return;
-        }
-        const rect = this.containerRef.el.getBoundingClientRect();
-        this.state.creatorPos = {
-            x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
-            y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
-        };
-        this.state.isCreatingNode = true;
-        console.log("[FSMDiagram] onBackgroundDblClick: Opening node creator at", this.state.creatorPos);
     }
 
     onNodeMove = ({ nodeId, dx, dy, end }) => {
@@ -333,18 +335,11 @@ export class FSMDiagram extends Component {
     }
     
     onNodeResize = ({ nodeId, height }) => {
-        console.log(`[FSMDiagram] onNodeResize: Node ${nodeId} resized to height ${height}.`);
-        if (this.isReadonly) {
-            console.log("[FSMDiagram] onNodeResize: Readonly mode, skipping resize.");
-            return;
-        }
+        if (this.isReadonly) return;
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node && node.height !== height) {
             node.height = height;
             this.updateData();
-            console.log(`[FSMDiagram] onNodeResize: Node ${nodeId} height updated and data saved.`);
-        } else if (!node) {
-            console.warn(`[FSMDiagram] onNodeResize: Node ${nodeId} not found.`);
         }
     }
 

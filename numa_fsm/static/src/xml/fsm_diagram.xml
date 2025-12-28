@@ -19,7 +19,9 @@
 
             <div t-if="state.dataLoaded"
                  class="o_fsm_viewport"
-                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
+                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'"
+                 t-on-click="onClick"
+                 t-on-dblclick="onDblClick">
 
                 <!-- Connections Layer (SVG) -->
                 <svg class="o_fsm_connections">
