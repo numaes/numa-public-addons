@@ -287,9 +287,17 @@ export class FSMDiagram extends Component {
     
     loadData = (value) => {
         try {
-            const data = (value && typeof value === 'string' && value.trim() !== "{}") ? JSON.parse(value) : (value || {});
-            this.state.nodes = data.nodes || [];
-            this.state.connections = data.connections || [];
+            let data = value;
+            if (typeof value === 'string') {
+                if (value.trim() === "" || value.trim() === "{}") {
+                    data = {};
+                } else {
+                    data = JSON.parse(value);
+                }
+            }
+            
+            this.state.nodes = data?.nodes || [];
+            this.state.connections = data?.connections || [];
 
             if (this.state.nodes.length === 0) {
                 this.state.nodes.push({
@@ -307,7 +315,12 @@ export class FSMDiagram extends Component {
     updateData = () => {
         if (this.isReadonly) return;
         const data = { nodes: this.state.nodes, connections: this.state.connections };
-        this.props.record.update({ [this.props.name]: JSON.stringify(data) });
+        const jsonVal = JSON.stringify(data);
+        this.props.record.update({ [this.props.name]: jsonVal });
+        // En Odoo 18, marcamos el campo como sucio para asegurar que se guarde al presionar "Guardar"
+        if (this.props.record.model && this.props.record.model.root) {
+            this.props.record.model.root.isDirty = true;
+        }
     }
 
     zoomToFit = () => {

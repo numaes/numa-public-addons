@@ -50,15 +50,21 @@ class FSMDefinition(models.Model):
 
     def compile_ui_schema_to_definition(self):
         for record in self:
+            _logger.info("Compiling UI Schema for FSM Definition %s", record.id)
             if not record.json_ui_schema:
                 record.json_compiled_definition = '{}'
                 continue
             
             try:
-                ui_data = record.json_ui_schema if isinstance(record.json_ui_schema, dict) else json.loads(record.json_ui_schema or '{}')
+                ui_data = record.json_ui_schema
+                if isinstance(ui_data, str):
+                    ui_data = json.loads(ui_data or '{}')
+                
                 nodes = ui_data.get('nodes', [])
                 connections = ui_data.get('connections', [])
-            except (json.JSONDecodeError, TypeError):
+                _logger.debug("Nodes count: %s, Connections count: %s", len(nodes), len(connections))
+            except (json.JSONDecodeError, TypeError) as e:
+                _logger.error("Error decoding json_ui_schema for record %s: %s", record.id, str(e))
                 continue
 
             compiled_nodes = {}
@@ -85,20 +91,25 @@ class FSMDefinition(models.Model):
                 if not from_node: continue
                 
                 if from_node['type'] in ['start', 'transition']:
-                    if conn.get('fromPortName') in from_node['outcomes']:
-                        from_node['outcomes'][conn.get('fromPortName')] = conn.get('toNodeId')
+                    # Outcomes initialization for safety
+                    if 'outcomes' not in from_node:
+                        from_node['outcomes'] = {}
+                    
+                    from_node['outcomes'][conn.get('fromPortName')] = conn.get('toNodeId')
                 
                 elif from_node['type'] == 'state':
+                    # Events initialization for safety
+                    if 'events' not in from_node:
+                        from_node['events'] = []
+                        
                     event = next((e for e in from_node['events'] if e.get('name') == conn.get('fromPortName')), None)
                     if event:
                         event['target_transition_id'] = conn.get('toNodeId')
 
-            all_state_events = {}
-
             compiled_definition = {
                 'start_node_id': start_node_id,
                 'nodes': compiled_nodes,
-                'all_state_events': all_state_events,
+                'all_state_events': {},
             }
             
             record.json_compiled_definition = json.dumps(compiled_definition, indent=2)
