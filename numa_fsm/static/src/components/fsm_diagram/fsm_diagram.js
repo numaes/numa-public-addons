@@ -57,9 +57,6 @@ export class FSMDiagram extends Component {
             nodes: [],
             connections: [],
             transform: { x: 0, y: 0, k: 1 },
-            isPanning: false,
-            isDraggingNode: false,
-            draggingNodeId: null,
             editingNode: null,
             editingNodeType: null,
             newConnection: null,
@@ -71,9 +68,12 @@ export class FSMDiagram extends Component {
             dataLoaded: false,
         });
 
+        this.isPanning = false;
+        this.isDraggingNode = false;
+        this.draggingNodeId = null;
+        this.dragStart = { x: 0, y: 0 };
         this.history = [];
         this.nodeWidth = 180;
-
         this.initialData = null;
 
         onWillStart(async () => {
@@ -342,8 +342,8 @@ export class FSMDiagram extends Component {
             isPort: !!isPort,
             isConnection: !!isConnection,
             button: ev.button,
-            isPanning: this.state.isPanning,
-            isDraggingNode: this.state.isDraggingNode
+            isPanning: this.isPanning,
+            isDraggingNode: this.isDraggingNode
         });
 
         if (ev.button === 0) {
@@ -364,8 +364,8 @@ export class FSMDiagram extends Component {
             if (isNode) {
                 const nodeId = isNode.dataset.nodeId || isNode.getAttribute('data-node-id');
                 console.log("[FSMDiagram] starting node drag", { nodeId });
-                this.state.isDraggingNode = true;
-                this.state.draggingNodeId = nodeId;
+                this.isDraggingNode = true;
+                this.draggingNodeId = nodeId;
                 this.dragStart = { x: ev.clientX, y: ev.clientY };
                 
                 // Trigger selection
@@ -393,7 +393,7 @@ export class FSMDiagram extends Component {
                     this.state.selectedIds.clear();
                 }
                 console.log("[FSMDiagram] starting pan at", { x: ev.clientX, y: ev.clientY });
-                this.state.isPanning = true;
+                this.isPanning = true;
                 this.dragStart = { x: ev.clientX, y: ev.clientY };
                 
                 // Focusing the container manually to capture keyboard events
@@ -405,11 +405,11 @@ export class FSMDiagram extends Component {
     }
 
     onMouseMove = (ev) => {
-        if (this.state.isPanning || this.state.isDraggingNode) {
+        if (this.isPanning || this.isDraggingNode) {
             ev.preventDefault();
         }
-        console.log("[FSMDiagram] onMouseMove", { isPanning: this.state.isPanning, isDraggingNode: this.state.isDraggingNode });
-        if (this.state.isPanning) {
+        console.log("[FSMDiagram] onMouseMove", { isPanning: this.isPanning, isDraggingNode: this.isDraggingNode });
+        if (this.isPanning) {
             const dx = ev.clientX - this.dragStart.x;
             const dy = ev.clientY - this.dragStart.y;
             console.log("[FSMDiagram] onMouseMove - Panning", { dx, dy });
@@ -419,13 +419,13 @@ export class FSMDiagram extends Component {
                 this.dragStart = { x: ev.clientX, y: ev.clientY };
             }
         }
-        if (this.state.isDraggingNode) {
+        if (this.isDraggingNode) {
             const dx = ev.clientX - this.dragStart.x;
             const dy = ev.clientY - this.dragStart.y;
             console.log("[FSMDiagram] onMouseMove - Dragging", { dx, dy });
             if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
                 this.onNodeMove({
-                    nodeId: this.state.draggingNodeId,
+                    nodeId: this.draggingNodeId,
                     dx: dx / this.state.transform.k,
                     dy: dy / this.state.transform.k,
                     end: false
@@ -449,28 +449,28 @@ export class FSMDiagram extends Component {
         const isSelectedConnection = ev.target.closest('path.o_fsm_connection') || ev.target.closest('path.o_fsm_connection_hitbox');
 
         console.log("[FSMDiagram] onMouseUp", { 
-            isPanning: this.state.isPanning, 
-            isDraggingNode: this.state.isDraggingNode,
+            isPanning: this.isPanning, 
+            isDraggingNode: this.isDraggingNode,
             hasNewConn: !!this.state.newConnection,
             readonly: this.isReadonly,
             isSelectedConnection: !!isSelectedConnection
         });
 
-        if (this.state.isPanning) {
+        if (this.isPanning) {
             console.log("[FSMDiagram] onMouseUp - stopping pan");
-            this.state.isPanning = false;
+            this.isPanning = false;
         }
 
-        if (this.state.isDraggingNode) {
-            console.log("[FSMDiagram] onMouseUp - stopping node drag", { nodeId: this.state.draggingNodeId });
+        if (this.isDraggingNode) {
+            console.log("[FSMDiagram] onMouseUp - stopping node drag", { nodeId: this.draggingNodeId });
             this.onNodeMove({
-                nodeId: this.state.draggingNodeId,
+                nodeId: this.draggingNodeId,
                 dx: 0,
                 dy: 0,
                 end: true
             });
-            this.state.isDraggingNode = false;
-            this.state.draggingNodeId = null;
+            this.isDraggingNode = false;
+            this.draggingNodeId = null;
         }
 
         if (this.state.newConnection) {
