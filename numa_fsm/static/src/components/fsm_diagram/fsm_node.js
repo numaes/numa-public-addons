@@ -47,12 +47,15 @@ export class FSMNode extends Component {
             return;
         }
 
+        console.log("[FSMNode] onNodeMouseDown", { nodeId: this.props.node.id, button: ev.button });
+
         // STOP propagation to prevent FSMDiagram from seeing this as a background click
         ev.stopPropagation();
 
         // Manual double click detection
         const now = Date.now();
         if (this.lastClickTime && (now - this.lastClickTime < 300)) {
+            console.log("[FSMNode] double click detected", { nodeId: this.props.node.id });
             this.onNodeDblClick();
             this.lastClickTime = 0;
             return;
@@ -63,6 +66,7 @@ export class FSMNode extends Component {
         this.env.bus.trigger('fsm_node_click', { event: ev, nodeId: this.props.node.id });
 
         // Start dragging
+        console.log("[FSMNode] drag started", { nodeId: this.props.node.id });
         this.state.isDragging = true;
         this.dragStart = { x: ev.clientX, y: ev.clientY };
 
@@ -83,9 +87,10 @@ export class FSMNode extends Component {
         };
 
         const onMouseUp = (upEv) => {
+            console.log("[FSMNode] onMouseUp", { nodeId: this.props.node.id });
             this.state.isDragging = false;
-            window.removeEventListener("mousemove", onMouseMove);
-            window.removeEventListener("mouseup", onMouseUp);
+            window.removeEventListener("mousemove", onMouseMove, { capture: true });
+            window.removeEventListener("mouseup", onMouseUp, { capture: true });
             if (this.props.onMove) {
                 // Signal move end to save data
                 this.props.onMove({ nodeId: this.props.node.id, dx: 0, dy: 0, end: true });
