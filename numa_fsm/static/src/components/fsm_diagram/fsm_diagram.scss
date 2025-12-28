@@ -35,6 +35,12 @@
     user-select: none;
     pointer-events: none;
     & > * {
+        pointer-events: none;
+    }
+    .o_fsm_connections, .o_fsm_nodes {
+        pointer-events: none;
+    }
+    .o_fsm_node, .o_fsm_connection_group, .o_fsm_port {
         pointer-events: all;
     }
 }
@@ -44,13 +50,15 @@
     width: 100%;
     height: 100%;
     pointer-events: none;
+    z-index: 5;
 
     path {
-        pointer-events: all;
+        pointer-events: stroke;
     }
 }
 
 .o_fsm_node {
+    z-index: 10;
     &:hover, &.o_fsm_node_hover {
         border-color: #714B67 !important;
         box-shadow: 0 4px 12px rgba(113, 75, 103, 0.3) !important;
@@ -59,7 +67,7 @@
 }
 
 .o_fsm_connection_group {
-    pointer-events: all;
+    pointer-events: stroke;
     cursor: pointer;
 
     &:hover {

@@ -44,10 +44,12 @@
         font-weight: bold;
         border-bottom: 1px solid #ccc;
         box-sizing: border-box;
+        pointer-events: none;
     }
 
     .o_fsm_node_body {
         padding: 10px;
+        pointer-events: none;
     }
 
     .o_fsm_port {
@@ -143,10 +145,12 @@
     justify-content: center;
     background-color: #d4edda;
     border: 2px solid #28a745;
+    z-index: 10;
 
     &:hover, &.o_fsm_node_hover {
         border-color: #714B67 !important;
         box-shadow: 0 0 15px rgba(113, 75, 103, 0.5) !important;
+        z-index: 100;
     }
     .o_fsm_node_header {
         border-bottom: none;
@@ -157,6 +161,7 @@
         width: 100%;
         font-size: 14px;
         color: #1e7e34;
+        pointer-events: none;
     }
 
     .o_fsm_node_body {
@@ -164,6 +169,7 @@
         width: 100%;
         display: flex;
         justify-content: center;
+        pointer-events: none;
     }
 
     .o_fsm_port_out_wrapper {

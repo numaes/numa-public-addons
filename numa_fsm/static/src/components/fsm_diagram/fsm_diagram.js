@@ -29,7 +29,6 @@ export class FSMDiagram extends Component {
     }
 
     setup() {
-        console.log("[FSMDiagram] setup props:", this.props);
         this.notification = useService("notification");
         this.containerRef = useRef("container");
         this.state = useState({
@@ -55,7 +54,6 @@ export class FSMDiagram extends Component {
         });
 
         onMounted(() => {
-            console.log("[FSMDiagram] onMounted");
             if (this.state.nodes.length > 0) {
                 setTimeout(() => {
                     if (this.containerRef.el) {
@@ -74,11 +72,7 @@ export class FSMDiagram extends Component {
         // Clear hover state on click
         this.state.hoveredId = null;
         
-        // Only handle primary button
-        if (ev.button !== 0) return;
-
         const target = ev.target;
-        
         const nodeEl = target.closest('.o_fsm_node');
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isEditor = target.closest('.o_fsm_editors');
@@ -86,6 +80,9 @@ export class FSMDiagram extends Component {
         const isConnection = target.closest('.o_fsm_connection_hitbox') || target.closest('.o_fsm_connection');
 
         if (isToolbar || isEditor) return;
+
+        // Only handle primary button
+        if (ev.button !== 0) return;
         
         // Ensure container has focus for keyboard events
         if (this.containerRef.el) {
@@ -93,7 +90,6 @@ export class FSMDiagram extends Component {
         }
 
         if (isPort) {
-            console.log("[FSMDiagram] Port clicked, starting connection", { nodeId: isPort.dataset.nodeId, port: isPort.dataset.portName });
             ev.preventDefault();
             ev.stopPropagation();
             if (target.setPointerCapture && ev.pointerId !== undefined) {
@@ -102,10 +98,28 @@ export class FSMDiagram extends Component {
             const nodeId = isPort.dataset.nodeId;
             const portName = isPort.dataset.portName;
             
-            const rect = isPort.getBoundingClientRect();
-            const diagramRect = this.containerRef.el.getBoundingClientRect();
-            const x1 = (rect.left - diagramRect.left + rect.width / 2 - this.state.transform.x) / this.state.transform.k;
-            const y1 = (rect.top - diagramRect.top + rect.height / 2 - this.state.transform.y) / this.state.transform.k;
+            const fromNode = this.state.nodes.find(n => n.id === nodeId);
+            const HEADER_HEIGHT = 30;
+            const BODY_PADDING = 10;
+            const PORT_HEIGHT = 20;
+            const NODE_WIDTH = 180;
+
+            let x1, y1;
+            if (fromNode.type === 'start') {
+                x1 = fromNode.x + 100;
+                y1 = fromNode.y + 50;
+            } else {
+                let portIndex = 0;
+                if (fromNode.type === 'state') {
+                    portIndex = (fromNode.events || []).findIndex(e => e.name === portName);
+                } else {
+                    portIndex = Object.keys(fromNode.outcomes || {}).indexOf(portName);
+                }
+                if (portIndex === -1) portIndex = 0;
+
+                x1 = fromNode.x + NODE_WIDTH;
+                y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
+            }
 
             this.state.newConnection = { fromNode: nodeId, fromPort: portName, x1, y1, x2: x1, y2: y1 };
             this.dragState = { type: 'connection', startX: ev.clientX, startY: ev.clientY };
@@ -201,13 +215,16 @@ export class FSMDiagram extends Component {
                 }
                 return node;
             });
-            this.state.isDirty = !this.state.isDirty;
         } else if (this.dragState.type === 'connection') {
             const rect = this.containerRef.el.getBoundingClientRect();
+            const k = this.state.transform.k;
+            const x2 = (ev.clientX - rect.left - this.state.transform.x) / k;
+            const y2 = (ev.clientY - rect.top - this.state.transform.y) / k;
+
             this.state.newConnection = {
                 ...this.state.newConnection,
-                x2: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
-                y2: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
+                x2,
+                y2
             };
 
             // Enhanced feedback: show target node highlighting
@@ -243,7 +260,6 @@ export class FSMDiagram extends Component {
         } else if (dragType === 'connection' && !this.isReadonly) {
             // Find port or node under pointer
             const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
-            console.log("[FSMDiagram] elements at point:", elements.map(el => `${el.tagName}.${el.className}`));
             
             // Priority 1: Direct port hit
             let targetNodeId = elements.find(el => el.closest('.o_fsm_port_in'))?.closest('.o_fsm_port_in')?.dataset.nodeId;
@@ -258,14 +274,9 @@ export class FSMDiagram extends Component {
             }
             
             if (targetNodeId) {
-                console.log("[FSMDiagram] target node found for connection", { targetNodeId });
                 if (targetNodeId !== this.state.newConnection.fromNode) {
                     this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, targetNodeId);
-                } else {
-                    console.log("[FSMDiagram] Connection to self blocked");
                 }
-            } else {
-                console.log("[FSMDiagram] No target found for connection");
             }
             this.state.newConnection = null;
             this.state.connectingTargetId = null;
@@ -280,7 +291,6 @@ export class FSMDiagram extends Component {
             const selectedConns = this.state.connections.filter(c => this.state.selectedIds.has(c.id));
             
             if (selectedNodes.length > 0 || selectedConns.length > 0) {
-                console.log("[FSMDiagram] Deleting selected elements");
                 // Remove connections associated with deleted nodes
                 const nodeIds = new Set(selectedNodes.map(n => n.id));
                 this.state.connections = this.state.connections.filter(c => 
@@ -300,7 +310,6 @@ export class FSMDiagram extends Component {
         const nodeEl = target.closest('.o_fsm_node');
         const isBackground = !nodeEl && (target.closest('.o_fsm_viewport') || target.closest('.o_fsm_diagram_container') || target.tagName === 'svg' || target.tagName === 'path');
 
-        console.log("[FSMDiagram] onDblClick", {
             target: target.tagName,
             classes: target.className,
             isNode: !!nodeEl,
@@ -309,7 +318,6 @@ export class FSMDiagram extends Component {
         });
 
         if (nodeEl) {
-            console.log("[FSMDiagram] Node double clicked, opening editor:", nodeEl.dataset.nodeId);
             this.onNodeDblClick(nodeEl.dataset.nodeId);
         } else if (isBackground && !this.isReadonly) {
             const rect = this.containerRef.el.getBoundingClientRect();
@@ -317,7 +325,6 @@ export class FSMDiagram extends Component {
                 x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
                 y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
             };
-            console.log("[FSMDiagram] opening node creator at", this.state.creatorPos);
             this.state.isCreatingNode = true;
         }
     }
@@ -336,7 +343,6 @@ export class FSMDiagram extends Component {
             }
             this.state.dataLoaded = true;
         } catch (e) {
-            console.error("[FSMDiagram] loadData: Error parsing FSM data:", e);
             this.state.nodes = [];
             this.state.connections = [];
             this.state.dataLoaded = true;
@@ -350,13 +356,10 @@ export class FSMDiagram extends Component {
     }
 
     zoomToFit = () => {
-        console.log("[FSMDiagram] zoomToFit: Calculating optimal zoom and pan.");
         if (!this.containerRef.el) {
-            console.warn("[FSMDiagram] zoomToFit: containerRef.el is null.");
             return;
         }
         if (this.state.nodes.length === 0) {
-            console.log("[FSMDiagram] zoomToFit: No nodes to fit.");
             return;
         }
         const rect = this.containerRef.el.getBoundingClientRect();
@@ -379,7 +382,6 @@ export class FSMDiagram extends Component {
             x: (rect.width / 2) - (k * (minX + graphWidth / 2)),
             y: (rect.height / 2) - (k * (minY + graphHeight / 2)),
         };
-        console.log("[FSMDiagram] zoomToFit: New transform:", this.state.transform);
     }
 
     onWheel = (ev) => {
@@ -407,7 +409,6 @@ export class FSMDiagram extends Component {
             }
             return node;
         });
-        this.state.isDirty = !this.state.isDirty; // Trigger re-render for connections
     }
     
     onNodeDblClick = (nodeId) => {
@@ -415,7 +416,7 @@ export class FSMDiagram extends Component {
         if (node) {
             this.state.editingNode = Object.assign({}, node); 
             if (node.outcomes) this.state.editingNode.outcomes = Object.assign({}, node.outcomes);
-            if (node.events) this.state.editingNode.events = node.events.map(e => Object.assign({}, e));
+            if (node.events) this.state.editingNode.events = (node.events || []).map(e => Object.assign({}, e));
             
             this.state.editingNodeType = node.type;
         }
@@ -450,7 +451,6 @@ export class FSMDiagram extends Component {
             const newNodes = [...this.state.nodes];
             newNodes[nodeIndex] = { ...newNodes[nodeIndex], height };
             this.state.nodes = newNodes;
-            // Removed updateData from here to avoid recursive Odoo updates during render
         }
     }
 
@@ -459,9 +459,7 @@ export class FSMDiagram extends Component {
     }
 
     addConnection = (fromNodeId, fromPortName, toNodeId) => {
-        console.log(`[FSMDiagram] addConnection: Adding connection from ${fromNodeId}:${fromPortName} to ${toNodeId}.`);
         if (this.isReadonly) {
-            console.log("[FSMDiagram] addConnection: Readonly mode, skipping.");
             return;
         }
         // Remove existing connection from the same port if any
@@ -469,7 +467,6 @@ export class FSMDiagram extends Component {
         const id = `conn_${fromNodeId}_${fromPortName}_${toNodeId}`;
         this.state.connections = [...filteredConns, { id, fromNodeId, fromPortName, toNodeId }];
         this.updateData();
-        console.log(`[FSMDiagram] addConnection: Connection ${id} added. Total connections: ${this.state.connections.length}.`);
     }
 
     getCurvePath = (conn) => {
@@ -477,9 +474,13 @@ export class FSMDiagram extends Component {
         const toNode = this.state.nodes.find(n => n.id === conn.toNodeId);
         if (!fromNode || !toNode) return '';
 
+        const HEADER_HEIGHT = 30;
+        const BODY_PADDING = 10;
+        const PORT_HEIGHT = 20;
+        const NODE_WIDTH = 180;
+
         let x1, y1;
         if (fromNode.type === 'start') {
-            // Start node is circular 100x100, port is exactly at the middle right
             x1 = fromNode.x + 100;
             y1 = fromNode.y + 50;
         } else {
@@ -491,70 +492,44 @@ export class FSMDiagram extends Component {
             }
             if (portIndex === -1) portIndex = 0;
 
-            const headerHeight = 30;
-            const bodyPaddingTop = 10;
-            const portWrapperHeight = 20;
-            
-        // Precise calculation: header (30) + padding (10) + wrapper offset (index * 20) + wrapper center (10)
-            const yOffset = headerHeight + bodyPaddingTop + (portIndex * portWrapperHeight) + (portWrapperHeight / 2);
-
-            x1 = fromNode.x + 180;
-            y1 = fromNode.y + yOffset;
+            x1 = fromNode.x + NODE_WIDTH;
+            y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
         }
 
-        // Destination: port is at left: -6px, top: 50%
-        // We target the exact left edge of the node (x2) and vertical center
-        const x2 = toNode.x; 
-        let nodeHeight = toNode.height;
-        
-        // Fallback for default heights if onNodeResize hasn't triggered yet
-        if (!nodeHeight) {
-            if (toNode.type === 'start') nodeHeight = 100;
-            else if (toNode.type === 'end') nodeHeight = 80;
-            else {
-                const portsCount = toNode.type === 'state' ? (toNode.events?.length || 0) : Object.keys(toNode.outcomes || {}).length;
-                nodeHeight = 30 + 10 + (portsCount * 20) + 10; // header + padding-top + ports + padding-bottom
-            }
+        let x2 = toNode.x;
+        let y2;
+
+        if (toNode.type === 'start') {
+            y2 = toNode.y + 50;
+        } else if (toNode.type === 'end') {
+            y2 = toNode.y + 40; // 80 / 2
+        } else {
+            // Target is center of the body vertically
+            const portsCount = toNode.type === 'state' ? (toNode.events?.length || 0) : Object.keys(toNode.outcomes || {}).length;
+            const bodyHeight = BODY_PADDING + (portsCount * PORT_HEIGHT) + BODY_PADDING;
+            y2 = toNode.y + HEADER_HEIGHT + (bodyHeight / 2);
         }
-        
-        // The port is at top: 50%, which includes the border.
-        // For circular nodes, the center is exactly height/2.
-        // For rectangular nodes, the header is 30px, body padding 10px + 10px.
-        // If the node has many outcomes, the center shifts.
-        const y2 = toNode.y + (nodeHeight / 2);
 
         const dx = x2 - x1;
         const curveX = Math.max(Math.abs(dx) * 0.5, 50);
 
-        // Integer rounding for pixel-perfect alignment on non-retina screens/standard zooms
-        const rx1 = Math.round(x1);
-        const ry1 = Math.round(y1);
-        const rx2 = Math.round(x2);
-        const ry2 = Math.round(y2);
-        const rcX = Math.round(curveX);
-
-        const path = `M ${rx1} ${ry1} C ${rx1 + rcX} ${ry1}, ${rx2 - rcX} ${ry2}, ${rx2} ${ry2}`;
+        const path = `M ${Math.round(x1)} ${Math.round(y1)} C ${Math.round(x1 + curveX)} ${Math.round(y1)}, ${Math.round(x2 - curveX)} ${Math.round(y2)}, ${Math.round(x2)} ${Math.round(y2)}`;
         return path;
     }
     
     showHelp = () => {
-        console.log("[FSMDiagram] showHelp: Showing help modal.");
         this.state.showHelp = true;
     }
     hideHelp = () => {
-        console.log("[FSMDiagram] hideHelp: Hiding help modal.");
         this.state.showHelp = false;
     }
     validateDiagram = () => {
-        console.log("[FSMDiagram] validateDiagram: Triggered.");
         this.notification.add("Validation not implemented yet.", { type: 'info' });
     }
     onNodeCreatorClose = () => {
-        console.log("[FSMDiagram] onNodeCreatorClose: Closing node creator.");
         this.state.isCreatingNode = false;
     }
     onEditorClose = () => {
-        console.log("[FSMDiagram] onEditorClose: Closing editor.");
         this.state.editingNode = null;
         this.state.editingNodeType = null;
     }

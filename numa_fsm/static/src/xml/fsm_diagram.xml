@@ -38,13 +38,11 @@
                                           }"/>
                                     <path t-att-d="getCurvePath(conn)"
                                           t-att-data-conn-id="conn.id"
-                                          class="o_fsm_connection_hitbox"
-                                          t-on-pointerenter="() => state.hoveredId = conn.id"
-                                          t-on-pointerleave="() => state.hoveredId = null"/>
+                                          class="o_fsm_connection_hitbox"/>
                                 </g>
                             </t>
                             <path t-if="state.newConnection"
-                                  t-att-d="`M ${state.newConnection.x1} ${state.newConnection.y1} L ${state.newConnection.x2} ${state.newConnection.y2}`"
+                                  t-att-d="`M ${Math.round(state.newConnection.x1)} ${Math.round(state.newConnection.y1)} L ${Math.round(state.newConnection.x2)} ${Math.round(state.newConnection.y2)}`"
                                   class="o_fsm_new_connection"/>
                         </svg>
 
