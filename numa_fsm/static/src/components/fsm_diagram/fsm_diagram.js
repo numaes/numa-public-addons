@@ -20,14 +20,22 @@ export class FSMDiagram extends Component {
 
     get isReadonly() {
         // In Odoo 18, the record mode is the most reliable way to check if we can edit.
-        // props.readonly might be true even if we are in edit mode in some contexts.
         const record = this.props.record;
         const recordMode = record?.mode; // 'readonly', 'edit', 'create'
         const propsReadonly = this.props.readonly;
         const recordIsReadonly = record?.isReadonly;
 
+        console.log("[FSMDiagram] isReadonly deep check:", {
+            recordMode,
+            recordIsReadonly,
+            propsReadonly,
+            resModel: record?.resModel,
+            resId: record?.resId,
+            record: record
+        });
+
         const result = (() => {
-            // Priority 1: record.mode (Explicitly check for edit/create)
+            // Priority 1: If we are in 'edit' or 'create' mode, we MUST NOT be readonly
             if (recordMode === 'edit' || recordMode === 'create') {
                 return false;
             }
@@ -35,24 +43,22 @@ export class FSMDiagram extends Component {
                 return true;
             }
 
-            // Priority 2: record.isReadonly property (Standard Odoo 18 property)
-            if (recordIsReadonly !== undefined) {
-                return recordIsReadonly;
-            }
-
-            // Priority 3: props.readonly (Fallback to what the view says)
-            // BUG FIX: If it's a fsm.definition and we have a resId, we are likely in edit/create
-            // and props.readonly might be a false positive from Odoo's field wrapper.
-            if (record?.resModel === 'fsm.definition' && propsReadonly === true) {
-                // If it's fsm.definition, we usually want to edit it unless explicitly readonly.
-                // However, let's be careful. If recordMode is undefined, we might be in an unexpected state.
-                // Let's check if we have an id.
-                if (record?.resId) {
-                    // It's an existing record.
+            // Priority 2: Special case for fsm.definition - usually editable if we are in a form
+            if (record?.resModel === 'fsm.definition') {
+                // If we have no mode, but we are in fsm.definition, check if it's a false positive
+                if (propsReadonly === true && recordMode === undefined) {
+                    // Try to guess based on other record properties if available
+                    // In Odoo 18, sometimes fields are marked readonly in the view but the record is editable
                     return false; 
                 }
             }
 
+            // Priority 3: record.isReadonly property
+            if (recordIsReadonly !== undefined) {
+                return recordIsReadonly;
+            }
+
+            // Fallback
             if (propsReadonly !== undefined) {
                 return propsReadonly;
             }
@@ -60,6 +66,7 @@ export class FSMDiagram extends Component {
             return false;
         })();
 
+        console.log("[FSMDiagram] isReadonly result:", result);
         return result;
     }
 
@@ -326,8 +333,15 @@ export class FSMDiagram extends Component {
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isNode = target.closest('.o_fsm_node');
         const isConnection = target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'));
-
         const isBackground = !isToolbar && !isNode && !isConnection;
+
+        console.log("[FSMDiagram] onMouseDown", {
+            readonly: isReadOnlyState,
+            target: target.tagName,
+            classList: Array.from(target.classList),
+            isBackground,
+            button: ev.button
+        });
 
         if (ev.button === 0) {
             if (isBackground) {
@@ -448,6 +462,7 @@ export class FSMDiagram extends Component {
 
     onNodeDblClick(nodeId) {
         const isReadOnlyState = this.isReadonly;
+        console.log("[FSMDiagram] onNodeDblClick", { nodeId, readonly: isReadOnlyState });
         const node = this.state.nodes.find(n => n.id === nodeId);
         
         if (node) {
@@ -456,6 +471,7 @@ export class FSMDiagram extends Component {
             }
             this.state.editingNode = { ...node }; // Create a copy to avoid direct mutation
             this.state.editingNodeType = node.type;
+            console.log("[FSMDiagram] opening editor for", node.type);
         }
     }
 
@@ -482,6 +498,8 @@ export class FSMDiagram extends Component {
     onNodeMove({ nodeId, dx, dy, end }) {
         const isReadOnlyState = this.isReadonly;
         
+        console.log("[FSMDiagram] onNodeMove", { nodeId, dx, dy, end, readonly: isReadOnlyState });
+
         if (end) {
             if (!isReadOnlyState) {
                 this.takeSnapshot();
@@ -491,13 +509,8 @@ export class FSMDiagram extends Component {
         }
 
         // We allow moving nodes visually even in readonly, 
-        // but it won't be saved (blocked in updateData/end).
-        // Actually, let's block it if readonly to avoid confusion, 
-        // but maybe the user wants to reorganize for viewing.
-        // Given the logs, let's be strict if isReadOnlyState is really true.
-        if (isReadOnlyState) {
-            return;
-        }
+        // so the user can reorganize for viewing.
+        // But it won't be saved (blocked in updateData/end).
 
         const isSelected = this.state.selectedIds.has(nodeId);
         const nodesToMove = isSelected ? 
