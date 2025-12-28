@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMDiagram" owl="1">
-        <div class="o_fsm_diagram_container"
+        <div class="o_fsm_diagram_container overflow-hidden"
              t-ref="container"
              tabindex="0"
-             t-on-mousedown="onMouseDown"
              t-on-wheel="onWheel"
              t-on-dblclick="onDblClick">
             <div class="o_fsm_diagram_toolbar d-flex gap-2">
@@ -27,14 +26,11 @@
                 <svg class="o_fsm_connections">
                     <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
                         <path t-att-d="getCurvePath(conn)"
-                              t-att-data-connection-id="conn.id"
                               t-att-class="{
                                   'o_fsm_connection': true,
                                   'o_fsm_connection_selected': state.selectedIds.has(conn.id)
                               }"/>
-                        <!-- Invisible wider path for easier clicking -->
                         <path t-att-d="getCurvePath(conn)"
-                              t-att-data-connection-id="conn.id"
                               class="o_fsm_connection_hitbox"/>
                     </t>
                     <path t-if="state.newConnection"
@@ -48,34 +44,29 @@
                         <FSMNode node="node"
                                  diagramScale="state.transform.k"
                                  selected="state.selectedIds.has(node.id)"
-                                 onMove.bind="onNodeMove"
-                                 onResize.bind="onNodeResize"
-                                 onPortMouseDown.bind="onPortMouseDown"
-                                 onNodeDblClick.bind="onNodeDblClick"/>
+                                 onMove="onNodeMove"
+                                 onResize="onNodeResize"
+                                 onPortMouseDown="onPortMouseDown"
+                                 onNodeDblClick="onNodeDblClick"/>
                     </t>
                 </div>
             </div>
 
-            <div class="o_fsm_editors">
-                <FSMNodeCreator t-if="state.isCreatingNode"
-                                x="state.creatorPos.x"
-                                y="state.creatorPos.y"
-                                onSave.bind="onNodeCreate"
-                                onClose.bind="onNodeCreatorClose"/>
+            <FSMNodeCreator t-if="state.isCreatingNode"
+                            x="state.creatorPos.x"
+                            y="state.creatorPos.y"
+                            onSave="onNodeCreate"
+                            onClose="onNodeCreatorClose"/>
 
-                <t t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'">
-                    <FSMTransitionEditor node="state.editingNode"
-                                         readonly="isReadonly"
-                                         onSave.bind="onEditorSave"
-                                         onClose.bind="onEditorClose"/>
-                </t>
-                <t t-if="state.editingNodeType === 'state'">
-                    <FSMStateEditor node="state.editingNode"
-                                    readonly="isReadonly"
-                                    onSave.bind="onEditorSave"
-                                    onClose.bind="onEditorClose"/>
-                </t>
-            </div>
+            <FSMTransitionEditor t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'"
+                                 node="state.editingNode"
+                                 onSave="onEditorSave"
+                                 onClose="onEditorClose"/>
+
+            <FSMStateEditor t-if="state.editingNodeType === 'state'"
+                            node="state.editingNode"
+                            onSave="onEditorSave"
+                            onClose="onEditorClose"/>
 
             <!-- Help Modal -->
             <div t-if="state.showHelp" class="o_fsm_help_modal" t-on-click="hideHelp">

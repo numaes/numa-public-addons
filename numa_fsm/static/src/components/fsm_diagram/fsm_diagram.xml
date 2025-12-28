@@ -4,9 +4,7 @@
         <div class="o_fsm_diagram_container overflow-hidden"
              t-ref="container"
              tabindex="0"
-             t-on-mousedown="onMouseDown"
-             t-on-wheel="onWheel"
-             t-on-dblclick="onDblClick">
+             t-on-wheel="onWheel">
             <div class="o_fsm_diagram_toolbar d-flex gap-2">
                 <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
                     <i class="fa fa-expand"/>
@@ -21,7 +19,8 @@
 
             <div t-if="state.dataLoaded"
                  class="o_fsm_viewport"
-                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
+                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'"
+                 t-on-dblclick="onDblClick">
 
                 <!-- Connections Layer (SVG) -->
                 <svg class="o_fsm_connections">
@@ -30,12 +29,9 @@
                               t-att-class="{
                                   'o_fsm_connection': true,
                                   'o_fsm_connection_selected': state.selectedIds.has(conn.id)
-                              }"
-                              t-on-mousedown.stop="(ev) => onObjectClick(ev, conn.id)"/>
-                        <!-- Invisible wider path for easier clicking -->
+                              }"/>
                         <path t-att-d="getCurvePath(conn)"
-                              class="o_fsm_connection_hitbox"
-                              t-on-mousedown.stop="(ev) => onObjectClick(ev, conn.id)"/>
+                              class="o_fsm_connection_hitbox"/>
                     </t>
                     <path t-if="state.newConnection"
                           t-att-d="`M ${state.newConnection.x1} ${state.newConnection.y1} L ${state.newConnection.x2} ${state.newConnection.y2}`"
@@ -48,10 +44,10 @@
                         <FSMNode node="node"
                                  diagramScale="state.transform.k"
                                  selected="state.selectedIds.has(node.id)"
-                                 onMove.bind="onNodeMove"
-                                 onResize.bind="onNodeResize"
-                                 onPortMouseDown.bind="onPortMouseDown"
-                                 onNodeDblClick.bind="onNodeDblClick"/>
+                                 onMove="onNodeMove"
+                                 onResize="onNodeResize"
+                                 onPortMouseDown="onPortMouseDown"
+                                 onNodeDblClick="onNodeDblClick"/>
                     </t>
                 </div>
             </div>
@@ -59,18 +55,18 @@
             <FSMNodeCreator t-if="state.isCreatingNode"
                             x="state.creatorPos.x"
                             y="state.creatorPos.y"
-                            onSave.bind="onNodeCreate"
-                            onClose.bind="onNodeCreatorClose"/>
+                            onSave="onNodeCreate"
+                            onClose="onNodeCreatorClose"/>
 
             <FSMTransitionEditor t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'"
                                  node="state.editingNode"
-                                 onSave.bind="onEditorSave"
-                                 onClose.bind="onEditorClose"/>
+                                 onSave="onEditorSave"
+                                 onClose="onEditorClose"/>
 
             <FSMStateEditor t-if="state.editingNodeType === 'state'"
                             node="state.editingNode"
-                            onSave.bind="onEditorSave"
-                            onClose.bind="onEditorClose"/>
+                            onSave="onEditorSave"
+                            onClose="onEditorClose"/>
 
             <!-- Help Modal -->
             <div t-if="state.showHelp" class="o_fsm_help_modal" t-on-click="hideHelp">

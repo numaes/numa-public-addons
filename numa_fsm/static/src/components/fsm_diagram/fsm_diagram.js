@@ -1,9 +1,10 @@
 /** @odoo-module **/
 
-import { Component, useState, useRef, onMounted, onWillStart, onWillUnmount, useEffect, useExternalListener } from "@odoo/owl";
+import { Component, useState, useRef, onMounted, onWillStart, useEffect } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { useService } from "@web/core/utils/hooks";
+import { useDraggable } from "@web/core/utils/draggable";
 import { FSMNode } from "./fsm_node";
 import { FSMTransitionEditor } from "./fsm_transition_editor";
 import { FSMStateEditor } from "./fsm_state_editor";
@@ -12,45 +13,24 @@ import { FSMNodeCreator } from "./fsm_node_creator";
 export class FSMDiagram extends Component {
     static template = "numa_fsm.FSMDiagram";
     static components = { FSMNode, FSMTransitionEditor, FSMStateEditor, FSMNodeCreator };
-    static props = { 
+    static props = {
         ...standardFieldProps,
-        activeNodeId: { type: String, optional: true },
         readonly: { type: Boolean, optional: true },
     };
 
     get isReadonly() {
-        // ULTIMATE BYPASS FOR ODOO 18
         const record = this.props.record;
-        
-        const check = {
-            result: false,
-            propsReadonly: this.props.readonly,
-            recordMode: record?.mode,
-            recordIsReadonly: record?.isReadonly,
-            resModel: record?.resModel,
-            resId: record?.resId,
-        };
-
-        // If explicitly set to readonly in the record mode, honor it
         if (record?.mode === 'readonly') {
-            check.result = true;
-        } else {
-            // FORCE FALSE for specific models unless record is explicitly readonly
-            const forceEditableModels = ['fsm.definition', 'conversation.bot'];
-            if (record?.resModel && forceEditableModels.includes(record.resModel)) {
-                check.result = false;
-            } else {
-                // Default to false if we are not sure, to allow interaction
-                check.result = false;
-            }
+            return true;
         }
-
-        console.log("[FSMDiagram] isReadonly deep check:", check);
-        return check.result;
+        const forceEditableModels = ['fsm.definition', 'conversation.bot'];
+        if (record?.resModel && forceEditableModels.includes(record.resModel)) {
+            return false;
+        }
+        return this.props.readonly;
     }
 
     setup() {
-        console.log("[FSMDiagram] setup start");
         this.notification = useService("notification");
         this.containerRef = useRef("container");
         this.state = useState({
@@ -60,626 +40,255 @@ export class FSMDiagram extends Component {
             editingNode: null,
             editingNodeType: null,
             newConnection: null,
-            showHelp: false,
             isCreatingNode: false,
             creatorPos: { x: 0, y: 0 },
             isDirty: false,
             selectedIds: new Set(),
-            dataLoaded: false,
         });
 
-        this.isPanning = false;
-        this.isDraggingNode = false;
-        this.draggingNodeId = null;
-        this.dragStart = { x: 0, y: 0 };
-        this.history = [];
-        this.nodeWidth = 180;
-        this.initialData = null;
+        this.dragMode = null;
 
-        onWillStart(async () => {
-            this.loadData(this.props.value);
+        useDraggable({
+            ref: this.containerRef,
+            elements: ".o_fsm_node, .o_fsm_viewport",
+            ignore: ".o_fsm_port, button, input, .o_fsm_node_header, .o_fsm_node_body",
+            onDragStart: this.onDragStart,
+            onDrag: this.onDrag,
+            onDragEnd: this.onDragEnd,
+            enable: () => !this.isReadonly,
         });
 
-        useEffect(() => {
-            this.loadData(this.props.value);
-        }, () => [this.props.value]);
-
-        useExternalListener(window, "keydown", this.onKeyDown);
+        onWillStart(async () => this.loadData(this.props.value));
+        useEffect(() => this.loadData(this.props.value), () => [this.props.value]);
 
         onMounted(() => {
-            console.log("[FSMDiagram] onMounted start");
-            this.env.bus.addEventListener('fsm_node_click', this.onFSMNodeClick);
-            window.addEventListener("mousemove", this.onMouseMove);
-            window.addEventListener("mouseup", this.onMouseUp);
-
             if (this.state.nodes.length > 0) {
                 setTimeout(() => {
-                    console.log("[FSMDiagram] onMounted - zoomToFit delayed call");
-                    if (this.containerRef.el) {
-                        this.zoomToFit();
-                    }
+                    if (this.containerRef.el) this.zoomToFit();
                 }, 100);
             }
-            console.log("[FSMDiagram] onMounted end");
         });
+    }
 
-        onWillUnmount(() => {
-            console.log("[FSMDiagram] onWillUnmount");
-            if (this._renderConnectionFrame) {
-                cancelAnimationFrame(this._renderConnectionFrame);
+    onDragStart = ({ originalEvent, element }) => {
+        this.dragMode = null;
+        if (element.classList.contains('o_fsm_node')) {
+            this.dragMode = 'drag_node';
+            const nodeId = element.dataset.nodeId;
+            if (!originalEvent.shiftKey && !this.state.selectedIds.has(nodeId)) {
+                this.state.selectedIds.clear();
             }
-            this.env.bus.removeEventListener('fsm_node_click', this.onFSMNodeClick);
-            window.removeEventListener("mousemove", this.onMouseMove);
-            window.removeEventListener("mouseup", this.onMouseUp);
-        });
-    }
-
-    showHelp = () => {
-        this.state.showHelp = true;
-    }
-
-    hideHelp = () => {
-        this.state.showHelp = false;
-    }
-
-    loadData(value) {
-        if (!value || (typeof value === 'object' && Object.keys(value).length === 0) || value === "{}") {
-            this.state.nodes = [{
-                id: 'start_node',
-                type: 'start',
-                x: 100,
-                y: 100,
-                label: 'Inicio',
-                height: 100, // Increased height for start node
-                outcomes: { '__default__': null }
-            }];
-            this.state.connections = [];
-            this.state.dataLoaded = true;
-            return;
+            this.state.selectedIds.add(nodeId);
+        } else if (element.classList.contains('o_fsm_viewport')) {
+            this.dragMode = 'pan';
+            if (!originalEvent.shiftKey) {
+                this.state.selectedIds.clear();
+            }
         }
+    }
+
+    onDrag = ({ dx, dy, element }) => {
+        if (!this.dragMode) return;
+        if (this.dragMode === 'pan') {
+            this.state.transform.x += dx;
+            this.state.transform.y += dy;
+        } else if (this.dragMode === 'drag_node') {
+            const nodeId = element.dataset.nodeId;
+            this.onNodeMove({
+                nodeId,
+                dx: dx / this.state.transform.k,
+                dy: dy / this.state.transform.k,
+                end: false,
+            });
+        }
+    }
+
+    onDragEnd = ({ element }) => {
+        if (this.dragMode === 'drag_node') {
+            this.onNodeMove({ nodeId: element.dataset.nodeId, end: true });
+        }
+        this.dragMode = null;
+    }
+
+    loadData = (value) => {
         try {
-            const data = typeof value === 'string' ? JSON.parse(value) : value;
+            const data = (value && typeof value === 'string') ? JSON.parse(value) : (value || {});
             this.state.nodes = data.nodes || [];
             this.state.connections = data.connections || [];
-
             if (this.state.nodes.length === 0) {
-                this.state.nodes = [{
-                    id: 'start_node',
-                    type: 'start',
-                    x: 100,
-                    y: 100,
-                    label: 'Inicio',
-                    height: 100, // Increased height for start node
-                    outcomes: { '__default__': null }
-                }];
-            } else {
-                // Ensure start node has correct height if it's there
-                const startNode = this.state.nodes.find(n => n.type === 'start');
-                if (startNode && (!startNode.height || startNode.height < 100)) {
-                    startNode.height = 100;
-                }
-            }
-            
-            this.state.dataLoaded = true;
-            
-            // Initial data for comparison if needed
-            if (!this.initialData) {
-                this.initialData = JSON.stringify({ nodes: this.state.nodes, connections: this.state.connections });
+                this.state.nodes.push({
+                    id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', height: 100, outcomes: { '__default__': null }
+                });
             }
         } catch (e) {
             console.error("Error parsing FSM data:", e);
-            this.state.nodes = [{
-                id: 'start_node',
-                type: 'start',
-                x: 100,
-                y: 100,
-                label: 'Inicio',
-                height: 50,
-                outcomes: { '__default__': null }
-            }];
+            this.state.nodes = [];
             this.state.connections = [];
-            this.state.dataLoaded = true;
         }
     }
 
-    updateData() {
-        const isReadOnlyState = this.isReadonly;
-        if (isReadOnlyState) {
-            return;
-        }
-        const data = {
-            nodes: this.state.nodes,
-            connections: this.state.connections,
-        };
-        const value = JSON.stringify(data);
-        if (this.props.record && this.props.record.update) {
-            this.props.record.update({ [this.props.name]: value });
-        } else if (this.props.update) {
-            this.props.update(value);
-        }
+    updateData = () => {
+        if (this.isReadonly) return;
+        const data = { nodes: this.state.nodes, connections: this.state.connections };
+        this.props.record.update({ [this.props.name]: JSON.stringify(data) });
     }
 
-    zoomToFit() {
+    zoomToFit = () => {
         if (!this.containerRef.el || this.state.nodes.length === 0) return;
-
         const rect = this.containerRef.el.getBoundingClientRect();
         const padding = 50;
-        
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        
         this.state.nodes.forEach(n => {
             minX = Math.min(minX, n.x);
             minY = Math.min(minY, n.y);
-            maxX = Math.max(maxX, n.x + this.nodeWidth);
+            maxX = Math.max(maxX, n.x + 180);
             maxY = Math.max(maxY, n.y + (n.height || 50));
         });
-
         const graphWidth = maxX - minX;
         const graphHeight = maxY - minY;
-        
-        const scaleX = (rect.width - padding * 2) / graphWidth;
-        const scaleY = (rect.height - padding * 2) / graphHeight;
+        const scaleX = graphWidth > 0 ? (rect.width - padding * 2) / graphWidth : 1;
+        const scaleY = graphHeight > 0 ? (rect.height - padding * 2) / graphHeight : 1;
         const k = Math.min(Math.max(Math.min(scaleX, scaleY), 0.1), 1.5);
-
-        this.state.transform.k = k;
-        this.state.transform.x = (rect.width / 2) - (k * (minX + graphWidth / 2));
-        this.state.transform.y = (rect.height / 2) - (k * (minY + graphHeight / 2));
+        this.state.transform = {
+            k,
+            x: (rect.width / 2) - (k * (minX + graphWidth / 2)),
+            y: (rect.height / 2) - (k * (minY + graphHeight / 2)),
+        };
     }
 
-    onFSMNodeClick = (ev) => {
-        // En Odoo 18 / OWL, los eventos del bus a menudo vienen con los datos en el primer argumento o en ev.detail
-        const detail = ev.detail || ev;
-        // console.log("[FSMDiagram] onFSMNodeClick - received event from bus", detail);
-        this.onObjectClick(detail.event, detail.nodeId);
-    }
-
-    onKeyDown = (ev) => {
-        const isReadOnlyState = this.isReadonly;
-        if (isReadOnlyState) return;
-        
-        // Don't trigger if focus is in an input/textarea
-        if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
-
-        if (ev.key === 'Delete' || ev.key === 'Backspace') {
-            this.deleteSelected();
-        } else if (ev.key === 'z' && (ev.ctrlKey || ev.metaKey)) {
-            this.undo();
-        }
-    }
-
-    takeSnapshot() {
-        const snapshot = JSON.stringify({
-            nodes: this.state.nodes,
-            connections: this.state.connections,
-        });
-        if (this.history.length === 0 || this.history[this.history.length - 1] !== snapshot) {
-            this.history.push(snapshot);
-            if (this.history.length > 50) this.history.shift();
-        }
-    }
-
-    undo() {
-        const isReadOnlyState = this.isReadonly;
-        if (isReadOnlyState) {
-            return;
-        }
-        if (this.history.length > 1) {
-            this.history.pop(); // Remove current state
-            const prevState = JSON.parse(this.history[this.history.length - 1]);
-            this.state.nodes = prevState.nodes;
-            this.state.connections = prevState.connections;
-            this.state.selectedIds.clear();
-            this.updateData();
-        } else if (this.history.length === 1) {
-            const prevState = JSON.parse(this.history[0]);
-            this.state.nodes = prevState.nodes;
-            this.state.connections = prevState.connections;
-            this.state.selectedIds.clear();
-            this.updateData();
-        }
-    }
-
-    onObjectClick(ev, id) {
-        // console.log("[FSMDiagram] onObjectClick", { id, shiftKey: ev ? ev.shiftKey : false });
-        if (ev && ev.stopPropagation) {
-            ev.stopPropagation();
-        }
-        
-        if (ev && ev.shiftKey) {
-            if (this.state.selectedIds.has(id)) {
-                this.state.selectedIds.delete(id);
-            } else {
-                this.state.selectedIds.add(id);
-            }
-        } else {
-            this.state.selectedIds.clear();
-            this.state.selectedIds.add(id);
-        }
-    }
-
-    deleteSelected() {
-        const isReadOnlyState = this.isReadonly;
-        if (isReadOnlyState) {
-            return;
-        }
-        if (this.state.selectedIds.size === 0) return;
-        this.takeSnapshot();
-        
-        const selectedIds = this.state.selectedIds;
-        
-        // Remove nodes
-        this.state.nodes = this.state.nodes.filter(n => !selectedIds.has(n.id));
-        
-        // Remove connections that are selected OR connected to selected nodes
-        this.state.connections = this.state.connections.filter(c => {
-            if (selectedIds.has(c.id)) return false;
-            if (selectedIds.has(c.fromNodeId) || selectedIds.has(c.toNodeId)) return false;
-            return true;
-        });
-        
-        this.state.selectedIds.clear();
-        this.updateData();
-    }
-
-    onMouseDown(ev) {
-        ev.preventDefault();
-        const target = ev.target;
-        const classes = target.className || "";
-        
-        // Background elements that should trigger pan or clear selection
-        const isToolbar = target.closest('.o_fsm_diagram_toolbar');
-        const isNode = target.closest('.o_fsm_node');
-        const isPort = target.closest('.o_fsm_port');
-        const isEditor = target.closest('.o_fsm_editors');
-        const isConnection = (target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'))) || target.closest('svg.o_fsm_connections path');
-        
-        // Use standard background check for click management
-        const isBackground = !isToolbar && !isNode && !isPort && !isEditor && !isConnection;
-
-        console.log("[FSMDiagram] onMouseDown", { 
-            target: target.tagName, 
-            classes, 
-            isBackground, 
-            isNode: !!isNode, 
-            isPort: !!isPort,
-            isConnection: !!isConnection,
-            button: ev.button,
-            isPanning: this.isPanning,
-            isDraggingNode: this.isDraggingNode
-        });
-
-        if (ev.button === 0) {
-            if (isConnection) {
-                const connId = isConnection.dataset.connectionId || isConnection.getAttribute('data-connection-id');
-                if (connId) {
-                    this.onObjectClick(ev, connId);
-                }
-                return;
-            }
-
-            if (isPort) {
-                // Let FSMNode handle port click via props or we can handle it here if needed
-                // But FSMNode has t-on-mousedown for ports, so it should work if it calls onPortMouseDown
-                return; 
-            }
-
-            if (isNode) {
-                const nodeId = isNode.dataset.nodeId || isNode.getAttribute('data-node-id');
-                console.log("[FSMDiagram] starting node drag", { nodeId });
-                this.isDraggingNode = true;
-                this.draggingNodeId = nodeId;
-                this.dragStart = { x: ev.clientX, y: ev.clientY };
-                
-                // Trigger selection
-                this.onObjectClick(ev, nodeId);
-                
-                if (this.containerRef.el) {
-                    this.containerRef.el.focus();
-                }
-                return;
-            }
-
-            if (isBackground) {
-                // Manual double click detection for background
-                const now = Date.now();
-                if (this.lastBgClickTime && (now - this.lastBgClickTime < 300)) {
-                    console.log("[FSMDiagram] background double click detected");
-                    this.onDblClick(ev);
-                    this.lastBgClickTime = 0;
-                    return;
-                }
-                this.lastBgClickTime = now;
-
-                if (!ev.shiftKey) {
-                    console.log("[FSMDiagram] clearing selection");
-                    this.state.selectedIds.clear();
-                }
-                console.log("[FSMDiagram] starting pan at", { x: ev.clientX, y: ev.clientY });
-                this.isPanning = true;
-                this.dragStart = { x: ev.clientX, y: ev.clientY };
-                
-                // Focusing the container manually to capture keyboard events
-                if (this.containerRef.el) {
-                    this.containerRef.el.focus();
-                }
-            }
-        }
-    }
-
-    onMouseMove = (ev) => {
-        if (this.isPanning || this.isDraggingNode) {
-            ev.preventDefault();
-        }
-        console.log("[FSMDiagram] onMouseMove", { isPanning: this.isPanning, isDraggingNode: this.isDraggingNode });
-        if (this.isPanning) {
-            const dx = ev.clientX - this.dragStart.x;
-            const dy = ev.clientY - this.dragStart.y;
-            console.log("[FSMDiagram] onMouseMove - Panning", { dx, dy });
-            if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
-                this.state.transform.x += dx;
-                this.state.transform.y += dy;
-                this.dragStart = { x: ev.clientX, y: ev.clientY };
-            }
-        }
-        if (this.isDraggingNode) {
-            const dx = ev.clientX - this.dragStart.x;
-            const dy = ev.clientY - this.dragStart.y;
-            console.log("[FSMDiagram] onMouseMove - Dragging", { dx, dy });
-            if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
-                this.onNodeMove({
-                    nodeId: this.draggingNodeId,
-                    dx: dx / this.state.transform.k,
-                    dy: dy / this.state.transform.k,
-                    end: false
-                });
-                this.dragStart = { x: ev.clientX, y: ev.clientY };
-            }
-        }
-        if (this.state.newConnection) {
-            if (this.isReadonly) {
-                this.state.newConnection = null;
-                return;
-            }
-            if (!this.containerRef.el) return;
-            const rect = this.containerRef.el.getBoundingClientRect();
-            this.state.newConnection.x2 = (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k;
-            this.state.newConnection.y2 = (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k;
-        }
-    }
-
-    onMouseUp = (ev) => {
-        const isSelectedConnection = ev.target.closest('path.o_fsm_connection') || ev.target.closest('path.o_fsm_connection_hitbox');
-
-        console.log("[FSMDiagram] onMouseUp", { 
-            isPanning: this.isPanning, 
-            isDraggingNode: this.isDraggingNode,
-            hasNewConn: !!this.state.newConnection,
-            readonly: this.isReadonly,
-            isSelectedConnection: !!isSelectedConnection
-        });
-
-        if (this.isPanning) {
-            console.log("[FSMDiagram] onMouseUp - stopping pan");
-            this.isPanning = false;
-        }
-
-        if (this.isDraggingNode) {
-            console.log("[FSMDiagram] onMouseUp - stopping node drag", { nodeId: this.draggingNodeId });
-            this.onNodeMove({
-                nodeId: this.draggingNodeId,
-                dx: 0,
-                dy: 0,
-                end: true
-            });
-            this.isDraggingNode = false;
-            this.draggingNodeId = null;
-        }
-
-        if (this.state.newConnection) {
-            const targetPort = ev.target.closest('.o_fsm_port_in');
-            if (targetPort && !this.isReadonly) {
-                const toNodeId = targetPort.dataset.nodeId;
-                if (toNodeId !== this.state.newConnection.fromNode) {
-                     console.log("[FSMDiagram] addConnection", { from: this.state.newConnection.fromNode, port: this.state.newConnection.fromPort, to: toNodeId });
-                     this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, toNodeId);
-                }
-            }
-            this.state.newConnection = null;
-        }
-    }
-
-    onWheel(ev) {
+    onWheel = (ev) => {
         ev.preventDefault();
         const zoomIntensity = 0.1;
         const delta = ev.deltaY < 0 ? 1 : -1;
-        const newScale = this.state.transform.k + (delta * zoomIntensity);
+        const newScale = this.state.transform.k * (1 + delta * zoomIntensity);
         if (newScale >= 0.1 && newScale <= 3) {
             this.state.transform.k = newScale;
         }
     }
 
-    onDblClick(ev) {
+    onDblClick = (ev) => {
         const target = ev.target;
-        const classes = target.className || "";
-        
-        // Robust check for background clicks
-        const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isNode = target.closest('.o_fsm_node');
-        const isConnection = (target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'))) || target.closest('svg.o_fsm_connections path');
-        const isEditor = target.closest('.o_fsm_editors');
+        const isBackground = target.classList.contains('o_fsm_viewport');
 
-        // If it's not a toolbar, node, connection or editor, it's background
-        const isBackground = !isToolbar && !isNode && !isConnection && !isEditor;
-
-        console.log("[FSMDiagram] onDblClick", { 
-            target: target.tagName, 
-            classes, 
-            isBackground, 
-            readonly: this.isReadonly 
-        });
-
-        if (isBackground) {
-            if (!this.containerRef.el) return;
+        if (isNode) {
+            this.onNodeDblClick(isNode.dataset.nodeId);
+        } else if (isBackground && !this.isReadonly) {
             const rect = this.containerRef.el.getBoundingClientRect();
             this.state.creatorPos = {
                 x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
                 y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
             };
-            console.log("[FSMDiagram] opening node creator at", this.state.creatorPos);
             this.state.isCreatingNode = true;
         }
     }
 
-    addNode(type, x, y, label) {
-        console.log("[FSMDiagram] addNode", { type, label, x, y });
-        if (this.isReadonly) return;
-        this.takeSnapshot();
-        const id = 'node_' + Date.now();
-        const newNode = { id, type, x, y, label, height: 50 };
-        if (type === 'transition') {
-            newNode.outcomes = { '__default__': null };
-            newNode.code = '# Your Python code here\n# Use set_outcome("outcome_name")';
-        } else if (type === 'state') {
-            newNode.events = [];
-        } else if (type === 'end') {
-            // End nodes have no outputs
+    onNodeMove = ({ nodeId, dx, dy, end }) => {
+        if (this.isReadonly && !end) return;
+        if (end) {
+            if (!this.isReadonly) this.updateData();
+            return;
         }
-        this.state.nodes.push(newNode);
-        this.updateData();
+        const nodesToMove = this.state.selectedIds.has(nodeId)
+            ? this.state.nodes.filter(n => this.state.selectedIds.has(n.id))
+            : [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
+        for (const node of nodesToMove) {
+            node.x += dx;
+            node.y += dy;
+        }
+        this.state.isDirty = !this.state.isDirty;
     }
-
-    onNodeDblClick(nodeId) {
-        console.log("[FSMDiagram] onNodeDblClick", { nodeId });
+    
+    onNodeDblClick = (nodeId) => {
         const node = this.state.nodes.find(n => n.id === nodeId);
-        
         if (node) {
-            console.log("[FSMDiagram] opening editor for node", node.label);
-            // DEEP CLONE to avoid any proxy issues or direct mutations from editors
-            this.state.editingNode = JSON.parse(JSON.stringify(node)); 
+            this.state.editingNode = JSON.parse(JSON.stringify(node));
             this.state.editingNodeType = node.type;
         }
     }
 
-    onEditorSave(updatedNode) {
-        if (this.isReadonly) {
-            this.state.editingNode = null;
-            this.state.editingNodeType = null;
-            return;
+    onNodeCreate = (type, label, x, y) => {
+        if (this.isReadonly) return;
+        const newNode = { id: `node_${Date.now()}`, type, x, y, label, height: 50 };
+        if (type === 'transition') {
+            newNode.outcomes = { '__default__': null };
+        } else if (type === 'state') {
+            newNode.events = [];
         }
-        this.takeSnapshot();
-        const nodeIndex = this.state.nodes.findIndex(n => n.id === updatedNode.id);
-        if (nodeIndex !== -1) {
-            this.state.nodes[nodeIndex] = updatedNode;
-        }
-        this.state.editingNode = null;
-        this.state.editingNodeType = null;
+        this.state.nodes.push(newNode);
         this.updateData();
+        this.state.isCreatingNode = false;
     }
-
-    onEditorClose() {
-        this.state.editingNode = null;
-        this.state.editingNodeType = null;
-    }
-
-    onNodeMove({ nodeId, dx, dy, end }) {
-        const isReadOnlyState = this.isReadonly;
-        if (end) {
-            console.log("[FSMDiagram] onNodeMove END", { nodeId, readonly: isReadOnlyState });
-            if (!isReadOnlyState) {
-                this.takeSnapshot();
-                this.updateData();
-            }
-            return;
-        }
-
-        const isSelected = this.state.selectedIds.has(nodeId);
-        const nodesToMove = isSelected ? 
-            this.state.nodes.filter(n => this.state.selectedIds.has(n.id)) : 
-            [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
-
-        if (nodesToMove.length > 0) {
-            // console.log("[FSMDiagram] onNodeMove", { nodeId, dx, dy, end, readonly: isReadOnlyState });
-            for (const node of nodesToMove) {
-                node.x += dx;
-                node.y += dy;
-            }
-            
-            // Mark as dirty to trigger re-render of connections
-            this.state.isDirty = !this.state.isDirty;
-        }
-    }
-
-    onNodeResize({ nodeId, height }) {
-        const isReadOnlyState = this.isReadonly;
-        console.log("[FSMDiagram] onNodeResize", { nodeId, height, readonly: isReadOnlyState });
-        if (isReadOnlyState) {
-            console.log("[FSMDiagram] onNodeResize - BLOCKED because readonly");
-            return;
-        }
+    
+    onNodeResize = ({ nodeId, height }) => {
+        if (this.isReadonly) return;
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node && node.height !== height) {
             node.height = height;
-            this.state.isDirty = !this.state.isDirty;
             this.updateData();
         }
     }
 
-    onPortMouseDown({ event, portName, nodeId }) {
-        if (this.isReadonly) {
-            console.log("[FSMDiagram] onPortMouseDown BLOCKED because readonly");
-            return;
-        }
-        const target = event.target;
-        if (event && event.stopPropagation) {
-            event.stopPropagation();
-        }
+    onPortMouseDown = ({ event, portName, nodeId }) => {
+        if (this.isReadonly) return;
+        event.stopPropagation();
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (!node) return;
 
-        const rect = target.getBoundingClientRect();
+        const rect = event.target.getBoundingClientRect();
         const diagramRect = this.containerRef.el.getBoundingClientRect();
         const x1 = (rect.left - diagramRect.left + rect.width / 2 - this.state.transform.x) / this.state.transform.k;
         const y1 = (rect.top - diagramRect.top + rect.height / 2 - this.state.transform.y) / this.state.transform.k;
-        console.log("[FSMDiagram] onPortMouseDown starting connection", { nodeId, portName, x1, y1 });
+        
         this.state.newConnection = { fromNode: node.id, fromPort: portName, x1, y1, x2: x1, y2: y1 };
+
+        const onMouseMove = (moveEv) => {
+            const newRect = this.containerRef.el.getBoundingClientRect();
+            this.state.newConnection.x2 = (moveEv.clientX - newRect.left - this.state.transform.x) / this.state.transform.k;
+            this.state.newConnection.y2 = (moveEv.clientY - newRect.top - this.state.transform.y) / this.state.transform.k;
+        };
+
+        const onMouseUp = (upEv) => {
+            const targetPort = upEv.target.closest('.o_fsm_port_in');
+            if (targetPort) {
+                const toNodeId = targetPort.dataset.nodeId;
+                if (toNodeId !== this.state.newConnection.fromNode) {
+                     this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, toNodeId);
+                }
+            }
+            this.state.newConnection = null;
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+        };
+
+        window.addEventListener('mousemove', onMouseMove);
+        window.addEventListener('mouseup', onMouseUp);
     }
 
-    onNodeCreate(type, label, x, y) {
-        // const isReadOnlyState = this.isReadonly;
-        // The addNode itself checks for snapshot/data update which is blocked if readonly
-        this.addNode(type, x, y, label);
-        this.state.isCreatingNode = false;
-    }
-
-    onNodeCreatorClose() {
-        this.state.isCreatingNode = false;
-    }
-
-    addConnection(fromNodeId, fromPortName, toNodeId) {
-        const isReadOnlyState = this.isReadonly;
-        if (isReadOnlyState) {
-            return;
-        }
-        this.takeSnapshot();
+    addConnection = (fromNodeId, fromPortName, toNodeId) => {
+        if (this.isReadonly) return;
         this.state.connections = this.state.connections.filter(c => !(c.fromNodeId === fromNodeId && c.fromPortName === fromPortName));
         const id = `conn_${fromNodeId}_${fromPortName}_${toNodeId}`;
         this.state.connections.push({ id, fromNodeId, fromPortName, toNodeId });
         this.updateData();
     }
 
-    getCurvePath(conn) {
+    getCurvePath = (conn) => {
         const fromNode = this.state.nodes.find(n => n.id === conn.fromNodeId);
         const toNode = this.state.nodes.find(n => n.id === conn.toNodeId);
         if (!fromNode || !toNode) return '';
 
         let portIndex = 0;
-        if (fromNode.type === 'state') portIndex = (fromNode.events || []).findIndex(e => e.name === conn.fromPortName);
-        else portIndex = Object.keys(fromNode.outcomes || {}).indexOf(conn.fromPortName);
+        if (fromNode.type === 'state') {
+            portIndex = (fromNode.events || []).findIndex(e => e.name === conn.fromPortName);
+        } else {
+            portIndex = Object.keys(fromNode.outcomes || {}).indexOf(conn.fromPortName);
+        }
         
         const headerHeight = 30, portHeight = 20;
         const yOffset = headerHeight + 10 + (portIndex * portHeight) + (portHeight / 2);
 
-        const x1 = fromNode.x + this.nodeWidth; 
+        const x1 = fromNode.x + 180; // nodeWidth
         const y1 = fromNode.y + yOffset;
         const x2 = toNode.x;
         const y2 = toNode.y + ((toNode.height || 50) / 2); 
@@ -689,47 +298,21 @@ export class FSMDiagram extends Component {
         
         return `M ${x1} ${y1} C ${x1 + curveX} ${y1}, ${x2 - curveX} ${y2}, ${x2} ${y2}`;
     }
-
-    validateDiagram() {
-        const errors = [];
-        const connectedInputs = new Set(this.state.connections.map(c => c.toNodeId));
-        const connectedOutputs = new Set(this.state.connections.map(c => `${c.fromNodeId}-${c.fromPortName}`));
-
-        console.log("[FSMDiagram] validateDiagram start", { 
-            nodes: this.state.nodes.length, 
-            connections: this.state.connections.length
-        });
-
-        for (const node of this.state.nodes) {
-            const outputs = node.type === 'state' ? (node.events || []).map(e => e.name) : Object.keys(node.outcomes || {});
-            console.log("[FSMDiagram] validateDiagram - checking node", { label: node.label, type: node.type, outputs });
-            
-            // Check for unconnected outputs
-            for (const portName of outputs) {
-                if (!connectedOutputs.has(`${node.id}-${portName}`)) {
-                    errors.push(`Nodo '${node.label}' tiene un resultado '${portName}' sin conexión.`);
-                }
-            }
-
-            // Check for nodes without inputs (except start)
-            if (node.type !== 'start' && !connectedInputs.has(node.id)) {
-                errors.push(`Nodo '${node.label}' no tiene conexiones de entrada.`);
-            }
-
-            // Transition and state MUST have at least one output (except end which has none)
-            if (node.type !== 'end' && outputs.length === 0) {
-                errors.push(`Nodo '${node.label}' debe tener al menos un resultado.`);
-            }
+    
+    showHelp = () => this.state.showHelp = true;
+    hideHelp = () => this.state.showHelp = false;
+    validateDiagram = () => this.notification.add("Validation not implemented yet.", { type: 'info' });
+    onNodeCreatorClose = () => this.state.isCreatingNode = false;
+    onEditorClose = () => this.state.editingNode = null;
+    onEditorSave = (updatedNode) => {
+        if (this.isReadonly) return;
+        const nodeIndex = this.state.nodes.findIndex(n => n.id === updatedNode.id);
+        if (nodeIndex !== -1) {
+            this.state.nodes[nodeIndex] = updatedNode;
         }
-
-        if (errors.length > 0) {
-            console.log("[FSMDiagram] validateDiagram - errors found", errors);
-            this.notification.add(errors.join('\n'), { type: 'danger', title: 'Errores de Validación' });
-        } else {
-            console.log("[FSMDiagram] validateDiagram - success");
-            this.notification.add("¡El diagrama es válido!", { type: 'success' });
-        }
-    }
+        this.state.editingNode = null;
+        this.updateData();
+    };
 }
 
 registry.category("fields").add("fsm_diagram", {
