@@ -47,8 +47,6 @@ export class FSMNode extends Component {
             return;
         }
 
-        console.log("[FSMNode] onNodeMouseDown", { nodeId: this.props.node.id, button: ev.button });
-
         // STOP propagation to prevent FSMDiagram from seeing this as a background click
         ev.stopPropagation();
 
@@ -66,7 +64,6 @@ export class FSMNode extends Component {
         this.env.bus.trigger('fsm_node_click', { event: ev, nodeId: this.props.node.id });
 
         // Start dragging
-        console.log("[FSMNode] drag started", { nodeId: this.props.node.id });
         this.state.isDragging = true;
         this.dragStart = { x: ev.clientX, y: ev.clientY };
 

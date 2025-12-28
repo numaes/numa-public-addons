@@ -22,30 +22,18 @@ export class FSMDiagram extends Component {
         // ULTIMATE BYPASS FOR ODOO 18
         const record = this.props.record;
         
-        console.log("[FSMDiagram] isReadonly deep check:", {
-            recordMode: record?.mode,
-            recordIsReadonly: record?.isReadonly,
-            propsReadonly: this.props.readonly,
-            resModel: record?.resModel,
-            resId: record?.resId,
-            context: record?.context
-        });
-
         // If explicitly set to readonly in the record mode, honor it
         if (record?.mode === 'readonly') {
-            console.log("[FSMDiagram] isReadonly result: true (record mode is readonly)");
             return true;
         }
 
         // FORCE FALSE for specific models unless record is explicitly readonly
         const forceEditableModels = ['fsm.definition', 'conversation.bot'];
         if (record?.resModel && forceEditableModels.includes(record.resModel)) {
-            console.log("[FSMDiagram] isReadonly result: false (bypassed for model " + record.resModel + ")");
             return false;
         }
 
         // Default to false if we are not sure, to allow interaction
-        console.log("[FSMDiagram] isReadonly result: false (default)");
         return false;
     }
 
@@ -317,17 +305,8 @@ export class FSMDiagram extends Component {
     }
 
     onMouseDown(ev) {
-        const isReadOnlyState = this.isReadonly;
         const target = ev.target;
         
-        console.log("[FSMDiagram] onMouseDown", {
-            target: target.tagName,
-            classes: target.className,
-            isBackground: !target.closest('.o_fsm_node') && !target.closest('.o_fsm_port') && !target.closest('.o_fsm_diagram_toolbar') && !target.closest('.o_fsm_editors'),
-            isNode: !!target.closest('.o_fsm_node'),
-            isPanning: this.state.isPanning
-        });
-
         // Background elements that should trigger pan or clear selection
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isNode = target.closest('.o_fsm_node');
@@ -343,7 +322,6 @@ export class FSMDiagram extends Component {
                 // Manual double click detection for background
                 const now = Date.now();
                 if (this.lastBgClickTime && (now - this.lastBgClickTime < 300)) {
-                    console.log("[FSMDiagram] background double click detected");
                     this.onDblClick(ev);
                     this.lastBgClickTime = 0;
                     return;
@@ -368,7 +346,6 @@ export class FSMDiagram extends Component {
         if (this.state.isPanning) {
             const dx = ev.clientX - this.dragStart.x;
             const dy = ev.clientY - this.dragStart.y;
-            // console.log("[FSMDiagram] panning", { dx, dy, x: this.state.transform.x, y: this.state.transform.y });
             if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
                 this.state.transform.x += dx;
                 this.state.transform.y += dy;
@@ -389,7 +366,6 @@ export class FSMDiagram extends Component {
     }
 
     onMouseUp = (ev) => {
-        console.log("[FSMDiagram] onMouseUp", { isPanning: this.state.isPanning, hasNewConn: !!this.state.newConnection, readonly: this.isReadonly });
         if (this.state.isPanning) {
             this.state.isPanning = false;
         }
@@ -417,21 +393,18 @@ export class FSMDiagram extends Component {
     }
 
     onDblClick(ev) {
-        const isReadOnlyState = this.isReadonly;
         const target = ev.target;
         
         // Robust check for background clicks
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isNode = target.closest('.o_fsm_node');
         const isConnection = (target.classList && (target.classList.contains('o_fsm_connection') || target.classList.contains('o_fsm_connection_hitbox'))) || target.closest('svg.o_fsm_connections path');
+        const isEditor = target.closest('.o_fsm_editors');
 
-        // If it's not a toolbar, node or connection, it's background
-        const isBackground = !isToolbar && !isNode && !isConnection;
+        // If it's not a toolbar, node, connection or editor, it's background
+        const isBackground = !isToolbar && !isNode && !isConnection && !isEditor;
 
         if (isBackground) {
-            if (isReadOnlyState) {
-                return;
-            }
             if (!this.containerRef.el) return;
             const rect = this.containerRef.el.getBoundingClientRect();
             this.state.creatorPos = {
@@ -461,7 +434,6 @@ export class FSMDiagram extends Component {
     }
 
     onNodeDblClick(nodeId) {
-        console.log("[FSMDiagram] onNodeDblClick", { nodeId });
         const node = this.state.nodes.find(n => n.id === nodeId);
         
         if (node) {
@@ -494,7 +466,6 @@ export class FSMDiagram extends Component {
 
     onNodeMove({ nodeId, dx, dy, end }) {
         if (end) {
-            console.log("[FSMDiagram] onNodeMove END", { nodeId, readonly: this.isReadonly });
             if (!this.isReadonly) {
                 this.takeSnapshot();
                 this.updateData();
@@ -508,7 +479,7 @@ export class FSMDiagram extends Component {
             [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
 
         if (nodesToMove.length > 0) {
-            console.log("[FSMDiagram] moving nodes", { count: nodesToMove.length, dx, dy });
+            console.log("[FSMDiagram] moving nodes count:", nodesToMove.length);
             for (const node of nodesToMove) {
                 node.x += dx;
                 node.y += dy;
@@ -601,10 +572,9 @@ export class FSMDiagram extends Component {
         const connectedInputs = new Set(this.state.connections.map(c => c.toNodeId));
         const connectedOutputs = new Set(this.state.connections.map(c => `${c.fromNodeId}-${c.fromPortName}`));
 
-        console.log("[FSMDiagram] validateDiagram", { 
+        console.log("[FSMDiagram] validateDiagram start", { 
             nodes: this.state.nodes.length, 
-            connections: this.state.connections.length,
-            nodes_data: this.state.nodes
+            connections: this.state.connections.length
         });
 
         for (const node of this.state.nodes) {
