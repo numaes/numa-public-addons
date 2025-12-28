@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState, useRef, onMounted, onWillStart, onWillUnmount } from "@odoo/owl";
+import { Component, useState, useRef, onMounted, onWillStart, onWillUnmount, useExternalListener } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { useService } from "@web/core/utils/hooks";
@@ -19,34 +19,17 @@ export class FSMDiagram extends Component {
 
     get isReadonly() {
         const record = this.props.record;
-        let result;
-        if (record?.mode === 'readonly') {
-            result = true;
-        } else {
-            // Force editability for definition models unless explicitly in readonly mode
-            const forceEditableModels = ['fsm.definition', 'conversation.bot', 'conversation.analysis.report'];
-            if (record?.resModel && (forceEditableModels.includes(record.resModel) || record.resModel.startsWith('fsm.'))) {
-                result = false;
-            } else {
-                result = this.props.readonly;
-            }
-        }
+        if (record?.mode === 'readonly') return true;
         
-        // DEBUG: If it's still readonly but we are in fsm.definition, bypass it.
-        if (result && (record?.resModel === 'fsm.definition' || record?.resModel === 'conversation.bot') && record?.mode !== 'readonly') {
-            result = false;
+        const forceEditableModels = ['fsm.definition', 'conversation.bot', 'conversation.analysis.report'];
+        if (record?.resModel && (forceEditableModels.includes(record.resModel) || record.resModel.startsWith('fsm.'))) {
+            return false;
         }
-
-        console.log("[FSMDiagram] isReadonly result:", result, "deep check:", {
-            recordMode: record?.mode,
-            resModel: record?.resModel,
-            propsReadonly: this.props.readonly,
-            resId: record?.resId
-        });
-        return result;
+        return !!this.props.readonly;
     }
 
     setup() {
+        console.log("[FSMDiagram] setup props:", this.props);
         this.notification = useService("notification");
         this.containerRef = useRef("container");
         this.state = useState({
@@ -76,27 +59,27 @@ export class FSMDiagram extends Component {
                     if (this.containerRef.el) {
                         this.zoomToFit();
                     }
-                }, 100);
+                }, 500);
             }
-            this.boundMouseMove = this.onGlobalMouseMove.bind(this);
-            this.boundMouseUp = this.onGlobalMouseUp.bind(this);
-            this.boundKeyDown = this.onKeyDown.bind(this);
-
-            window.addEventListener('mousemove', this.boundMouseMove);
-            window.addEventListener('mouseup', this.boundMouseUp);
-            window.addEventListener('keydown', this.boundKeyDown);
         });
 
-        onWillUnmount(() => {
-            console.log("[FSMDiagram] onWillUnmount");
-            window.removeEventListener('mousemove', this.boundMouseMove);
-            window.removeEventListener('mouseup', this.boundMouseUp);
-            window.removeEventListener('keydown', this.boundKeyDown);
-        });
+        useExternalListener(document, "pointermove", this.onGlobalMouseMove);
+        useExternalListener(document, "pointerup", this.onGlobalMouseUp);
+        useExternalListener(document, "keydown", this.onKeyDown);
     }
 
     onMouseDown = (ev) => {
         const target = ev.target;
+        
+        // Capture pointer for robust dragging in Odoo 18
+        if (target.setPointerCapture && ev.pointerId !== undefined) {
+            try {
+                target.setPointerCapture(ev.pointerId);
+            } catch (e) {
+                // Ignore capture errors on non-element targets or invalid IDs
+            }
+        }
+
         const nodeEl = target.closest('.o_fsm_node');
         const isToolbar = target.closest('.o_fsm_diagram_toolbar');
         const isEditor = target.closest('.o_fsm_editors');
@@ -109,14 +92,11 @@ export class FSMDiagram extends Component {
             target: target.tagName,
             classes: target.className,
             isNode: !!nodeEl,
-            isPort: !!isPort,
-            isConnection: !!isConnection,
-            isBackground: !nodeEl && !isPort && !isToolbar && !isEditor && !isConnection,
             button: ev.button,
-            readonly: this.isReadonly
+            existingDrag: !!this.dragState
         });
 
-        // Ensure container has focus for keyboard events
+        // Ensure container has focus
         if (this.containerRef.el) {
             this.containerRef.el.focus();
         }
@@ -135,8 +115,6 @@ export class FSMDiagram extends Component {
         this.lastClick = { x: startX, y: startY, time: now };
 
         if (nodeEl) {
-            ev.preventDefault();
-            ev.stopPropagation();
             const nodeId = nodeEl.dataset.nodeId;
             console.log("[FSMDiagram] Node selected for drag:", nodeId);
             if (!ev.shiftKey && !this.state.selectedIds.has(nodeId)) {
@@ -152,14 +130,11 @@ export class FSMDiagram extends Component {
                 initialNodes: this.state.nodes.filter(n => this.state.selectedIds.has(n.id)).map(n => ({ id: n.id, x: n.x, y: n.y })),
             };
         } else if (isConnection) {
-            ev.preventDefault();
-            ev.stopPropagation();
             const connId = isConnection.dataset.connId;
             if (!ev.shiftKey) this.state.selectedIds.clear();
             if (connId) this.state.selectedIds.add(connId);
             this.dragState = null;
         } else {
-            ev.preventDefault();
             if (!ev.shiftKey) this.state.selectedIds.clear();
             console.log("[FSMDiagram] Starting pan");
             this.dragState = {
@@ -175,8 +150,12 @@ export class FSMDiagram extends Component {
     onGlobalMouseMove = (ev) => {
         if (!this.dragState) return;
         
-        const dx = ev.clientX - this.dragState.startX;
-        const dy = ev.clientY - this.dragState.startY;
+        const clientX = ev.clientX;
+        const clientY = ev.clientY;
+        const dx = clientX - this.dragState.startX;
+        const dy = clientY - this.dragState.startY;
+        
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
         
         if (this.dragState.type === 'pan') {
             this.state.transform = {
@@ -185,6 +164,7 @@ export class FSMDiagram extends Component {
                 y: this.dragState.initialY + dy
             };
         } else if (this.dragState.type === 'node') {
+            if (this.isReadonly) return;
             const k = this.state.transform.k;
             this.state.nodes = this.state.nodes.map(node => {
                 if (this.state.selectedIds.has(node.id)) {
@@ -202,17 +182,19 @@ export class FSMDiagram extends Component {
     onGlobalMouseUp = (ev) => {
         if (!this.dragState) return;
         const dragType = this.dragState.type;
-        console.log("[FSMDiagram] onGlobalMouseUp", {
-            type: dragType,
-            nodeId: this.dragState.nodeId,
-            readonly: this.isReadonly,
-            dx: ev.clientX - this.dragState.startX,
-            dy: ev.clientY - this.dragState.startY
-        });
-        
         const dx = ev.clientX - this.dragState.startX;
         const dy = ev.clientY - this.dragState.startY;
 
+        console.log("[FSMDiagram] onGlobalMouseUp", {
+            type: dragType,
+            startX: this.dragState.startX,
+            startY: this.dragState.startY,
+            clientX: ev.clientX,
+            clientY: ev.clientY,
+            dx,
+            dy
+        });
+        
         if (dragType === 'node' && !this.isReadonly) {
             if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
                 this.updateData();
@@ -403,7 +385,7 @@ export class FSMDiagram extends Component {
             const newNodes = [...this.state.nodes];
             newNodes[nodeIndex] = { ...newNodes[nodeIndex], height };
             this.state.nodes = newNodes;
-            this.updateData();
+            // Removed updateData from here to avoid recursive Odoo updates during render
         }
     }
 

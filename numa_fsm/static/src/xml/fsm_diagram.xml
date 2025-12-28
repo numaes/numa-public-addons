@@ -1,53 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMDiagram" owl="1">
-        <div class="o_fsm_diagram_container o_field_fsm_diagram overflow-hidden"
-             t-ref="container"
-             tabindex="0"
-             t-on-mousedown.stop="onMouseDown"
-             t-on-dblclick.stop="onDblClick"
-             t-on-wheel.stop="onWheel">
-            <div class="o_fsm_diagram_toolbar d-flex gap-2">
-                <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
-                    <i class="fa fa-expand"/>
-                </button>
-                <button class="btn btn-primary shadow-sm" t-on-click="validateDiagram" title="Validar Diagrama">
-                    <i class="fa fa-check"/> Validar
-                </button>
-                <button class="btn btn-info shadow-sm text-white" t-on-click="showHelp" title="Ayuda">
-                    <i class="fa fa-question-circle"/> Ayuda
-                </button>
-            </div>
+        <div class="o_fsm_diagram_container o_field_fsm_diagram overflow-hidden">
+            <div t-ref="container" 
+                 class="w-100 h-100" 
+                 tabindex="0"
+                 t-on-pointerdown="onMouseDown"
+                 t-on-dblclick="onDblClick"
+                 t-on-wheel="onWheel">
+                <div class="o_fsm_diagram_toolbar d-flex gap-2">
+                    <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
+                        <i class="fa fa-expand"/>
+                    </button>
+                    <button class="btn btn-primary shadow-sm" t-on-click="validateDiagram" title="Validar Diagrama">
+                        <i class="fa fa-check"/> Validar
+                    </button>
+                    <button class="btn btn-info shadow-sm text-white" t-on-click="showHelp" title="Ayuda">
+                        <i class="fa fa-question-circle"/> Ayuda
+                    </button>
+                </div>
 
-            <div t-if="state.dataLoaded"
-                 class="o_fsm_viewport"
-                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
+                <div class="o_fsm_viewport"
+                     t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
+                    <t t-if="state.dataLoaded">
+                        <!-- Connections Layer (SVG) -->
+                        <svg class="o_fsm_connections">
+                            <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
+                                <path t-att-d="getCurvePath(conn)"
+                                      t-att-data-conn-id="conn.id"
+                                      t-att-class="{
+                                          'o_fsm_connection': true,
+                                          'o_fsm_connection_selected': state.selectedIds.has(conn.id)
+                                      }"/>
+                                <path t-att-d="getCurvePath(conn)"
+                                      t-att-data-conn-id="conn.id"
+                                      class="o_fsm_connection_hitbox"/>
+                            </t>
+                            <path t-if="state.newConnection"
+                                  t-att-d="`M ${state.newConnection.x1} ${state.newConnection.y1} L ${state.newConnection.x2} ${state.newConnection.y2}`"
+                                  class="o_fsm_new_connection"/>
+                        </svg>
 
-                <!-- Connections Layer (SVG) -->
-                <svg class="o_fsm_connections">
-                    <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
-                        <path t-att-d="getCurvePath(conn)"
-                              t-att-data-conn-id="conn.id"
-                              t-att-class="{
-                                  'o_fsm_connection': true,
-                                  'o_fsm_connection_selected': state.selectedIds.has(conn.id)
-                              }"/>
-                        <path t-att-d="getCurvePath(conn)"
-                              t-att-data-conn-id="conn.id"
-                              class="o_fsm_connection_hitbox"/>
-                    </t>
-                    <path t-if="state.newConnection"
-                          t-att-d="`M ${state.newConnection.x1} ${state.newConnection.y1} L ${state.newConnection.x2} ${state.newConnection.y2}`"
-                          class="o_fsm_new_connection"/>
-                </svg>
-
-                <!-- Nodes Layer (HTML) -->
-                <div class="o_fsm_nodes">
-                    <t t-foreach="state.nodes" t-as="node" t-key="node.id">
-                        <FSMNode node="node"
-                                 diagramScale="state.transform.k"
-                                 selected="state.selectedIds.has(node.id)"
-                                 onPortMouseDown="onPortMouseDown"/>
+                        <!-- Nodes Layer (HTML) -->
+                        <div class="o_fsm_nodes">
+                            <t t-foreach="state.nodes" t-as="node" t-key="node.id">
+                                <FSMNode node="node"
+                                         diagramScale="state.transform.k"
+                                         selected="state.selectedIds.has(node.id)"
+                                         onPortMouseDown="onPortMouseDown"/>
+                            </t>
+                        </div>
                     </t>
                 </div>
             </div>
