@@ -4,6 +4,8 @@
         <div class="o_fsm_diagram_container o_field_fsm_diagram"
              t-ref="container"
              tabindex="0"
+             t-on-mousedown="onMouseDown"
+             t-on-dblclick="onDblClick"
              t-on-wheel="onWheel">
             <div class="o_fsm_diagram_toolbar d-flex gap-2">
                 <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
@@ -19,9 +21,7 @@
 
             <div t-if="state.dataLoaded"
                  class="o_fsm_viewport"
-                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'"
-                 t-on-click="onClick"
-                 t-on-dblclick="onDblClick">
+                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
 
                 <!-- Connections Layer (SVG) -->
                 <svg class="o_fsm_connections">
@@ -50,21 +50,25 @@
                 </div>
             </div>
 
-            <FSMNodeCreator t-if="state.isCreatingNode"
-                            x="state.creatorPos.x"
-                            y="state.creatorPos.y"
-                            onSave="onNodeCreate"
-                            onClose="onNodeCreatorClose"/>
+            <div class="o_fsm_editors">
+                <FSMNodeCreator t-if="state.isCreatingNode"
+                                x="state.creatorPos.x"
+                                y="state.creatorPos.y"
+                                onSave="onNodeCreate"
+                                onClose="onNodeCreatorClose"/>
 
-            <FSMTransitionEditor t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'"
-                                 node="state.editingNode"
-                                 onSave="onEditorSave"
-                                 onClose="onEditorClose"/>
+                <FSMTransitionEditor t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'"
+                                     node="state.editingNode"
+                                     readonly="isReadonly"
+                                     onSave="onEditorSave"
+                                     onClose="onEditorClose"/>
 
-            <FSMStateEditor t-if="state.editingNodeType === 'state'"
-                            node="state.editingNode"
-                            onSave="onEditorSave"
-                            onClose="onEditorClose"/>
+                <FSMStateEditor t-if="state.editingNodeType === 'state'"
+                                node="state.editingNode"
+                                readonly="isReadonly"
+                                onSave="onEditorSave"
+                                onClose="onEditorClose"/>
+            </div>
 
             <!-- Help Modal -->
             <div t-if="state.showHelp" class="o_fsm_help_modal" t-on-click="hideHelp">

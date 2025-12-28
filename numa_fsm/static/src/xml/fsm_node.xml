@@ -9,9 +9,7 @@
                 'o_fsm_node_selected': props.selected,
                 ['o_fsm_node_' + props.node.type]: true
              }"
-             t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'"
-             t-on-mousedown="onNodeMouseDown"
-             t-on-dblclick="onNodeDblClick">
+             t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'">
 
             <div t-if="props.node.type !== 'start' &amp;&amp; props.node.type !== 'end'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>
             <div t-if="props.node.type === 'end'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>

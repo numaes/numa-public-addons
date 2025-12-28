@@ -1,10 +1,9 @@
 /** @odoo-module **/
 
-import { Component, useState, useRef, onMounted, onWillStart, useEffect } from "@odoo/owl";
+import { Component, useState, useRef, onMounted, onWillStart, onWillUnmount } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { useService } from "@web/core/utils/hooks";
-import { useDraggable } from "@web/core/utils/draggable"; // Using the standard Odoo useDraggable
 import { FSMNode } from "./fsm_node";
 import { FSMTransitionEditor } from "./fsm_transition_editor";
 import { FSMStateEditor } from "./fsm_state_editor";
@@ -31,12 +30,10 @@ export class FSMDiagram extends Component {
                 result = this.props.readonly;
             }
         }
-        console.log(`[FSMDiagram] isReadonly getter: Result: ${result}`);
         return result;
     }
 
     setup() {
-        console.log("[FSMDiagram] setup: Component setup initiated.");
         this.notification = useService("notification");
         this.containerRef = useRef("container");
         this.state = useState({
@@ -50,141 +47,110 @@ export class FSMDiagram extends Component {
             creatorPos: { x: 0, y: 0 },
             isDirty: false,
             selectedIds: new Set(),
-            dataLoaded: false, // Initial state for data loading
+            dataLoaded: false,
         });
 
-        this.dragMode = null; // 'pan' or 'drag_node'
-
-        // Use the standard Odoo useDraggable hook for drag operations only
-        useDraggable({
-            ref: this.containerRef,
-            elements: ".o_fsm_node, .o_fsm_viewport", // Make nodes and viewport draggable
-            ignore: ".o_fsm_port, button, input", // Ignore specific interactive elements
-            onDragStart: this.onDragStart,
-            onDrag: this.onDrag,
-            onDragEnd: this.onDragEnd,
-            enable: () => {
-                const enabled = !this.isReadonly;
-                console.log(`[FSMDiagram] useDraggable enable check: ${enabled}`);
-                return enabled;
-            },
-        });
+        this.dragState = null;
 
         onWillStart(async () => {
-            console.log("[FSMDiagram] onWillStart: Loading initial data.");
             await this.loadData(this.props.value);
         });
 
-        // Removed useEffect for props.value as it caused double load.
-        // Data should only be loaded once on onWillStart or explicitly when needed.
-
         onMounted(() => {
-            console.log("[FSMDiagram] onMounted: Component is now in the DOM.");
-            if (this.state.nodes.length > 0) { // Check nodes.length directly
-                console.log("[FSMDiagram] onMounted: Nodes found, scheduling zoomToFit.");
+            if (this.state.nodes.length > 0) {
                 setTimeout(() => {
                     if (this.containerRef.el) {
                         this.zoomToFit();
-                    } else {
-                        console.warn("[FSMDiagram] onMounted: containerRef.el is null, cannot zoomToFit.");
                     }
                 }, 100);
-            } else {
-                console.log("[FSMDiagram] onMounted: No nodes to zoom to fit.");
             }
+            window.addEventListener('mousemove', this.onGlobalMouseMove);
+            window.addEventListener('mouseup', this.onGlobalMouseUp);
+        });
+
+        onWillUnmount(() => {
+            window.removeEventListener('mousemove', this.onGlobalMouseMove);
+            window.removeEventListener('mouseup', this.onGlobalMouseUp);
         });
     }
 
-    onDragStart = ({ originalEvent, element }) => {
-        console.log(`[FSMDiagram] onDragStart: Fired on element '${element.className}'. Original event:`, originalEvent);
-
-        this.dragMode = null; // Reset drag mode
-        if (element.classList.contains('o_fsm_node')) {
-            this.dragMode = 'drag_node';
-            const nodeId = element.dataset.nodeId;
-            console.log(`[FSMDiagram] onDragStart: Mode set to 'drag_node' for node ${nodeId}.`);
-            // Select node on drag start if not already selected (or shift key not pressed)
-            if (!originalEvent.shiftKey && !this.state.selectedIds.has(nodeId)) {
-                this.state.selectedIds.clear();
-            }
-            this.state.selectedIds.add(nodeId);
-        } else if (element.classList.contains('o_fsm_viewport')) {
-            this.dragMode = 'pan';
-            console.log("[FSMDiagram] onDragStart: Mode set to 'pan'.");
-            // Clear selection on background pan start if shift key not pressed
-            if (!originalEvent.shiftKey) {
-                this.state.selectedIds.clear();
-            }
-        }
-        console.log(`[FSMDiagram] onDragStart: Final dragMode: ${this.dragMode}. Selected IDs:`, [...this.state.selectedIds]);
-    }
-
-    onDrag = ({ dx, dy, element }) => {
-        if (!this.dragMode) {
-            console.warn("[FSMDiagram] onDrag: dragMode is null, returning.");
-            return;
-        }
-        console.log(`[FSMDiagram] onDrag: Mode is '${this.dragMode}'. Delta: (${dx}, ${dy}). Element:`, element);
-        if (this.dragMode === 'pan') {
-            this.state.transform.x += dx;
-            this.state.transform.y += dy;
-            console.log("[FSMDiagram] onDrag: New transform:", this.state.transform);
-        } else if (this.dragMode === 'drag_node') {
-            const nodeId = element.dataset.nodeId;
-            this.onNodeMove({
-                nodeId,
-                dx: dx / this.state.transform.k, // Adjust delta by current scale
-                dy: dy / this.state.transform.k,
-                end: false,
-            });
-        }
-    }
-
-    onDragEnd = ({ element }) => {
-        console.log(`[FSMDiagram] onDragEnd: Dragging finished for mode '${this.dragMode}'. Element:`, element);
-        if (this.dragMode === 'drag_node') {
-            this.onNodeMove({ nodeId: element.dataset.nodeId, end: true }); // Final update and save
-        }
-        this.dragMode = null;
-        console.log("[FSMDiagram] onDragEnd: dragMode reset to null.");
-    }
-
-    onClick = (ev) => {
-        console.log("[FSMDiagram] onClick: Event fired.", { target: ev.target });
+    onMouseDown = (ev) => {
         const target = ev.target;
-        const isNode = target.closest('.o_fsm_node');
-        const isBackground = target.classList.contains('o_fsm_viewport');
+        const nodeEl = target.closest('.o_fsm_node');
+        const isToolbar = target.closest('.o_fsm_diagram_toolbar');
+        const isEditor = target.closest('.o_fsm_editors');
 
-        if (isNode) {
-            const nodeId = isNode.dataset.nodeId;
-            console.log(`[FSMDiagram] onClick: Detected on node ${nodeId}.`);
+        if (isToolbar || isEditor) return;
+
+        ev.preventDefault();
+        const startX = ev.clientX;
+        const startY = ev.clientY;
+
+        if (nodeEl) {
+            const nodeId = nodeEl.dataset.nodeId;
             if (!ev.shiftKey && !this.state.selectedIds.has(nodeId)) {
                 this.state.selectedIds.clear();
             }
-            if (this.state.selectedIds.has(nodeId)) {
-                this.state.selectedIds.delete(nodeId);
-            } else {
-                this.state.selectedIds.add(nodeId);
-            }
-        } else if (isBackground) {
-            console.log("[FSMDiagram] onClick: Detected on background.");
-            if (!ev.shiftKey) {
-                this.state.selectedIds.clear();
-            }
+            this.state.selectedIds.add(nodeId);
+
+            this.dragState = {
+                type: 'node',
+                nodeId,
+                startX,
+                startY,
+                initialNodes: this.state.nodes.filter(n => this.state.selectedIds.has(n.id)).map(n => ({ id: n.id, x: n.x, y: n.y })),
+            };
+        } else {
+            if (!ev.shiftKey) this.state.selectedIds.clear();
+            this.dragState = {
+                type: 'pan',
+                startX,
+                startY,
+                initialX: this.state.transform.x,
+                initialY: this.state.transform.y,
+            };
         }
     }
 
-    onDblClick = (ev) => {
-        console.log("[FSMDiagram] onDblClick: Event fired.", { target: ev.target });
-        const target = ev.target;
-        const isNode = target.closest('.o_fsm_node');
-        const isBackground = target.classList.contains('o_fsm_viewport');
+    onGlobalMouseMove = (ev) => {
+        if (!this.dragState) return;
 
-        if (isNode) {
-            console.log(`[FSMDiagram] onDblClick: Detected on node ${isNode.dataset.nodeId}.`);
-            this.onNodeDblClick(isNode.dataset.nodeId);
+        const dx = ev.clientX - this.dragState.startX;
+        const dy = ev.clientY - this.dragState.startY;
+
+        if (this.dragState.type === 'pan') {
+            this.state.transform.x = this.dragState.initialX + dx;
+            this.state.transform.y = this.dragState.initialY + dy;
+        } else if (this.dragState.type === 'node' && !this.isReadonly) {
+            const k = this.state.transform.k;
+            for (const initialNode of this.dragState.initialNodes) {
+                const node = this.state.nodes.find(n => n.id === initialNode.id);
+                if (node) {
+                    node.x = initialNode.x + (dx / k);
+                    node.y = initialNode.y + (dy / k);
+                }
+            }
+            this.state.isDirty = !this.state.isDirty;
+        }
+    }
+
+    onGlobalMouseUp = () => {
+        if (!this.dragState) return;
+        console.log("[FSMDiagram] onGlobalMouseUp: dragType:", this.dragState.type);
+        if (this.dragState.type === 'node' && !this.isReadonly) {
+            this.updateData();
+        }
+        this.dragState = null;
+    }
+
+    onDblClick = (ev) => {
+        const target = ev.target;
+        const nodeEl = target.closest('.o_fsm_node');
+        const isBackground = target.classList.contains('o_fsm_viewport') || target.classList.contains('o_fsm_diagram_container');
+
+        if (nodeEl) {
+            this.onNodeDblClick(nodeEl.dataset.nodeId);
         } else if (isBackground && !this.isReadonly) {
-            console.log("[FSMDiagram] onDblClick: Detected on background.");
             const rect = this.containerRef.el.getBoundingClientRect();
             this.state.creatorPos = {
                 x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
@@ -195,38 +161,29 @@ export class FSMDiagram extends Component {
     }
     
     loadData = (value) => {
-        console.log("[FSMDiagram] loadData: Received value:", value);
         try {
             const data = (value && typeof value === 'string' && value.trim() !== "{}") ? JSON.parse(value) : (value || {});
-            console.log("[FSMDiagram] loadData: Parsed data:", data);
 
             this.state.nodes = data.nodes || [];
             this.state.connections = data.connections || [];
 
             if (this.state.nodes.length === 0) {
-                console.log("[FSMDiagram] loadData: No nodes found, creating initial start node.");
                 this.state.nodes.push({
                     id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null }
                 });
             }
             this.state.dataLoaded = true;
-            console.log(`[FSMDiagram] loadData: Finished. State has ${this.state.nodes.length} nodes. dataLoaded: ${this.state.dataLoaded}`);
         } catch (e) {
             console.error("[FSMDiagram] loadData: Error parsing FSM data:", e);
             this.state.nodes = [];
             this.state.connections = [];
-            this.state.dataLoaded = true; // Ensure dataLoaded is true even on error to avoid infinite loading states
+            this.state.dataLoaded = true;
         }
     }
 
     updateData = () => {
-        console.log("[FSMDiagram] updateData: Saving data to model.");
-        if (this.isReadonly) {
-            console.log("[FSMDiagram] updateData: Readonly mode, skipping save.");
-            return;
-        }
+        if (this.isReadonly) return;
         const data = { nodes: this.state.nodes, connections: this.state.connections };
-        console.log("[FSMDiagram] updateData: Data to save:", data);
         this.props.record.update({ [this.props.name]: JSON.stringify(data) });
     }
 
@@ -277,51 +234,34 @@ export class FSMDiagram extends Component {
     }
 
     onNodeMove = ({ nodeId, dx, dy, end }) => {
-        console.log(`[FSMDiagram] onNodeMove: Node ${nodeId}, delta (${dx}, ${dy}), end: ${end}.`);
-        if (this.isReadonly && !end) {
-            console.log("[FSMDiagram] onNodeMove: Readonly mode, skipping move.");
-            return;
-        }
+        if (this.isReadonly && !end) return;
         if (end) {
             if (!this.isReadonly) this.updateData();
-            console.log(`[FSMDiagram] onNodeMove: End of move for node ${nodeId}, data updated.`);
             return;
         }
         const nodesToMove = this.state.selectedIds.has(nodeId)
             ? this.state.nodes.filter(n => this.state.selectedIds.has(n.id))
             : [this.state.nodes.find(n => n.id === nodeId)].filter(Boolean);
         
-        if (nodesToMove.length === 0) {
-            console.warn(`[FSMDiagram] onNodeMove: No nodes found to move for nodeId ${nodeId}.`);
-            return;
-        }
+        if (nodesToMove.length === 0) return;
 
         for (const node of nodesToMove) {
             node.x += dx;
             node.y += dy;
-            console.log(`[FSMDiagram] onNodeMove: Node ${node.id} new position (${node.x}, ${node.y}).`);
         }
         this.state.isDirty = !this.state.isDirty; // Trigger re-render for connections
     }
     
     onNodeDblClick = (nodeId) => {
-        console.log(`[FSMDiagram] onNodeDblClick: Processing for node ${nodeId}.`);
         const node = this.state.nodes.find(n => n.id === nodeId);
         if (node) {
             this.state.editingNode = JSON.parse(JSON.stringify(node)); // Deep copy for editing
             this.state.editingNodeType = node.type;
-            console.log(`[FSMDiagram] onNodeDblClick: Opening editor for node ${nodeId}, type ${node.type}.`);
-        } else {
-            console.warn(`[FSMDiagram] onNodeDblClick: Node ${nodeId} not found.`);
         }
     }
 
     onNodeCreate = (type, label, x, y) => {
-        console.log(`[FSMDiagram] onNodeCreate: Creating node of type '${type}' with label '${label}' at (${x}, ${y}).`);
-        if (this.isReadonly) {
-            console.log("[FSMDiagram] onNodeCreate: Readonly mode, skipping creation.");
-            return;
-        }
+        if (this.isReadonly) return;
         const newNode = { id: `node_${Date.now()}`, type, x, y, label, height: 50 };
         if (type === 'transition') {
             newNode.outcomes = { '__default__': null };
@@ -331,7 +271,6 @@ export class FSMDiagram extends Component {
         this.state.nodes.push(newNode);
         this.updateData();
         this.state.isCreatingNode = false;
-        console.log(`[FSMDiagram] onNodeCreate: Node ${newNode.id} created. Total nodes: ${this.state.nodes.length}.`);
     }
     
     onNodeResize = ({ nodeId, height }) => {
@@ -456,17 +395,10 @@ export class FSMDiagram extends Component {
         this.state.editingNode = null;
     }
     onEditorSave = (updatedNode) => {
-        console.log("[FSMDiagram] onEditorSave: Saving updated node:", updatedNode);
-        if (this.isReadonly) {
-            console.log("[FSMDiagram] onEditorSave: Readonly mode, skipping save.");
-            return;
-        }
+        if (this.isReadonly) return;
         const nodeIndex = this.state.nodes.findIndex(n => n.id === updatedNode.id);
         if (nodeIndex !== -1) {
             this.state.nodes[nodeIndex] = updatedNode;
-            console.log(`[FSMDiagram] onEditorSave: Node ${updatedNode.id} updated.`);
-        } else {
-            console.warn(`[FSMDiagram] onEditorSave: Node ${updatedNode.id} not found for update.`);
         }
         this.state.editingNode = null;
         this.updateData();

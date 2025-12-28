@@ -15,16 +15,13 @@ export class FSMNode extends Component {
     };
 
     setup() {
-        console.log(`[FSMNode ${this.props.node.id}] setup: Initializing.`);
         this.nodeRef = useRef("node");
         this.lastHeight = 0;
 
         onMounted(() => {
-            console.log(`[FSMNode ${this.props.node.id}] onMounted: Checking size.`);
             this.checkSize();
         });
         onPatched(() => {
-            console.log(`[FSMNode ${this.props.node.id}] onPatched: Re-checking size.`);
             this.checkSize();
         });
     }
@@ -35,7 +32,6 @@ export class FSMNode extends Component {
             if (height !== this.lastHeight) {
                 this.lastHeight = height;
                 if (this.props.onResize) {
-                    console.log(`[FSMNode ${this.props.node.id}] checkSize: Height changed to ${height}, calling onResize.`);
                     this.props.onResize({ nodeId: this.props.node.id, height });
                 }
             }
@@ -43,7 +39,6 @@ export class FSMNode extends Component {
     }
 
     onPortMouseDown(ev, portName) {
-        console.log(`[FSMNode ${this.props.node.id}] onPortMouseDown: Port '${portName}' clicked.`);
         if (this.props.onPortMouseDown) {
             this.props.onPortMouseDown({ event: ev, portName: portName, nodeId: this.props.node.id });
         }
