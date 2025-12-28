@@ -69,6 +69,7 @@ export class FSMDiagram extends Component {
     }
 
     onMouseDown = (ev) => {
+        console.log("[FSMDiagram] onMouseDown", { target: ev.target.tagName, classes: ev.target.className });
         // Only handle primary button
         if (ev.button !== 0) return;
 
@@ -88,6 +89,7 @@ export class FSMDiagram extends Component {
         }
 
         if (isPort) {
+            console.log("[FSMDiagram] Port clicked, starting connection", { nodeId: isPort.dataset.nodeId, port: isPort.dataset.portName });
             ev.preventDefault();
             ev.stopPropagation();
             if (target.setPointerCapture && ev.pointerId !== undefined) {
@@ -224,15 +226,22 @@ export class FSMDiagram extends Component {
                 this.updateData();
             }
         } else if (dragType === 'connection' && !this.isReadonly) {
+            console.log("[FSMDiagram] onGlobalMouseUp: dragType connection, searching target port");
             // Find port under pointer
             const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
+            console.log("[FSMDiagram] elements at point:", elements.map(el => `${el.tagName}.${el.className}`));
             const targetPort = elements.find(el => el.closest('.o_fsm_port_in'))?.closest('.o_fsm_port_in');
             
             if (targetPort) {
                 const toNodeId = targetPort.dataset.nodeId;
+                console.log("[FSMDiagram] targetPort found", { toNodeId });
                 if (toNodeId !== this.state.newConnection.fromNode) {
                     this.addConnection(this.state.newConnection.fromNode, this.state.newConnection.fromPort, toNodeId);
+                } else {
+                    console.log("[FSMDiagram] Connection to self blocked");
                 }
+            } else {
+                console.log("[FSMDiagram] No targetPort found");
             }
             this.state.newConnection = null;
         }
@@ -433,9 +442,9 @@ export class FSMDiagram extends Component {
             return;
         }
         // Remove existing connection from the same port if any
-        this.state.connections = this.state.connections.filter(c => !(c.fromNodeId === fromNodeId && c.fromPortName === fromPortName));
+        const filteredConns = this.state.connections.filter(c => !(c.fromNodeId === fromNodeId && c.fromPortName === fromPortName));
         const id = `conn_${fromNodeId}_${fromPortName}_${toNodeId}`;
-        this.state.connections.push({ id, fromNodeId, fromPortName, toNodeId });
+        this.state.connections = [...filteredConns, { id, fromNodeId, fromPortName, toNodeId }];
         this.updateData();
         console.log(`[FSMDiagram] addConnection: Connection ${id} added. Total connections: ${this.state.connections.length}.`);
     }

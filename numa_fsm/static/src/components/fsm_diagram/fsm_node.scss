@@ -37,6 +37,19 @@
         border-radius: 50%;
         position: absolute;
         cursor: crosshair;
+        z-index: 10;
+        pointer-events: all;
+
+        &::after {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            right: -10px;
+            bottom: -10px;
+            border-radius: 50%;
+            // background: rgba(255,0,0,0.2); // Debug hitbox
+        }
 
         &.o_fsm_port_in {
             left: -6px;

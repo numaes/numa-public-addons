@@ -24,8 +24,7 @@
                         <span><t t-esc="event.name"/></span>
                         <div class="o_fsm_port o_fsm_port_out"
                              t-att-data-node-id="props.node.id"
-                             t-att-data-port-name="event.name"
-                             t-on-pointerdown.stop=""/>
+                             t-att-data-port-name="event.name"/>
                     </div>
                 </t>
                 <t t-if="props.node.type === 'transition' || props.node.type === 'start'">
@@ -33,8 +32,7 @@
                         <span><t t-esc="outcome"/></span>
                         <div class="o_fsm_port o_fsm_port_out"
                              t-att-data-node-id="props.node.id"
-                             t-att-data-port-name="outcome"
-                             t-on-pointerdown.stop=""/>
+                             t-att-data-port-name="outcome"/>
                     </div>
                 </t>
             </div>
