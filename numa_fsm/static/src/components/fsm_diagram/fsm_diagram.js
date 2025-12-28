@@ -91,7 +91,7 @@ export class FSMDiagram extends Component {
         onMounted(() => {
             console.log("[FSMDiagram] onMounted start");
             this.env.bus.addEventListener('fsm_node_click', this.onFSMNodeClick);
-            
+
             if (this.state.nodes.length > 0) {
                 setTimeout(() => {
                     console.log("[FSMDiagram] onMounted - zoomToFit delayed call");
@@ -320,6 +320,7 @@ export class FSMDiagram extends Component {
     }
 
     onMouseDown(ev) {
+        ev.preventDefault();
         const target = ev.target;
         const classes = target.className || "";
         
@@ -404,9 +405,14 @@ export class FSMDiagram extends Component {
     }
 
     onMouseMove = (ev) => {
+        if (this.state.isPanning || this.state.isDraggingNode) {
+            ev.preventDefault();
+        }
+        console.log("[FSMDiagram] onMouseMove", { isPanning: this.state.isPanning, isDraggingNode: this.state.isDraggingNode });
         if (this.state.isPanning) {
             const dx = ev.clientX - this.dragStart.x;
             const dy = ev.clientY - this.dragStart.y;
+            console.log("[FSMDiagram] onMouseMove - Panning", { dx, dy });
             if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
                 this.state.transform.x += dx;
                 this.state.transform.y += dy;
@@ -416,6 +422,7 @@ export class FSMDiagram extends Component {
         if (this.state.isDraggingNode) {
             const dx = ev.clientX - this.dragStart.x;
             const dy = ev.clientY - this.dragStart.y;
+            console.log("[FSMDiagram] onMouseMove - Dragging", { dx, dy });
             if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
                 this.onNodeMove({
                     nodeId: this.state.draggingNodeId,
