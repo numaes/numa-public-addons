@@ -2,8 +2,8 @@
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMDiagram" owl="1">
         <div class="o_fsm_diagram_container o_field_fsm_diagram overflow-hidden">
-            <div t-ref="container" 
-                 class="w-100 h-100" 
+            <div t-ref="container"
+                 class="w-100 h-100"
                  tabindex="0"
                  t-on-pointerdown="onMouseDown"
                  t-on-dblclick="onDblClick"
