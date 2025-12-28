@@ -8,6 +8,7 @@
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     transition: box-shadow 0.2s ease-in-out;
     pointer-events: all;
+    box-sizing: border-box;
 
     &.o_fsm_node_active {
         box-shadow: 0 0 0 4px rgba(0, 123, 255, 0.5);
@@ -24,9 +25,11 @@
         }
     }
 
-    &:hover:not(.o_fsm_node_selected), &.o_fsm_node_hover:not(.o_fsm_node_selected) {
-        border-color: #714B67;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    &:hover, &.o_fsm_node_hover {
+        &:not(.o_fsm_node_selected) {
+            border-color: #714B67;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
     }
 
     &.o_fsm_node_connecting {
@@ -77,6 +80,8 @@
 
         &.o_fsm_port_out {
             right: -6px;
+            top: 50%;
+            transform: translateY(-50%);
         }
     }
 
@@ -130,10 +135,7 @@
     background-color: #d4edda;
 
     .o_fsm_node_header {
-        border-bottom: none;
-        background-color: transparent;
-        padding: 0;
-        text-align: center;
+        display: none;
     }
 
     .o_fsm_node_body {
@@ -166,9 +168,7 @@
     background-color: #f8d7da;
 
     .o_fsm_node_header {
-        border-bottom: none;
-        background-color: transparent;
-        padding: 0;
+        display: none;
     }
 
     .o_fsm_node_body {

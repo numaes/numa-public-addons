@@ -495,26 +495,40 @@ export class FSMDiagram extends Component {
             const bodyPaddingTop = 10;
             const portWrapperHeight = 20;
             
-            // The center of the port is at header + bodyPaddingTop + (index * wrapperHeight) + (wrapperHeight / 2)
-            // Header is 30px, body padding is 10px. 
-            // In CSS, o_fsm_port_out has no top offset, it is naturally placed in the wrapper.
-            // But getCurvePath needs the absolute offset from node top.
+            // Precise calculation: header (30) + padding (10) + wrapper offset (index * 20) + wrapper center (10)
             const yOffset = headerHeight + bodyPaddingTop + (portIndex * portWrapperHeight) + (portWrapperHeight / 2);
 
             x1 = fromNode.x + 180;
             y1 = fromNode.y + yOffset;
         }
 
+        // Destination: port is at left: -6px, top: 50%
+        // We target the exact left edge of the node (x2) and vertical center
         const x2 = toNode.x;
-        // In-port is always at 50% height of the node
-        const nodeHeight = toNode.height || (toNode.type === 'start' ? 100 : (toNode.type === 'end' ? 80 : 50));
+        let nodeHeight = toNode.height;
+        
+        // Fallback for default heights if onNodeResize hasn't triggered yet
+        if (!nodeHeight) {
+            if (toNode.type === 'start') nodeHeight = 100;
+            else if (toNode.type === 'end') nodeHeight = 80;
+            else {
+                const portsCount = toNode.type === 'state' ? (toNode.events?.length || 0) : Object.keys(toNode.outcomes || {}).length;
+                nodeHeight = 30 + 20 + (portsCount * 20);
+            }
+        }
+        
         const y2 = toNode.y + (nodeHeight / 2);
+
+        if (conn.id === this.state.connections[0]?.id) {
+            console.log(`[FSMDiagram] getCurvePath first connection: (${x1}, ${y1}) -> (${x2}, ${y2})`);
+        }
 
         const dx = x2 - x1;
         const curveX = Math.max(Math.abs(dx) * 0.5, 50);
 
-        // We use Math.round to avoid sub-pixel offsets that cause visual jumps
-        return `M ${Math.round(x1)} ${Math.round(y1)} C ${Math.round(x1 + curveX)} ${Math.round(y1)}, ${Math.round(x2 - curveX)} ${Math.round(y2)}, ${Math.round(x2)} ${Math.round(y2)}`;
+        // Sub-pixel precision for perfect alignment with physical ports
+        const path = `M ${x1} ${y1} C ${x1 + curveX} ${y1}, ${x2 - curveX} ${y2}, ${x2} ${y2}`;
+        return path;
     }
     
     showHelp = () => {
