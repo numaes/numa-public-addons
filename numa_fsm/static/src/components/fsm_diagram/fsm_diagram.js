@@ -175,13 +175,15 @@ export class FSMDiagram extends Component {
         } else if (this.dragState.type === 'node' && !this.isReadonly) {
             const k = this.state.transform.k;
             console.log("[FSMDiagram] Dragging nodes, dx, dy:", dx, dy);
-            for (const initialNode of this.dragState.initialNodes) {
-                const node = this.state.nodes.find(n => n.id === initialNode.id);
-                if (node) {
-                    node.x = initialNode.x + (dx / k);
-                    node.y = initialNode.y + (dy / k);
+            this.state.nodes = this.state.nodes.map(node => {
+                if (this.state.selectedIds.has(node.id)) {
+                    const initial = this.dragState.initialNodes.find(n => n.id === node.id);
+                    if (initial) {
+                        return { ...node, x: initial.x + (dx / k), y: initial.y + (dy / k) };
+                    }
                 }
-            }
+                return node;
+            });
             this.state.isDirty = !this.state.isDirty;
         }
     }
@@ -366,9 +368,9 @@ export class FSMDiagram extends Component {
     
     onNodeResize = ({ nodeId, height }) => {
         if (this.isReadonly) return;
-        const node = this.state.nodes.find(n => n.id === nodeId);
-        if (node && node.height !== height) {
-            node.height = height;
+        const nodeIndex = this.state.nodes.findIndex(n => n.id === nodeId);
+        if (nodeIndex !== -1 && this.state.nodes[nodeIndex].height !== height) {
+            this.state.nodes[nodeIndex] = { ...this.state.nodes[nodeIndex], height };
             this.updateData();
         }
     }
@@ -484,14 +486,16 @@ export class FSMDiagram extends Component {
     onEditorClose = () => {
         console.log("[FSMDiagram] onEditorClose: Closing editor.");
         this.state.editingNode = null;
+        this.state.editingNodeType = null;
     }
     onEditorSave = (updatedNode) => {
         if (this.isReadonly) return;
         const nodeIndex = this.state.nodes.findIndex(n => n.id === updatedNode.id);
         if (nodeIndex !== -1) {
-            this.state.nodes[nodeIndex] = updatedNode;
+            this.state.nodes[nodeIndex] = { ...updatedNode };
         }
         this.state.editingNode = null;
+        this.state.editingNodeType = null;
         this.updateData();
     };
 }

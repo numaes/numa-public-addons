@@ -65,13 +65,13 @@
                                 onSave="onNodeCreate"
                                 onClose="onNodeCreatorClose"/>
 
-                <FSMTransitionEditor t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'"
+                <FSMTransitionEditor t-if="state.editingNode and (state.editingNodeType === 'transition' or state.editingNodeType === 'start')"
                                      node="state.editingNode"
                                      readonly="isReadonly"
                                      onSave="onEditorSave"
                                      onClose="onEditorClose"/>
 
-                <FSMStateEditor t-if="state.editingNodeType === 'state'"
+                <FSMStateEditor t-if="state.editingNode and state.editingNodeType === 'state'"
                                 node="state.editingNode"
                                 readonly="isReadonly"
                                 onSave="onEditorSave"
