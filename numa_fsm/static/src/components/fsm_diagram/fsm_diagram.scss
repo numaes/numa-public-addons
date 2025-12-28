@@ -50,18 +50,32 @@
     }
 }
 
+.o_fsm_node {
+    &:hover, &.o_fsm_node_hover {
+        border-color: #714B67 !important;
+        box-shadow: 0 4px 12px rgba(113, 75, 103, 0.3) !important;
+        z-index: 100;
+    }
+}
+
+.o_fsm_connection_group {
+    pointer-events: all;
+    cursor: pointer;
+
+    &:hover {
+        .o_fsm_connection {
+            stroke: #714B67 !important;
+            stroke-width: 6 !important;
+        }
+    }
+}
+
 .o_fsm_connection {
     fill: none;
     stroke: #999;
     stroke-width: 2;
     transition: stroke 0.2s, stroke-width 0.2s;
-    cursor: pointer;
-    pointer-events: all;
-
-    &:hover, &.o_fsm_connection_hover {
-        stroke: #714B67;
-        stroke-width: 4;
-    }
+    pointer-events: stroke; 
 }
 
 .o_fsm_connection_selected {

@@ -87,12 +87,18 @@
 
     .o_fsm_port_out_wrapper {
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-end;
         align-items: center;
-        padding: 2px 0;
+        padding: 2px 10px 2px 0;
         height: 20px;
         box-sizing: border-box;
         position: relative;
+
+        span {
+            font-size: 11px;
+            color: #666;
+            margin-right: 5px;
+        }
     }
 }
 
@@ -133,7 +139,12 @@
     align-items: center;
     justify-content: center;
     background-color: #d4edda;
+    border: 2px solid #28a745;
 
+    &:hover, &.o_fsm_node_hover {
+        border-color: #714B67 !important;
+        box-shadow: 0 0 15px rgba(113, 75, 103, 0.5) !important;
+    }
     .o_fsm_node_header {
         border-bottom: none;
         background: transparent;

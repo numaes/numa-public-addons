@@ -504,7 +504,7 @@ export class FSMDiagram extends Component {
 
         // Destination: port is at left: -6px, top: 50%
         // We target the exact left edge of the node (x2) and vertical center
-        const x2 = toNode.x + 2; // Adjusted slightly right to hit port center better
+        const x2 = toNode.x; 
         let nodeHeight = toNode.height;
         
         // Fallback for default heights if onNodeResize hasn't triggered yet
@@ -513,11 +513,11 @@ export class FSMDiagram extends Component {
             else if (toNode.type === 'end') nodeHeight = 80;
             else {
                 const portsCount = toNode.type === 'state' ? (toNode.events?.length || 0) : Object.keys(toNode.outcomes || {}).length;
-                nodeHeight = 30 + 20 + (portsCount * 20);
+                nodeHeight = 30 + 10 + (portsCount * 20) + 10; // header + padding-top + ports + padding-bottom
             }
         }
         
-        const y2 = toNode.y + (nodeHeight / 2) + 1; // Adjusted 1px down to compensate for alignment issue
+        const y2 = toNode.y + (nodeHeight / 2);
 
         const dx = x2 - x1;
         const curveX = Math.max(Math.abs(dx) * 0.5, 50);
