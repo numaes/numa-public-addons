@@ -7,10 +7,13 @@
              t-att-class="{
                 'o_fsm_node_active': props.activeNodeId === props.node.id,
                 'o_fsm_node_selected': props.selected,
+                'o_fsm_node_hover': props.hovered,
                 'o_fsm_node_connecting': props.isConnecting,
                 ['o_fsm_node_' + props.node.type]: true
              }"
-             t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'">
+             t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'"
+             t-on-pointerenter="() => props.onPointerEnter &amp;&amp; props.onPointerEnter()"
+             t-on-pointerleave="() => props.onPointerLeave &amp;&amp; props.onPointerLeave()">
 
             <div t-if="props.node.type !== 'start' &amp;&amp; props.node.type !== 'end'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>
             <div t-if="props.node.type === 'end'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>

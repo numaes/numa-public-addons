@@ -45,6 +45,7 @@ export class FSMDiagram extends Component {
             selectedIds: new Set(),
             dataLoaded: false,
             connectingTargetId: null,
+            hoveredId: null,
         });
 
         this.dragState = null;
@@ -70,7 +71,9 @@ export class FSMDiagram extends Component {
     }
 
     onMouseDown = (ev) => {
-        console.log("[FSMDiagram] onMouseDown", { target: ev.target.tagName, classes: ev.target.className });
+        // Clear hover state on click
+        this.state.hoveredId = null;
+        
         // Only handle primary button
         if (ev.button !== 0) return;
 
@@ -210,9 +213,9 @@ export class FSMDiagram extends Component {
             // Enhanced feedback: show target node highlighting
             const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
             const targetNodeEl = elements.find(el => el.closest('.o_fsm_node'))?.closest('.o_fsm_node');
-            const targetNodeId = targetNodeEl?.dataset.nodeId;
+            const targetNodeId = targetNodeEl?.dataset?.nodeId;
             
-            if (targetNodeId && targetNodeId !== this.state.newConnection.fromNode) {
+            if (targetNodeId && targetNodeId !== this.state.newConnection.fromNode && targetNodeId !== 'start_node') {
                 this.state.connectingTargetId = targetNodeId;
             } else {
                 this.state.connectingTargetId = null;
@@ -238,7 +241,6 @@ export class FSMDiagram extends Component {
                 this.updateData();
             }
         } else if (dragType === 'connection' && !this.isReadonly) {
-            console.log("[FSMDiagram] onGlobalMouseUp: dragType connection, searching target port");
             // Find port or node under pointer
             const elements = document.elementsFromPoint(ev.clientX, ev.clientY);
             console.log("[FSMDiagram] elements at point:", elements.map(el => `${el.tagName}.${el.className}`));
@@ -381,16 +383,13 @@ export class FSMDiagram extends Component {
     }
 
     onWheel = (ev) => {
-        console.log("[FSMDiagram] onWheel: Zoom event detected.");
         ev.preventDefault();
         const zoomIntensity = 0.1;
         const delta = ev.deltaY < 0 ? 1 : -1;
         const newScale = this.state.transform.k * (1 + delta * zoomIntensity);
         if (newScale >= 0.1 && newScale <= 3) {
             this.state.transform.k = newScale;
-            console.log("[FSMDiagram] onWheel: New scale:", this.state.transform.k);
         } else {
-            console.log("[FSMDiagram] onWheel: Scale out of bounds, not applying.");
         }
     }
 
@@ -496,15 +495,18 @@ export class FSMDiagram extends Component {
             const bodyPaddingTop = 10;
             const portWrapperHeight = 20;
             
-            // The center of the port is at header + padding + (index * wrapperHeight) + (wrapperHeight / 2)
+            // The center of the port is at header + bodyPaddingTop + (index * wrapperHeight) + (wrapperHeight / 2)
+            // Header is 30px, body padding is 10px. 
+            // In CSS, o_fsm_port_out has no top offset, it is naturally placed in the wrapper.
+            // But getCurvePath needs the absolute offset from node top.
             const yOffset = headerHeight + bodyPaddingTop + (portIndex * portWrapperHeight) + (portWrapperHeight / 2);
-            
+
             x1 = fromNode.x + 180;
             y1 = fromNode.y + yOffset;
         }
 
         const x2 = toNode.x;
-        // In-port is always at 50% height of the node, transform: translateY(-50%)
+        // In-port is always at 50% height of the node
         const nodeHeight = toNode.height || (toNode.type === 'start' ? 100 : (toNode.type === 'end' ? 80 : 50));
         const y2 = toNode.y + (nodeHeight / 2);
 
@@ -546,6 +548,10 @@ export class FSMDiagram extends Component {
         this.state.editingNodeType = null;
         this.updateData();
     };
+
+    onFSMNodeClick = (ev) => {
+        // Simple click handled via onMouseDown for better event integration in Odoo 18
+    }
 }
 
 registry.category("fields").add("fsm_diagram", {

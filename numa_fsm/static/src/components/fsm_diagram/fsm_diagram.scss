@@ -57,7 +57,7 @@
     transition: stroke 0.2s, stroke-width 0.2s;
     cursor: pointer;
 
-    &:hover:not(.o_fsm_connection_selected) {
+    &:hover:not(.o_fsm_connection_selected), &.o_fsm_connection_hover:not(.o_fsm_connection_selected) {
         stroke: #714B67;
         stroke-width: 4;
     }
@@ -67,7 +67,7 @@
     stroke: #00A09D;
     stroke-width: 4;
 
-    &:hover {
+    &:hover, &.o_fsm_connection_hover {
         stroke: #007a77;
         stroke-width: 6;
     }

@@ -30,11 +30,16 @@
                                       t-att-data-conn-id="conn.id"
                                       t-att-class="{
                                           'o_fsm_connection': true,
-                                          'o_fsm_connection_selected': state.selectedIds.has(conn.id)
-                                      }"/>
+                                          'o_fsm_connection_selected': state.selectedIds.has(conn.id),
+                                          'o_fsm_connection_hover': state.hoveredId === conn.id
+                                      }"
+                                      t-on-pointerenter="() => state.hoveredId = conn.id"
+                                      t-on-pointerleave="() => state.hoveredId = null"/>
                                 <path t-att-d="getCurvePath(conn)"
                                       t-att-data-conn-id="conn.id"
-                                      class="o_fsm_connection_hitbox"/>
+                                      class="o_fsm_connection_hitbox"
+                                      t-on-pointerenter="() => state.hoveredId = conn.id"
+                                      t-on-pointerleave="() => state.hoveredId = null"/>
                             </t>
                             <path t-if="state.newConnection"
                                   t-att-d="`M ${state.newConnection.x1} ${state.newConnection.y1} L ${state.newConnection.x2} ${state.newConnection.y2}`"
@@ -47,8 +52,11 @@
                                 <FSMNode node="node"
                                          diagramScale="state.transform.k"
                                          selected="state.selectedIds.has(node.id)"
+                                         hovered="state.hoveredId === node.id"
                                          isConnecting="state.connectingTargetId === node.id"
-                                         onPortMouseDown="onPortMouseDown"/>
+                                         onPortMouseDown="onPortMouseDown"
+                                         onPointerEnter="() => state.hoveredId = node.id"
+                                         onPointerLeave="() => state.hoveredId = null"/>
                             </t>
                         </div>
                     </t>
