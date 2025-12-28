@@ -78,6 +78,7 @@
             left: -6px;
             top: 50%;
             transform: translateY(-50%);
+            display: none; // No dibujar círculo de entrada
         }
 
         &.o_fsm_port_out {
@@ -174,12 +175,19 @@
         display: flex;
         justify-content: center;
         pointer-events: none;
+        position: relative;
+        height: 0; // El puerto se posicionará respecto al contenedor de 100x100
     }
 
     .o_fsm_port_out_wrapper {
         width: 100%;
+        display: flex;
         justify-content: center;
         padding: 0;
+        position: absolute;
+        top: 50px; // Centro del círculo de 100px
+        left: 0;
+        height: 0;
 
         span {
             display: none;
@@ -187,7 +195,7 @@
 
         .o_fsm_port_out {
             right: -6px;
-            top: 50%;
+            top: 0;
             transform: translateY(-50%);
         }
     }

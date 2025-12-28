@@ -367,7 +367,7 @@ export class FSMDiagram extends Component {
             }
             if (portIndex === -1) portIndex = 0;
             x1 = fromNode.x + NODE_WIDTH;
-            y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
+            y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + Math.round(portIndex * PORT_HEIGHT) + Math.round(PORT_HEIGHT / 2);
         }
 
         this.state.newConnection = { fromNode: nodeId, fromPort: portName, x1, y1, x2: x1, y2: y1 };
@@ -442,7 +442,7 @@ export class FSMDiagram extends Component {
             }
             if (portIndex === -1) portIndex = 0;
             x1 = fromNode.x + NODE_WIDTH;
-            y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + (portIndex * PORT_HEIGHT) + (PORT_HEIGHT / 2);
+            y1 = fromNode.y + HEADER_HEIGHT + BODY_PADDING + Math.round(portIndex * PORT_HEIGHT) + Math.round(PORT_HEIGHT / 2);
         }
 
         const x2 = toNode.x;
@@ -455,7 +455,7 @@ export class FSMDiagram extends Component {
             // All other nodes have input port at 50% total height
             // We use the reported height or a safe default of 50
             const h = toNode.height || 50;
-            y2 = toNode.y + (h / 2);
+            y2 = toNode.y + Math.round(h / 2);
         }
 
         const dx = x2 - x1;

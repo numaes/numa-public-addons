@@ -15,8 +15,7 @@
              t-on-pointerenter="onPointerEnter"
              t-on-pointerleave="onPointerLeave">
 
-            <div t-if="props.node.type !== 'start' &amp;&amp; props.node.type !== 'end'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>
-            <div t-if="props.node.type === 'end'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>
+            <div t-if="props.node.type !== 'start'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>
 
             <div class="o_fsm_node_header" t-on-pointerenter.stop="" t-on-pointerleave.stop="">
                 <i t-if="props.node.is_breakpoint" class="fa fa-hand-paper-o me-2" title="Breakpoint"/>
