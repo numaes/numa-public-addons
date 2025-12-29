@@ -62,11 +62,9 @@ export class FSMDiagram extends Component {
 
         onWillStart(async () => {
             console.log("[FSMDiagram] onWillStart. props.value:", this.props.value);
-            // Solo cargamos si el valor NO es undefined. 
-            // Si es undefined, esperamos a onWillUpdateProps para no marcar dataLoaded prematuramente.
-            if (this.props.value !== undefined) {
-                await this.loadData(this.props.value);
-            }
+            // Cargamos datos siempre para asegurar que dataLoaded pase a true
+            // Si es undefined, loadData inicializará el nodo por defecto
+            await this.loadData(this.props.value);
         });
 
         onWillUpdateProps(async (nextProps) => {
@@ -74,9 +72,9 @@ export class FSMDiagram extends Component {
             const oldVal = JSON.stringify(this.props.value);
             const newVal = JSON.stringify(nextProps.value);
             
-            // Forzamos la carga si el valor cambia o si aún no hemos cargado datos y el valor es válido
-            if (oldVal !== newVal || (!this.state.dataLoaded && nextProps.value !== undefined)) {
-                console.log("[FSMDiagram] Loading/Reloading data...");
+            // Forzamos la carga si el valor cambia
+            if (oldVal !== newVal) {
+                console.log("[FSMDiagram] Value changed, reloading data...");
                 await this.loadData(nextProps.value);
                 
                 if (this.state.nodes.length > 0) {
