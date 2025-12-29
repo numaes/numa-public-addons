@@ -57,10 +57,20 @@
                                          selected="state.selectedIds.has(node.id)"
                                          hovered="state.hoveredId === node.id"
                                          isConnecting="state.connectingTargetId === node.id"
+                                         onMove="onNodeMove"
+                                         onResize="onNodeResize"
                                          onPortMouseDown="onPortMouseDown"
+                                         onNodeDblClick="onNodeDblClick"
                                          onMouseEnter="() => onElementPointerEnter(node.id)"
                                          onMouseLeave="onElementPointerLeave"/>
                             </t>
+                        </div>
+                    </t>
+                    <t t-else="">
+                        <div class="d-flex align-items-center justify-content-center h-100">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
                         </div>
                     </t>
                 </div>

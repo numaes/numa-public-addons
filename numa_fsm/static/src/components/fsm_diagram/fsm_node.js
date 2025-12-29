@@ -19,10 +19,12 @@ export class FSMNode extends Component {
     };
 
     setup() {
+        console.log("[FSMNode] setup. nodeId:", this.props.node.id);
         this.nodeRef = useRef("node");
         this.lastHeight = 0;
 
         onMounted(() => {
+            console.log("[FSMNode] onMounted. nodeId:", this.props.node.id);
             this.checkSize();
         });
         onPatched(() => {

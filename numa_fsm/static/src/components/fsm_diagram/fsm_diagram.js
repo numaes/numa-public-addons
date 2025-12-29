@@ -37,6 +37,7 @@ export class FSMDiagram extends Component {
     }
 
     setup() {
+        console.log("[FSMDiagram] setup started. props.value:", this.props.value);
         this.notification = useService("notification");
         this.containerRef = useRef("container");
         this.state = useState({
@@ -60,24 +61,35 @@ export class FSMDiagram extends Component {
         this.maxHistory = 50;
 
         onWillStart(async () => {
-            await this.loadData(this.props.value);
+            console.log("[FSMDiagram] onWillStart. props.value:", this.props.value);
+            // Solo cargamos si el valor NO es undefined. 
+            // Si es undefined, esperamos a onWillUpdateProps para no marcar dataLoaded prematuramente.
+            if (this.props.value !== undefined) {
+                await this.loadData(this.props.value);
+            }
         });
 
         onWillUpdateProps(async (nextProps) => {
+            console.log("[FSMDiagram] onWillUpdateProps. nextProps.value:", nextProps.value);
             const oldVal = JSON.stringify(this.props.value);
             const newVal = JSON.stringify(nextProps.value);
-            if (oldVal !== newVal) {
+            
+            // Forzamos la carga si el valor cambia o si aún no hemos cargado datos y el valor es válido
+            if (oldVal !== newVal || (!this.state.dataLoaded && nextProps.value !== undefined)) {
+                console.log("[FSMDiagram] Loading/Reloading data...");
                 await this.loadData(nextProps.value);
+                
+                if (this.state.nodes.length > 0) {
+                    window.requestAnimationFrame(() => this.zoomToFit());
+                }
             }
         });
 
         onMounted(() => {
+            console.log("[FSMDiagram] onMounted. state.nodes length:", this.state.nodes.length);
+            // Si el valor llega tarde, zoomToFit será llamado desde onWillUpdateProps
             if (this.state.nodes.length > 0) {
-                setTimeout(() => {
-                    if (this.containerRef.el) {
-                        this.zoomToFit();
-                    }
-                }, 500);
+                this.zoomToFit();
             }
         });
 
@@ -299,6 +311,7 @@ export class FSMDiagram extends Component {
     }
     
     loadData = (value) => {
+        console.log("[FSMDiagram] loadData called with:", value);
         try {
             let data = value;
             if (typeof value === 'string') {
@@ -307,7 +320,7 @@ export class FSMDiagram extends Component {
                 } else {
                     data = JSON.parse(value);
                 }
-            } else if (value === false || value === null) {
+            } else if (value === false || value === null || value === undefined) {
                 data = {};
             } else if (typeof value === 'object') {
                 data = value;
@@ -317,8 +330,10 @@ export class FSMDiagram extends Component {
             
             const nodes = data?.nodes || [];
             const connections = data?.connections || [];
+            console.log("[FSMDiagram] Processing nodes:", nodes.length, "connections:", connections.length);
             
             if (nodes.length === 0) {
+                console.log("[FSMDiagram] Initializing with default start_node");
                 this.state.nodes = [{
                     id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null }
                 }];
@@ -327,10 +342,14 @@ export class FSMDiagram extends Component {
                 // Ensure deep copy to trigger OWL's reactivity and avoid Proxy issues
                 this.state.nodes = JSON.parse(JSON.stringify(nodes));
                 this.state.connections = JSON.parse(JSON.stringify(connections));
+                console.log("[FSMDiagram] state.nodes populated. length:", this.state.nodes.length);
             }
             
+            // Crucial: we mark dataLoaded ONLY if we actually processed something (even default)
             this.state.dataLoaded = true;
+            console.log("[FSMDiagram] state.dataLoaded is now true");
         } catch (e) {
+            console.error("[FSMDiagram] Error parsing data:", e);
             this.state.nodes = [{ id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null } }];
             this.state.connections = [];
             this.state.dataLoaded = true;
@@ -356,8 +375,19 @@ export class FSMDiagram extends Component {
     }
 
     zoomToFit = () => {
-        if (!this.containerRef.el || this.state.nodes.length === 0) return;
+        if (!this.containerRef.el || this.state.nodes.length === 0) {
+            console.log("[FSMDiagram] zoomToFit skipped. containerRef.el:", !!this.containerRef.el, "nodes:", this.state.nodes.length);
+            return;
+        }
         const rect = this.containerRef.el.getBoundingClientRect();
+        console.log("[FSMDiagram] zoomToFit. Container rect:", rect.width, "x", rect.height);
+        
+        if (rect.width === 0 || rect.height === 0) {
+            console.warn("[FSMDiagram] zoomToFit: container has no size yet. Retrying in next frame.");
+            window.requestAnimationFrame(() => this.zoomToFit());
+            return;
+        }
+
         const padding = 50;
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         this.state.nodes.forEach(n => {
@@ -377,6 +407,7 @@ export class FSMDiagram extends Component {
             x: (rect.width / 2) - (k * (minX + graphWidth / 2)),
             y: (rect.height / 2) - (k * (minY + graphHeight / 2)),
         };
+        console.log("[FSMDiagram] zoomToFit completed. transform:", JSON.stringify(this.state.transform));
     }
 
     onWheel = (ev) => {
@@ -451,6 +482,7 @@ export class FSMDiagram extends Component {
     }
     
     onNodeResize = ({ nodeId, height }) => {
+        console.log("[FSMDiagram] onNodeResize. nodeId:", nodeId, "height:", height);
         const nodeIndex = this.state.nodes.findIndex(n => n.id === nodeId);
         if (nodeIndex !== -1 && this.state.nodes[nodeIndex].height !== height) {
             this.state.nodes = this.state.nodes.map(n => n.id === nodeId ? { ...n, height } : n);
