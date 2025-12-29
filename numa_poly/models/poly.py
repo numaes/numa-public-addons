@@ -77,14 +77,16 @@ class IrPolyBase(models.Model):
     def as_concrete_model(self):
         """
         Convert this base record to its concrete model representation.
+        If no concrete model is defined (legacy records), returns self.
 
         Returns:
             The same record but as an instance of its concrete model class.
         """
         self.ensure_one()
-
+        if not self.concrete_model_id:
+            return self
         concrete_model = self.env[self.concrete_model_id.model]
-        return concrete_model.browse(self.id).exists()
+        return concrete_model.browse(self.id).exists() or self
 
 
 class PolyReference(fields.Many2one):
@@ -257,6 +259,36 @@ class PolyBase(BaseModel):
 
     # Flag to track if ID has been checked
     _checked_id = False
+
+    def as_concrete_model(self):
+        """
+        Convert this record to its most concrete model representation.
+        If no concrete model is defined (legacy records), returns self.
+        """
+        self.ensure_one()
+        # If the field is not even defined on this model, we are the concrete representation
+        if 'concrete_model_id' not in self._fields:
+            return self
+        if not self.concrete_model_id:
+            return self
+        if self.concrete_model_id.model == self._name:
+            return self
+        concrete_model = self.env[self.concrete_model_id.model]
+        return concrete_model.browse(self.id).exists() or self
+
+    def _compute_concrete_model_id(self):
+        """
+        Compute the concrete_model_id field for polymorphic models.
+        Handles fallback to current model for legacy records (no ir.poly_base entry).
+        """
+        for record in self:
+            # Check existence in ir.poly_base using the shared ID
+            poly_base = self.env['ir.poly_base'].sudo().browse(record.id)
+            if poly_base.exists():
+                record.concrete_model_id = poly_base.concrete_model_id
+            else:
+                # Legacy record: assume current model is the concrete one
+                record.concrete_model_id = self.env['ir.model']._get_id(record._name)
 
     def compute_poly_base_id(self):
         """
@@ -444,7 +476,8 @@ class PolyBase(BaseModel):
             fields.Many2one(
                 'ir.model',
                 string='Concrete model',
-                related='poly_base_id.concrete_model_id',
+                compute='_compute_concrete_model_id',
+                compute_sudo=True,
                 automatic=True,
                 readonly=True
              )
@@ -489,8 +522,13 @@ class PolyBase(BaseModel):
                 for subfield_name, subfield in base_model._fields.items():
                     # Only add fields that aren't already defined, aren't PolyReferences,
                     # and aren't related fields (to avoid duplication)
-                    if subfield_name not in self._fields and \
-                       not isinstance(subfield, PolyReference) and \
+                    if subfield_name in self._fields:
+                        if not isinstance(subfield, PolyReference) and not subfield.related:
+                            _logger.warning("Campo '%s' en '%s' está siendo redefinido por herencia polimórfica desde '%s'", 
+                                            subfield_name, self._name, mm)
+                        continue
+
+                    if not isinstance(subfield, PolyReference) and \
                        not subfield.related:
                         if subfield_name not in related_fields:
                             related_fields[subfield_name] = (
@@ -500,6 +538,9 @@ class PolyBase(BaseModel):
                                 subfield.comodel_name,
                                 subfield
                             )
+                        else:
+                            _logger.warning("Campo '%s' en '%s' está siendo redefinido por herencia polimórfica desde '%s' (ya definido por otra base)", 
+                                            subfield_name, self._name, mm)
 
                 # Add non-field attributes from the model
                 for attribute_name in base_model.mro()[1].__class__.__dir__(base_model):
@@ -710,7 +751,7 @@ class PolyBase(BaseModel):
                     existing_base = base_model.search([('id', '=', new_id)], limit=1)
                     if not existing_base:
                         _logger.debug(f'Creating {base} with {base_data} for id {new_id}')
-                        base_model.create(base_data)
+                        base_model.create([base_data])
                     else:
                         _logger.debug(f'Updating {base} with {base_data} for id {new_id}')
                         existing_base.write(base_data)
@@ -726,7 +767,7 @@ class PolyBase(BaseModel):
 
                 base_data['id'] = new_id
                 _logger.debug(f'Creating {self._name} with {base_data} for id {new_id}')
-                new_record = super().create(base_data)
+                new_record = super().create([base_data])
                 new_records |= new_record
 
             return new_records
