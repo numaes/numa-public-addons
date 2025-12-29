@@ -70,7 +70,7 @@ class FSMDefinition(models.Model):
                 
                 nodes = ui_data.get('nodes', [])
                 connections = ui_data.get('connections', [])
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError) as e:
                 continue
 
             compiled_nodes = {}

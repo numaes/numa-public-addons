@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState, useRef, onMounted, onWillStart, onWillUnmount, useExternalListener } from "@odoo/owl";
+import { Component, useState, useRef, onMounted, onWillStart, onWillUpdateProps, onWillUnmount, useExternalListener } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { useService } from "@web/core/utils/hooks";
@@ -61,6 +61,14 @@ export class FSMDiagram extends Component {
 
         onWillStart(async () => {
             await this.loadData(this.props.value);
+        });
+
+        onWillUpdateProps(async (nextProps) => {
+            const oldVal = JSON.stringify(this.props.value);
+            const newVal = JSON.stringify(nextProps.value);
+            if (oldVal !== newVal) {
+                await this.loadData(nextProps.value);
+            }
         });
 
         onMounted(() => {
@@ -294,20 +302,27 @@ export class FSMDiagram extends Component {
         try {
             let data = value;
             if (typeof value === 'string') {
-                if (value.trim() === "" || value.trim() === "{}") {
+                if (value.trim() === "" || value.trim() === "{}" || value.trim() === "false") {
                     data = {};
                 } else {
                     data = JSON.parse(value);
                 }
+            } else if (value === false) {
+                data = {};
+            } else if (typeof value === 'object' && value !== null) {
+                data = value;
+            } else {
+                data = {};
             }
             
             this.state.nodes = data?.nodes || [];
             this.state.connections = data?.connections || [];
 
             if (this.state.nodes.length === 0) {
-                this.state.nodes.push({
+                this.state.nodes = [{
                     id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null }
-                });
+                }];
+                this.state.connections = [];
             }
             this.state.dataLoaded = true;
         } catch (e) {
@@ -318,7 +333,9 @@ export class FSMDiagram extends Component {
     }
 
     updateData = async () => {
-        if (this.isReadonly) return;
+        if (this.isReadonly) {
+            return;
+        }
         const data = { nodes: this.state.nodes, connections: this.state.connections };
         
         try {
