@@ -1,118 +1,79 @@
-# Numa Poly: Practical Usage Guide (Cookbook)
+# Numa Poly: Developer Implementation Guide
 
-This guide provides practical patterns and solutions for common problems when using `numa_poly`. For architectural details, see `architecture.md`.
+This guide details the practical implementation patterns and best practices for leveraging the `numa_poly` polymorphic system in Odoo 18.
 
-## 1. The Golden Rule: When to Use `numa_poly`
+## 1. Choosing Your Inheritance Strategy
 
--   **Use standard Odoo `_inherit`:** When you want to add simple fields or methods to an existing model.
--   **Use `numa_poly` (`_depend_models`):** When you want to add a complex, self-contained "behavior" (like a state machine, versioning, etc.) to one or more models.
+| Feature | Standard `_inherit` | Numa Poly `_depend_models` |
+|---------|---------------------|----------------------------|
+| Purpose | Extending existing models with a few fields/methods. | Implementing complex, reusable, and independent behaviors. |
+| DB Structure | Adds columns to the same table. | Separate tables sharing the same ID (Horizontal scaling). |
+| Complexity | Low. | High (True polymorphic). |
+| Flexibility | Rigid (linked to model identity). | Modular (pluggable behaviors). |
 
----
+## 2. Core Implementation Patterns
 
-## 2. Core Patterns (Recipes)
+### Pattern A: Creating a Reusable Behavioral Base
+A "Behavior" is a model designed to be mixed into others. To make it pluggable, mark it as a polymorphic base.
 
-### Pattern 1: Creating a Reusable Behavior (Polymorphic Base)
-
-To create a behavior that other models can "plug in" (like `fsm.instance`), the base model must be part of the poly system.
-
-**Example: `my.behavior.mixin`**
 ```python
-class MyBehaviorMixin(models.Model):
-    _name = 'my.behavior.mixin'
-    # This line makes the model a polymorphic base, ready to be inherited.
-    _depend_models = {} 
-
-    my_field = fields.Char()
-
-    def my_method(self):
-        return "Behavior logic"
-```
-
-### Pattern 2: Applying a Behavior to a Model (The "Child")
-
-To make your business model (`my.business.model`) use the behavior, you use `_depend_models`.
-
-**Example: `my.business.model`**
-```python
-class MyBusinessModel(models.Model):
-    _name = 'my.business.model'
-    _inherit = ['my.business.model'] # Standard Odoo extension
+class VersioningMixin(models.Model):
+    _name = 'versioning.mixin'
+    _depend_models = {} # Crucial: Enables polymorphic injection
     
-    # This injects 'my.behavior.mixin' into this model.
-    # 'my_behavior_id' is the name of the linking field that will be created.
-    _depend_models = {'my.behavior.mixin': 'my_behavior_id'}
-
-    # You can now access fields and methods from the mixin
-    def some_action(self):
-        self.my_method()
-        self.my_field = "Hello"
+    version_number = fields.Integer('Version', default=1)
+    
+    def increment_version(self):
+        self.version_number += 1
 ```
 
+### Pattern B: Injecting Behaviors (Plugging in)
+When a business model needs a behavior, use `_depend_models`. `numa_poly` will automatically inject all fields from the base as `related` fields.
+
+```python
+class Project(models.Model):
+    _name = 'project.project'
+    _inherit = ['project.project']
+    
+    _depend_models = {'versioning.mixin': 'versioning_id'}
+    
+    def some_action(self):
+        # Accessing 'version_number' directly as if it were a local field
+        self.increment_version()
+        _logger.info(f"Project version is: {self.version_number}")
+```
+
+## 3. Advanced API Methods
+
+### `as_concrete_model()`
+In polymorphic hierarchies, you often hold a reference to a base model (e.g., `ir.poly_base` or a common base like `fsm.definition`). To access the specific logic of the final implementation:
+
+```python
+# Returns the record cast to its specific model (e.g., project.task)
+concrete_record = any_base_record.as_concrete_model()
+```
+*Note: Includes a fallback mechanism for legacy records, returning `self` if no concrete mapping exists.*
+
+## 4. Developer Best Practices & Troubleshooting
+
+### Name Collision Protection
+The `numa_poly` system processes the Method Resolution Order (MRO) carefully. 
+*   **Warning System**: During startup, if a base model field attempts to overwrite an existing field in the child class, a `_logger.warning` is triggered.
+*   **Golden Rule**: Use specific prefixes for fields in your Mixins/Behaviors (e.g., `fsm_state` instead of just `state`) to avoid collisions with standard Odoo fields.
+
+### Related Field Limitations
+Standard Odoo `related` fields defined in Python are evaluated early during registry setup. If you need to point to a field that is itself injected by `numa_poly`, Odoo might not "see" it yet.
+*   **Workaround**: Use a non-stored `compute` field instead of a `related` field for these edge cases.
+
+### Safe Field Access
+Injected fields (like `self.versioning_id`) are safely accessible in any method called after record creation (`create`, `write`, actions). Avoid using them in static class-level definitions (like `domain` strings or `attrs`) unless the fields are explicitly defined in the XML views as well.
+
+### Creation Performance
+`numa_poly` guarantees atomic creation. When you call `Model.create()`, the system:
+1. Generates a new ID via `ir.poly_base`.
+2. Propagates this ID to all base tables.
+3. Finalizes the concrete record creation.
+*All within a single database transaction.*
+
 ---
-
-## 3. Troubleshooting Common Errors
-
-### Error 1: `KeyError: Field '...' referenced in related field ... does not exist.`
-
--   **Cause:** You are using a standard Odoo `related` field to access a field injected by `numa_poly`. Odoo tries to resolve this during model setup, before `numa_poly` has done its work.
-
--   **Solution:** Use a `compute` field with `store=True` instead. It's evaluated later.
-
-    **Wrong:**
-    ```python
-    # This will fail
-    behavior_field = fields.Char(related='my_behavior_id.my_field')
-    ```
-
-    **Correct:**
-    ```python
-    behavior_field = fields.Char(compute='_compute_behavior_field', store=True)
-
-    @api.depends('my_behavior_id.my_field')
-    def _compute_behavior_field(self):
-        for record in self:
-            record.behavior_field = record.my_behavior_id.my_field
-    ```
-
-### Error 2: `TypeError: Cannot create a consistent method resolution order (MRO)`
-
--   **Cause:** Your model and a `numa_poly` mixin both inherit from a common ancestor (like `mail.thread`) in an incompatible order.
-
--   **Solution:** If you are using standard `_inherit` to mix models (not the recommended `_depend_models` pattern), try changing the order. Place the most complex or "dominant" model first.
-
-    **Wrong (May Fail):**
-    ```python
-    _inherit = ['my.business.model', 'fsm.instance']
-    ```
-
-    **Correct (Likely to Work):**
-    ```python
-    _inherit = ['fsm.instance', 'my.business.model']
-    ```
-    *Note: This is a workaround. The preferred method is using `_depend_models`.*
-
-### Error 3: `TypeError: Model '...' does not exist in registry.`
-
--   **Cause:** The order in which Python files are imported in `models/__init__.py` is incorrect. A model is being used in a field (`Many2one`, etc.) before its own file has been loaded.
-
--   **Solution:** In your `models/__init__.py`, ensure that models are imported before they are referenced by other models.
-
-    **Wrong:**
-    ```python
-    from . import model_that_uses_other
-    from . import other_model
-    ```
-
-    **Correct:**
-    ```python
-    from . import other_model
-    from . import model_that_uses_other
-    ```
----
-
-## 4. Lifecycle and Field Access
-
--   **When can I access injected fields (e.g., `self.fsm_instance_id`)?**
-    -   Safely in any method called after the record is created (`create`, `write`, button actions, etc.).
--   **When can I NOT access them?**
-    -   Directly in the class definition for `related` fields, `domain` fields, or other static definitions that Odoo evaluates at boot time. Use `compute` fields as a workaround.
+For technical support or architectural consultation, contact **NUMA Extreme Systems**.
