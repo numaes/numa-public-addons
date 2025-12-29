@@ -25,9 +25,9 @@
 
                 <div class="o_fsm_viewport"
                      t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
-                    <t t-if="state.dataLoaded">
-                        <!-- Connections Layer (SVG) -->
-                        <svg class="o_fsm_connections">
+                    <!-- Connections Layer (SVG) -->
+                    <svg class="o_fsm_connections">
+                        <t t-if="state.dataLoaded">
                             <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
                                 <g class="o_fsm_connection_group"
                                    t-on-mouseenter="() => onElementPointerEnter(conn.id)"
@@ -47,16 +47,18 @@
                             <path t-if="state.newConnection"
                                   t-att-d="`M ${Math.round(state.newConnection.x1)} ${Math.round(state.newConnection.y1)} L ${Math.round(state.newConnection.x2)} ${Math.round(state.newConnection.y2)}`"
                                   class="o_fsm_new_connection"/>
-                        </svg>
+                        </t>
+                    </svg>
 
-                        <!-- Nodes Layer (HTML) -->
-                        <div class="o_fsm_nodes">
+                    <!-- Nodes Layer (HTML) -->
+                    <div class="o_fsm_nodes">
+                        <t t-if="state.dataLoaded">
                             <t t-foreach="state.nodes" t-as="node" t-key="node.id">
                                 <FSMNode node="node"
                                          diagramScale="state.transform.k"
                                          selected="state.selectedIds.has(node.id)"
                                          hovered="state.hoveredId === node.id"
-                                         activeNodeId="props.active_node_id"
+                                         activeNodeId="props.activeNodeId"
                                          isConnecting="state.connectingTargetId === node.id"
                                          onMove="onNodeMove"
                                          onResize="onNodeResize"
@@ -65,15 +67,15 @@
                                          onMouseEnter="() => onElementPointerEnter(node.id)"
                                          onMouseLeave="onElementPointerLeave"/>
                             </t>
-                        </div>
-                    </t>
-                    <t t-else="">
-                        <div class="d-flex align-items-center justify-content-center h-100">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Loading...</span>
+                        </t>
+                        <t t-else="">
+                            <div class="d-flex align-items-center justify-content-center h-100 position-absolute w-100" style="top:0; left:0;">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
                             </div>
-                        </div>
-                    </t>
+                        </t>
+                    </div>
                 </div>
             </div>
 

@@ -139,7 +139,7 @@
                                        nolabel="1"
                                        class="o_full_width"
                                        readonly="1"
-                                       active_node_id="state == 'paused' ? next_node_id : current_state_id"
+                                       activeNodeId="state == 'paused' ? next_node_id : current_state_id"
                                 />
                             </page>
                         </notebook>

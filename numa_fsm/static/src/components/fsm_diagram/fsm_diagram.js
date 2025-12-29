@@ -15,7 +15,7 @@ export class FSMDiagram extends Component {
     static props = {
         ...standardFieldProps,
         readonly: { type: Boolean, optional: true },
-        active_node_id: { type: String, optional: true },
+        activeNodeId: { type: String, optional: true },
     };
 
     get isReadonly() {
