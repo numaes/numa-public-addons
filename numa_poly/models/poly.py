@@ -13,6 +13,7 @@ The polymorphic model system enables:
 """
 
 import logging
+import pprint
 from collections import OrderedDict, defaultdict, deque
 import inspect
 
@@ -589,6 +590,7 @@ class PolyBase(BaseModel):
                     string=description.string,
                     related=f'{related_bases[model]}.{field_name}',
                     automatic=True,
+                    readonly=False,
                 )
             else:
                 raise TypeError(_('Unsupported field type %s for field %s') %
@@ -815,6 +817,7 @@ class PolyBase(BaseModel):
         Args:
             vals_list: List of dictionaries containing values to write
         """
+        _logger.info("[PolyBase] _write_multi model %s, IDs %s, vals_list: %s", self._name, self.ids, pprint.pformat(vals_list))
         assert len(self) == len(vals_list)
 
         if not self:
