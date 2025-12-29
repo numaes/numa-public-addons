@@ -817,7 +817,6 @@ class PolyBase(BaseModel):
         Args:
             vals_list: List of dictionaries containing values to write
         """
-        _logger.info("[PolyBase] _write_multi model %s, IDs %s, vals_list: %s", self._name, self.ids, pprint.pformat(vals_list))
         assert len(self) == len(vals_list)
 
         if not self:
