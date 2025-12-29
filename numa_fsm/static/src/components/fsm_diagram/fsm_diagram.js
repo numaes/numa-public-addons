@@ -15,6 +15,7 @@ export class FSMDiagram extends Component {
     static props = {
         ...standardFieldProps,
         readonly: { type: Boolean, optional: true },
+        active_node_id: { type: String, optional: true },
     };
 
     get isReadonly() {
@@ -39,6 +40,7 @@ export class FSMDiagram extends Component {
     }
 
     setup() {
+        console.log("[FSMDiagram] setup started. props.value:", this.props.value, "record.resId:", this.props.record?.resId);
         this.notification = useService("notification");
         this.containerRef = useRef("container");
         this.state = useState({
@@ -60,25 +62,56 @@ export class FSMDiagram extends Component {
         this.dragState = null;
         this.historyStack = [];
         this.maxHistory = 50;
+        this.initTimeout = null;
 
         useEffect(
             (val) => {
-                if (val !== undefined) {
+                console.log("[FSMDiagram] useEffect triggered with value type:", typeof val, "value:", val, "dataLoaded:", this.state.dataLoaded);
+                
+                // Si el valor es una cadena JSON o un objeto con contenido, cargamos
+                if (val && (typeof val === 'string' || (typeof val === 'object' && Object.keys(val).length > 0))) {
+                    console.log("[FSMDiagram] useEffect: Valid data detected, calling loadData");
                     this.loadData(val);
-                } else if (!this.state.dataLoaded) {
-                    // Si es indefinido y no hemos cargado nada, podemos estar en un registro nuevo
-                    // o esperando carga asíncrona.
-                    if (this.props.record && !this.props.record.resId) {
-                        this.loadData(null);
+                    return;
+                }
+
+                // Si ya cargamos datos antes, no hacemos nada más ante valores nulos (evitar reset)
+                if (this.state.dataLoaded) {
+                    console.log("[FSMDiagram] useEffect: value is empty but data already loaded, ignoring.");
+                    return;
+                }
+
+                // Caso: Primera carga y el valor está vacío (null, false, undefined, empty object)
+                if (val === undefined) {
+                    console.log("[FSMDiagram] useEffect: value is undefined. Waiting for Odoo to load...");
+                    // En Odoo 18, si pasan más de 1.5s en undefined, forzamos carga por defecto
+                    if (!this.initTimeout) {
+                        this.initTimeout = setTimeout(() => {
+                            if (!this.state.dataLoaded) {
+                                console.log("[FSMDiagram] useEffect: Initial data timeout reached, forcing default load.");
+                                this.loadData(null);
+                            }
+                        }, 1500);
                     }
+                } else {
+                    // El valor es null, false o {} (explícitamente vacío en la DB o registro nuevo)
+                    console.log("[FSMDiagram] useEffect: value is explicitly empty, initializing default.");
+                    this.loadData(null);
                 }
             },
-            () => [this.props.value]
+            () => [this.props.value, this.props.record.resId]
         );
 
         onMounted(() => {
+            console.log("[FSMDiagram] onMounted. dataLoaded:", this.state.dataLoaded, "nodes:", this.state.nodes.length);
             if (this.state.nodes.length > 0) {
                 this.zoomToFit();
+            }
+        });
+
+        onWillUnmount(() => {
+            if (this.initTimeout) {
+                clearTimeout(this.initTimeout);
             }
         });
 
@@ -300,26 +333,38 @@ export class FSMDiagram extends Component {
     }
     
     loadData = (value) => {
+        console.log("[FSMDiagram] loadData called with:", value);
         try {
+            if (this.initTimeout) {
+                clearTimeout(this.initTimeout);
+                this.initTimeout = null;
+            }
+
             let data = value;
             if (typeof value === 'string') {
+                console.log("[FSMDiagram] loadData: value is string");
                 if (value.trim() === "" || value.trim() === "{}" || value.trim() === "false" || value.trim() === "null") {
                     data = {};
                 } else {
                     data = JSON.parse(value);
                 }
             } else if (value === false || value === null || value === undefined) {
+                console.log("[FSMDiagram] loadData: value is falsey");
                 data = {};
             } else if (typeof value === 'object') {
+                console.log("[FSMDiagram] loadData: value is object");
                 data = value;
             } else {
+                console.log("[FSMDiagram] loadData: unknown type", typeof value);
                 data = {};
             }
             
             const nodes = data?.nodes || [];
             const connections = data?.connections || [];
+            console.log("[FSMDiagram] loadData: nodes:", nodes.length, "connections:", connections.length);
             
             if (nodes.length === 0) {
+                console.log("[FSMDiagram] loadData: empty nodes, setting default start_node");
                 this.state.nodes = [{
                     id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null }
                 }];
@@ -330,7 +375,14 @@ export class FSMDiagram extends Component {
             }
             
             this.state.dataLoaded = true;
+            console.log("[FSMDiagram] loadData: dataLoaded set to true");
+            
+            // Forzamos zoomToFit tras la carga exitosa
+            window.requestAnimationFrame(() => {
+                this.zoomToFit();
+            });
         } catch (e) {
+            console.error("[FSMDiagram] loadData error:", e);
             this.state.nodes = [{ id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null } }];
             this.state.connections = [];
             this.state.dataLoaded = true;
@@ -463,9 +515,14 @@ export class FSMDiagram extends Component {
     }
     
     onNodeResize = ({ nodeId, height }) => {
+        console.log("[FSMDiagram] onNodeResize:", nodeId, height);
         const nodeIndex = this.state.nodes.findIndex(n => n.id === nodeId);
         if (nodeIndex !== -1 && this.state.nodes[nodeIndex].height !== height) {
             this.state.nodes = this.state.nodes.map(n => n.id === nodeId ? { ...n, height } : n);
+            // Si el diagrama ya estaba cargado, forzamos un zoomToFit si es el primer nodo o algo cambió
+            if (this.state.dataLoaded && this.state.nodes.length > 0) {
+                // No hacemos zoomToFit en cada resize para no marear al usuario
+            }
         }
     }
 

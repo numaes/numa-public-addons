@@ -56,6 +56,7 @@
                                          diagramScale="state.transform.k"
                                          selected="state.selectedIds.has(node.id)"
                                          hovered="state.hoveredId === node.id"
+                                         activeNodeId="props.active_node_id"
                                          isConnecting="state.connectingTargetId === node.id"
                                          onMove="onNodeMove"
                                          onResize="onNodeResize"
