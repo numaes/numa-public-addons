@@ -302,28 +302,33 @@ export class FSMDiagram extends Component {
         try {
             let data = value;
             if (typeof value === 'string') {
-                if (value.trim() === "" || value.trim() === "{}" || value.trim() === "false") {
+                if (value.trim() === "" || value.trim() === "{}" || value.trim() === "false" || value.trim() === "null") {
                     data = {};
                 } else {
                     data = JSON.parse(value);
                 }
-            } else if (value === false) {
+            } else if (value === false || value === null) {
                 data = {};
-            } else if (typeof value === 'object' && value !== null) {
+            } else if (typeof value === 'object') {
                 data = value;
             } else {
                 data = {};
             }
             
-            this.state.nodes = data?.nodes || [];
-            this.state.connections = data?.connections || [];
-
-            if (this.state.nodes.length === 0) {
+            const nodes = data?.nodes || [];
+            const connections = data?.connections || [];
+            
+            if (nodes.length === 0) {
                 this.state.nodes = [{
                     id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null }
                 }];
                 this.state.connections = [];
+            } else {
+                // Ensure deep copy to trigger OWL's reactivity and avoid Proxy issues
+                this.state.nodes = JSON.parse(JSON.stringify(nodes));
+                this.state.connections = JSON.parse(JSON.stringify(connections));
             }
+            
             this.state.dataLoaded = true;
         } catch (e) {
             this.state.nodes = [{ id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null } }];
@@ -449,6 +454,7 @@ export class FSMDiagram extends Component {
         const nodeIndex = this.state.nodes.findIndex(n => n.id === nodeId);
         if (nodeIndex !== -1 && this.state.nodes[nodeIndex].height !== height) {
             this.state.nodes = this.state.nodes.map(n => n.id === nodeId ? { ...n, height } : n);
+            // No updateData here to avoid infinite loops during initial rendering
         }
     }
 
