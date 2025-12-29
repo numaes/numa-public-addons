@@ -72,14 +72,23 @@ export class FSMDiagram extends Component {
             const oldVal = JSON.stringify(this.props.value);
             const newVal = JSON.stringify(nextProps.value);
             
-            // Forzamos la carga si el valor cambia
-            if (oldVal !== newVal) {
-                console.log("[FSMDiagram] Value changed, reloading data...");
+            // Forzamos la carga si el valor cambia o si el valor actual es undefined y recibimos datos
+            if (oldVal !== newVal || (!this.state.dataLoaded && nextProps.value !== undefined)) {
+                console.log("[FSMDiagram] Value changed or late arrival, reloading data...");
                 await this.loadData(nextProps.value);
                 
                 if (this.state.nodes.length > 0) {
                     window.requestAnimationFrame(() => this.zoomToFit());
                 }
+            } else if (nextProps.value === undefined && !this.state.dataLoaded) {
+                // Si seguimos sin datos pero ya pasamos por onMounted, forzamos inicialización por defecto 
+                // para no quedar en spinner infinito si el campo realmente no tiene nada
+                setTimeout(() => {
+                    if (!this.state.dataLoaded) {
+                        console.log("[FSMDiagram] Still no data after timeout, forced default initialization.");
+                        this.loadData(null); 
+                    }
+                }, 2000);
             }
         });
 
@@ -319,6 +328,12 @@ export class FSMDiagram extends Component {
                     data = JSON.parse(value);
                 }
             } else if (value === false || value === null || value === undefined) {
+                // Si el registro ya existe (tiene resId), no inicializamos por defecto con un valor vacío
+                // Esperamos a que Odoo nos proporcione el valor real en onWillUpdateProps
+                if (this.props.record && this.props.record.resId && value === undefined) {
+                    console.log("[FSMDiagram] loadData: record has resId but value is undefined. Skipping initialization.");
+                    return;
+                }
                 data = {};
             } else if (typeof value === 'object') {
                 data = value;
@@ -331,11 +346,19 @@ export class FSMDiagram extends Component {
             console.log("[FSMDiagram] Processing nodes:", nodes.length, "connections:", connections.length);
             
             if (nodes.length === 0) {
-                console.log("[FSMDiagram] Initializing with default start_node");
-                this.state.nodes = [{
-                    id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null }
-                }];
-                this.state.connections = [];
+                // Solo inicializamos si estamos seguros de que el diagrama debe estar vacío
+                // (por ejemplo, si el valor es un objeto vacío explícito o si el registro es nuevo)
+                const isNewRecord = this.props.record && !this.props.record.resId;
+                if (isNewRecord || (value !== undefined)) {
+                    console.log("[FSMDiagram] Initializing with default start_node");
+                    this.state.nodes = [{
+                        id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null }
+                    }];
+                    this.state.connections = [];
+                } else {
+                    console.log("[FSMDiagram] Diagram is empty but skipping initialization (waiting for data)");
+                    return;
+                }
             } else {
                 // Ensure deep copy to trigger OWL's reactivity and avoid Proxy issues
                 this.state.nodes = JSON.parse(JSON.stringify(nodes));
