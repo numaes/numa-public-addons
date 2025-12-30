@@ -109,6 +109,56 @@
             </field>
         </record>
 
+        <!-- Availability Period Views -->
+        <record id="view_numa_planning_availability_period_tree" model="ir.ui.view">
+            <field name="name">numa.planning.availability.period.tree</field>
+            <field name="model">numa.planning.availability.period</field>
+            <field name="arch" type="xml">
+                <list string="Availability Ledger" decoration-muted="pln_state == 'history'"
+                      decoration-danger="pln_type == 'leave' or pln_type == 'breakdown'"
+                      decoration-info="pln_type == 'maintenance'"
+                      decoration-warning="pln_type == 'overtime'">
+                    <field name="resource_id"/>
+                    <field name="start_date"/>
+                    <field name="end_date"/>
+                    <field name="duration" widget="float_time"/>
+                    <field name="pln_type"/>
+                    <field name="pln_efficiency"/>
+                    <field name="pln_priority"/>
+                    <field name="pln_state" widget="badge"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_numa_planning_availability_period_form" model="ir.ui.view">
+            <field name="name">numa.planning.availability.period.form</field>
+            <field name="model">numa.planning.availability.period</field>
+            <field name="arch" type="xml">
+                <form string="Availability Period">
+                    <header>
+                        <field name="pln_state" widget="statusbar" clickable="1"/>
+                    </header>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="resource_id"/>
+                                <field name="pln_type"/>
+                                <field name="pln_efficiency"/>
+                                <field name="pln_priority"/>
+                            </group>
+                            <group>
+                                <field name="start_date"/>
+                                <field name="end_date"/>
+                                <field name="duration" widget="float_time"/>
+                                <field name="pln_calendar_attendance_id" groups="base.group_no_one"/>
+                                <field name="pln_fsm_state_ref"/>
+                            </group>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
         <!-- Resource Views -->
         <record id="view_numa_planning_resource_tree" model="ir.ui.view">
             <field name="name">numa.planning.resource.tree</field>
@@ -129,6 +179,13 @@
             <field name="arch" type="xml">
                 <form string="Resource">
                     <sheet>
+                        <div class="oe_button_box" name="button_box">
+                            <button name="%(action_numa_planning_availability_period)d" type="action" class="oe_stat_button" icon="fa-calendar" context="{'search_default_resource_id': id}">
+                                <div class="o_stat_info">
+                                    <span class="o_stat_text">Availability</span>
+                                </div>
+                            </button>
+                        </div>
                         <div class="oe_title">
                             <label for="name" class="oe_edit_only"/>
                             <h1><field name="name" placeholder="Resource Name"/></h1>
@@ -203,6 +260,28 @@
                                         </list>
                                     </field>
                                 </group>
+                                <group name="availability" string="Availability Ledger">
+                                    <div class="d-flex gap-2 mb-2">
+                                        <p class="text-muted small">
+                                            This ledger represents the discrete time slots of resource capacity. 
+                                            Use "Generate Availability" from the Resource form to flatten recurring calendar rules.
+                                        </p>
+                                    </div>
+                                    <field name="pln_availability_period_ids" nolabel="1" readonly="1">
+                                        <list decoration-muted="pln_state == 'history'"
+                                              decoration-danger="pln_type == 'leave' or pln_type == 'breakdown'"
+                                              decoration-info="pln_type == 'maintenance'"
+                                              decoration-warning="pln_type == 'overtime'">
+                                            <field name="start_date"/>
+                                            <field name="end_date"/>
+                                            <field name="duration" widget="float_time"/>
+                                            <field name="pln_type"/>
+                                            <field name="pln_efficiency"/>
+                                            <field name="pln_priority"/>
+                                            <field name="pln_state"/>
+                                        </list>
+                                    </field>
+                                </group>
                             </page>
                         </notebook>
                     </sheet>
@@ -220,6 +299,12 @@
         <record id="action_numa_planning_resource" model="ir.actions.act_window">
             <field name="name">Resources</field>
             <field name="res_model">numa.planning.resource</field>
+            <field name="view_mode">list,form</field>
+        </record>
+
+        <record id="action_numa_planning_availability_period" model="ir.actions.act_window">
+            <field name="name">Availability Periods</field>
+            <field name="res_model">numa.planning.availability.period</field>
             <field name="view_mode">list,form</field>
         </record>
 
@@ -259,5 +344,11 @@
                   parent="menu_numa_planning_configuration"
                   action="action_numa_planning_resource"
                   sequence="20"/>
+
+        <menuitem id="menu_numa_planning_availability_periods"
+                  name="Availability Periods"
+                  parent="menu_numa_planning_configuration"
+                  action="action_numa_planning_availability_period"
+                  sequence="30"/>
     </data>
 </odoo>

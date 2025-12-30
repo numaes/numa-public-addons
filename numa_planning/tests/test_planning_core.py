@@ -82,3 +82,46 @@ class TestPlanningCore(TestPlanningCommon):
         # Assertion: Verify that the Node's computed dates only reflect the Official Scenario
         self.assertEqual(node.pln_calc_start, today, "Node should ignore non-official scenario dates")
         self.assertEqual(node.pln_calc_end, tomorrow, "Node should ignore non-official scenario dates")
+
+    def test_04_availability_ledger(self):
+        """Test the Advanced Availability Ledger"""
+        # Create a maintenance period (High Priority)
+        maintenance_start = fields.Datetime.now()
+        maintenance_end = maintenance_start + timedelta(hours=2)
+        
+        self.env['numa.planning.availability.period'].create({
+            'resource_id': self.resource_test.id,
+            'start_date': maintenance_start,
+            'end_date': maintenance_end,
+            'pln_type': 'maintenance',
+            'pln_efficiency': 0.0,
+            'pln_priority': 10,
+            'pln_state': 'planned',
+        })
+        
+        # Create a standard shift period (Lower Priority) covering the same time
+        shift_start = maintenance_start - timedelta(hours=1)
+        shift_end = maintenance_end + timedelta(hours=1)
+        
+        self.env['numa.planning.availability.period'].create({
+            'resource_id': self.resource_test.id,
+            'start_date': shift_start,
+            'end_date': shift_end,
+            'pln_type': 'standard',
+            'pln_efficiency': 1.0,
+            'pln_priority': 1,
+            'pln_state': 'planned',
+        })
+        
+        # Check capability at different times
+        # 1. During maintenance (Priority 10 should win)
+        cap_during = self.resource_test.get_capability_at(maintenance_start + timedelta(minutes=30))
+        self.assertEqual(cap_during, 0.0, "Priority 10 (Maintenance) should override Priority 1 (Shift)")
+        
+        # 2. Outside maintenance but within shift
+        cap_before = self.resource_test.get_capability_at(shift_start + timedelta(minutes=30))
+        self.assertEqual(cap_before, 1.0, "Standard shift efficiency should be returned outside maintenance")
+        
+        # 3. Outside both
+        cap_outside = self.resource_test.get_capability_at(shift_end + timedelta(hours=1))
+        self.assertEqual(cap_outside, 0.0, "No periods should return 0.0 capability")
