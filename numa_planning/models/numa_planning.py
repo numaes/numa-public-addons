@@ -43,9 +43,16 @@ class NumaPlanningNode(models.Model):
     # pln_calc_start is derived from the active Allocations of the official scenario.
     pln_calc_start = fields.Datetime('Calculated Start', compute='_compute_pln_dates', inverse='_inverse_pln_dates', store=True)
     pln_calc_end = fields.Datetime('Calculated End', compute='_compute_pln_dates', inverse='_inverse_pln_dates', store=True)
-    pln_free_float = fields.Float('Free Float')
-    pln_total_float = fields.Float('Total Float')
-    pln_is_critical = fields.Boolean('Is Critical')
+
+    # CPM / PDM Calculated Dates
+    pln_calc_early_start = fields.Datetime('Early Start', readonly=True)
+    pln_calc_early_end = fields.Datetime('Early End', readonly=True)
+    pln_calc_late_start = fields.Datetime('Late Start', readonly=True)
+    pln_calc_late_end = fields.Datetime('Late End', readonly=True)
+
+    pln_free_float = fields.Float('Free Float', readonly=True)
+    pln_total_float = fields.Float('Total Float', readonly=True)
+    pln_is_critical = fields.Boolean('Is Critical', readonly=True)
 
     pln_allocation_ids = fields.One2many('numa.planning.allocation', 'node_id', string='Allocations')
     pln_availability_period_ids = fields.One2many('numa.planning.availability.period', string='Related Availability',
@@ -189,6 +196,198 @@ class NumaPlanningNode(models.Model):
     # AI Hooks
     pln_ai_score = fields.Float('AI Score')
     pln_ai_reasoning = fields.Text('AI Reasoning')
+
+    def action_pln_compute_cpm(self):
+        """
+        Implementation of the Critical Path Method (CPM) and Precedence Diagramming Method (PDM).
+        Uses the 'Load-Process-Dump' pattern for high performance on large graphs.
+        """
+        if not self:
+            return
+
+        # Step A: Identify the connected graph context
+        # We find all nodes sharing the same pln_root_id as any node in self
+        root_ids = self.mapped('pln_root_id').ids
+        if not root_ids:
+            # If no root, we just use self and nodes connected via links
+            context_nodes = self
+        else:
+            context_nodes = self.search([('pln_root_id', 'in', root_ids)])
+
+        # Fetch graph data into memory
+        graph = self._pln_fetch_graph_data(context_nodes)
+        if not graph:
+            return
+
+        # Step B: Topological Sort & Cycle Detection (Kahn's Algorithm)
+        sorted_node_ids = self._pln_topological_sort(graph)
+
+        # Step C: Forward Pass (Early Dates)
+        # Determine base time (min of constraints or current time)
+        min_start = fields.Datetime.now()
+        for node_id in sorted_node_ids:
+            node_data = graph[node_id]
+            
+            # Base ES comes from predecessors or default start
+            es = min_start
+            for pred_id, link_type, lag in node_data['predecessors']:
+                pred = graph[pred_id]
+                # PDM Logic:
+                # FS: Finish-to-Start (Pred.EF + Lag)
+                # SS: Start-to-Start (Pred.ES + Lag)
+                # FF: Finish-to-Finish (Pred.EF + Lag - Duration)
+                # SF: Start-to-Finish (Pred.ES + Lag - Duration)
+                if link_type == 'fs':
+                    val = pred['early_end'] + timedelta(hours=lag)
+                elif link_type == 'ss':
+                    val = pred['early_start'] + timedelta(hours=lag)
+                elif link_type == 'ff':
+                    val = pred['early_end'] + timedelta(hours=lag - node_data['duration'])
+                elif link_type == 'sf':
+                    val = pred['early_start'] + timedelta(hours=lag - node_data['duration'])
+                else:
+                    val = es
+                
+                if val > es:
+                    es = val
+
+            # Respect Constraints
+            if node_data['constraint_type'] == 'must_start' and node_data['constraint_date']:
+                es = node_data['constraint_date']
+            elif node_data['constraint_type'] == 'asap' and node_data['constraint_date']:
+                if node_data['constraint_date'] > es:
+                    es = node_data['constraint_date']
+
+            node_data['early_start'] = es
+            node_data['early_end'] = es + timedelta(hours=node_data['duration'])
+
+        # Step D: Backward Pass (Late Dates)
+        project_end = max(n['early_end'] for n in graph.values())
+        
+        for node_id in reversed(sorted_node_ids):
+            node_data = graph[node_id]
+            
+            # Base LF comes from successors or project end
+            lf = project_end
+            if node_data['constraint_type'] == 'must_finish' and node_data['constraint_date']:
+                lf = node_data['constraint_date']
+
+            for succ_id, link_type, lag in node_data['successors']:
+                succ = graph[succ_id]
+                # Backward PDM Logic (Inverted):
+                # FS: LS = LF - D.  Target.LS = Source.LF + Lag => Source.LF = Target.LS - Lag
+                # SS: Target.ES = Source.ES + Lag => Source.ES = Target.ES - Lag => Source.LF = Target.ES - Lag + D
+                # FF: Target.EF = Source.EF + Lag => Source.EF = Target.EF - Lag => Source.LF = Target.EF - Lag
+                # SF: Target.EF = Source.ES + Lag => Source.ES = Target.EF - Lag => Source.LF = Target.EF - Lag + D
+                if link_type == 'fs':
+                    val = succ['late_start'] - timedelta(hours=lag)
+                elif link_type == 'ss':
+                    val = succ['late_start'] - timedelta(hours=lag - node_data['duration'])
+                elif link_type == 'ff':
+                    val = succ['late_end'] - timedelta(hours=lag)
+                elif link_type == 'sf':
+                    val = succ['late_end'] - timedelta(hours=lag - node_data['duration'])
+                else:
+                    val = lf
+                
+                if val < lf:
+                    lf = val
+
+            node_data['late_end'] = lf
+            node_data['late_start'] = lf - timedelta(hours=node_data['duration'])
+
+        # Step E: Float Calculation & Critical Path
+        for node_id, node_data in graph.items():
+            # Total Float = Late Start - Early Start
+            tf_delta = node_data['late_start'] - node_data['early_start']
+            node_data['total_float'] = tf_delta.total_seconds() / 3600.0
+            
+            # Free Float = Min(Succ.ES) - Early End
+            if not node_data['successors']:
+                node_data['free_float'] = 0.0 # Or TF if project end is fixed
+            else:
+                min_succ_es = min(graph[s_id]['early_start'] for s_id, lt, lag in node_data['successors'] if lt == 'fs')
+                # Simplifying FF calculation for FS dependencies
+                ff_delta = min_succ_es - node_data['early_end'] if any(lt == 'fs' for sid, lt, lag in node_data['successors']) else tf_delta
+                node_data['free_float'] = max(0.0, ff_delta.total_seconds() / 3600.0) if isinstance(ff_delta, timedelta) else node_data['total_float']
+
+            node_data['is_critical'] = node_data['total_float'] <= 0.0001
+
+        # Step F: Bulk Write (The Dump)
+        for node_id in sorted_node_ids:
+            node_data = graph[node_id]
+            node_record = self.env['numa.planning.node'].browse(node_id)
+            node_record.write({
+                'pln_calc_early_start': node_data['early_start'],
+                'pln_calc_early_end': node_data['early_end'],
+                'pln_calc_late_start': node_data['late_start'],
+                'pln_calc_late_end': node_data['late_end'],
+                'pln_total_float': node_data['total_float'],
+                'pln_free_float': node_data['free_float'],
+                'pln_is_critical': node_data['is_critical'],
+                'pln_topological_level': node_data['level'],
+                'pln_recalc_status': 'clean'
+            })
+
+    def _pln_fetch_graph_data(self, nodes):
+        """
+        Loads the graph into memory.
+        """
+        # Batch fetch links
+        node_ids = nodes.ids
+        links = self.env['numa.planning.link'].search([
+            '|', ('source_node_id', 'in', node_ids), ('target_node_id', 'in', node_ids)
+        ])
+        
+        graph = {}
+        for node in nodes:
+            graph[node.id] = {
+                'duration': node.pln_effort_hours or 0.0,
+                'constraint_type': node.pln_constraint_type,
+                'constraint_date': node.pln_constraint_date,
+                'predecessors': [],
+                'successors': [],
+                'early_start': None, 'early_end': None,
+                'late_start': None, 'late_end': None,
+                'level': 0
+            }
+
+        for link in links:
+            if link.source_node_id.id in graph and link.target_node_id.id in graph:
+                graph[link.target_node_id.id]['predecessors'].append(
+                    (link.source_node_id.id, link.link_type, link.lag_amount or 0.0)
+                )
+                graph[link.source_node_id.id]['successors'].append(
+                    (link.target_node_id.id, link.link_type, link.lag_amount or 0.0)
+                )
+        return graph
+
+    def _pln_topological_sort(self, graph):
+        """
+        Kahn's Algorithm for Topological Sort and Cycle Detection.
+        """
+        in_degree = {node_id: 0 for node_id in graph}
+        for node_id in graph:
+            for succ_id, link_type, lag in graph[node_id]['successors']:
+                in_degree[succ_id] += 1
+
+        queue = deque([node_id for node_id, degree in in_degree.items() if degree == 0])
+        sorted_nodes = []
+        
+        while queue:
+            u = queue.popleft()
+            sorted_nodes.append(u)
+            
+            for v, lt, lag in graph[u]['successors']:
+                in_degree[v] -= 1
+                graph[v]['level'] = max(graph[v]['level'], graph[u]['level'] + 1)
+                if in_degree[v] == 0:
+                    queue.append(v)
+
+        if len(sorted_nodes) != len(graph):
+            raise UserError(_("Cycle detected in planning graph. Recalculation aborted."))
+            
+        return sorted_nodes
 
 
 class NumaPlanningLink(models.Model):

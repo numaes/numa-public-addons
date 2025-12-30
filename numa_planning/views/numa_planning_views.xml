@@ -234,7 +234,12 @@
                                         <field name="pln_calc_start" readonly="1"/>
                                         <field name="pln_calc_end" readonly="1"/>
                                         <field name="pln_effort_hours" widget="float_time" readonly="1"/>
+                                        <field name="pln_calc_early_start" readonly="1"/>
+                                        <field name="pln_calc_early_end" readonly="1"/>
+                                        <field name="pln_calc_late_start" readonly="1"/>
+                                        <field name="pln_calc_late_end" readonly="1"/>
                                         <field name="pln_total_float" readonly="1"/>
+                                        <field name="pln_free_float" readonly="1"/>
                                         <field name="pln_recalc_status" readonly="1"/>
                                         <field name="pln_is_critical" readonly="1"/>
                                     </group>

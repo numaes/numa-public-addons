@@ -125,3 +125,88 @@ class TestPlanningCore(TestPlanningCommon):
         # 3. Outside both
         cap_outside = self.resource_test.get_capability_at(shift_end + timedelta(hours=1))
         self.assertEqual(cap_outside, 0.0, "No periods should return 0.0 capability")
+
+    def test_05_cpm_algorithm(self):
+        """Test the CPM/PDM Calculation Engine"""
+        # Create 3 nodes in a chain: A -> B -> C
+        node_a = self.create_planning_node("Node A") # D = 0 by default, let's set it
+        node_a.pln_effort_hours = 10.0
+        
+        node_b = self.create_planning_node("Node B")
+        node_b.pln_effort_hours = 20.0
+        
+        node_c = self.create_planning_node("Node C")
+        node_c.pln_effort_hours = 5.0
+        
+        # Create links (Finish-to-Start)
+        self.env['numa.planning.link'].create({
+            'source_node_id': node_a.id,
+            'target_node_id': node_b.id,
+            'link_type': 'fs',
+            'lag_amount': 2.0,
+        })
+        self.env['numa.planning.link'].create({
+            'source_node_id': node_b.id,
+            'target_node_id': node_c.id,
+            'link_type': 'fs',
+            'lag_amount': 0.0,
+        })
+        
+        # Run CPM
+        node_a.action_pln_compute_cpm()
+        
+        # Refresh nodes
+        node_a.refresh()
+        node_b.refresh()
+        node_c.refresh()
+        
+        # Assertions
+        # If project starts at T0 (now):
+        # A: ES=T0, EF=T10
+        # B: ES=EF(A)+2 = T12, EF=T32
+        # C: ES=EF(B)+0 = T32, EF=T37
+        
+        self.assertEqual(node_a.pln_calc_early_start, node_b.pln_calc_early_start - timedelta(hours=12))
+        self.assertEqual(node_b.pln_calc_early_start, node_a.pln_calc_early_end + timedelta(hours=2))
+        self.assertEqual(node_c.pln_calc_early_start, node_b.pln_calc_early_end)
+        
+        # In a simple chain, all should be critical (TF=0)
+        self.assertTrue(node_a.pln_is_critical)
+        self.assertTrue(node_b.pln_is_critical)
+        self.assertTrue(node_c.pln_is_critical)
+        self.assertEqual(node_a.pln_total_float, 0.0)
+
+    def test_06_cpm_float_and_non_critical(self):
+        """Test CPM with parallel paths and floats"""
+        # A -> B -> D
+        # A -> C -> D
+        node_a = self.create_planning_node("A", pln_effort_hours=10)
+        node_b = self.create_planning_node("B", pln_effort_hours=20)
+        node_c = self.create_planning_node("C", pln_effort_hours=5) # Shorter path
+        node_d = self.create_planning_node("D", pln_effort_hours=10)
+        
+        self.env['numa.planning.link'].create({'source_node_id': node_a.id, 'target_node_id': node_b.id, 'link_type': 'fs'})
+        self.env['numa.planning.link'].create({'source_node_id': node_a.id, 'target_node_id': node_c.id, 'link_type': 'fs'})
+        self.env['numa.planning.link'].create({'source_node_id': node_b.id, 'target_node_id': node_d.id, 'link_type': 'fs'})
+        self.env['numa.planning.link'].create({'source_node_id': node_c.id, 'target_node_id': node_d.id, 'link_type': 'fs'})
+        
+        node_a.action_pln_compute_cpm()
+        
+        # Path A-B-D = 10 + 20 + 10 = 40 (Critical)
+        # Path A-C-D = 10 + 5 + 10 = 25
+        # Float for C = 40 - 25 = 15
+        
+        self.assertTrue(node_b.pln_is_critical)
+        self.assertFalse(node_c.pln_is_critical)
+        self.assertEqual(node_c.pln_total_float, 15.0)
+
+    def test_07_cycle_detection(self):
+        """Test that cycles raise UserError"""
+        node_a = self.create_planning_node("A")
+        node_b = self.create_planning_node("B")
+        
+        self.env['numa.planning.link'].create({'source_node_id': node_a.id, 'target_node_id': node_b.id, 'link_type': 'fs'})
+        self.env['numa.planning.link'].create({'source_node_id': node_b.id, 'target_node_id': node_a.id, 'link_type': 'fs'})
+        
+        with self.assertRaises(UserError):
+            node_a.action_pln_compute_cpm()
