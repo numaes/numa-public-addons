@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Allocation Views -->
+        <record id="view_numa_planning_allocation_tree" model="ir.ui.view">
+            <field name="name">numa.planning.allocation.tree</field>
+            <field name="model">numa.planning.allocation</field>
+            <field name="arch" type="xml">
+                <list string="Allocations" decoration-muted="pln_state == 'history'" 
+                      decoration-info="pln_state == 'wip'" 
+                      decoration-success="pln_state == 'reserved'" 
+                      decoration-warning="pln_state == 'tentative'">
+                    <field name="resource_id"/>
+                    <field name="node_id"/>
+                    <field name="start_date"/>
+                    <field name="end_date"/>
+                    <field name="scenario_id"/>
+                    <field name="pln_state" widget="badge" 
+                           decoration-muted="pln_state == 'history'" 
+                           decoration-info="pln_state == 'wip'" 
+                           decoration-success="pln_state == 'reserved'" 
+                           decoration-warning="pln_state == 'tentative'"/>
+                    <field name="pln_is_locked"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_numa_planning_allocation_form" model="ir.ui.view">
+            <field name="name">numa.planning.allocation.form</field>
+            <field name="model">numa.planning.allocation</field>
+            <field name="arch" type="xml">
+                <form string="Allocation">
+                    <header>
+                        <field name="pln_state" widget="statusbar" clickable="1"/>
+                    </header>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="resource_id"/>
+                                <field name="node_id"/>
+                                <field name="scenario_id"/>
+                            </group>
+                            <group>
+                                <field name="start_date"/>
+                                <field name="end_date"/>
+                                <field name="pln_is_locked"/>
+                            </group>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="view_numa_planning_allocation_search" model="ir.ui.view">
+            <field name="name">numa.planning.allocation.search</field>
+            <field name="model">numa.planning.allocation</field>
+            <field name="arch" type="xml">
+                <search string="Search Allocations">
+                    <field name="resource_id"/>
+                    <field name="node_id"/>
+                    <field name="scenario_id"/>
+                    <filter string="Official Plan" name="official_plan" domain="[('scenario_id.is_official', '=', True)]"/>
+                    <separator/>
+                    <filter string="History" name="state_history" domain="[('pln_state', '=', 'history')]"/>
+                    <filter string="WIP" name="state_wip" domain="[('pln_state', '=', 'wip')]"/>
+                    <filter string="Reserved" name="state_reserved" domain="[('pln_state', '=', 'reserved')]"/>
+                    <filter string="Tentative" name="state_tentative" domain="[('pln_state', '=', 'tentative')]"/>
+                    <group expand="0" string="Group By">
+                        <filter string="Resource" name="group_resource" context="{'group_by': 'resource_id'}"/>
+                        <filter string="State" name="group_state" context="{'group_by': 'pln_state'}"/>
+                        <filter string="Scenario" name="group_scenario" context="{'group_by': 'scenario_id'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <!-- Scenario Views -->
+        <record id="view_numa_planning_scenario_tree" model="ir.ui.view">
+            <field name="name">numa.planning.scenario.tree</field>
+            <field name="model">numa.planning.scenario</field>
+            <field name="arch" type="xml">
+                <list string="Scenarios">
+                    <field name="name"/>
+                    <field name="base_scenario_id"/>
+                    <field name="is_official" widget="boolean_toggle"/>
+                    <field name="is_active" widget="boolean_toggle"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_numa_planning_scenario_form" model="ir.ui.view">
+            <field name="name">numa.planning.scenario.form</field>
+            <field name="model">numa.planning.scenario</field>
+            <field name="arch" type="xml">
+                <form string="Scenario">
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="name"/>
+                                <field name="base_scenario_id"/>
+                            </group>
+                            <group>
+                                <field name="is_official"/>
+                                <field name="is_active"/>
+                            </group>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Resource Views -->
+        <record id="view_numa_planning_resource_tree" model="ir.ui.view">
+            <field name="name">numa.planning.resource.tree</field>
+            <field name="model">numa.planning.resource</field>
+            <field name="arch" type="xml">
+                <list string="Resources">
+                    <field name="name"/>
+                    <field name="capacity"/>
+                    <field name="user_id"/>
+                    <field name="workcenter_id"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_numa_planning_resource_form" model="ir.ui.view">
+            <field name="name">numa.planning.resource.form</field>
+            <field name="model">numa.planning.resource</field>
+            <field name="arch" type="xml">
+                <form string="Resource">
+                    <sheet>
+                        <div class="oe_title">
+                            <label for="name" class="oe_edit_only"/>
+                            <h1><field name="name" placeholder="Resource Name"/></h1>
+                        </div>
+                        <group>
+                            <group string="Capacity">
+                                <field name="capacity"/>
+                                <field name="user_id"/>
+                                <field name="workcenter_id"/>
+                            </group>
+                            <group string="Hooks">
+                                <field name="pln_fsm_model"/>
+                                <field name="pln_current_fsm_state"/>
+                            </group>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Node Form Mixin -->
+        <record id="view_numa_planning_node_form_mixin" model="ir.ui.view">
+            <field name="name">numa.planning.node.form.mixin</field>
+            <field name="model">numa.planning.node</field>
+            <field name="arch" type="xml">
+                <form string="Planning Node">
+                    <sheet>
+                        <div class="oe_button_box" name="button_box">
+                            <button name="pln_get_allocations_view" type="object" class="oe_stat_button" icon="fa-tasks">
+                                <div class="o_stat_info">
+                                    <span class="o_stat_text">Allocations</span>
+                                </div>
+                            </button>
+                        </div>
+                        <notebook>
+                            <page name="planning_engine" string="Planning Engine">
+                                <group name="engine_control" string="Engine Control">
+                                    <div class="d-flex gap-2">
+                                        <button name="pln_action_auto_schedule" type="object" string="Auto Schedule" class="btn-primary"/>
+                                        <button name="action_freeze_baseline" type="object" string="Freeze Baseline" class="btn-secondary"/>
+                                        <button name="action_simulate" type="object" string="Simulate" class="btn-secondary"/>
+                                    </div>
+                                </group>
+                                <group>
+                                    <group name="metrics" string="Metrics">
+                                        <field name="pln_calc_start" readonly="1"/>
+                                        <field name="pln_calc_end" readonly="1"/>
+                                        <field name="pln_effort_hours" widget="float_time" readonly="1"/>
+                                        <field name="pln_total_float" readonly="1"/>
+                                        <field name="pln_recalc_status" readonly="1"/>
+                                        <field name="pln_is_critical" readonly="1"/>
+                                    </group>
+                                    <group name="constraints" string="Constraints">
+                                        <field name="pln_constraint_type"/>
+                                        <field name="pln_constraint_date"/>
+                                        <field name="pln_duration_type"/>
+                                        <field name="pln_root_id" groups="base.group_no_one"/>
+                                    </group>
+                                </group>
+                                <group name="allocations" string="Allocations">
+                                    <field name="pln_allocation_ids" nolabel="1">
+                                        <list editable="bottom" decoration-muted="pln_state == 'history'" 
+                                              decoration-info="pln_state == 'wip'" 
+                                              decoration-success="pln_state == 'reserved'" 
+                                              decoration-warning="pln_state == 'tentative'">
+                                            <field name="scenario_id"/>
+                                            <field name="resource_id"/>
+                                            <field name="start_date"/>
+                                            <field name="end_date"/>
+                                            <field name="pln_state"/>
+                                            <field name="pln_is_locked"/>
+                                        </list>
+                                    </field>
+                                </group>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Actions -->
+        <record id="action_numa_planning_scenario" model="ir.actions.act_window">
+            <field name="name">Scenarios</field>
+            <field name="res_model">numa.planning.scenario</field>
+            <field name="view_mode">list,form</field>
+        </record>
+
+        <record id="action_numa_planning_resource" model="ir.actions.act_window">
+            <field name="name">Resources</field>
+            <field name="res_model">numa.planning.resource</field>
+            <field name="view_mode">list,form</field>
+        </record>
+
+        <record id="action_numa_planning_allocation" model="ir.actions.act_window">
+            <field name="name">Allocations</field>
+            <field name="res_model">numa.planning.allocation</field>
+            <field name="view_mode">list,form</field>
+            <field name="search_view_id" ref="view_numa_planning_allocation_search"/>
+            <field name="context">{'search_default_official_plan': 1}</field>
+        </record>
+
+        <!-- Menus -->
+        <menuitem id="menu_numa_planning_root"
+                  name="Planning"
+                  sequence="50"
+                  web_icon="numa_planning,static/description/icon.png"/>
+
+        <menuitem id="menu_numa_planning_allocations"
+                  name="Allocations"
+                  parent="menu_numa_planning_root"
+                  action="action_numa_planning_allocation"
+                  sequence="10"/>
+
+        <menuitem id="menu_numa_planning_configuration"
+                  name="Configuration"
+                  parent="menu_numa_planning_root"
+                  sequence="100"/>
+
+        <menuitem id="menu_numa_planning_scenarios"
+                  name="Scenarios"
+                  parent="menu_numa_planning_configuration"
+                  action="action_numa_planning_scenario"
+                  sequence="10"/>
+
+        <menuitem id="menu_numa_planning_resources"
+                  name="Resources"
+                  parent="menu_numa_planning_configuration"
+                  action="action_numa_planning_resource"
+                  sequence="20"/>
+    </data>
+</odoo>

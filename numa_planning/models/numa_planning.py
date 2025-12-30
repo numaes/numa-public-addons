@@ -105,6 +105,20 @@ class NumaPlanningNode(models.Model):
                     last_alloc = allocations.sorted('end_date')[-1]
                     last_alloc.end_date = node.pln_calc_end
 
+    def action_freeze_baseline(self):
+        """
+        Placeholder for freezing the baseline.
+        """
+        self.ensure_one()
+        return True
+
+    def action_simulate(self):
+        """
+        Placeholder for simulation logic.
+        """
+        self.ensure_one()
+        return True
+
     def pln_action_auto_schedule(self):
         """
         Placeholder for basic scheduling logic.

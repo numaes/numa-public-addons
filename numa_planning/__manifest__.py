@@ -21,7 +21,7 @@ Advanced planning system with:
         'mrp',
     ],
     'data': [
-        # To be added
+        'views/numa_planning_views.xml',
     ],
     'installable': True,
     'application': True,
