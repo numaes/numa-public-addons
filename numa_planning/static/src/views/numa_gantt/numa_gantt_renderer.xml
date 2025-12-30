@@ -1,35 +1,77 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="numa_planning.NumaGanttRenderer" owl="1">
-        <div class="o_numa_gantt_view d-flex h-100 overflow-hidden">
-            <!-- Left Pane: WBS/Tree -->
-            <div class="o_numa_gantt_tree border-end bg-view overflow-auto" t-ref="tree" style="width: 250px; min-width: 250px;">
-                <table class="table table-sm table-hover mb-0">
-                    <thead class="bg-light sticky-top">
-                        <tr>
-                            <th class="ps-3">Name</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <t t-foreach="props.model.state.nodes" t-as="node" t-key="node.id">
-                            <tr t-att-class="{ 'table-active': state.hoveredNodeId === node.id }">
-                                <td class="ps-3 text-truncate">
-                                    <t t-esc="node.name"/>
-                                </td>
-                            </tr>
-                        </t>
-                    </tbody>
-                </table>
+        <div class="o_numa_gantt_view d-flex flex-column h-100 overflow-hidden">
+            <!-- Backlog Drawer -->
+            <div t-if="state.showBacklog" class="o_numa_gantt_backlog border-bottom bg-light p-2 overflow-auto" style="height: 120px;">
+                <div class="d-flex gap-2">
+                    <t t-foreach="props.model.state.backlog" t-as="task" t-key="task.id">
+                        <div class="o_numa_backlog_item p-2 border rounded bg-white shadow-sm" 
+                             style="width: 150px; cursor: grab;"
+                             t-on-pointerdown="(ev) => onBacklogMouseDown(ev, task)">
+                            <div class="text-truncate fw-bold"><t t-esc="task.name"/></div>
+                            <div class="text-muted small"><t t-esc="task.effort"/> h</div>
+                        </div>
+                    </t>
+                </div>
             </div>
 
-            <!-- Right Pane: Timeline/Canvas -->
-            <div class="o_numa_gantt_timeline flex-grow-1 position-relative overflow-auto" t-ref="timeline">
-                <canvas t-ref="canvas" 
-                        class="o_numa_gantt_canvas"
-                        style="cursor: grab;"
-                        t-on-pointerdown="onMouseDown"
-                        t-on-pointermove="onMouseMove"
-                        t-on-pointerup="onMouseUp"/>
+            <div class="o_numa_gantt_main_container d-flex flex-grow-1 overflow-hidden">
+                <!-- Left Pane: WBS/Tree -->
+                <div class="o_numa_gantt_tree border-end bg-view overflow-hidden d-flex flex-column" style="width: 250px; min-width: 250px;">
+                    <div class="o_numa_gantt_tree_top flex-grow-1 overflow-auto" t-ref="tree_top" style="flex-basis: 60%;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="bg-light sticky-top">
+                                <tr><th class="ps-3">Tasks</th></tr>
+                            </thead>
+                            <tbody>
+                                <t t-foreach="props.model.state.nodes" t-as="node" t-key="node.id">
+                                    <tr t-att-class="{ 'table-active': state.hoveredNodeId === node.id }">
+                                        <td class="ps-3 text-truncate"><t t-esc="node.name"/></td>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="o_numa_gantt_tree_bottom overflow-auto border-top" t-ref="tree_bottom" style="flex-basis: 40%;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="bg-light sticky-top">
+                                <tr><th class="ps-3">Resources</th></tr>
+                            </thead>
+                            <tbody>
+                                <t t-foreach="props.model.state.resources" t-as="res" t-key="res.id">
+                                    <tr>
+                                        <td class="ps-3 text-truncate"><t t-esc="res.name"/></td>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Right Pane: Timeline/Canvas -->
+                <div class="o_numa_gantt_timeline_container flex-grow-1 position-relative overflow-hidden d-flex flex-column">
+                    <div class="o_numa_gantt_timeline_top flex-grow-1 overflow-auto" t-ref="timeline_top" style="flex-basis: 60%;" t-on-scroll="onScrollTop">
+                        <canvas t-ref="canvas_top" 
+                                class="o_numa_gantt_canvas"
+                                style="cursor: grab;"
+                                t-on-pointerdown="onMouseDownTop"
+                                t-on-pointermove="onMouseMove"
+                                t-on-pointerup="onMouseUp"/>
+                    </div>
+                    <div class="o_numa_gantt_timeline_bottom overflow-auto border-top" t-ref="timeline_bottom" style="flex-basis: 40%;" t-on-scroll="onScrollBottom">
+                        <canvas t-ref="canvas_bottom" 
+                                class="o_numa_gantt_canvas"
+                                t-on-pointermove="onMouseMove"/>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Controls -->
+            <div class="o_numa_gantt_controls position-absolute bottom-0 end-0 p-3 d-flex gap-2">
+                <button class="btn btn-secondary rounded-circle shadow" t-on-click="toggleBacklog">
+                    <i class="fa fa-list"/>
+                </button>
             </div>
         </div>
     </t>

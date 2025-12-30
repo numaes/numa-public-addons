@@ -18,37 +18,25 @@ export class NumaGanttModel extends Model {
     }
 
     async load(params) {
-        const data = await this.orm.call(this.resModel, "search_read", [], {
+        const ganttData = await this.orm.call(this.resModel, "pln_get_gantt_data", [], {
             domain: params?.domain || [],
-            fields: ['id', 'display_name', 'pln_calc_start', 'pln_calc_end'],
         });
 
-        const ganttData = await Promise.all(data.map(node => 
-            this.orm.call(this.resModel, "pln_get_gantt_data", [node.id])
-        ));
-
-        this.state.nodes = ganttData;
+        this.state.nodes = ganttData.nodes;
+        this.state.resources = ganttData.resources;
+        this.state.backlog = ganttData.backlog;
+        
         this.computeRange();
-
-        // Fetch real resource load data for the histogram
-        if (this.state.startDate && this.state.endDate) {
-            // Format dates to string for Odoo call (YYYY-MM-DD HH:MM:SS)
-            const format = (d) => d.toISOString().replace('T', ' ').split('.')[0];
-            const startStr = format(this.state.startDate);
-            const endStr = format(this.state.endDate);
-            
-            this.state.resources = await this.orm.call(
-                this.resModel, 
-                "pln_get_resource_load_data", 
-                [startStr, endStr]
-            );
-        }
-
         this.notify();
     }
 
     computeRange() {
-        if (this.state.nodes.length === 0) return;
+        if (this.state.nodes.length === 0) {
+            this.state.startDate = new Date();
+            this.state.endDate = new Date();
+            this.state.endDate.setDate(this.state.endDate.getDate() + 30);
+            return;
+        }
         let min = new Date(Math.min(...this.state.nodes.map(n => new Date(n.pln_calc_start))));
         let max = new Date(Math.max(...this.state.nodes.map(n => new Date(n.pln_calc_end))));
         

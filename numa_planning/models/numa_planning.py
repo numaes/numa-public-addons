@@ -163,26 +163,110 @@ class NumaPlanningNode(models.Model):
             'context': {'default_node_id': self.id},
         }
 
-    def pln_get_gantt_data(self):
-        self.ensure_one()
-        links = self.env['numa.planning.link'].search([('source_node_id', '=', self.id)])
+    def pln_get_gantt_data(self, domain=None):
+        """
+        Contextual Loading: Fetches data for nodes in domain, plus allocations for
+        resources involved in these nodes (including external ones).
+        """
+        # If called on a recordset, we process all of them
+        nodes = self.search(domain or []) if domain is not None else self
+        
+        official_scenario = self.env['numa.planning.scenario'].search([('is_official', '=', True)], limit=1)
+        if not official_scenario:
+            return {'nodes': [], 'resources': [], 'backlog': []}
+
+        # 1. Active Tasks (with allocations)
+        nodes_data = []
+        resource_ids = set()
+        active_node_ids = set()
+
+        for node in nodes:
+            links = self.env['numa.planning.link'].search([('source_node_id', '=', node.id)])
+            allocs = node.pln_allocation_ids.filtered(lambda x: x.scenario_id == official_scenario)
+            
+            if allocs:
+                active_node_ids.add(node.id)
+                nodes_data.append({
+                    'id': node.id,
+                    'name': node.display_name,
+                    'pln_calc_start': node.pln_calc_start,
+                    'pln_calc_end': node.pln_calc_end,
+                    'allocations': [{
+                        'id': a.id,
+                        'resource_id': a.resource_id.id,
+                        'start': a.start_date,
+                        'end': a.end_date,
+                        'state': a.pln_state
+                    } for a in allocs],
+                    'dependencies': links.mapped('target_node_id').ids
+                })
+                for a in allocs:
+                    resource_ids.add(a.resource_id.id)
+
+        # 2. Backlog (Unscheduled Tasks)
+        # Tasks in domain that have no allocations in official scenario and are not 'done'
+        # (Assuming pln_state comes from allocations, for Node we check if it has none)
+        backlog_data = []
+        for node in nodes:
+            if node.id not in active_node_ids:
+                # Basic check for 'done' status if applicable, or just no allocations
+                backlog_data.append({
+                    'id': node.id,
+                    'name': node.display_name,
+                    'effort': node.pln_effort_hours or 1.0,
+                })
+
+        # 3. Resources & Ghost Allocations
+        resources_data = []
+        if resource_ids:
+            resources = self.env['numa.planning.resource'].browse(list(resource_ids))
+            for res in resources:
+                # Fetch ALL allocations for these resources in official scenario
+                all_res_allocs = self.env['numa.planning.allocation'].search([
+                    ('resource_id', '=', res.id),
+                    ('scenario_id', '=', official_scenario.id)
+                ])
+                
+                res_allocs_data = []
+                for a in all_res_allocs:
+                    is_external = a.node_id.id not in active_node_ids
+                    res_allocs_data.append({
+                        'id': a.id,
+                        'node_id': a.node_id.id,
+                        'node_name': a.node_id.display_name,
+                        'start': a.start_date,
+                        'end': a.end_date,
+                        'state': a.pln_state,
+                        'is_external': is_external,
+                        'read_only': is_external
+                    })
+
+                # Fetch availability periods
+                availability = self.env['numa.planning.availability.period'].search([
+                    ('resource_id', '=', res.id)
+                ])
+
+                resources_data.append({
+                    'id': res.id,
+                    'name': res.name,
+                    'allocations': res_allocs_data,
+                    'availability': [{
+                        'start': ap.start_date,
+                        'end': ap.end_date,
+                        'type': ap.pln_type,
+                        'efficiency': ap.pln_efficiency
+                    } for ap in availability]
+                })
+
         return {
-            'id': self.id,
-            'name': self.display_name,
-            'pln_calc_start': self.pln_calc_start,
-            'pln_calc_end': self.pln_calc_end,
-            'allocations': [{
-                'resource_id': a.resource_id.id,
-                'start': a.start_date,
-                'end': a.end_date,
-                'state': a.pln_state
-            } for a in self.pln_allocation_ids.filtered(lambda x: x.scenario_id.is_official)],
-            'dependencies': links.mapped('target_node_id').ids
+            'nodes': nodes_data,
+            'resources': resources_data,
+            'backlog': backlog_data
         }
 
     def pln_gantt_update_batch(self, changes):
         """
-        Accepts a list of changes: [{'id': node_id, 'start': datetime, 'end': datetime}, ...]
+        Accepts a list of changes: [{'id': node_id, 'start': datetime, 'end': datetime, 'resource_id': int}, ...]
         Applies changes to allocations in the official scenario.
         """
         official_scenario = self.env['numa.planning.scenario'].search([('is_official', '=', True)], limit=1)
@@ -195,12 +279,28 @@ class NumaPlanningNode(models.Model):
                 continue
                 
             allocations = node.pln_allocation_ids.filtered(lambda a: a.scenario_id == official_scenario)
-            if not allocations:
-                continue
-                
+            
             new_start = fields.Datetime.to_datetime(change['start'])
             new_end = fields.Datetime.to_datetime(change['end'])
-            
+            new_resource_id = change.get('resource_id')
+
+            if not allocations:
+                # Create a new allocation if it's a drop from backlog
+                if new_resource_id:
+                    self.env['numa.planning.allocation'].create({
+                        'node_id': node.id,
+                        'resource_id': new_resource_id,
+                        'scenario_id': official_scenario.id,
+                        'start_date': new_start,
+                        'end_date': new_end,
+                        'pln_state': 'reserved'
+                    })
+                continue
+                
+            # Update existing resource if provided
+            if new_resource_id:
+                allocations.write({'resource_id': new_resource_id})
+
             # Simple shift logic for batch updates
             old_start = node.pln_calc_start
             if old_start and new_start != old_start:

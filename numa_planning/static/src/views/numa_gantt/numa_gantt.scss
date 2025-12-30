@@ -1,5 +1,7 @@
 .o_numa_gantt_view {
     border: 1px solid #dee2e6;
+    display: flex;
+    flex-direction: column;
 }
 
 .o_numa_gantt_tree {
@@ -11,7 +13,7 @@
     height: 40px;
 }
 
-.o_numa_gantt_timeline {
+.o_numa_gantt_timeline_container {
     cursor: crosshair;
 }
 
@@ -20,12 +22,23 @@
     image-rendering: pixelated;
 }
 
-.o_numa_gantt_timeline::-webkit-scrollbar {
+.o_numa_gantt_timeline_top::-webkit-scrollbar,
+.o_numa_gantt_timeline_bottom::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
 
-.o_numa_gantt_timeline::-webkit-scrollbar-thumb {
+.o_numa_gantt_timeline_top::-webkit-scrollbar-thumb,
+.o_numa_gantt_timeline_bottom::-webkit-scrollbar-thumb {
     background: #ccc;
     border-radius: 4px;
+}
+
+.o_numa_backlog_item:hover {
+    background-color: #f1f1f1 !important;
+}
+
+.o_numa_gantt_backlog {
+    transition: height 0.3s ease;
+    z-index: 10;
 }

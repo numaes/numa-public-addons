@@ -7,180 +7,215 @@ export class NumaGanttRenderer extends Component {
     static props = ["model"];
 
     setup() {
-        this.canvasRef = useRef("canvas");
-        this.treeRef = useRef("tree");
-        this.timelineRef = useRef("timeline");
+        this.canvasTopRef = useRef("canvas_top");
+        this.canvasBottomRef = useRef("canvas_bottom");
+        this.treeTopRef = useRef("tree_top");
+        this.treeBottomRef = useRef("tree_bottom");
+        this.timelineTopRef = useRef("timeline_top");
+        this.timelineBottomRef = useRef("timeline_bottom");
+        
         this.state = useState({
             hoveredNodeId: null,
             draggingNodeId: null,
+            draggingBacklogTask: null,
+            showBacklog: false,
+            mouseX: 0,
+            mouseY: 0,
+            activePane: 'top', // 'top' or 'bottom'
         });
 
         onMounted(() => {
             this.draw();
-            this.syncScroll();
         });
         onPatched(() => this.draw());
     }
 
-    syncScroll() {
-        const tree = this.treeRef.el;
-        const timeline = this.timelineRef.el;
-        if (!tree || !timeline) return;
-
-        timeline.addEventListener("scroll", () => {
-            tree.scrollTop = timeline.scrollTop;
-        });
-        tree.addEventListener("scroll", () => {
-            timeline.scrollTop = tree.scrollTop;
-        });
+    onScrollTop() {
+        const top = this.timelineTopRef.el;
+        const bottom = this.timelineBottomRef.el;
+        if (top && bottom) {
+            bottom.scrollLeft = top.scrollLeft;
+        }
+        if (this.treeTopRef.el && top) {
+            this.treeTopRef.el.scrollTop = top.scrollTop;
+        }
     }
 
-    /**
-     * Coordinate System: Time -> Pixels
-     * X = (Date - StartDate) * PixelsPerUnit(scale)
-     * Y = NodeIndex * RowHeight
-     */
-    getPixelsPerDay() {
-        const scales = {
-            'day': 100,
-            'week': 20,
-            'month': 5
+    onScrollBottom() {
+        const top = this.timelineTopRef.el;
+        const bottom = this.timelineBottomRef.el;
+        if (top && bottom) {
+            top.scrollLeft = bottom.scrollLeft;
+        }
+        if (this.treeBottomRef.el && bottom) {
+            this.treeBottomRef.el.scrollTop = bottom.scrollTop;
+        }
+    }
+
+    toggleBacklog() {
+        this.state.showBacklog = !this.state.showBacklog;
+    }
+
+    onBacklogMouseDown(ev, task) {
+        this.state.draggingBacklogTask = task;
+        this.state.draggingNodeId = null;
+        this.canvasTopRef.el.style.cursor = "grabbing";
+        
+        // Setup global mouse up to handle drop anywhere
+        const onGlobalUp = (upEv) => {
+            this.onMouseUp(upEv);
+            document.removeEventListener("pointerup", onGlobalUp);
         };
-        return scales[this.props.model.state.scale] || 20;
+        document.addEventListener("pointerup", onGlobalUp);
     }
 
     dateToX(date) {
-        const diff = new Date(date) - this.props.model.state.startDate;
+        const { startDate } = this.props.model.state;
+        const diff = new Date(date) - startDate;
         return (diff / (1000 * 60 * 60 * 24)) * this.getPixelsPerDay();
     }
 
-    draw() {
-        const canvas = this.canvasRef.el;
-        if (!canvas) return;
+    xToDate(x) {
+        const { startDate } = this.props.model.state;
+        const days = x / this.getPixelsPerDay();
+        const date = new Date(startDate);
+        date.setMilliseconds(date.getMilliseconds() + days * 24 * 60 * 60 * 1000);
+        return date;
+    }
 
-        const timeline = this.timelineRef.el;
-        if (timeline) {
-            // High DPI support and matching scroll dimensions
-            const pixelsPerDay = this.getPixelsPerDay();
-            const { startDate, endDate, nodes } = this.props.model.state;
-            const days = (endDate - startDate) / (1000 * 60 * 60 * 24);
-            
-            canvas.width = days * pixelsPerDay;
-            canvas.height = Math.max(nodes.length * 40 + 150, timeline.clientHeight);
-        }
+    draw() {
+        this.drawPane('top');
+        this.drawPane('bottom');
+    }
+
+    drawPane(pane) {
+        const canvas = pane === 'top' ? this.canvasTopRef.el : this.canvasBottomRef.el;
+        const timeline = pane === 'top' ? this.timelineTopRef.el : this.timelineBottomRef.el;
+        if (!canvas || !timeline) return;
+
+        const pixelsPerDay = this.getPixelsPerDay();
+        const { startDate, endDate, nodes, resources } = this.props.model.state;
+        const days = (endDate - startDate) / (1000 * 60 * 60 * 24);
+        
+        canvas.width = days * pixelsPerDay;
+        const rowCount = pane === 'top' ? nodes.length : resources.length;
+        canvas.height = Math.max(rowCount * 40 + 50, timeline.clientHeight);
 
         const ctx = canvas.getContext("2d");
-        const { nodes } = this.props.model.state;
-        const width = canvas.width;
-        const height = canvas.height;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        ctx.clearRect(0, 0, width, height);
+        this.drawGrid(ctx, canvas.width, canvas.height);
 
-        // Draw Grid
-        this.drawGrid(ctx, width, height);
-
-        // Draw Dependencies
-        this.drawDependencies(ctx);
-
-        // Draw Bars
-        nodes.forEach((node, index) => {
-            this.drawBar(ctx, node, index);
-        });
-
-        // Draw Histogram
-        this.drawHistogram(ctx, width, height);
-    }
-
-    drawHistogram(ctx, width, height) {
-        const histHeight = 100;
-        const top = height - histHeight;
-        const resources = this.props.model.state.resources || [];
-        
-        ctx.fillStyle = "rgba(240, 240, 240, 0.9)";
-        ctx.fillRect(0, top, width, histHeight);
-        ctx.strokeStyle = "#ccc";
-        ctx.strokeRect(0, top, width, histHeight);
-
-        if (resources.length === 0) return;
-
-        const pixelsPerDay = this.getPixelsPerDay();
-        resources.forEach((res, resIdx) => {
-            ctx.fillStyle = `rgba(255, 0, 0, ${0.1 + (resIdx * 0.1)})`; // Distinguish resources
-            (res.load || []).forEach(entry => {
-                const x = this.dateToX(entry.date);
-                const h = (entry.value / 8) * histHeight; // Assume 8h is 100% load
-                ctx.fillRect(x, height - h, pixelsPerDay - 2, h);
-            });
-        });
-    }
-
-    drawGrid(ctx, width, height) {
-        ctx.strokeStyle = "#e0e0e0";
-        ctx.beginPath();
-        const pixelsPerDay = this.getPixelsPerDay();
-        for (let x = 0; x < width; x += pixelsPerDay) {
-            ctx.moveTo(x, 0);
-            ctx.lineTo(x, height);
+        if (pane === 'top') {
+            this.drawDependencies(ctx);
+            nodes.forEach((node, index) => this.drawBar(ctx, node, index));
+        } else {
+            resources.forEach((res, index) => this.drawResourceRow(ctx, res, index));
         }
-        ctx.stroke();
-    }
-
-    drawBar(ctx, node, index) {
-        const x = this.dateToX(node.pln_calc_start);
-        const x2 = this.dateToX(node.pln_calc_end);
-        const y = index * 40 + 10;
-        const w = Math.max(x2 - x, 5);
-        const h = 20;
-
-        // Color coding by state
-        const stateColors = {
-            'history': '#adb5bd',  // Gray
-            'wip': '#007bff',      // Blue
-            'reserved': '#28a745', // Green
-            'tentative': '#ffc107' // Orange
-        };
         
-        // Find main allocation state if possible
-        const state = node.allocations?.[0]?.state || 'reserved';
-        ctx.fillStyle = stateColors[state] || "#00A09D";
-        
-        ctx.fillRect(x, y, w, h);
-        
-        ctx.fillStyle = "#000";
-        ctx.font = "12px sans-serif";
-        ctx.fillText(node.name, x + 5, y + 15);
-    }
-
-    drawDependencies(ctx) {
-        const { nodes } = this.props.model.state;
-        ctx.strokeStyle = "rgba(0, 0, 0, 0.3)";
-        ctx.lineWidth = 1;
-
-        nodes.forEach((node, index) => {
-            const x1 = this.dateToX(node.pln_calc_end);
-            const y1 = index * 40 + 20;
-
-            (node.dependencies || []).forEach(targetId => {
-                const targetIndex = nodes.findIndex(n => n.id === targetId);
-                if (targetIndex === -1) return;
-
-                const targetNode = nodes[targetIndex];
-                const x2 = this.dateToX(targetNode.pln_calc_start);
-                const y2 = targetIndex * 40 + 20;
-
+        // Draw vertical sync line if hovering or dragging
+        if (this.state.hoveredNodeId || this.state.draggingNodeId || this.state.draggingBacklogTask) {
+            const nodeId = this.state.draggingNodeId || this.state.draggingBacklogTask?.id || this.state.hoveredNodeId;
+            const node = nodes.find(n => n.id === nodeId);
+            if (node && node.pln_calc_start) {
+                const x = this.dateToX(node.pln_calc_start);
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = "rgba(0, 160, 157, 0.5)";
+                ctx.lineWidth = 1;
                 ctx.beginPath();
-                ctx.moveTo(x1, y1);
-                // Bezier curve for professional look
-                const cp1x = x1 + (x2 - x1) / 2;
-                const cp2x = x1 + (x2 - x1) / 2;
-                ctx.bezierCurveTo(cp1x, y1, cp2x, y2, x2, y2);
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
                 ctx.stroke();
-            });
+                ctx.setLineDash([]);
+            }
+        }
+
+        // Tooltip logic (manual for canvas)
+        if (pane === 'bottom' && this.state.hoveredNodeId) {
+            const resIdx = resources.findIndex(r => r.allocations?.some(a => a.node_id === this.state.hoveredNodeId && a.is_external));
+            if (resIdx !== -1) {
+                const res = resources[resIdx];
+                const alloc = res.allocations.find(a => a.node_id === this.state.hoveredNodeId);
+                if (alloc && alloc.is_external) {
+                    this.drawTooltip(ctx, `Occupied by Project: ${alloc.node_name}`, this.state.mouseX, (resIdx * 40) + 20);
+                }
+            }
+        }
+    }
+
+    drawTooltip(ctx, text, x, y) {
+        ctx.font = "12px sans-serif";
+        const textWidth = ctx.measureText(text).width;
+        ctx.fillStyle = "rgba(0,0,0,0.8)";
+        ctx.fillRect(x + 10, y - 25, textWidth + 10, 20);
+        ctx.fillStyle = "#fff";
+        ctx.fillText(text, x + 15, y - 11);
+    }
+
+    drawResourceRow(ctx, resource, index) {
+        const y = index * 40;
+        const rowHeight = 40;
+        const width = ctx.canvas.width;
+
+        // Layer 0: Availability
+        (resource.availability || []).forEach(ap => {
+            const x = this.dateToX(ap.start);
+            const x2 = this.dateToX(ap.end);
+            const w = x2 - x;
+            if (ap.type === 'maintenance' || ap.efficiency === 0) {
+                ctx.fillStyle = "rgba(255, 0, 0, 0.1)";
+                ctx.fillRect(x, y, w, rowHeight);
+            }
+        });
+
+        // Layer 1 & 2: Allocations
+        (resource.allocations || []).forEach(alloc => {
+            const x = this.dateToX(alloc.start);
+            const x2 = this.dateToX(alloc.end);
+            const w = Math.max(x2 - x, 5);
+            const h = 24;
+            const barY = y + 8;
+
+            if (alloc.is_external) {
+                // Ghost style: Hatching
+                ctx.save();
+                ctx.fillStyle = "#f8f9fa";
+                ctx.fillRect(x, barY, w, h);
+                ctx.strokeStyle = "#dee2e6";
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                for (let i = -h; i < w; i += 5) {
+                    ctx.moveTo(x + i, barY + h);
+                    ctx.lineTo(x + i + h, barY);
+                }
+                ctx.clip(new Path2D(`M ${x} ${barY} h ${w} v ${h} h ${-w} z`));
+                ctx.stroke();
+                ctx.restore();
+                ctx.strokeStyle = "#adb5bd";
+                ctx.strokeRect(x, barY, w, h);
+            } else {
+                const stateColors = {
+                    'history': '#adb5bd',
+                    'wip': '#007bff',
+                    'reserved': '#28a745',
+                    'tentative': '#ffc107'
+                };
+                ctx.fillStyle = stateColors[alloc.state] || "#00A09D";
+                ctx.fillRect(x, barY, w, h);
+                ctx.strokeStyle = "rgba(0,0,0,0.1)";
+                ctx.strokeRect(x, barY, w, h);
+                
+                if (this.state.hoveredNodeId === alloc.node_id) {
+                    ctx.strokeStyle = "#714B67";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x - 2, barY - 2, w + 4, h + 4);
+                }
+            }
         });
     }
 
-    onMouseDown(ev) {
-        const timeline = this.timelineRef.el;
+    onMouseDownTop(ev) {
+        const timeline = this.timelineTopRef.el;
         if (!timeline) return;
         const rect = timeline.getBoundingClientRect();
         const mouseX = ev.clientX - rect.left + timeline.scrollLeft;
@@ -199,40 +234,100 @@ export class NumaGanttRenderer extends Component {
             this.dragStartX = mouseX;
             this.initialStart = new Date(nodes[clickedNodeIndex].pln_calc_start);
             this.initialEnd = new Date(nodes[clickedNodeIndex].pln_calc_end);
-            this.canvasRef.el.style.cursor = "grabbing";
+            this.canvasTopRef.el.style.cursor = "grabbing";
         }
     }
 
     onMouseMove(ev) {
-        if (!this.state.draggingNodeId) return;
+        const timelineTop = this.timelineTopRef.el;
+        const timelineBottom = this.timelineBottomRef.el;
+        const rectTop = timelineTop.getBoundingClientRect();
+        const rectBottom = timelineBottom.getBoundingClientRect();
+        
+        let mouseX, mouseY, pane;
+        if (ev.clientY < rectBottom.top) {
+            mouseX = ev.clientX - rectTop.left + timelineTop.scrollLeft;
+            mouseY = ev.clientY - rectTop.top + timelineTop.scrollTop;
+            pane = 'top';
+        } else {
+            mouseX = ev.clientX - rectBottom.left + timelineBottom.scrollLeft;
+            mouseY = ev.clientY - rectBottom.top + timelineBottom.scrollTop;
+            pane = 'bottom';
+        }
 
-        const timeline = this.timelineRef.el;
-        if (!timeline) return;
-        const rect = timeline.getBoundingClientRect();
-        const mouseX = ev.clientX - rect.left + timeline.scrollLeft;
-        const dx = mouseX - this.dragStartX;
-        const daysShift = dx / this.getPixelsPerDay();
+        // Hover logic
+        const { nodes, resources } = this.props.model.state;
+        let newHoverId = null;
+        if (pane === 'top') {
+            const idx = Math.floor((mouseY - 10) / 40);
+            if (nodes[idx]) newHoverId = nodes[idx].id;
+        } else {
+            const resIdx = Math.floor(mouseY / 40);
+            const res = resources[resIdx];
+            if (res) {
+                const alloc = (res.allocations || []).find(a => {
+                    const x = this.dateToX(a.start);
+                    const x2 = this.dateToX(a.end);
+                    return mouseX >= x && mouseX <= x2;
+                });
+                if (alloc) newHoverId = alloc.node_id;
+            }
+        }
+        this.state.hoveredNodeId = newHoverId;
 
-        const node = this.props.model.state.nodes.find(n => n.id === this.state.draggingNodeId);
-        if (node) {
-            // Optimistic Update
-            const newStart = new Date(this.initialStart);
-            newStart.setDate(newStart.getDate() + daysShift);
-            const newEnd = new Date(this.initialEnd);
-            newEnd.setDate(newEnd.getDate() + daysShift);
-            
-            node.pln_calc_start = newStart;
-            node.pln_calc_end = newEnd;
+        // Drag logic
+        if (this.state.draggingNodeId || this.state.draggingBacklogTask) {
             this.draw();
         }
     }
 
     onMouseUp(ev) {
-        if (this.state.draggingNodeId) {
-            const node = this.props.model.state.nodes.find(n => n.id === this.state.draggingNodeId);
-            this.props.model.updateTaskDate(node.id, node.pln_calc_start, node.pln_calc_end);
+        const timelineBottom = this.timelineBottomRef.el;
+        const rectBottom = timelineBottom.getBoundingClientRect();
+        const isInBottom = ev.clientY >= rectBottom.top;
+        
+        if (this.state.draggingNodeId || this.state.draggingBacklogTask) {
+            if (isInBottom) {
+                const mouseX = ev.clientX - rectBottom.left + timelineBottom.scrollLeft;
+                const mouseY = ev.clientY - rectBottom.top + timelineBottom.scrollTop;
+                const resIdx = Math.floor(mouseY / 40);
+                const resource = this.props.model.state.resources[resIdx];
+                
+                if (resource) {
+                    const newStart = this.xToDate(mouseX);
+                    const nodeId = this.state.draggingNodeId || this.state.draggingBacklogTask.id;
+                    const effort = this.state.draggingBacklogTask?.effort || 1.0;
+                    const newEnd = new Date(newStart);
+                    newEnd.setHours(newEnd.getHours() + effort);
+                    
+                    this.props.model.orm.call(this.props.model.resModel, "pln_gantt_update_batch", [[{
+                        id: nodeId,
+                        start: newStart,
+                        end: newEnd,
+                        resource_id: resource.id
+                    }]]);
+                    this.props.model.load();
+                }
+            } else if (this.state.draggingNodeId) {
+                // Handle standard move in top pane
+                const timelineTop = this.timelineTopRef.el;
+                const rectTop = timelineTop.getBoundingClientRect();
+                const mouseX = ev.clientX - rectTop.left + timelineTop.scrollLeft;
+                const dx = mouseX - this.dragStartX;
+                const daysShift = dx / this.getPixelsPerDay();
+                
+                const node = this.props.model.state.nodes.find(n => n.id === this.state.draggingNodeId);
+                const newStart = new Date(this.initialStart);
+                newStart.setDate(newStart.getDate() + daysShift);
+                const newEnd = new Date(this.initialEnd);
+                newEnd.setDate(newEnd.getDate() + daysShift);
+                
+                this.props.model.updateTaskDate(node.id, newStart, newEnd);
+            }
+            
             this.state.draggingNodeId = null;
-            this.canvasRef.el.style.cursor = "grab";
+            this.state.draggingBacklogTask = null;
+            this.canvasTopRef.el.style.cursor = "grab";
         }
     }
 }
