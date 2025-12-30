@@ -1,0 +1,31 @@
+.o_numa_gantt_view {
+    border: 1px solid #dee2e6;
+}
+
+.o_numa_gantt_tree {
+    user-select: none;
+    background-color: #f8f9fa;
+}
+
+.o_numa_gantt_tree tr {
+    height: 40px;
+}
+
+.o_numa_gantt_timeline {
+    cursor: crosshair;
+}
+
+.o_numa_gantt_canvas {
+    display: block;
+    image-rendering: pixelated;
+}
+
+.o_numa_gantt_timeline::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.o_numa_gantt_timeline::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 4px;
+}

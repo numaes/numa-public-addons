@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="numa_planning.NumaGanttRenderer" owl="1">
+        <div class="o_numa_gantt_view d-flex h-100 overflow-hidden">
+            <!-- Left Pane: WBS/Tree -->
+            <div class="o_numa_gantt_tree border-end bg-view overflow-auto" t-ref="tree" style="width: 250px; min-width: 250px;">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="bg-light sticky-top">
+                        <tr>
+                            <th class="ps-3">Name</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <t t-foreach="props.model.state.nodes" t-as="node" t-key="node.id">
+                            <tr t-att-class="{ 'table-active': state.hoveredNodeId === node.id }">
+                                <td class="ps-3 text-truncate">
+                                    <t t-esc="node.name"/>
+                                </td>
+                            </tr>
+                        </t>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Right Pane: Timeline/Canvas -->
+            <div class="o_numa_gantt_timeline flex-grow-1 position-relative overflow-auto" t-ref="timeline">
+                <canvas t-ref="canvas" 
+                        class="o_numa_gantt_canvas"
+                        style="cursor: grab;"
+                        t-on-pointerdown="onMouseDown"
+                        t-on-pointermove="onMouseMove"
+                        t-on-pointerup="onMouseUp"/>
+            </div>
+        </div>
+    </t>
+</templates>

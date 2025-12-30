@@ -134,3 +134,27 @@ odoo-bin -i numa_planning --test-enable
 ```
 
 > **DX Tip:** Because `numa.planning.node` is a concrete model in the polymorphic hierarchy, you can run tests directly against it or against your concrete inheriting models. The existing test suite in `numa_planning/tests/` serves as living documentation for the expected behavior of the engine.
+
+## Visual Frontend: Numa Gantt View
+
+`numa_planning` includes a custom, high-performance Gantt view designed to handle large-scale planning data.
+
+### Key Features
+- **Hybrid Rendering:** Uses standard DOM for the WBS (Left Pane) and HTML5 Canvas for the Timeline (Right Pane).
+- **Infinite Scrolling:** Smoothly handle thousands of nodes without performance degradation.
+- **Drag & Drop:** Interactively reschedule tasks by dragging bars on the canvas.
+- **Resource Histogram:** Integrated heatmap showing resource load at the bottom of the timeline.
+
+### How to use
+In your Odoo XML architecture, simply use the `<numa_gantt>` tag:
+
+```xml
+<record id="my_business_object_gantt" model="ir.ui.view">
+    <field name="model">my.business.object</field>
+    <field name="arch" type="xml">
+        <numa_gantt date_start="pln_calc_start" date_stop="pln_calc_end">
+            <!-- WBS columns can be customized here in future versions -->
+        </numa_gantt>
+    </field>
+</record>
+```

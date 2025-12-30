@@ -23,6 +23,11 @@ Advanced planning system with:
     'data': [
         'views/numa_planning_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'numa_planning/static/src/views/numa_gantt/**/*',
+        ],
+    },
     'installable': True,
     'application': True,
 }

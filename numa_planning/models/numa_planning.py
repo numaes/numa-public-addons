@@ -180,6 +180,86 @@ class NumaPlanningNode(models.Model):
             'dependencies': links.mapped('target_node_id').ids
         }
 
+    def pln_gantt_update_batch(self, changes):
+        """
+        Accepts a list of changes: [{'id': node_id, 'start': datetime, 'end': datetime}, ...]
+        Applies changes to allocations in the official scenario.
+        """
+        official_scenario = self.env['numa.planning.scenario'].search([('is_official', '=', True)], limit=1)
+        if not official_scenario:
+            return False
+            
+        for change in changes:
+            node = self.browse(change['id'])
+            if not node.exists():
+                continue
+                
+            allocations = node.pln_allocation_ids.filtered(lambda a: a.scenario_id == official_scenario)
+            if not allocations:
+                continue
+                
+            new_start = fields.Datetime.to_datetime(change['start'])
+            new_end = fields.Datetime.to_datetime(change['end'])
+            
+            # Simple shift logic for batch updates
+            old_start = node.pln_calc_start
+            if old_start and new_start != old_start:
+                delta = new_start - old_start
+                for alloc in allocations:
+                    alloc.start_date += delta
+                    alloc.end_date += delta
+            
+            # Adjust end date of the last allocation if it was a resize
+            if new_end:
+                last_alloc = allocations.sorted('end_date')[-1]
+                if last_alloc.end_date != new_end:
+                    last_alloc.end_date = new_end
+                    
+        return True
+
+    def pln_get_resource_load_data(self, start_date, end_date):
+        """
+        Returns resource load data for the histogram.
+        [{'resource_id': id, 'name': name, 'load': [{'date': d, 'value': v}, ...]}]
+        """
+        resources = self.env['numa.planning.resource'].search([])
+        official_scenario = self.env['numa.planning.scenario'].search([('is_official', '=', True)], limit=1)
+        
+        # Convert JS dates to Python datetimes if necessary
+        if isinstance(start_date, str):
+            start_date = fields.Datetime.to_datetime(start_date)
+        if isinstance(end_date, str):
+            end_date = fields.Datetime.to_datetime(end_date)
+
+        result = []
+        for res in resources:
+            allocs = self.env['numa.planning.allocation'].search([
+                ('resource_id', '=', res.id),
+                ('scenario_id', '=', official_scenario.id),
+                ('start_date', '<=', end_date),
+                ('end_date', '>=', start_date)
+            ])
+            
+            # Simple daily aggregation
+            load_by_day = defaultdict(float)
+            for alloc in allocs:
+                curr = max(alloc.start_date, start_date)
+                stop = min(alloc.end_date, end_date)
+                while curr < stop:
+                    day_str = curr.strftime('%Y-%m-%d')
+                    day_end = (curr + timedelta(days=1)).replace(hour=0, minute=0, second=0)
+                    overlap_end = min(day_end, stop)
+                    hours = (overlap_end - curr).total_seconds() / 3600.0
+                    load_by_day[day_str] += hours
+                    curr = day_end
+
+            result.append({
+                'id': res.id,
+                'name': res.name,
+                'load': [{'date': d, 'value': v} for d, v in load_by_day.items()]
+            })
+        return result
+
     # Optimization (CPM)
     pln_topological_level = fields.Integer('Topological Level')
     pln_recalc_status = fields.Selection([
