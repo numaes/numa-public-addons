@@ -4,7 +4,7 @@
     'summary': 'Polymorphic model inheritance for Odoo.',
     'author': 'NUMA Extreme Systems',
     'website': 'https://www.numaes.com',
-    'license': 'LGPL-3',
+    'license': 'AGPL-3',
     'category': 'Extra Tools',
     'depends': [
         'base',
