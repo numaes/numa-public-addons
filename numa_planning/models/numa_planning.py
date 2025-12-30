@@ -145,9 +145,11 @@ class NumaPlanningNode(models.Model):
 
     def pln_action_auto_schedule(self):
         """
-        Placeholder for basic scheduling logic.
+        Trigger for the complete scheduling engine.
+        Calculates CPM first, then performs Resource Leveling.
         """
-        self.ensure_one()
+        self.action_pln_compute_cpm()
+        self.action_pln_resource_leveling()
         return True
 
     def pln_get_allocations_view(self):
@@ -361,6 +363,118 @@ class NumaPlanningNode(models.Model):
                     (link.target_node_id.id, link.link_type, link.lag_amount or 0.0)
                 )
         return graph
+
+    def action_pln_resource_leveling(self):
+        """
+        Resource Leveling Engine (Clipping).
+        Converts theoretical CPM dates into real allocations respecting resource capacity.
+        Uses a Greedy Heuristic (Serial Generation Scheme).
+        """
+        if not self:
+            return
+
+        # 1. Scope & Cleanup
+        root_ids = self.mapped('pln_root_id').ids
+        if root_ids:
+            context_nodes = self.search([('pln_root_id', 'in', root_ids)])
+        else:
+            context_nodes = self
+
+        # Identify official scenario
+        official_scenario = self.env['numa.planning.scenario'].search([('is_official', '=', True)], limit=1)
+        if not official_scenario:
+            raise UserError(_("No official scenario found. Resource leveling requires an official target."))
+
+        # Delete existing tentative or reserved allocations for these nodes in the official scenario
+        self.env['numa.planning.allocation'].search([
+            ('node_id', 'in', context_nodes.ids),
+            ('scenario_id', '=', official_scenario.id),
+            ('pln_state', 'in', ['reserved', 'tentative']),
+            ('pln_is_locked', '=', False)
+        ]).unlink()
+
+        # 2. Prioritization (The Queue)
+        # We sort by: Hard constraints, Early Start, Float, AI Score
+        sorted_nodes = context_nodes.sorted(key=lambda n: (
+            n.pln_constraint_date or fields.Datetime.now(),
+            n.pln_calc_early_start or fields.Datetime.now(),
+            n.pln_total_float,
+            -n.pln_ai_score
+        ))
+
+        # 3. Scheduling Loop (The Tetris)
+        # In-memory timeline to track resource consumption: {resource_id: [(start, end, load), ...]}
+        resource_timeline = defaultdict(list)
+        
+        # Load existing 'wip' or 'history' or 'locked' allocations into timeline
+        existing_allocs = self.env['numa.planning.allocation'].search([
+            ('scenario_id', '=', official_scenario.id),
+            '|', ('pln_state', 'in', ['history', 'wip']), ('pln_is_locked', '=', True)
+        ])
+        for alloc in existing_allocs:
+            resource_timeline[alloc.resource_id.id].append((alloc.start_date, alloc.end_date, 1.0))
+
+        allocations_to_create = []
+        
+        for node in sorted_nodes:
+            effort = node.pln_effort_hours
+            if effort <= 0:
+                continue
+
+            # For now, we assume a node needs ONE resource. 
+            # We'll pick the first suggested resource or a default one.
+            # In a more advanced version, we would check required_resource_ids.
+            resource = node.pln_allocation_ids.mapped('resource_id')[:1] or \
+                       self.env['numa.planning.resource'].search([], limit=1)
+            
+            if not resource:
+                continue
+
+            # Probe Time Slots
+            probe_time = node.pln_calc_early_start or fields.Datetime.now()
+            booked = False
+            
+            while not booked:
+                # Calculate real duration based on resource efficiency at this time
+                # For simplicity, we use the efficiency at probe_time
+                efficiency = resource.get_capability_at(probe_time)
+                if efficiency <= 0:
+                    # Resource unavailable, move to next available period or +1 hour
+                    probe_time += timedelta(hours=1)
+                    continue
+                
+                real_duration_hours = effort / efficiency
+                end_time = probe_time + timedelta(hours=real_duration_hours)
+                
+                # Check for conflicts in the timeline
+                conflicts = [
+                    slot for slot in resource_timeline[resource.id]
+                    if not (end_time <= slot[0] or probe_time >= slot[1])
+                ]
+                
+                if not conflicts:
+                    # Book it!
+                    alloc_vals = {
+                        'node_id': node.id,
+                        'resource_id': resource.id,
+                        'scenario_id': official_scenario.id,
+                        'start_date': probe_time,
+                        'end_date': end_time,
+                        'pln_state': 'reserved',
+                    }
+                    allocations_to_create.append(alloc_vals)
+                    resource_timeline[resource.id].append((probe_time, end_time, 1.0))
+                    booked = True
+                else:
+                    # Move probe time to the end of the first conflict and retry
+                    next_start = max(c[1] for c in conflicts)
+                    probe_time = next_start
+
+        # 4. Bulk Create & Sync
+        if allocations_to_create:
+            self.env['numa.planning.allocation'].create(allocations_to_create)
+            # Recompute Node dates (this is triggered by the depends on Node model)
+            context_nodes._compute_pln_dates()
 
     def _pln_topological_sort(self, graph):
         """

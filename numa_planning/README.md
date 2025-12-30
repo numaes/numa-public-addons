@@ -117,7 +117,8 @@ Resources (`numa.planning.resource`) do not just follow a simple recurring calen
 
 *   **`_compute_pln_dates()`**: Aggregates dates from the Official Scenario allocations. Override this if you need custom aggregation logic.
 *   **`_inverse_pln_dates()`**: Handles manual UI adjustments (like dragging a task in a Gantt chart). It automatically shifts or resizes underlying allocations.
-*   **`pln_action_auto_schedule()`**: The entry point for the scheduling engine (CPM/Heuristics).
+*   **`pln_action_auto_schedule()`**: The entry point for the scheduling engine. It triggers both CPM calculations and Resource Leveling (Clipping).
+*   **`action_pln_resource_leveling()`**: Executes the greedy resource leveling algorithm to resolve capacity conflicts.
 *   **`resource.get_capability_at(timestamp)`**: Queries the Availability Ledger to find the effective efficiency of a resource at a specific moment, considering overlaps and priorities.
 
 ---
