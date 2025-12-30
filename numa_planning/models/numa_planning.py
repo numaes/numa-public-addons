@@ -37,15 +37,108 @@ class NumaPlanningNode(models.Model):
         ('fixed_work', 'Fixed Work'),
         ('fixed_units', 'Fixed Units')
     ], string='Duration Type')
-    pln_effort_hours = fields.Float('Effort Hours')
+    pln_effort_hours = fields.Float('Effort Hours', compute='_compute_pln_dates', store=True)
 
     # Calculated Dates (Engine Output)
     # pln_calc_start is derived from the active Allocations of the official scenario.
-    pln_calc_start = fields.Datetime('Calculated Start', readonly=True)
-    pln_calc_end = fields.Datetime('Calculated End', readonly=True)
+    pln_calc_start = fields.Datetime('Calculated Start', compute='_compute_pln_dates', inverse='_inverse_pln_dates', store=True)
+    pln_calc_end = fields.Datetime('Calculated End', compute='_compute_pln_dates', inverse='_inverse_pln_dates', store=True)
     pln_free_float = fields.Float('Free Float')
     pln_total_float = fields.Float('Total Float')
     pln_is_critical = fields.Boolean('Is Critical')
+
+    pln_allocation_ids = fields.One2many('numa.planning.allocation', 'node_id', string='Allocations')
+
+    @api.depends('pln_allocation_ids.start_date', 'pln_allocation_ids.end_date', 'pln_allocation_ids.scenario_id.is_official')
+    def _compute_pln_dates(self):
+        for node in self:
+            official_allocations = node.pln_allocation_ids.filtered(lambda a: a.scenario_id.is_official)
+            if official_allocations:
+                node.pln_calc_start = min(official_allocations.mapped('start_date'))
+                node.pln_calc_end = max(official_allocations.mapped('end_date'))
+                effort = sum((a.end_date - a.start_date).total_seconds() / 3600.0 for a in official_allocations)
+                node.pln_effort_hours = effort
+            else:
+                node.pln_calc_start = False
+                node.pln_calc_end = False
+                node.pln_effort_hours = 0.0
+
+    def _inverse_pln_dates(self):
+        for node in self:
+            official_scenario = self.env['numa.planning.scenario'].search([('is_official', '=', True)], limit=1)
+            if not official_scenario:
+                continue
+
+            allocations = node.pln_allocation_ids.filtered(lambda a: a.scenario_id == official_scenario)
+            
+            if not allocations:
+                # Create a default allocation if dates are provided and we can find a resource
+                resource = self.env['numa.planning.resource'].search([], limit=1)
+                if resource and node.pln_calc_start and node.pln_calc_end:
+                    self.env['numa.planning.allocation'].create({
+                        'node_id': node.id,
+                        'resource_id': resource.id,
+                        'scenario_id': official_scenario.id,
+                        'start_date': node.pln_calc_start,
+                        'end_date': node.pln_calc_end,
+                    })
+                continue
+
+            # Check for delta shift based on pln_calc_start
+            old_start = node._origin.pln_calc_start
+            if old_start and node.pln_calc_start and node.pln_calc_start != old_start:
+                delta = node.pln_calc_start - old_start
+                for allocation in allocations:
+                    allocation.start_date += delta
+                    allocation.end_date += delta
+            
+            # Check for resize based on pln_calc_end if it wasn't just shifted
+            # If it was shifted, pln_calc_end should have moved by the same delta.
+            # If it's different, it's a resize.
+            old_end = node._origin.pln_calc_end
+            if old_end and node.pln_calc_end and node.pln_calc_end != old_end:
+                # If we already shifted, the current allocations' max end_date might be different from node.pln_calc_end
+                # if the user intended to resize.
+                current_max_end = max(allocations.mapped('end_date'))
+                if current_max_end != node.pln_calc_end:
+                    # Adjust the last allocation
+                    last_alloc = allocations.sorted('end_date')[-1]
+                    last_alloc.end_date = node.pln_calc_end
+
+    def pln_action_auto_schedule(self):
+        """
+        Placeholder for basic scheduling logic.
+        """
+        self.ensure_one()
+        return True
+
+    def pln_get_allocations_view(self):
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Allocations'),
+            'res_model': 'numa.planning.allocation',
+            'view_mode': 'list,form',
+            'domain': [('node_id', '=', self.id)],
+            'context': {'default_node_id': self.id},
+        }
+
+    def pln_get_gantt_data(self):
+        self.ensure_one()
+        links = self.env['numa.planning.link'].search([('source_node_id', '=', self.id)])
+        return {
+            'id': self.id,
+            'name': self.display_name,
+            'pln_calc_start': self.pln_calc_start,
+            'pln_calc_end': self.pln_calc_end,
+            'allocations': [{
+                'resource_id': a.resource_id.id,
+                'start': a.start_date,
+                'end': a.end_date,
+                'state': a.pln_state
+            } for a in self.pln_allocation_ids.filtered(lambda x: x.scenario_id.is_official)],
+            'dependencies': links.mapped('target_node_id').ids
+        }
 
     # Optimization (CPM)
     pln_topological_level = fields.Integer('Topological Level')
