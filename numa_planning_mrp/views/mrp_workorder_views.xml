@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="mrp_workorder_view_form_inherit_numa" model="ir.ui.view">
+        <field name="name">mrp.workorder.view.form.inherit.numa</field>
+        <field name="model">mrp.workorder</field>
+        <field name="inherit_id" ref="mrp.mrp_production_workorder_form_view_inherit"/>
+        <field name="arch" type="xml">
+            <xpath expr="//header" position="inside">
+                <button name="action_view_numa_planning" type="object" string="View Planning" class="btn-secondary" icon="fa-tasks"/>
+            </xpath>
+            <xpath expr="//notebook" position="inside">
+                <page string="Planning Engine" name="planning_engine">
+                    <group>
+                        <group>
+                            <field name="pln_effort_hours"/>
+                            <field name="pln_calc_start"/>
+                            <field name="pln_calc_end"/>
+                        </group>
+                        <group>
+                            <field name="pln_constraint_type"/>
+                            <field name="pln_constraint_date"/>
+                        </group>
+                    </group>
+                    <field name="pln_allocation_ids">
+                        <tree editable="bottom">
+                            <field name="resource_id"/>
+                            <field name="start_date"/>
+                            <field name="end_date"/>
+                            <field name="pln_state"/>
+                        </tree>
+                    </field>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

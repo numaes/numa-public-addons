@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="purchase_order_form_inherit_numa" model="ir.ui.view">
+        <field name="name">purchase.order.form.inherit.numa</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//div[@name='button_box']" position="inside">
+                <button name="action_view_supply_gantt" type="object" class="oe_stat_button" icon="fa-tasks">
+                    <div class="o_stat_info">
+                        <span class="o_stat_text">Supply Gantt</span>
+                    </div>
+                </button>
+            </xpath>
+            <xpath expr="//notebook" position="inside">
+                <page string="Planning Engine" name="planning_engine">
+                    <field name="order_line" readonly="1">
+                        <list>
+                            <field name="product_id"/>
+                            <field name="pln_effort_hours" widget="float_time"/>
+                            <field name="pln_calc_start"/>
+                            <field name="pln_calc_end"/>
+                            <field name="pln_ai_score" string="AI Score"/>
+                            <field name="pln_allocation_ids" widget="many2many_tags"/>
+                        </list>
+                    </field>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>
