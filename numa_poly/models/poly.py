@@ -89,6 +89,24 @@ class IrPolyBase(models.Model):
         return concrete_model.browse(self.id).exists() or self
 
 
+def poly_many2one_convert_to_read(self, value, record, use_display_name=True):
+    if use_display_name and value:
+        # evaluate display_name as superuser, because the visibility of a
+        # many2one field value (id and name) depends on the current record's
+        # access rights, and not the value's access rights.
+        try:
+            # performance: value.sudo() prefetches the same records as value
+            return (value.id, value.sudo().display_name)
+        except MissingError:
+            # Should not happen, unless the foreign key is missing.
+            return False
+    else:
+        if value:
+            return value.id
+        else:
+            return False
+
+
 class PolyReference(fields.Many2one):
     """
     Special Many2one field for polymorphic references.
@@ -467,8 +485,8 @@ class PolyBase(BaseModel):
                 'ir.poly_base',
                 string='Poly base',
                 automatic=True,
-                readonly=True
-             )
+                readonly=True,
+            )
         )
 
         # Create a concrete_model_id field to know the concrete model of each record
@@ -482,6 +500,11 @@ class PolyBase(BaseModel):
                 readonly=True
              )
         )
+
+        set('id',
+             fields.Id(string='id',
+                       related='poly_base_id.id',
+                       automatic=True))
 
         # Add standard audit fields related to the poly_base record
         # TODO: log fields should be registered only on ir.poly_base
@@ -522,12 +545,6 @@ class PolyBase(BaseModel):
                 for subfield_name, subfield in base_model._fields.items():
                     # Only add fields that aren't already defined, aren't PolyReferences,
                     # and aren't related fields (to avoid duplication)
-                    if subfield_name in self._fields:
-                        if not isinstance(subfield, PolyReference) and not subfield.related:
-                            _logger.warning("Campo '%s' en '%s' está siendo redefinido por herencia polimórfica desde '%s'", 
-                                            subfield_name, self._name, mm)
-                        continue
-
                     if not isinstance(subfield, PolyReference) and \
                        not subfield.related:
                         if subfield_name not in related_fields:
@@ -538,9 +555,6 @@ class PolyBase(BaseModel):
                                 subfield.comodel_name,
                                 subfield
                             )
-                        else:
-                            _logger.warning("Campo '%s' en '%s' está siendo redefinido por herencia polimórfica desde '%s' (ya definido por otra base)", 
-                                            subfield_name, self._name, mm)
 
                 # Add non-field attributes from the model
                 for attribute_name in base_model.mro()[1].__class__.__dir__(base_model):
@@ -848,6 +862,7 @@ class PolyBase(BaseModel):
         return result
 
     def _write_multi(self, vals_list):
+
         """
         Low-level implementation of write() for multiple records.
 
@@ -863,92 +878,13 @@ class PolyBase(BaseModel):
         if not self:
             return
 
-        # Determine records that require updating parent_path
-        parent_records = self._parent_store_update_prepare(vals_list)
-
-        # For non-polymorphic models, set audit fields
-        if self._log_access and self._name != 'ir.poly_base' and self._depend_models == None:
-            # Set magic fields (already done by write(), but not for computed fields)
-            log_vals = {'write_uid': self.env.uid, 'write_date': self.env.cr.now()}
-            vals_list = [(log_vals | vals) for vals in vals_list]
-
-        # Determine SQL updates, grouped by set of updated fields:
-        # {(col1, col2, col3): [(id, val1, val2, val3)]}
-        updates = defaultdict(list)
-        for record, vals in zip(self, vals_list):
-            # Sort vals.items() by key, then retrieve its keys and values
-            fnames, row = zip(*sorted(vals.items()))
-            updates[fnames].append(record._ids + row)
-
-        # Perform updates (fnames, rows) in batches
-        updates_list = [
-            (fnames, sub_rows)
-            for fnames, rows in updates.items()
-            for sub_rows in split_every(UPDATE_BATCH_SIZE, rows)
-        ]
-
-        # Update columns by group of updated fields
-        for fnames, rows in updates_list:
-            columns = []
-            assignments = []
-            for fname in fnames:
-                field = self._fields[fname]
-                assert field.store and field.column_type
-                column = SQL.identifier(fname)
-                # The type cast is necessary for some values, like NULLs
-                expr = SQL('"__tmp".%s::%s', column, SQL(field.column_type[1]))
-                if field.translate is True:
-                    # This is the SQL equivalent of:
-                    # None if expr is None else (
-                    #     (column or {'en_US': next(iter(expr.values()))}) | expr
-                    # )
-                    expr = SQL(
-                        """CASE WHEN %(expr)s IS NULL THEN NULL ELSE
-                            COALESCE(%(table)s.%(column)s, jsonb_build_object(
-                                'en_US', jsonb_path_query_first(%(expr)s, '$.*')
-                            )) || %(expr)s
-                        END""",
-                        table=SQL.identifier(self._table),
-                        column=column,
-                        expr=expr,
-                    )
-                if field.company_dependent:
-                    fallbacks = self.env['ir.default']._get_field_column_fallbacks(self._name, fname)
-                    expr = SQL(
-                        """(SELECT jsonb_object_agg(d.key, d.value)
-                        FROM jsonb_each(COALESCE(%(table)s.%(column)s, '{}'::jsonb) || %(expr)s) d
-                        JOIN jsonb_each(%(fallbacks)s) f
-                        ON d.key = f.key AND d.value != f.value)""",
-                        table=SQL.identifier(self._table),
-                        column=column,
-                        expr=expr,
-                        fallbacks=fallbacks
-                    )
-                columns.append(column)
-                assignments.append(SQL("%s = %s", column, expr))
-
-            self.env.execute_query(SQL(
-                """ UPDATE %(table)s
-                    SET %(assignments)s
-                    FROM (VALUES %(values)s) AS "__tmp"("id", %(columns)s)
-                    WHERE %(table)s."id" = "__tmp"."id"
-                """,
-                table=SQL.identifier(self._table),
-                assignments=SQL(", ").join(assignments),
-                values=SQL(", ").join(rows),
-                columns=SQL(", ").join(columns),
-            ))
-
-        # Update parent_path
-        if parent_records:
-            parent_records._parent_store_update()
+        super()._write_multi(vals_list)
 
         # Update audit fields for polymorphic models
         if self._log_access and self._depend_models != None and self._name != 'ir.poly_base':
             poly_base_model = self.env['ir.poly_base']
             log_vals = {'write_uid': self.env.uid, 'write_date': self.env.cr.now()}
             poly_base_model.browse(self.ids).write(log_vals)
-
 
     @api.model
     def fields_get(self, allfields=None, attributes=None):
@@ -963,6 +899,33 @@ class PolyBase(BaseModel):
                     if inherited_field not in fields:
                         fields[inherited_field] = inherited_field
         return fields
+
+    def _field_to_sql(self, alias: str, fname: str, query: (Query | None) = None, flush: bool = True) -> SQL:
+        """ Return an :class:`SQL` object that represents the value of the given
+        field from the given table alias, in the context of the given query.
+        The method also checks that the field is accessible for reading.
+
+        The query object is necessary for inherited fields, many2one fields and
+        properties fields, where joins are added to the query.
+
+        When parameter ``flush`` is true, the method adds some metadata in the
+        result to make method :meth:`~odoo.api.Environment.execute_query` flush
+        the field before executing the query.
+        """
+        property_name = None
+        if '.' in fname:
+            fname, property_name = fname.split('.', 1)
+
+        field = self._fields.get(fname)
+        if not field:
+            raise ValueError(f"Invalid field {fname!r} on model {self._name!r}")
+
+        if isinstance(field, PolyReference):
+            model = self.env['ir.poly_base']
+            field = model._fields['id']
+            return model._field_to_sql(alias, field.name, query)
+
+        return super()._field_to_sql(alias, fname, query, flush)
 
 
 class PolyModel(PolyBase):
@@ -1091,3 +1054,4 @@ odoo.models.BaseModel = PolyBase
 odoo.models.AbstractModel = PolyBase
 odoo.models.Model = PolyModel
 odoo.models.TransientModel = PolyTransientModel
+odoo.fields.Many2one.convert_to_read = poly_many2one_convert_to_read
