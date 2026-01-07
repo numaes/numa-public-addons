@@ -501,10 +501,10 @@ class PolyBase(BaseModel):
              )
         )
 
-        set('id',
-             fields.Id(string='id',
-                       related='poly_base_id.id',
-                       automatic=True))
+        # set('id',
+        #      fields.Id(string='id',
+        #                related='poly_base_id.id',
+        #                automatic=True))
 
         # Add standard audit fields related to the poly_base record
         # TODO: log fields should be registered only on ir.poly_base
