@@ -285,13 +285,12 @@ class PolyBase(BaseModel):
         """
         self.ensure_one()
         # If the field is not even defined on this model, we are the concrete representation
-        if 'concrete_model_id' not in self._fields:
+        if self._depend_models == None:
             return self
-        if not self.concrete_model_id:
+        poly_base = self.env['ir.poly_base'].sudo().browse(self.id)
+        if poly_base.concrete_model_id.model == self._name:
             return self
-        if self.concrete_model_id.model == self._name:
-            return self
-        concrete_model = self.env[self.concrete_model_id.model]
+        concrete_model = self.env[poly_base.concrete_model_id.model]
         return concrete_model.browse(self.id).exists() or self
 
     def _compute_concrete_model_id(self):
@@ -878,7 +877,81 @@ class PolyBase(BaseModel):
         if not self:
             return
 
-        super()._write_multi(vals_list)
+        # determine records that require updating parent_path
+        parent_records = self._parent_store_update_prepare(vals_list)
+
+        # determine SQL updates, grouped by set of updated fields:
+        # {(col1, col2, col3): [(id, val1, val2, val3)]}
+        updates = defaultdict(list)
+        for record, vals in zip(self, vals_list):
+            # sort vals.items() by key, then retrieve its keys and values
+            fnames, row = zip(*sorted(vals.items()))
+            updates[fnames].append(record._ids + row)
+
+        # perform updates (fnames, rows) in batches
+        updates_list = [
+            (fnames, sub_rows)
+            for fnames, rows in updates.items()
+            for sub_rows in split_every(UPDATE_BATCH_SIZE, rows)
+        ]
+
+        # update columns by group of updated fields
+        for fnames, rows in updates_list:
+            columns = []
+            assignments = []
+            for fname in fnames:
+                field = self._fields[fname]
+                if not(field.store and field.column_type):
+                    continue
+                column = SQL.identifier(fname)
+                # the type cast is necessary for some values, like NULLs
+                expr = SQL('"__tmp".%s::%s', column, SQL(field.column_type[1]))
+                if field.translate is True:
+                    # this is the SQL equivalent of:
+                    # None if expr is None else (
+                    #     (column or {'en_US': next(iter(expr.values()))}) | expr
+                    # )
+                    expr = SQL(
+                        """CASE WHEN %(expr)s IS NULL THEN NULL ELSE
+                            COALESCE(%(table)s.%(column)s, jsonb_build_object(
+                                'en_US', jsonb_path_query_first(%(expr)s, '$.*')
+                            )) || %(expr)s
+                        END""",
+                        table=SQL.identifier(self._table),
+                        column=column,
+                        expr=expr,
+                    )
+                if field.company_dependent:
+                    fallbacks = self.env['ir.default']._get_field_column_fallbacks(self._name, fname)
+                    expr = SQL(
+                        """(SELECT jsonb_object_agg(d.key, d.value)
+                        FROM jsonb_each(COALESCE(%(table)s.%(column)s, '{}'::jsonb) || %(expr)s) d
+                        JOIN jsonb_each(%(fallbacks)s) f
+                        ON d.key = f.key AND d.value != f.value)""",
+                        table=SQL.identifier(self._table),
+                        column=column,
+                        expr=expr,
+                        fallbacks=fallbacks
+                    )
+                columns.append(column)
+                assignments.append(SQL("%s = %s", column, expr))
+
+            self.env.execute_query(SQL(
+                """ UPDATE %(table)s
+                    SET %(assignments)s
+                    FROM (VALUES %(values)s) AS "__tmp"("id", %(columns)s)
+                    WHERE %(table)s."id" = "__tmp"."id"
+                """,
+                table=SQL.identifier(self._table),
+                assignments=SQL(", ").join(assignments),
+                values=SQL(", ").join(rows),
+                columns=SQL(", ").join(columns),
+            ))
+
+        # update parent_path
+        if parent_records:
+            parent_records._parent_store_update()
+
 
         # Update audit fields for polymorphic models
         if self._log_access and self._depend_models != None and self._name != 'ir.poly_base':
