@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMDiagram" owl="1">
-        <div class="o_fsm_diagram_container o_field_fsm_diagram overflow-hidden">
-            <div t-ref="container"
-                 class="w-100 h-100"
+        <div t-ref="container" class="o_fsm_diagram_container o_field_fsm_diagram overflow-hidden">
+            <div class="w-100 h-100"
                  tabindex="0"
                  t-on-pointerdown="onMouseDown"
                  t-on-dblclick="onDblClick"
@@ -25,9 +24,9 @@
 
                 <div class="o_fsm_viewport"
                      t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'">
-                    <t t-if="state.dataLoaded">
-                        <!-- Connections Layer (SVG) -->
-                        <svg class="o_fsm_connections">
+                    <!-- Connections Layer (SVG) -->
+                    <svg class="o_fsm_connections">
+                        <t t-if="state.dataLoaded">
                             <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
                                 <g class="o_fsm_connection_group"
                                    t-on-mouseenter="() => onElementPointerEnter(conn.id)"
@@ -47,22 +46,35 @@
                             <path t-if="state.newConnection"
                                   t-att-d="`M ${Math.round(state.newConnection.x1)} ${Math.round(state.newConnection.y1)} L ${Math.round(state.newConnection.x2)} ${Math.round(state.newConnection.y2)}`"
                                   class="o_fsm_new_connection"/>
-                        </svg>
+                        </t>
+                    </svg>
 
-                        <!-- Nodes Layer (HTML) -->
-                        <div class="o_fsm_nodes">
+                    <!-- Nodes Layer (HTML) -->
+                    <div class="o_fsm_nodes">
+                        <t t-if="state.dataLoaded">
                             <t t-foreach="state.nodes" t-as="node" t-key="node.id">
                                 <FSMNode node="node"
                                          diagramScale="state.transform.k"
                                          selected="state.selectedIds.has(node.id)"
                                          hovered="state.hoveredId === node.id"
+                                         activeNodeId="props.activeNodeId"
                                          isConnecting="state.connectingTargetId === node.id"
+                                         onMove="onNodeMove"
+                                         onResize="onNodeResize"
                                          onPortMouseDown="onPortMouseDown"
+                                         onNodeDblClick="onNodeDblClick"
                                          onMouseEnter="() => onElementPointerEnter(node.id)"
                                          onMouseLeave="onElementPointerLeave"/>
                             </t>
-                        </div>
-                    </t>
+                        </t>
+                        <t t-else="">
+                            <div class="d-flex align-items-center justify-content-center h-100 position-absolute w-100" style="top:0; left:0;">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </div>
+                        </t>
+                    </div>
                 </div>
             </div>
 

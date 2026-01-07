@@ -9,6 +9,7 @@ export class FSMNode extends Component {
         diagramScale: { type: Number },
         selected: { type: Boolean, optional: true },
         hovered: { type: Boolean, optional: true },
+        activeNodeId: { type: String, optional: true },
         isConnecting: { type: Boolean, optional: true },
         onMove: { type: Function, optional: true },
         onResize: { type: Function, optional: true },
@@ -19,10 +20,12 @@ export class FSMNode extends Component {
     };
 
     setup() {
+        console.log("[FSMNode] setup. nodeId:", this.props.node.id);
         this.nodeRef = useRef("node");
         this.lastHeight = 0;
 
         onMounted(() => {
+            console.log("[FSMNode] onMounted. nodeId:", this.props.node.id);
             this.checkSize();
         });
         onPatched(() => {

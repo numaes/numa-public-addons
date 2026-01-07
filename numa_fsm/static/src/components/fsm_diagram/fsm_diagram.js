@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState, useRef, onMounted, onWillStart, onWillUnmount, useExternalListener } from "@odoo/owl";
+import { Component, useState, useRef, onMounted, onWillUnmount, useExternalListener, useEffect } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { useService } from "@web/core/utils/hooks";
@@ -15,28 +15,32 @@ export class FSMDiagram extends Component {
     static props = {
         ...standardFieldProps,
         readonly: { type: Boolean, optional: true },
+        activeNodeId: { type: String, optional: true },
     };
 
     get isReadonly() {
         const record = this.props.record;
+        if (!record) return true;
         
         // Forced readonly if in production state
-        if (record?.data?.state === 'production') {
+        if (record.data?.state === 'production') {
             return true;
         }
 
         // Si estamos en un modelo de FSM o Bot, forzamos editabilidad a menos que el registro esté explícitamente bloqueado
         const forceEditableModels = ['fsm.definition', 'conversation.bot', 'conversation.analysis.report'];
-        const isForceModel = record?.resModel && (forceEditableModels.includes(record.resModel) || record.resModel.startsWith('fsm.'));
+        const isForceModel = record.resModel && (forceEditableModels.includes(record.resModel) || record.resModel.startsWith('fsm.'));
         
         if (isForceModel) {
-            return record.mode === 'readonly' && this.props.readonly;
+            // En modo edición de Odoo, permitimos siempre a menos que se indique lo contrario
+            return record.mode === 'readonly';
         }
         
-        return record?.mode === 'readonly' || !!this.props.readonly;
+        return record.mode === 'readonly' || !!this.props.readonly;
     }
 
     setup() {
+        console.log("[FSMDiagram] setup started. props.value:", this.props.value, "record.resId:", this.props.record?.resId);
         this.notification = useService("notification");
         this.containerRef = useRef("container");
         this.state = useState({
@@ -58,18 +62,56 @@ export class FSMDiagram extends Component {
         this.dragState = null;
         this.historyStack = [];
         this.maxHistory = 50;
+        this.initTimeout = null;
 
-        onWillStart(async () => {
-            await this.loadData(this.props.value);
-        });
+        useEffect(
+            (val, resId, recordMode) => {
+                const directVal = this.props.record.data[this.props.name];
+                console.log("[FSMDiagram] useEffect triggered:", {
+                    val: typeof val,
+                    directVal: typeof directVal,
+                    resId,
+                    recordMode,
+                    dataLoaded: this.state.dataLoaded
+                });
+                
+                const dataToLoad = (val !== undefined) ? val : directVal;
+
+                if (dataToLoad !== undefined) {
+                    console.log("[FSMDiagram] useEffect: Data found, calling loadData");
+                    this.loadData(dataToLoad);
+                    if (this.initTimeout) {
+                        clearTimeout(this.initTimeout);
+                        this.initTimeout = null;
+                    }
+                    return;
+                }
+
+                if (this.state.dataLoaded) return;
+
+                console.log("[FSMDiagram] useEffect: value is undefined. Waiting for Odoo...");
+                if (!this.initTimeout) {
+                    this.initTimeout = setTimeout(() => {
+                        if (!this.state.dataLoaded) {
+                            console.log("[FSMDiagram] useEffect: Timeout reached, forcing default load.");
+                            this.loadData(null);
+                        }
+                    }, 4000); 
+                }
+            },
+            () => [this.props.value, this.props.record.resId, this.props.record.mode]
+        );
 
         onMounted(() => {
+            console.log("[FSMDiagram] onMounted. dataLoaded:", this.state.dataLoaded, "nodes:", this.state.nodes.length);
             if (this.state.nodes.length > 0) {
-                setTimeout(() => {
-                    if (this.containerRef.el) {
-                        this.zoomToFit();
-                    }
-                }, 500);
+                this.zoomToFit();
+            }
+        });
+
+        onWillUnmount(() => {
+            if (this.initTimeout) {
+                clearTimeout(this.initTimeout);
             }
         });
 
@@ -291,26 +333,54 @@ export class FSMDiagram extends Component {
     }
     
     loadData = (value) => {
+        console.log("[FSMDiagram] loadData started. Type:", typeof value, "isObject:", (value !== null && typeof value === 'object'));
         try {
+            if (this.initTimeout) {
+                clearTimeout(this.initTimeout);
+                this.initTimeout = null;
+            }
+
             let data = value;
             if (typeof value === 'string') {
-                if (value.trim() === "" || value.trim() === "{}") {
+                if (value.trim() === "" || value.trim() === "{}" || value.trim() === "false" || value.trim() === "null") {
                     data = {};
                 } else {
                     data = JSON.parse(value);
                 }
+            } else if (value === false || value === null || value === undefined) {
+                data = {};
+            } else if (typeof value === 'object') {
+                data = value;
+            } else {
+                data = {};
             }
             
-            this.state.nodes = data?.nodes || [];
-            this.state.connections = data?.connections || [];
-
-            if (this.state.nodes.length === 0) {
-                this.state.nodes.push({
+            console.log("[FSMDiagram] loadData object keys:", Object.keys(data || {}));
+            
+            const nodes = data?.nodes || [];
+            const connections = data?.connections || [];
+            console.log("[FSMDiagram] loadData: nodes found:", nodes.length, "connections found:", connections.length);
+            
+            if (nodes.length === 0) {
+                console.log("[FSMDiagram] loadData: real empty state initialization");
+                this.state.nodes = [{
                     id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null }
-                });
+                }];
+                this.state.connections = [];
+            } else {
+                console.log("[FSMDiagram] loadData: setting state nodes/connections");
+                this.state.nodes = JSON.parse(JSON.stringify(nodes));
+                this.state.connections = JSON.parse(JSON.stringify(connections));
             }
+            
             this.state.dataLoaded = true;
+            console.log("[FSMDiagram] loadData finished. dataLoaded = true");
+            
+            window.requestAnimationFrame(() => {
+                this.zoomToFit();
+            });
         } catch (e) {
+            console.error("[FSMDiagram] loadData critical error:", e);
             this.state.nodes = [{ id: 'start_node', type: 'start', x: 100, y: 100, label: 'Inicio', outcomes: { '__default__': null } }];
             this.state.connections = [];
             this.state.dataLoaded = true;
@@ -318,7 +388,9 @@ export class FSMDiagram extends Component {
     }
 
     updateData = async () => {
-        if (this.isReadonly) return;
+        if (this.isReadonly) {
+            return;
+        }
         const data = { nodes: this.state.nodes, connections: this.state.connections };
         
         try {
@@ -334,8 +406,19 @@ export class FSMDiagram extends Component {
     }
 
     zoomToFit = () => {
-        if (!this.containerRef.el || this.state.nodes.length === 0) return;
+        if (!this.containerRef.el || this.state.nodes.length === 0) {
+            console.log("[FSMDiagram] zoomToFit skipped. containerRef.el:", !!this.containerRef.el, "nodes:", this.state.nodes.length);
+            return;
+        }
         const rect = this.containerRef.el.getBoundingClientRect();
+        console.log("[FSMDiagram] zoomToFit. Container rect:", rect.width, "x", rect.height);
+        
+        if (rect.width === 0 || rect.height === 0) {
+            console.warn("[FSMDiagram] zoomToFit: container has no size yet. Retrying in next frame.");
+            window.requestAnimationFrame(() => this.zoomToFit());
+            return;
+        }
+
         const padding = 50;
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         this.state.nodes.forEach(n => {
@@ -355,6 +438,7 @@ export class FSMDiagram extends Component {
             x: (rect.width / 2) - (k * (minX + graphWidth / 2)),
             y: (rect.height / 2) - (k * (minY + graphHeight / 2)),
         };
+        console.log("[FSMDiagram] zoomToFit completed. transform:", JSON.stringify(this.state.transform));
     }
 
     onWheel = (ev) => {
@@ -429,8 +513,10 @@ export class FSMDiagram extends Component {
     }
     
     onNodeResize = ({ nodeId, height }) => {
+        if (!this.state.dataLoaded) return;
         const nodeIndex = this.state.nodes.findIndex(n => n.id === nodeId);
         if (nodeIndex !== -1 && this.state.nodes[nodeIndex].height !== height) {
+            console.log("[FSMDiagram] onNodeResize: updating node", nodeId, "to height", height);
             this.state.nodes = this.state.nodes.map(n => n.id === nodeId ? { ...n, height } : n);
         }
     }

@@ -13,6 +13,7 @@ The polymorphic model system enables:
 """
 
 import logging
+import pprint
 from collections import OrderedDict, defaultdict, deque
 import inspect
 
@@ -76,14 +77,34 @@ class IrPolyBase(models.Model):
     def as_concrete_model(self):
         """
         Convert this base record to its concrete model representation.
+        If no concrete model is defined (legacy records), returns self.
 
         Returns:
             The same record but as an instance of its concrete model class.
         """
         self.ensure_one()
-
+        if not self.concrete_model_id:
+            return self
         concrete_model = self.env[self.concrete_model_id.model]
-        return concrete_model.browse(self.id).exists()
+        return concrete_model.browse(self.id).exists() or self
+
+
+def poly_many2one_convert_to_read(self, value, record, use_display_name=True):
+    if use_display_name and value:
+        # evaluate display_name as superuser, because the visibility of a
+        # many2one field value (id and name) depends on the current record's
+        # access rights, and not the value's access rights.
+        try:
+            # performance: value.sudo() prefetches the same records as value
+            return (value.id, value.sudo().display_name)
+        except MissingError:
+            # Should not happen, unless the foreign key is missing.
+            return False
+    else:
+        if value:
+            return value.id
+        else:
+            return False
 
 
 class PolyReference(fields.Many2one):
@@ -256,6 +277,35 @@ class PolyBase(BaseModel):
 
     # Flag to track if ID has been checked
     _checked_id = False
+
+    def as_concrete_model(self):
+        """
+        Convert this record to its most concrete model representation.
+        If no concrete model is defined (legacy records), returns self.
+        """
+        self.ensure_one()
+        # If the field is not even defined on this model, we are the concrete representation
+        if self._depend_models == None:
+            return self
+        poly_base = self.env['ir.poly_base'].sudo().browse(self.id)
+        if poly_base.concrete_model_id.model == self._name:
+            return self
+        concrete_model = self.env[poly_base.concrete_model_id.model]
+        return concrete_model.browse(self.id).exists() or self
+
+    def _compute_concrete_model_id(self):
+        """
+        Compute the concrete_model_id field for polymorphic models.
+        Handles fallback to current model for legacy records (no ir.poly_base entry).
+        """
+        for record in self:
+            # Check existence in ir.poly_base using the shared ID
+            poly_base = self.env['ir.poly_base'].sudo().browse(record.id)
+            if poly_base.exists():
+                record.concrete_model_id = poly_base.concrete_model_id
+            else:
+                # Legacy record: assume current model is the concrete one
+                record.concrete_model_id = self.env['ir.model']._get_id(record._name)
 
     def compute_poly_base_id(self):
         """
@@ -434,8 +484,8 @@ class PolyBase(BaseModel):
                 'ir.poly_base',
                 string='Poly base',
                 automatic=True,
-                readonly=True
-             )
+                readonly=True,
+            )
         )
 
         # Create a concrete_model_id field to know the concrete model of each record
@@ -443,11 +493,17 @@ class PolyBase(BaseModel):
             fields.Many2one(
                 'ir.model',
                 string='Concrete model',
-                related='poly_base_id.concrete_model_id',
+                compute='_compute_concrete_model_id',
+                compute_sudo=True,
                 automatic=True,
                 readonly=True
              )
         )
+
+        # set('id',
+        #      fields.Id(string='id',
+        #                related='poly_base_id.id',
+        #                automatic=True))
 
         # Add standard audit fields related to the poly_base record
         # TODO: log fields should be registered only on ir.poly_base
@@ -488,8 +544,7 @@ class PolyBase(BaseModel):
                 for subfield_name, subfield in base_model._fields.items():
                     # Only add fields that aren't already defined, aren't PolyReferences,
                     # and aren't related fields (to avoid duplication)
-                    if subfield_name not in self._fields and \
-                       not isinstance(subfield, PolyReference) and \
+                    if not isinstance(subfield, PolyReference) and \
                        not subfield.related:
                         if subfield_name not in related_fields:
                             related_fields[subfield_name] = (
@@ -589,6 +644,7 @@ class PolyBase(BaseModel):
                     string=description.string,
                     related=f'{related_bases[model]}.{field_name}',
                     automatic=True,
+                    readonly=False,
                 )
             else:
                 raise TypeError(_('Unsupported field type %s for field %s') %
@@ -708,7 +764,7 @@ class PolyBase(BaseModel):
                     existing_base = base_model.search([('id', '=', new_id)], limit=1)
                     if not existing_base:
                         _logger.debug(f'Creating {base} with {base_data} for id {new_id}')
-                        base_model.create(base_data)
+                        base_model.create([base_data])
                     else:
                         _logger.debug(f'Updating {base} with {base_data} for id {new_id}')
                         existing_base.write(base_data)
@@ -724,7 +780,7 @@ class PolyBase(BaseModel):
 
                 base_data['id'] = new_id
                 _logger.debug(f'Creating {self._name} with {base_data} for id {new_id}')
-                new_record = super().create(base_data)
+                new_record = super().create([base_data])
                 new_records |= new_record
 
             return new_records
@@ -805,6 +861,7 @@ class PolyBase(BaseModel):
         return result
 
     def _write_multi(self, vals_list):
+
         """
         Low-level implementation of write() for multiple records.
 
@@ -820,42 +877,37 @@ class PolyBase(BaseModel):
         if not self:
             return
 
-        # Determine records that require updating parent_path
+        # determine records that require updating parent_path
         parent_records = self._parent_store_update_prepare(vals_list)
 
-        # For non-polymorphic models, set audit fields
-        if self._log_access and self._name != 'ir.poly_base' and self._depend_models == None:
-            # Set magic fields (already done by write(), but not for computed fields)
-            log_vals = {'write_uid': self.env.uid, 'write_date': self.env.cr.now()}
-            vals_list = [(log_vals | vals) for vals in vals_list]
-
-        # Determine SQL updates, grouped by set of updated fields:
+        # determine SQL updates, grouped by set of updated fields:
         # {(col1, col2, col3): [(id, val1, val2, val3)]}
         updates = defaultdict(list)
         for record, vals in zip(self, vals_list):
-            # Sort vals.items() by key, then retrieve its keys and values
+            # sort vals.items() by key, then retrieve its keys and values
             fnames, row = zip(*sorted(vals.items()))
             updates[fnames].append(record._ids + row)
 
-        # Perform updates (fnames, rows) in batches
+        # perform updates (fnames, rows) in batches
         updates_list = [
             (fnames, sub_rows)
             for fnames, rows in updates.items()
             for sub_rows in split_every(UPDATE_BATCH_SIZE, rows)
         ]
 
-        # Update columns by group of updated fields
+        # update columns by group of updated fields
         for fnames, rows in updates_list:
             columns = []
             assignments = []
             for fname in fnames:
                 field = self._fields[fname]
-                assert field.store and field.column_type
+                if not(field.store and field.column_type):
+                    continue
                 column = SQL.identifier(fname)
-                # The type cast is necessary for some values, like NULLs
+                # the type cast is necessary for some values, like NULLs
                 expr = SQL('"__tmp".%s::%s', column, SQL(field.column_type[1]))
                 if field.translate is True:
-                    # This is the SQL equivalent of:
+                    # this is the SQL equivalent of:
                     # None if expr is None else (
                     #     (column or {'en_US': next(iter(expr.values()))}) | expr
                     # )
@@ -896,16 +948,16 @@ class PolyBase(BaseModel):
                 #columns=SQL(", ").join(columns),
             #))
 
-        # Update parent_path
+        # update parent_path
         if parent_records:
             parent_records._parent_store_update()
+
 
         # Update audit fields for polymorphic models
         if self._log_access and self._depend_models != None and self._name != 'ir.poly_base':
             poly_base_model = self.env['ir.poly_base']
             log_vals = {'write_uid': self.env.uid, 'write_date': self.env.cr.now()}
             poly_base_model.browse(self.ids).write(log_vals)
-
 
     @api.model
     def fields_get(self, allfields=None, attributes=None):
@@ -920,6 +972,33 @@ class PolyBase(BaseModel):
                     if inherited_field not in fields:
                         fields[inherited_field] = inherited_field
         return fields
+
+    def _field_to_sql(self, alias: str, fname: str, query: (Query | None) = None, flush: bool = True) -> SQL:
+        """ Return an :class:`SQL` object that represents the value of the given
+        field from the given table alias, in the context of the given query.
+        The method also checks that the field is accessible for reading.
+
+        The query object is necessary for inherited fields, many2one fields and
+        properties fields, where joins are added to the query.
+
+        When parameter ``flush`` is true, the method adds some metadata in the
+        result to make method :meth:`~odoo.api.Environment.execute_query` flush
+        the field before executing the query.
+        """
+        property_name = None
+        if '.' in fname:
+            fname, property_name = fname.split('.', 1)
+
+        field = self._fields.get(fname)
+        if not field:
+            raise ValueError(f"Invalid field {fname!r} on model {self._name!r}")
+
+        if isinstance(field, PolyReference):
+            model = self.env['ir.poly_base']
+            field = model._fields['id']
+            return model._field_to_sql(alias, field.name, query)
+
+        return super()._field_to_sql(alias, fname, query, flush)
 
 
 class PolyModel(PolyBase):
@@ -1048,3 +1127,4 @@ odoo.models.BaseModel = PolyBase
 odoo.models.AbstractModel = PolyBase
 odoo.models.Model = PolyModel
 odoo.models.TransientModel = PolyTransientModel
+odoo.fields.Many2one.convert_to_read = poly_many2one_convert_to_read

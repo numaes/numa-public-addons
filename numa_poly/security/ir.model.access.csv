@@ -1,6 +1,2 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_poly_base,General access Polymorphic Base,model_ir_poly_base,base.group_user,1,1,1,1
-access_test_test3,access_test_test3,numa_poly.model_test_test3,base.group_user,1,1,1,1
-access_test_test4,access_test_test4,numa_poly.model_test_test4,base.group_user,1,1,1,1
-access_test_test2,access_test_test2,numa_poly.model_test_test2,base.group_user,1,1,1,1
-access_test_test1,access_test_test1,numa_poly.model_test_test1,base.group_user,1,1,1,1
