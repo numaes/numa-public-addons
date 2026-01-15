@@ -386,7 +386,7 @@ class FSMInstance(models.Model):
     _depend_models = OrderedDict()
 
     name = fields.Char('Instance ID', default=lambda s: uuid.uuid4(), copy=False)
-    definition_id = fields.Many2one('fsm.definition', 'Definition', required=True)
+    definition_id = fields.Many2one('fsm.definition', 'Definition')
     
     state = fields.Selection(
         [('init', 'Not Started'), ('running', 'Running'), ('paused', 'Paused'), ('ended', 'Ended'), ('error', 'Error')],
