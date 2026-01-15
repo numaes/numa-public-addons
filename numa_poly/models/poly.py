@@ -936,17 +936,17 @@ class PolyBase(BaseModel):
                 columns.append(column)
                 assignments.append(SQL("%s = %s", column, expr))
 
-            #self.env.execute_query(SQL(
-                #""" UPDATE %(table)s
-                #    SET %(assignments)s
-                #    FROM (VALUES %(values)s) AS "__tmp"("id", %(columns)s)
-                #    WHERE %(table)s."id" = "__tmp"."id"
-                #""",
-                #table=SQL.identifier(self._table),
-                #assignments=SQL(", ").join(assignments),
-                #values=SQL(", ").join(rows),
-                #columns=SQL(", ").join(columns),
-            #))
+            self.env.execute_query(SQL(
+                """ UPDATE %(table)s
+                    SET %(assignments)s
+                    FROM (VALUES %(values)s) AS "__tmp"("id", %(columns)s)
+                    WHERE %(table)s."id" = "__tmp"."id"
+                """,
+                table=SQL.identifier(self._table),
+                assignments=SQL(", ").join(assignments),
+                values=SQL(", ").join(rows),
+                columns=SQL(", ").join(columns),
+            ))
 
         # update parent_path
         if parent_records:
