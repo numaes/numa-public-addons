@@ -21,21 +21,38 @@
 ##############################################################################
 {
     'name': 'NUMA Exceptions',
-    'author' : 'Numa Extreme Systems',
-    'category' : 'Specific Numa Applications',
-    'description': """
-Extended exception processing.
-==============================
-
-    * Exception information will be stored in a model in database
-    * Every exception records not only the stack frames, but also parameters and locals values and remote call parameters
-    * Exception information purge, unless configured, every month to limit space consuption
-    * User is informed of problem with a link that can be copied and emailed to the system administration
-    * Exception information can be viewed online without server access by the system administrator
-
-""",
-	'summary': "Exception Information Database",
+    'author': 'Numa Extreme Systems',
+    'website': 'https://www.numaes.com',
+    'category': 'Technical Settings',
     'version': '18.0.0.1',
+    'license': 'LGPL-3',
+    'summary': 'Advanced Exception Logging and Traceability',
+    'description': """
+NUMA Exceptions
+===============
+This module provides a robust infrastructure for capturing, persisting, and analyzing 
+system exceptions directly within the Odoo database.
+
+Key Features:
+-------------
+* **Persistent Logging:** Exception information is stored in the database, allowing 
+  historical analysis even after server restarts.
+* **Detailed Traceability:** Records the complete stack trace, including source code 
+  snippets, local variable values, and method parameters for each frame.
+* **Automatic Capture:** Seamlessly integrates with Odoo's HTTP dispatcher and Cron 
+  manager to automatically log unhandled exceptions.
+* **User Support:** When an error occurs, the user is provided with a unique exception 
+  reference ID to facilitate communication with system administrators.
+* **Online Inspection:** Administrators can view detailed error reports directly 
+  through the Odoo interface without needing direct server or log file access.
+* **Retention Policy:** Includes a configurable purge mechanism to automatically 
+  clean up old exception records (default: older than 30 days).
+
+Technical Information:
+----------------------
+The module uses a separate database cursor for logging, ensuring that exception 
+details are persisted even if the main transaction is rolled back.
+""",
     'depends': ['base', 'mail'],
     'data': ['security/ir.model.access.csv',
              'security/security.xml',

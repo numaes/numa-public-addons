@@ -47,27 +47,35 @@ DT_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 class VariableValue(models.Model):
+    """
+    Stores the name and string representation of a local variable within a call frame.
+    """
     _name = "base.variable_value"
     _description = "Exceptions: Variable Value"
 
-    frame = fields.Many2one(comodel_name='base.frame', string='Frame', ondelete="cascade")
-    sequence = fields.Integer(string='Sequence')
-    name = fields.Char(string='Name', readonly=True)
-    value = fields.Text(string='Value', readonly=True)
+    frame = fields.Many2one(comodel_name='base.frame', string='Frame', ondelete="cascade", help="Related stack frame")
+    sequence = fields.Integer(string='Sequence', help="Order of appearance in the frame")
+    name = fields.Char(string='Name', readonly=True, help="Variable name")
+    value = fields.Text(string='Value', readonly=True, help="Variable value (string representation)")
 
 
 class Frame(models.Model):
+    """
+    Represents a single entry in the execution stack trace.
+    Captures the file, line number, source code snippet, and local variables.
+    """
     _name = "base.frame"
     _description = "Exceptions: Call Frame"
 
-    gexception = fields.Many2one(comodel_name='base.general_exception', string='Exception', ondelete="cascade")
-    src_code = fields.Html(string='Source code', readonly=True)
-    line_number = fields.Integer(string='Line number', readonly=True)
-    file_name = fields.Char(string='File name', readonly=True)
+    gexception = fields.Many2one(comodel_name='base.general_exception', string='Exception', ondelete="cascade", help="Related exception log")
+    src_code = fields.Html(string='Source code', readonly=True, help="HTML formatted source code snippet")
+    line_number = fields.Integer(string='Line number', readonly=True, help="Line number where the exception occurred")
+    file_name = fields.Char(string='File name', readonly=True, help="Absolute path to the source file")
     locals = fields.One2many(comodel_name='base.variable_value',
                              inverse_name='frame',
                              string='Local variables',
-                             readonly=True)
+                             readonly=True,
+                             help="List of local variables captured at this frame")
 
     @api.depends('file_name', 'line_number')
     def _compute_display_name(self):
@@ -76,6 +84,9 @@ class Frame(models.Model):
 
     @api.model
     def _name_search(self, name, domain=None, operator='ilike', limit=80, order=None):
+        """
+        Allows searching frames by file name or line number.
+        """
         domain = domain or []
         if operator != 'ilike' or (name or '').strip():
             name_domain = ['|', ('file_name', operator, name), ('line_number', operator, name)]
@@ -83,26 +94,31 @@ class Frame(models.Model):
         return self._search(domain, limit=limit, order=order)
 
 class GeneralException (models.Model):
+    """
+    Main model for storing exception logs.
+    Aggregates error messages, stack frames, and execution metadata.
+    """
     _name = "base.general_exception"
     _inherit = ['mail.thread', 'mail.activity.mixin']
     _description = "Exceptions: Exception Log"
     _order = "timestamp desc"
 
-    name = fields.Char(string='Identification', readonly=True)
-    service = fields.Char(string='Service', readonly=True)
-    exception = fields.Text(string='Exception', readonly=True)
-    method = fields.Char(string='Method', readonly=True)
-    params = fields.Text(string='Params', readonly=True)
-    timestamp = fields.Datetime(string='Timestamp', readonly=True)
-    do_not_purge = fields.Boolean(string='Do not purge?', readonly=True)
-    user = fields.Many2one(comodel_name='res.users', string='User', readonly=True, ondelete='set null')
-    frames = fields.One2many(comodel_name='base.frame', inverse_name='gexception', string='Frames', readonly=True)
-    frames_count = fields.Integer(string='Frames Count', compute='_compute_frames_count', readonly=True)
+    name = fields.Char(string='Identification', readonly=True, help="Unique reference ID for the exception")
+    service = fields.Char(string='Service', readonly=True, help="Name of the service or component where the error occurred")
+    exception = fields.Text(string='Exception', readonly=True, help="Full exception message and cause chain")
+    method = fields.Char(string='Method', readonly=True, help="Method name being executed")
+    params = fields.Text(string='Params', readonly=True, help="Parameters passed to the method (string representation)")
+    timestamp = fields.Datetime(string='Timestamp', readonly=True, help="When the exception occurred")
+    do_not_purge = fields.Boolean(string='Do not purge?', readonly=True, help="If checked, this log will be excluded from the automatic purge")
+    user = fields.Many2one(comodel_name='res.users', string='User', readonly=True, ondelete='set null', help="User who triggered the exception")
+    frames = fields.One2many(comodel_name='base.frame', inverse_name='gexception', string='Frames', readonly=True, help="Ordered stack frames")
+    frames_count = fields.Integer(string='Frames Count', compute='_compute_frames_count', readonly=True, help="Number of frames in the stack trace")
 
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
             vals = vals or {}
+            # Generate a unique reference using a sequence
             vals['name'] = self.env['ir.sequence'].next_by_code('base.general_exception') or '/'
             vals['timestamp'] = fields.Datetime.now()
         return super(GeneralException, self).create(vals_list)
@@ -112,6 +128,9 @@ class GeneralException (models.Model):
             record.frames_count = len(record.frames) if record.frames else 0
 
     def action_frames(self):
+        """
+        Returns an action to view the frames associated with this exception.
+        """
         self.ensure_one()
 
         ge = self
@@ -126,6 +145,10 @@ class GeneralException (models.Model):
         }
         
     def action_clean(self):
+        """
+        Scheduled action to purge exception logs older than 30 days.
+        Records marked with 'do_not_purge' are ignored.
+        """
         now = datetime.datetime.utcnow()
         one_month_before_dt = now - datetime.timedelta(days=30)
         one_month_before = one_month_before_dt.strftime(DT_FORMAT)
@@ -142,10 +165,26 @@ class GeneralException (models.Model):
 
     @api.model
     def new_exception(self, e, service_name='unknown', method='unknown', params=None):
+        """
+        Entry point to manually register an exception from within a model.
+        """
         register_exception(service_name, method, params, self.env.cr.dbname, self.env.user.id, e)
 
 
 def register_exception(service_name, method, params, db, uid, e):
+    """
+    Global utility function to log an exception into the database.
+    It opens a new database cursor to ensure the log is persisted even if the 
+    main transaction fails and is rolled back.
+    
+    :param service_name: String identifying the origin (e.g., 'sale.order')
+    :param method: Method name where the error occurred
+    :param params: Arguments passed to the method
+    :param db: Database name
+    :param uid: User ID
+    :param e: Exception instance
+    :return: Unique exception reference string (name) or None
+    """
     if not db:
         return None
 
@@ -227,6 +266,10 @@ def register_exception(service_name, method, params, db, uid, e):
 
 
 class IrHttp(models.AbstractModel):
+    """
+    Extends Odoo's HTTP dispatcher to automatically capture and log 
+    unhandled exceptions during web requests.
+    """
     _inherit = 'ir.http'
 
     @classmethod
@@ -235,6 +278,7 @@ class IrHttp(models.AbstractModel):
             return super(IrHttp, cls)._dispatch(endpoint)
         except Exception as e:
             _logger.exception(e)
+            # Log the exception and get a unique reference ID
             ename = register_exception(
                 'Endpoint %s' % request.httprequest,
                 'IrHttp.dispatch',
@@ -243,6 +287,8 @@ class IrHttp(models.AbstractModel):
                 request.env.uid,
                 e)
 
+            # For critical system errors, wrap the exception in a UserError 
+            # with the reference ID to help the user report it.
             if not isinstance(e, (
                     odoo.exceptions.RedirectWarning,
                     SessionExpiredException,
@@ -255,6 +301,10 @@ class IrHttp(models.AbstractModel):
 
 
 class IrCron(models.Model):
+    """
+    Extends Odoo's Cron manager to automatically log exceptions 
+    occurring during scheduled actions.
+    """
     _inherit = 'ir.cron'
 
     @api.model
@@ -265,6 +315,7 @@ class IrCron(models.Model):
         db = self.env.cr.dbname
         uid = self.env.user.id
 
+        # Automatically log cron failures
         register_exception(
             model,
             method,
