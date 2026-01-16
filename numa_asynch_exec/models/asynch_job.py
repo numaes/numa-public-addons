@@ -1,6 +1,7 @@
 import time
 import logging
-from odoo import models, fields, api, Registry, SUPERUSER_ID
+from odoo import models, fields, api, SUPERUSER_ID
+from odoo.modules.registry import Registry
 from odoo.addons.numa_exceptions.models.exceptions import register_exception
 
 _logger = logging.getLogger(__name__)
