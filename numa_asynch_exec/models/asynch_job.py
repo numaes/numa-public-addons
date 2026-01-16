@@ -24,9 +24,21 @@ class NumaAsynchJob(models.Model):
     
     state = fields.Selection([
         ('pending', 'Pending'),
+        ('running', 'Running'),
         ('done', 'Done'),
         ('failed', 'Failed'),
     ], string='State', default='pending')
+
+    @api.model
+    def _recover_pending_jobs(self):
+        pending_jobs = self.sudo().search([('state', '=', 'pending')])
+        if pending_jobs:
+            _logger.info("Retomando %s jobs asíncronos pendientes...", len(pending_jobs))
+            # Import here to avoid circular dependency
+            from ..utils import get_asynch_executor
+            executor = get_asynch_executor()
+            for job in pending_jobs:
+                executor.submit(job._run_in_thread)
 
     def _run_in_thread(self):
         """Method to be executed in the ThreadPoolExecutor"""
@@ -37,15 +49,18 @@ class NumaAsynchJob(models.Model):
         registry = Registry(db_name)
         with registry.cursor() as cr:
             env = api.Environment(cr, self.uid.id, self.context or {})
+            # Update state to running
+            self.with_env(env).write({'state': 'running'})
+            cr.commit()
+
             try:
                 recordset = env[self.model_name].browse(self.res_ids)
                 method = getattr(recordset, self.method_name)
                 method(*self.args, **self.kwargs)
                 
                 # Mark as done
-                # We need a new environment/cursor to update the job status if we want it persisted
-                # or we can update it in the current cursor and commit.
                 self.with_env(env).write({'state': 'done'})
+                cr.commit()
                 
             except Exception as e:
                 cr.rollback()
@@ -65,17 +80,12 @@ class NumaAsynchJob(models.Model):
                         'retry_count': self.retry_count + 1,
                         'state': 'pending',
                     })
-                    # Re-enqueue. We need to do this after the current transaction if we want to be safe, 
-                    # but since we are already in a thread, we can just trigger it.
-                    # Wait, the current job in DB is still 'pending' or 'failed'.
+                    # Re-enqueue.
                     self.with_env(env).write({'state': 'failed'})
                     
                     # Import here to avoid circular dependency
                     from ..utils import get_asynch_executor
                     executor = get_asynch_executor()
-                    # We need to make sure the new_job is committed before it runs,
-                    # but here we are in a separate cursor.
-                    # Actually, we should commit the 'failed' state and the 'new_job' creation.
                     cr.commit() 
                     executor.submit(new_job._run_in_thread)
                 else:
