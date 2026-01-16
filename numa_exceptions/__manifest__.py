@@ -45,6 +45,8 @@ Key Features:
   reference ID to facilitate communication with system administrators.
 * **Online Inspection:** Administrators can view detailed error reports directly 
   through the Odoo interface without needing direct server or log file access.
+* **Automatic Decorator:** Easy-to-use `@exception_managed` decorator for models 
+  to automate traceability with minimal code changes.
 * **Retention Policy:** Includes a configurable purge mechanism to automatically 
   clean up old exception records (default: older than 30 days).
 

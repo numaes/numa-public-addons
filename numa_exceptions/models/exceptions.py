@@ -37,6 +37,7 @@ from odoo.http import SessionExpiredException
 import datetime
 import sys
 import inspect
+import functools
 from odoo.osv import expression
 
 
@@ -169,6 +170,42 @@ class GeneralException (models.Model):
         Entry point to manually register an exception from within a model.
         """
         register_exception(service_name, method, params, self.env.cr.dbname, self.env.user.id, e)
+
+
+def exception_managed(service_name=None):
+    """
+    Decorator to automatically log exceptions in a method to the numa_exceptions system.
+    It captures the execution context and calls register_exception before re-raising.
+
+    :param service_name: Optional name for the service. Defaults to the model name.
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except Exception as e:
+                # Use provided service_name or fallback to model name
+                s_name = service_name or getattr(self, '_name', 'UnknownService')
+
+                # Extract Odoo environment details from 'self'
+                # Works for both instance methods and @api.model methods
+                db = self.env.cr.dbname
+                uid = self.env.uid
+
+                # Register the exception using the independent cursor logic
+                register_exception(
+                    service_name=s_name,
+                    method=func.__name__,
+                    params={'args': args, 'kwargs': kwargs},
+                    db=db,
+                    uid=uid,
+                    e=e
+                )
+                # Re-raise to ensure the standard Odoo error handling is not bypassed
+                raise e
+        return wrapper
+    return decorator
 
 
 def register_exception(service_name, method, params, db, uid, e):

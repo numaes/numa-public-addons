@@ -15,6 +15,7 @@ This module provides a robust infrastructure for capturing, persisting, and anal
     - **Cron Manager:** Automatically logs failures in scheduled actions (Crons).
 - **User Assistance:** When a non-standard error occurs, the user is presented with a friendly message containing a unique **Exception Reference ID** (e.g., `EXC/2026/0001`). This ID can be sent to support for quick identification of the problem.
 - **Retention Policy:** To prevent excessive database growth, a scheduled action automatically purges records older than 30 days, unless they are explicitly marked as "Do not purge".
+- **Automatic Decorator:** Easy integration via the `@exception_managed` decorator to automatically log exceptions in any model method.
 
 ## Technical Overview
 
@@ -27,7 +28,25 @@ This approach guarantees that even if the main transaction that caused the error
 
 ## Usage for Developers
 
-While the module captures most errors automatically, you can manually log exceptions using the `register_exception` function or the `new_exception` method on `base.general_exception`.
+While the module captures most errors automatically, you can manually log exceptions using the `@exception_managed` decorator, the `register_exception` function, or the `new_exception` method on `base.general_exception`.
+
+### Decorator Usage (Recommended)
+
+The easiest way to log exceptions is to use the `@exception_managed` decorator. This will automatically capture the context, database, user, and any exceptions raised during the execution of the method.
+
+```python
+from odoo.addons.numa_exceptions.models.exceptions import exception_managed
+
+class MyModel(models.Model):
+    _name = 'my.model'
+
+    @api.model
+    @exception_managed(service_name="External Integration")
+    def process_data(self, data):
+        # Any exception raised here will be automatically logged to numa_exceptions
+        # and then re-raised to maintain normal Odoo behavior.
+        return self._do_heavy_lifting(data)
+```
 
 ### Manual Registration
 
