@@ -1,6 +1,10 @@
 from odoo import models, api
 from ..utils import get_asynch_executor
 
+import logging
+_logger = logging.getLogger(__name__)
+
+
 class AsynchProxy:
     """
     A proxy object that intercepts method calls on a recordset and
@@ -31,11 +35,13 @@ class AsynchProxy:
                 'retry_delay': self.retry_delay,
             }
             # Create the job record in sudo mode to ensure persistence
+            _logger.debug(f'Creating asynchronous job: {job_vals}')
             job = self.recordset.env['numa.asynch.job'].sudo().create(job_vals)
             
             # Register a hook to submit the job only after the current transaction is committed.
             # This ensures that the job record is visible to the background thread.
             def _submit_job():
+                _logger.debug(f'Submitting asynchronous job: {job.id}')
                 executor = get_asynch_executor()
                 executor.submit(job._run_in_thread)
 
