@@ -60,7 +60,7 @@ def _run_in_thread(job_id, db_name, context):
         try:
             # Browse records and execute method
 
-            user = env['res.users'].browse(job.uid).exists()
+            user = env['res.users'].browse(job.uid.id).exists()
             if user:
                 # impersonar al usuario que creó el job para la lógica de negocio
                 # Esto garantiza que el Audit Trail registre al usuario real
