@@ -1,10 +1,10 @@
-from odoo.addons.base.tests.common import SavepointCase
+from odoo.tests.common import TransactionCase
 from ..models import miniqweb
 import logging
 _logger = logging.getLogger(__name__)
 
 
-class TestMiniQweb(SavepointCase):
+class TestMiniQweb(TransactionCase):
     """ Test running at-install to test flows independently to other modules """
 
     @classmethod
