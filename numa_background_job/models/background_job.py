@@ -90,7 +90,7 @@ class BackgroundJob(models.Model):
         # Start a background thread only if the current transaction commits successfully
 
         @self.env.cr.postcommit.add
-        def after_commit():
+        def _post_commit_start_job():
             def do_start_job():
                 background_thread(dbname, user_id, name, newJobId, context=context)
 
