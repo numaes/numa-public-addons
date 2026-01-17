@@ -39,7 +39,7 @@ class AsynchProxy:
                 executor = get_asynch_executor()
                 executor.submit(job._run_in_thread)
 
-            self.recordset.env.cr.after_commit(_submit_job)
+            self.recordset.env.cr.postcommit.add(_submit_job)
             return True
 
         return _asynch_call
