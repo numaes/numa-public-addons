@@ -4,7 +4,11 @@ from odoo.tools import config
 
 # Thread-safe global executor instance
 _executor_lock = threading.Lock()
-_executor = None
+max_workers = int(config.get('numa_asynch_max_threads', 5))
+_executor = ThreadPoolExecutor(
+    max_workers=max_workers,
+    thread_name_prefix='numa_asynch_exec'
+)
 
 def get_asynch_executor():
     """
@@ -14,13 +18,4 @@ def get_asynch_executor():
     :return: ThreadPoolExecutor instance
     """
     global _executor
-    if _executor is None:
-        with _executor_lock:
-            if _executor is None:
-                # Get max threads from config or default to 5
-                max_workers = int(config.get('numa_asynch_max_threads', 5))
-                _executor = ThreadPoolExecutor(
-                    max_workers=max_workers,
-                    thread_name_prefix='numa_asynch_exec'
-                )
     return _executor
