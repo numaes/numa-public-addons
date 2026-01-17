@@ -1,5 +1,5 @@
 from odoo import models, api
-from ..utils import get_asynch_executor
+from ..utils import get_asynch_executor, _run_in_thread
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -22,9 +22,12 @@ class AsynchProxy:
         """
         def _asynch_call(*args, **kwargs):
             # Capture all metadata needed for asynchronous execution
+            dbname = self.recordset.env.cr.dbname
+            model_name = self.recordset._name
+            res_ids = self.recordset.ids
             job_vals = {
-                'db_name': self.recordset.env.cr.dbname,
-                'model_name': self.recordset._name,
+                'db_name': dbname,
+                'model_name': model_name,
                 'res_ids': self.recordset.ids,
                 'method_name': name,
                 'args': args,
@@ -37,13 +40,14 @@ class AsynchProxy:
             # Create the job record in sudo mode to ensure persistence
             _logger.debug(f'Creating asynchronous job: {job_vals}')
             job = self.recordset.env['numa.asynch.job'].sudo().create(job_vals)
+            job_id = job.id
+            _context = job.context
             
             # Register a hook to submit the job only after the current transaction is committed.
             # This ensures that the job record is visible to the background thread.
+            # Instead of blocking the postcommit with the execution of the target method, schedule a task
             def _submit_job():
-                _logger.debug(f'Submitting asynchronous job: {job.id}')
-                executor = get_asynch_executor()
-                executor.submit(job._run_in_thread)
+                get_asynch_executor().submit(_run_in_thread, job_id, dbname, _context)
 
             self.recordset.env.cr.postcommit.add(_submit_job)
             return True

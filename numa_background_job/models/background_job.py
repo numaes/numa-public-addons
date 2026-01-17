@@ -332,20 +332,17 @@ def background_thread(dbName, uid, name, jobId, context=None):
                             cr.rollback()
                         break
 
-                    except Exception as e:
+                    except Exception:
                         _logger.error(f'Unexpected exception raised for job {name} with id {jobId}', exc_info=True)
                         cr.rollback()
 
-                        bkJob = bkJobObj.browse(self.jobId)
+                        bkJob = bkJobObj.browse(jobId)
                         bkJob.abort(
                             statusMsg=_('Unexpected exception!'),
-                            errorMsg='\n'.join(exceptionLines))
+                            errorMsg=traceback.format_exc())
 
                         attemptCount += 1
                         time.sleep(1)
                 else:
                     _logger.error(f'Non existing job {name} with id {jobId}!!')
-                    bkJob.abort(
-                        statusMsg=_('Non existing job!'),
-                        errorMsg='\n'.join(exceptionLines))
                     break
