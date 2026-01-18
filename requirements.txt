@@ -3,3 +3,5 @@ requests
 Werkzeug
 lxml
 phonenumbers
+email-validator
+
