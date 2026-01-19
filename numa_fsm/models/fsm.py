@@ -530,6 +530,29 @@ class FSMInstance(models.Model):
         }
 
     def process_event(self, event):
+        """
+        Queue an event for asynchronous processing using numa_asynch_exec.
+        
+        This method schedules the event processing to run asynchronously,
+        ensuring persistence and retry capability. The actual processing
+        is done by _process_event_sync().
+        
+        :param event: Dictionary containing event data with at least a 'name' key
+        """
+        for fsm_instance in self:
+            # Use asynch_exec to process the event asynchronously
+            fsm_instance.asynch_exec()._process_event_sync(event)
+
+    def _process_event_sync(self, event):
+        """
+        Synchronous event processing logic.
+        
+        This method contains the actual event processing logic that was
+        previously in process_event(). It is called asynchronously via
+        numa_asynch_exec to ensure persistence and error handling.
+        
+        :param event: Dictionary containing event data with at least a 'name' key
+        """
         self.ensure_one()
         if self.state != 'running' or not self.current_state_id:
             self.log(f"Event '{event.get('name')}' ignored: FSM not in a running state.")
@@ -565,6 +588,13 @@ class FSMInstance(models.Model):
         self._execute_chain()
 
     def send_event(self, event):
+        """
+        Send an event to one or more FSM instances.
+        
+        Events are processed asynchronously via numa_asynch_exec.
+        
+        :param event: Dictionary containing event data with at least a 'name' key
+        """
         for fsm_instance in self:
             fsm_instance.process_event(event)
 
