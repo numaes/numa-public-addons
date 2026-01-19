@@ -36,6 +36,11 @@ Key Features:
         'views/crm_lead_views.xml',
         'views/menu_views.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'numa_fsm_crm/static/src/css/*.css',
+        ],
+    },
     'installable': True,
     'application': False,
     'auto_install': False,
