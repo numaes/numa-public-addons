@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Extend res.groups form view with conditional logic based on numa_type -->
+        <record id="view_groups_form_numa_roles" model="ir.ui.view">
+            <field name="name">res.groups.form.numa_roles</field>
+            <field name="model">res.groups</field>
+            <field name="inherit_id" ref="base.view_groups_form"/>
+            <field name="arch" type="xml">
+                <!-- Add numa_type field at the top -->
+                <field name="name" position="after">
+                    <field name="numa_type" widget="radio" options="{'horizontal': true}"/>
+                    <field name="is_template" invisible="numa_type != 'role'"/>
+                    <field name="technical_code" invisible="numa_type != 'permission'"/>
+                    <field name="permission_count" invisible="numa_type != 'role'"/>
+                </field>
+
+                <!-- For PERMISSIONS: Hide Users, Rules, Views, Menus tabs -->
+                <!-- Hide standard notebook pages for permissions -->
+                <xpath expr="//page[@name='users']" position="attributes">
+                    <attribute name="attrs">{'invisible': [('numa_type', '=', 'permission')]}</attribute>
+                </xpath>
+                <xpath expr="//page[@name='view_access']" position="attributes">
+                    <attribute name="attrs">{'invisible': [('numa_type', '=', 'permission')]}</attribute>
+                </xpath>
+                <xpath expr="//page[@name='rule_groups']" position="attributes">
+                    <attribute name="attrs">{'invisible': [('numa_type', '=', 'permission')]}</attribute>
+                </xpath>
+                <xpath expr="//page[@name='menu_access']" position="attributes">
+                    <attribute name="attrs">{'invisible': [('numa_type', '=', 'permission')]}</attribute>
+                </xpath>
+
+                <!-- Add a simplified view for permissions -->
+                <xpath expr="//notebook" position="inside">
+                    <page string="Información Técnica" attrs="{'invisible': [('numa_type', '!=', 'permission')]}">
+                        <group>
+                            <group>
+                                <field name="technical_code" readonly="1"/>
+                                <field name="category_id"/>
+                                <field name="comment" placeholder="Descripción técnica del permiso..."/>
+                            </group>
+                            <group>
+                                <field name="is_template"/>
+                                <field name="active"/>
+                            </group>
+                        </group>
+                        <group string="Permisos Heredados (Solo Otros Permisos o Sistema)">
+                            <field name="implied_ids" 
+                                   domain="[('numa_type', 'in', ['permission', 'system'])]"
+                                   context="{'default_numa_type': 'permission'}">
+                                <tree>
+                                    <field name="name"/>
+                                    <field name="numa_type"/>
+                                    <field name="technical_code"/>
+                                </tree>
+                            </field>
+                        </group>
+                    </page>
+                </xpath>
+
+                <!-- For ROLES: Hide technical tabs (Views, Menus, Rules) -->
+                <!-- Show Permissions tab and Users tab -->
+                <xpath expr="//page[@name='implied_ids']" position="attributes">
+                    <attribute name="string">Permisos</attribute>
+                    <attribute name="attrs">{'invisible': [('numa_type', '!=', 'role')]}</attribute>
+                </xpath>
+                <xpath expr="//page[@name='implied_ids']//field[@name='implied_ids']" position="attributes">
+                    <attribute name="domain">[('numa_type', '=', 'permission')]</attribute>
+                    <attribute name="context">{'default_numa_type': 'permission'}</attribute>
+                </xpath>
+
+                <!-- Hide technical pages for roles -->
+                <xpath expr="//page[@name='view_access']" position="attributes">
+                    <attribute name="attrs">{'invisible': ['|', ('numa_type', '=', 'role'), ('numa_type', '=', 'permission')]}</attribute>
+                </xpath>
+                <xpath expr="//page[@name='rule_groups']" position="attributes">
+                    <attribute name="attrs">{'invisible': ['|', ('numa_type', '=', 'role'), ('numa_type', '=', 'permission')]}</attribute>
+                </xpath>
+                <xpath expr="//page[@name='menu_access']" position="attributes">
+                    <attribute name="attrs">{'invisible': ['|', ('numa_type', '=', 'role'), ('numa_type', '=', 'permission')]}</attribute>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- Extend res.groups tree view to show numa_type -->
+        <record id="view_groups_tree_numa_roles" model="ir.ui.view">
+            <field name="name">res.groups.tree.numa_roles</field>
+            <field name="model">res.groups</field>
+            <field name="inherit_id" ref="base.view_groups_tree"/>
+            <field name="arch" type="xml">
+                <field name="name" position="after">
+                    <field name="numa_type"/>
+                    <field name="technical_code" invisible="numa_type != 'permission'"/>
+                    <field name="permission_count" invisible="numa_type != 'role'"/>
+                </field>
+            </field>
+        </record>
+
+        <!-- Extend res.groups search view -->
+        <record id="view_groups_search_numa_roles" model="ir.ui.view">
+            <field name="name">res.groups.search.numa_roles</field>
+            <field name="model">res.groups</field>
+            <field name="inherit_id" ref="base.view_groups_search"/>
+            <field name="arch" type="xml">
+                <field name="name" position="after">
+                    <field name="numa_type"/>
+                    <field name="technical_code"/>
+                </field>
+                <filter name="group_system" position="after">
+                    <filter string="Roles" name="filter_roles" domain="[('numa_type', '=', 'role')]"/>
+                    <filter string="Permisos" name="filter_permissions" domain="[('numa_type', '=', 'permission')]"/>
+                    <filter string="Sistema" name="filter_system" domain="[('numa_type', '=', 'system')]"/>
+                </filter>
+            </field>
+        </record>
+
+        <!-- Action for Roles -->
+        <record id="action_res_groups_roles" model="ir.actions.act_window">
+            <field name="name">Roles</field>
+            <field name="res_model">res.groups</field>
+            <field name="view_mode">tree,form</field>
+            <field name="domain">[('numa_type', '=', 'role')]</field>
+            <field name="context">{'default_numa_type': 'role', 'search_default_filter_roles': 1}</field>
+            <field name="help">Los roles son agrupaciones de permisos que se asignan a usuarios. 
+            Un usuario puede tener múltiples roles, y cada rol incluye múltiples permisos.</field>
+        </record>
+
+        <!-- Action for Permissions -->
+        <record id="action_res_groups_permissions" model="ir.actions.act_window">
+            <field name="name">Permisos</field>
+            <field name="res_model">res.groups</field>
+            <field name="view_mode">tree,form</field>
+            <field name="domain">[('numa_type', '=', 'permission')]</field>
+            <field name="context">{'default_numa_type': 'permission', 'search_default_filter_permissions': 1}</field>
+            <field name="help">Los permisos son unidades atómicas de acceso. 
+            No se asignan directamente a usuarios, sino que se incluyen en roles.</field>
+        </record>
+
+        <!-- Menu: Access Management Root -->
+        <menuitem
+            id="menu_access_management"
+            name="Gestión de Accesos"
+            parent="base.menu_administration"
+            sequence="50"
+            groups="base.group_system"
+        />
+
+        <!-- Submenu: Roles -->
+        <menuitem
+            id="menu_res_groups_roles"
+            name="Roles"
+            parent="menu_access_management"
+            action="action_res_groups_roles"
+            sequence="10"
+            groups="base.group_system"
+        />
+
+        <!-- Submenu: Permissions -->
+        <menuitem
+            id="menu_res_groups_permissions"
+            name="Permisos"
+            parent="menu_access_management"
+            action="action_res_groups_permissions"
+            sequence="20"
+            groups="base.group_system"
+        />
+    </data>
+</odoo>
