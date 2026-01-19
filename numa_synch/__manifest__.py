@@ -1,18 +1,34 @@
 {
-    'application': True,
-    'name': "NUMA Synch",
-    'summary': "Keep relations between internal IDs and remote data",
-    'author': "Gustavo Marino <gamarino@numaes.com>",
+    'name': 'Numa Synch',
+    'version': '18.0.1.0.0',
+    'summary': 'Foundational core module for offline-first synchronization system',
+    'description': """
+        Numa Synch Core Module
+        ======================
+        
+        This module provides the foundational infrastructure for a distributed 
+        synchronization system. It acts as a library/dependency for future modules 
+        (numa_synch_master and numa_synch_slave).
+        
+        Features:
+        - Identity mapping between local and remote IDs
+        - Synchronization rules with domain filters
+        - Abstract serialization engine
+    """,
+    'author': 'Gustavo Marino <gamarino@numaes.com>',
     'website': 'https://www.numaes.com',
-    'version': "18.0.0.1",
-    'category': "Synch",
-    'depends': ['base', 'mail'],
+    'license': 'LGPL-3',
+    'category': 'Extra Tools',
+    'depends': [
+        'base',
+        'mail',
+        'web',
+    ],
     'data': [
-        "security/security.xml",
-        "security/ir.model.access.csv",
-        "views/synch_view.xml",
-        "views/menu.xml",
+        'security/ir.model.access.csv',
+        'views/numa_synch_map_views.xml',
+        'views/numa_synch_rule_views.xml',
     ],
     'installable': True,
-    'license': 'LGPL-3',
+    'application': False,
 }
