@@ -1,25 +1,42 @@
+# -*- coding: utf-8 -*-
 {
-    'application': True,
-    'name': "NUMA Finite State Machine - CRM",
-    'summary': "FSM CRM",
-    'author': "Gustavo Marino <gamarino@numaes.com>",
+    'name': 'Numa FSM CRM',
+    'version': '18.0.1.0.0',
+    'summary': 'Integrates FSM capabilities into CRM Leads',
+    'description': """
+Numa FSM CRM
+============
+
+This module integrates Finite State Machine capabilities into CRM Leads,
+allowing leads to be converted into FSM instances with automated workflows.
+
+Key Features:
+-------------
+* Convert CRM leads into FSM instances
+* Assign bots (FSM definitions) to leads for automated processing
+* Control FSM execution from the lead form
+* Visual FSM diagram showing current state
+* Step-by-step debugging capabilities
+    """,
+    'author': 'NUMA Extreme Systems',
     'website': 'https://www.numaes.com',
-    'version': "18.0.0.1",
-    'category': "mailing",
+    'license': 'LGPL-3',
+    'category': 'Sales/CRM',
     'depends': [
         'base',
-        'numa_fsm',
         'crm',
         'mail',
-        'mass_mailing',
-        'numa_poly'
+        'numa_fsm',
+        'numa_poly',
     ],
     'data': [
-        "security/security.xml",
-        "security/ir.model.access.csv",
-        "views/poly_test_views.xml",
-        "views/menu_views.xml",
+        'security/security.xml',
+        'security/ir.model.access.csv',
+        'views/crm_bot_views.xml',
+        'views/crm_lead_views.xml',
+        'views/menu_views.xml',
     ],
     'installable': True,
-    'license': 'LGPL-3',
+    'application': False,
+    'auto_install': False,
 }

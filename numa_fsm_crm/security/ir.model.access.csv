@@ -1,2 +1,3 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_crm_workflow,General access CRM Workflow,model_crm_workflow,base.group_user,1,1,1,1
+access_crm_bot_user,crm.bot user access,model_crm_bot,base.group_user,1,1,1,1
+access_crm_bot_manager,crm.bot manager access,model_crm_bot,base.group_system,1,1,1,1

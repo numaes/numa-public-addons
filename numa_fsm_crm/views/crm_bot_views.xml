@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- CRM Bot List View -->
+        <record id="crm_bot_view_list" model="ir.ui.view">
+            <field name="name">crm.bot.list</field>
+            <field name="model">crm.bot</field>
+            <field name="mode">primary</field>
+            <field name="inherit_id" ref="numa_fsm.definition_list_view"/>
+        </record>
+
+        <!-- CRM Bot Form View -->
+        <record id="crm_bot_view_form" model="ir.ui.view">
+            <field name="name">crm.bot.form</field>
+            <field name="model">crm.bot</field>
+            <field name="mode">primary</field>
+            <field name="inherit_id" ref="numa_fsm.definition_form_view"/>
+            <field name="arch" type="xml">
+                <field name="name" position="before">
+                    <span>"Bot Name"</span>
+                    <newline/>
+                </field>
+            </field>
+        </record>
+
+        <!-- Action for CRM Bot -->
+        <record model="ir.actions.act_window" id="action_crm_bot">
+            <field name="name">CRM Bots</field>
+            <field name="res_model">crm.bot</field>
+            <field name="view_mode">tree,form</field>
+            <field name="domain">[('type', '=', 'crm_bot')]</field>
+            <field name="context">{'default_type': 'crm_bot'}</field>
+        </record>
+    </data>
+</odoo>

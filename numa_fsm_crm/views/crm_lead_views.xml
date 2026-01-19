@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Extend CRM Lead Form to add FSM Control -->
+        <record id="view_crm_lead_form_fsm" model="ir.ui.view">
+            <field name="name">crm.lead.form.fsm</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+            <field name="arch" type="xml">
+                <!-- Add bot_id field in header -->
+                <field name="user_id" position="after">
+                    <field name="bot_id" widget="many2one" options="{'no_create': True}"/>
+                    <field name="has_fsm" invisible="1"/>
+                </field>
+
+                <!-- Add FSM Control Notebook Page -->
+                <notebook position="inside">
+                    <page string="FSM Workflow" name="fsm_control" invisible="not has_fsm">
+                        <group>
+                            <group string="FSM Status">
+                                <field name="bot_state" readonly="1"/>
+                                <field name="state" readonly="1" string="Execution State"/>
+                                <field name="current_state_id" readonly="1" string="Current State"/>
+                                <field name="next_node_id" readonly="1" string="Next Node" invisible="not next_node_id"/>
+                            </group>
+                            <group string="FSM Actions">
+                                <button name="action_start_fsm" 
+                                        type="object" 
+                                        string="Start FSM" 
+                                        class="btn-primary"
+                                        invisible="state != 'init'"/>
+                                <button name="action_pause_fsm" 
+                                        type="object" 
+                                        string="Pause FSM" 
+                                        class="btn-secondary"
+                                        invisible="state != 'running'"/>
+                                <button name="action_resume_fsm" 
+                                        type="object" 
+                                        string="Resume FSM" 
+                                        class="btn-primary"
+                                        invisible="state != 'paused'"/>
+                                <button name="action_next_step_fsm" 
+                                        type="object" 
+                                        string="Next Step" 
+                                        class="btn-secondary"
+                                        invisible="state != 'paused'"/>
+                            </group>
+                        </group>
+                        
+                        <!-- FSM Diagram Miniature -->
+                        <group string="FSM Diagram" class="oe_read_only">
+                            <field name="definition_id" invisible="1"/>
+                            <field name="current_state_id" invisible="1"/>
+                            <field name="next_node_id" invisible="1"/>
+                            <field name="state" invisible="1"/>
+                            <field name="json_ui_schema"
+                                   widget="fsm_diagram"
+                                   nolabel="1"
+                                   class="o_full_width"
+                                   readonly="1"
+                                   activeNodeId="state == 'paused' ? next_node_id : current_state_id"
+                                   invisible="not json_ui_schema"/>
+                            <div class="alert alert-info" role="alert" invisible="json_ui_schema">
+                                No FSM diagram available. Please configure the FSM definition.
+                            </div>
+                        </group>
+
+                        <!-- FSM Variables (for debugging) -->
+                        <group string="FSM Variables" invisible="not instance_variables">
+                            <field name="instance_variables" 
+                                   widget="ace" 
+                                   options="{'mode': 'json'}" 
+                                   readonly="1"
+                                   nolabel="1"/>
+                        </group>
+                    </page>
+                </notebook>
+
+                <!-- Add Assign Bot button in header if no bot assigned -->
+                <button name="action_assign_bot" 
+                        type="object" 
+                        string="Assign Bot" 
+                        class="oe_link"
+                        invisible="bot_id or not definition_id"
+                        position="attributes">
+                    <attribute name="invisible">bot_id</attribute>
+                </button>
+            </field>
+        </record>
+
+        <!-- Extend CRM Lead List View to show bot info -->
+        <record id="view_crm_lead_tree_fsm" model="ir.ui.view">
+            <field name="name">crm.lead.tree.fsm</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.crm_lead_view_tree"/>
+            <field name="arch" type="xml">
+                <field name="name" position="after">
+                    <field name="bot_id" optional="hide"/>
+                    <field name="bot_state" optional="hide" readonly="1"/>
+                </field>
+            </field>
+        </record>
+
+        <!-- Extend CRM Lead Search View -->
+        <record id="view_crm_lead_search_fsm" model="ir.ui.view">
+            <field name="name">crm.lead.search.fsm</field>
+            <field name="model">crm.lead</field>
+            <field name="inherit_id" ref="crm.crm_lead_view_search"/>
+            <field name="arch" type="xml">
+                <field name="name" position="after">
+                    <field name="bot_id"/>
+                    <field name="has_fsm"/>
+                </field>
+                <filter name="my_leads" position="after">
+                    <filter string="With Active FSM" name="has_fsm" domain="[('has_fsm', '=', True)]"/>
+                    <filter string="With Bot" name="has_bot" domain="[('bot_id', '!=', False)]"/>
+                </filter>
+            </field>
+        </record>
+    </data>
+</odoo>
