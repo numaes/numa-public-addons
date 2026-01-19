@@ -2,11 +2,12 @@
 
 ## Resumen Ejecutivo
 
-El sistema **Numa Synch** es una solución de sincronización offline-first para Odoo 18.0 que permite mantener múltiples instancias de Odoo sincronizadas en una arquitectura Master-Slave. El sistema está compuesto por tres módulos modulares que trabajan en conjunto:
+El sistema **Numa Synch** es una solución de sincronización offline-first para Odoo 18.0 que permite mantener múltiples instancias de Odoo sincronizadas en una arquitectura Master-Slave. El sistema está compuesto por cuatro módulos modulares que trabajan en conjunto:
 
 1. **`numa_synch`** - Módulo core (biblioteca base)
 2. **`numa_synch_master`** - Servidor central (Master)
 3. **`numa_synch_slave`** - Nodos branch (Slave)
+4. **`numa_synch_ai_assisted`** - Adaptación asistida por IA (opcional)
 
 **Versión:** 18.0.1.0.0  
 **Autor:** Gustavo Marino <gamarino@numaes.com>  
@@ -91,13 +92,31 @@ El sistema **Numa Synch** es una solución de sincronización offline-first para
 **Componentes:**
 - **Connection Model**: Configuración de conexión al Master
 - **Engine Slave**: Lógica de detección y envío
-- **Cron Job**: Sincronización programada (15 minutos)
+- **Cron Job**: Sincronización programada (configurable por conexión)
 
 **Características:**
 - Delta detection basado en `write_date`
 - BFS exploration para dependencias Many2one
 - Batch processing con commits atómicos
 - UUID automático para identificación única
+- Frecuencia de sincronización configurable por conexión
+- Hora programada opcional para sincronizaciones diarias
+
+#### D. `numa_synch_ai_assisted` (AI-Powered Adapter) - Opcional
+**Propósito:** Adaptador inteligente que usa IA para resolver incompatibilidades de esquema.
+
+**Componentes:**
+- **AI Map Model**: Almacena mapeos generados por IA
+- **Issue Model**: Registra análisis de brechas cuando IA no puede resolver
+- **Engine Extension**: Extiende el engine con lógica asistida por IA
+
+**Características:**
+- Adaptación automática de esquemas usando IA
+- Cache de mapeos para evitar llamadas repetidas
+- Análisis de brechas detallado cuando IA falla
+- Transformación transparente de payloads
+- Scripts de transformación para conversiones complejas
+- Integración con `numa_ai` para análisis de esquemas
 
 ---
 
@@ -559,6 +578,41 @@ while queue:
 - **Respeto a Configuración**: Hash considera sync_rule (computed fields, binary)
 - **Estado**: ✅ Implementado
 
+#### D. Configuración de Frecuencia de Sincronización por Conexión
+- **Implementación**: Cada conexión Slave puede tener su propia frecuencia
+- **Componentes**:
+  - `sync_interval_number`: Número de intervalos (default: 15)
+  - `sync_interval_type`: Tipo de intervalo (minutes/hours/days)
+  - `use_scheduled_time`: Activar hora programada
+  - `sync_schedule_time`: Hora específica del día (formato 24h)
+  - `cron_id`: Cron job dinámico asociado
+- **Características**:
+  - Creación automática de cron jobs por conexión
+  - Actualización automática cuando cambian los ajustes
+  - Eliminación automática al borrar conexión
+  - Cálculo automático de `nextcall` para horas programadas
+- **Estado**: ✅ Implementado
+
+#### E. Adaptación Asistida por IA (numa_synch_ai_assisted)
+- **Implementación**: Módulo opcional que extiende validación con IA
+- **Componentes**:
+  - `numa.synch.ai.map`: Almacena mapeos generados por IA
+  - `numa.synch.issue`: Registra análisis de brechas cuando IA no puede resolver
+  - Engine extension: Override de `_validate_metadata()` y `process_incoming_batch_master()`
+- **Flujo**:
+  1. Validación estándar falla
+  2. Busca mapeo en cache
+  3. Si no hay cache, invoca IA para análisis
+  4. Si confianza alta (>0.9) y sin issues críticos → crea mapeo y continúa
+  5. Si confianza baja o issues críticos → registra gap analysis y aborta
+- **Características**:
+  - Mapeo automático de campos basado en similitud semántica
+  - Cache de mapeos para performance
+  - Scripts de transformación para conversiones complejas
+  - Análisis detallado de brechas con sugerencias
+  - Integración con `numa_ai` engine
+- **Estado**: ✅ Implementado
+
 ### 5.4 Consideraciones de Escalabilidad
 
 #### A. Múltiples Slaves
@@ -674,6 +728,8 @@ El sistema **Numa Synch** proporciona una solución robusta y flexible para sinc
 6. ✅ Validación estricta de metadatos y esquema (previene corrupción)
 7. ✅ Soporte para campos binary con compresión
 8. ✅ Soporte para campos computados (stored y non-stored)
+9. ✅ Configuración flexible de frecuencia por conexión
+10. ✅ Adaptación asistida por IA para sistemas no-Odoo (opcional)
 
 ### Áreas de Mejora:
 1. ⚠️ Sincronización bidireccional completa
@@ -683,6 +739,8 @@ El sistema **Numa Synch** proporciona una solución robusta y flexible para sinc
 5. ⚠️ Métricas y monitoreo
 6. ✅ Soporte para campos computados (IMPLEMENTADO)
 7. ✅ Validación de metadatos y esquema estricto (IMPLEMENTADO)
+8. ✅ Configuración de frecuencia por conexión (IMPLEMENTADO)
+9. ✅ Adaptación asistida por IA (IMPLEMENTADO)
 
 ### Recomendación:
 El sistema está listo para uso en producción para casos de uso de sincronización unidireccional (Slave → Master). Para sincronización bidireccional completa, se recomienda implementar las mejoras sugeridas.
@@ -778,7 +836,234 @@ El sistema implementa validación estricta de metadatos para asegurar compatibil
 
 ---
 
-**Versión del Análisis:** 2.0  
+---
+
+## 10. Adaptación Asistida por IA
+
+### 10.1 Propósito
+
+El módulo `numa_synch_ai_assisted` extiende el sistema de sincronización con capacidades de adaptación inteligente de esquemas usando Inteligencia Artificial. Actúa como un **adaptador de fallback** cuando la validación estándar de metadatos falla, permitiendo sincronizar con sistemas no-Odoo o sistemas con esquemas modificados.
+
+### 10.2 Arquitectura
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  MASTER: Receive Batch                                       │
+└───────────────────────┬──────────────────────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Standard Metadata Validation                                │
+└───────────────────────┬──────────────────────────────────────┘
+                        │
+                        ├─ Success → Process Batch
+                        │
+                        └─ Failure → AI-Assisted Flow
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  Check Cache (AI Map)          │
+                    └───────────┬─────────────────────┘
+                                │
+                    ┌───────────┴───────────┐
+                    │                        │
+                    ▼                        ▼
+            Found in Cache          Not Found
+                    │                        │
+                    │                        ▼
+                    │            ┌───────────────────────┐
+                    │            │  Invoke AI Analysis    │
+                    │            └───────────┬───────────┘
+                    │                        │
+                    │            ┌───────────┴───────────┐
+                    │            │                        │
+                    │            ▼                        ▼
+                    │    High Confidence          Low Confidence
+                    │    (>0.9) + No Issues       OR Critical Issues
+                    │            │                        │
+                    │            │                        ▼
+                    │            │            ┌──────────────────────┐
+                    │            │            │  Log Gap Analysis    │
+                    │            │            │  Abort Transaction   │
+                    │            │            └──────────────────────┘
+                    │            │
+                    │            ▼
+                    │    ┌──────────────────────┐
+                    │    │  Create AI Mapping   │
+                    │    │  Cache for Future    │
+                    │    └──────────┬───────────┘
+                    │               │
+                    └───────────────┘
+                            │
+                            ▼
+                ┌───────────────────────┐
+                │  Transform Payload     │
+                │  Apply Mapping         │
+                └───────────┬───────────┘
+                            │
+                            ▼
+                ┌───────────────────────┐
+                │  Process Batch        │
+                │  (Standard Flow)     │
+                └───────────────────────┘
+```
+
+### 10.3 Componentes
+
+#### A. Modelo `numa.synch.ai.map`
+
+Almacena mapeos generados por IA para transformar payloads.
+
+**Campos:**
+- `remote_token`: Identificador del sistema remoto
+- `model_name`: Nombre del modelo Odoo objetivo
+- `mapping_json`: Diccionario JSON mapeando campos remotos a locales
+- `transformation_script`: Script Python opcional para transformaciones complejas
+- `confidence_score`: Score de confianza de la IA (0.0 a 1.0)
+- `active`: Estado activo/inactivo
+
+**Ejemplo de Mapping:**
+```json
+{
+  "fname": "name",
+  "email_addr": "email",
+  "phone_num": "phone"
+}
+```
+
+#### B. Modelo `numa.synch.issue`
+
+Registra análisis de brechas cuando la IA no puede resolver automáticamente.
+
+**Campos:**
+- `batch_id`: Identificador del batch que generó el issue
+- `remote_token`: Identificador del sistema remoto
+- `model_name`: Nombre del modelo con el issue
+- `issue_type`: Tipo de issue (missing_field, type_mismatch, ambiguity, other)
+- `description`: Explicación de la IA sobre el problema
+- `remote_field_sample`: Muestra de datos del payload para contexto
+- `suggestion`: Sugerencia propuesta por la IA
+- `confidence_score`: Score de confianza del análisis
+- `resolved`: Flag de resolución manual
+
+### 10.4 Flujo de Trabajo
+
+#### Paso 1: Interceptar Falla de Validación
+
+Cuando `_validate_metadata()` falla con `UserError`, el módulo intercepta la excepción y activa el flujo asistido por IA.
+
+#### Paso 2: Verificar Cache
+
+Busca en `numa.synch.ai.map` un mapeo activo para el `remote_token` y `model_name`:
+- **Si existe**: Aplica el mapeo y continúa
+- **Si no existe**: Procede al análisis de IA
+
+#### Paso 3: Análisis de IA
+
+Construye un prompt estructurado que incluye:
+- **Esquema objetivo**: Estructura del modelo Odoo local
+- **Esquema fuente**: Estructura del sistema remoto (inferido de metadata o muestras)
+- **Instrucciones**: Mapear campos basándose en similitud semántica y compatibilidad de tipos
+
+La IA retorna JSON con:
+- `mapping`: Diccionario de mapeos de campos
+- `confidence_score`: Score de confianza (0.0 a 1.0)
+- `issues`: Lista de problemas detectados
+- `critical_issues`: Boolean indicando si hay issues críticos
+
+#### Paso 4: Decisión
+
+**Alta Confianza (>0.9) + Sin Issues Críticos:**
+- Crea registro en `numa.synch.ai.map`
+- Aplica mapeo al payload
+- Continúa con procesamiento estándar
+- Log: "AI Mapping created for node X"
+
+**Baja Confianza O Issues Críticos:**
+- Crea registros en `numa.synch.issue` para cada problema
+- Lanza `UserError` con mensaje descriptivo
+- Aborta transacción
+- Usuario debe revisar issues y resolver manualmente
+
+#### Paso 5: Transformación de Payload
+
+Si existe un mapeo cacheado:
+1. Itera sobre registros del batch
+2. Para cada registro, aplica el mapeo:
+   - Renombra campos según `mapping_json`
+   - Ejecuta `transformation_script` si existe
+3. Pasa payload transformado al procesamiento estándar
+
+### 10.5 Prompt Engineering
+
+El prompt enviado a la IA está diseñado para:
+
+1. **Actuar como Data Engineer**: Especializado en mapeo de esquemas
+2. **Analizar Similitud Semántica**: No solo coincidencia de nombres
+3. **Considerar Compatibilidad de Tipos**: string → char OK, integer → date NO
+4. **Identificar Issues Críticos**: Campos requeridos faltantes, tipos incompatibles
+5. **Proporcionar Scores Conservadores**: Ser cauteloso con la confianza
+6. **Retornar JSON Estructurado**: Formato consistente para parsing
+
+### 10.6 Casos de Uso
+
+#### Caso 1: Sistema Externo con Nombres Diferentes
+
+**Escenario:** Sistema CRM externo usa `customer_name`, Odoo espera `name`
+
+**Solución:**
+1. Primera sincronización: IA detecta y genera mapeo `{"customer_name": "name"}`
+2. Mapeo se cachea
+3. Sincronizaciones futuras usan mapeo cacheado automáticamente
+
+#### Caso 2: Campos Faltantes
+
+**Escenario:** Odoo requiere `is_company` pero sistema externo no lo provee
+
+**Solución:**
+1. IA detecta campo faltante
+2. Issue es registrado con sugerencia
+3. Usuario puede:
+   - Agregar script de transformación con valor por defecto
+   - Actualizar sistema fuente para proveer el campo
+
+#### Caso 3: Transformación Compleja
+
+**Escenario:** Sistema externo tiene `first_name` y `last_name` separados, Odoo tiene `name` único
+
+**Solución:**
+1. IA genera mapeo básico
+2. Usuario agrega script de transformación:
+   ```python
+   if field_name == "name":
+       result = f"{first_name} {last_name}".strip()
+   ```
+
+### 10.7 Ventajas
+
+1. **Flexibilidad Máxima**: Permite sincronizar con cualquier sistema
+2. **Automatización**: Reduce trabajo manual de mapeo
+3. **Cache Inteligente**: Evita llamadas repetidas a IA
+4. **Análisis Detallado**: Gap analysis ayuda a resolver problemas
+5. **Transparente**: Integración seamless con flujo existente
+
+### 10.8 Limitaciones
+
+1. **Dependencia de IA**: Requiere `numa_ai` instalado y configurado
+2. **Latencia Inicial**: Primera vez requiere análisis de IA (subsecuentes usan cache)
+3. **Precisión**: Mapeos pueden necesitar revisión manual
+4. **Threshold de Confianza**: Mapeos con confianza < 0.9 son rechazados
+
+### 10.9 Mejores Prácticas
+
+1. **Revisar Mapeos**: Después de creación automática, verificar y ajustar
+2. **Monitorear Issues**: Revisar regularmente issues no resueltos
+3. **Usar Scripts**: Para transformaciones complejas, usar transformation scripts
+4. **Mantener Cache Limpio**: Desactivar mapeos no usados
+
+---
+
+**Versión del Análisis:** 3.0  
 **Fecha:** 2024  
 **Autor:** Análisis generado automáticamente  
-**Última Actualización:** Incluye validación de metadatos y esquema estricto
+**Última Actualización:** Incluye adaptación asistida por IA y configuración de frecuencia por conexión
