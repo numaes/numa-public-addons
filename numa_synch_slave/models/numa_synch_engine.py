@@ -63,7 +63,16 @@ class NumaSynchEngineSlave(models.Model):
             _logger.info('Found %d records to synchronize', len(records_to_sync))
             
             # Step 2: Serialization
-            serialized_records = self._serialize_records(records_to_sync)
+            # Build mapping of model_name -> sync_rule for binary sync config
+            rules_by_model = {}
+            for rule in self.env['numa.synch.rule'].search([
+                ('active', '=', True),
+                ('direction', 'in', ['bidirectional', 'outgoing'])
+            ]):
+                if rule.model_name:
+                    rules_by_model[rule.model_name] = rule
+            
+            serialized_records = self._serialize_records(records_to_sync, rules_by_model)
             
             # Step 3: Batching & Transport
             batches = self._create_batches(serialized_records, connection.batch_size)
@@ -274,19 +283,25 @@ class NumaSynchEngineSlave(models.Model):
         
         return dependencies
 
-    def _serialize_records(self, records):
+    def _serialize_records(self, records, rules_by_model=None):
         """
         Serialize a list of records to JSON-compatible dictionaries.
         
         :param list records: List of recordsets
+        :param dict rules_by_model: Dictionary mapping model_name to sync_rule
         :return: List of serialized record dictionaries
         :rtype: list
         """
+        if rules_by_model is None:
+            rules_by_model = {}
+        
         serialized = []
         
         for record in records:
             try:
-                vals_dict, _ = self._serialize_record(record)
+                # Get sync rule for this model (if available)
+                sync_rule = rules_by_model.get(record._name)
+                vals_dict, _ = self._serialize_record(record, sync_rule=sync_rule)
                 
                 # Add metadata
                 serialized_record = {
