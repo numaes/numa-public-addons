@@ -10,6 +10,7 @@
         'base',
         'mail',
         'numa_poly',
+        'numa_asynch_exec',
         'website',
     ],
     'data': [
