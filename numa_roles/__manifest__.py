@@ -36,13 +36,22 @@ Key Features:
     'category': 'Security',
     'depends': [
         'base',
+        'web',
     ],
     'data': [
         'security/ir.model.access.csv',
         'security/security.xml',
         'views/res_groups_views.xml',
+        'views/numa_roles_menus.xml',
         'data/security_demo.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'numa_roles/static/src/components/permission_matrix/permission_matrix.scss',
+            'numa_roles/static/src/components/permission_matrix/permission_matrix.js',
+            'numa_roles/static/src/components/permission_matrix/permission_matrix.xml',
+        ],
+    },
     'demo': [],
     'installable': True,
     'application': False,

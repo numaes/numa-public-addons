@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Client Action: Permission Matrix -->
+        <record id="action_permission_matrix" model="ir.actions.client">
+            <field name="name">Matriz de Permisos</field>
+            <field name="tag">numa_roles.matrix_action</field>
+        </record>
+
+        <!-- Menu: Permission Matrix -->
+        <menuitem
+            id="menu_permission_matrix"
+            name="Matriz de Seguridad"
+            parent="menu_access_management"
+            action="action_permission_matrix"
+            sequence="30"
+            groups="base.group_system"
+        />
+    </data>
+</odoo>

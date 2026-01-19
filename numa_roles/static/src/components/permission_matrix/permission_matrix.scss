@@ -1,0 +1,198 @@
+.o_permission_matrix_container {
+    padding: 20px;
+    background-color: #f8f9fa;
+    min-height: 100vh;
+
+    .o_permission_matrix_header {
+        margin-bottom: 20px;
+        
+        h2 {
+            margin-bottom: 10px;
+            color: #212529;
+        }
+    }
+
+    .o_permission_matrix_loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 60px 20px;
+        text-align: center;
+    }
+
+    .o_permission_matrix_content {
+        background-color: white;
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+    }
+
+    .table {
+        margin-bottom: 0;
+        
+        thead {
+            background-color: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            
+            th {
+                border-bottom: 2px solid #dee2e6;
+                font-weight: 600;
+                vertical-align: middle;
+                padding: 12px 8px;
+            }
+        }
+
+        tbody {
+            tr {
+                &:hover {
+                    background-color: #f8f9fa;
+                }
+            }
+        }
+    }
+
+    .o_permission_matrix_permission_col {
+        min-width: 300px;
+        max-width: 400px;
+        position: sticky;
+        left: 0;
+        background-color: #f8f9fa;
+        z-index: 5;
+        border-right: 2px solid #dee2e6;
+    }
+
+    .o_permission_matrix_role_col {
+        min-width: 150px;
+        text-align: center;
+        
+        .o_permission_matrix_role_header {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            height: 150px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 5px;
+            white-space: nowrap;
+            
+            .o_permission_matrix_role_name {
+                font-weight: 500;
+                color: #212529;
+            }
+        }
+    }
+
+    .o_permission_matrix_category_row {
+        background-color: #e9ecef;
+        
+        .o_permission_matrix_category_cell {
+            font-weight: 600;
+            padding: 10px 12px;
+            background-color: #e9ecef;
+            position: sticky;
+            left: 0;
+            z-index: 4;
+            border-right: 2px solid #dee2e6;
+        }
+        
+        .o_permission_matrix_category_spacer {
+            background-color: #e9ecef;
+        }
+    }
+
+    .o_permission_matrix_permission_row {
+        .o_permission_matrix_permission_cell {
+            padding: 10px 12px;
+            background-color: white;
+            position: sticky;
+            left: 0;
+            z-index: 3;
+            border-right: 2px solid #dee2e6;
+            
+            .o_permission_matrix_permission_info {
+                .o_permission_matrix_permission_name {
+                    display: block;
+                    font-weight: 500;
+                    color: #212529;
+                    cursor: help;
+                    
+                    &:hover {
+                        color: #0d6efd;
+                    }
+                }
+                
+                code {
+                    font-size: 0.85em;
+                    color: #6c757d;
+                    background-color: #f8f9fa;
+                    padding: 2px 4px;
+                    border-radius: 3px;
+                }
+            }
+        }
+    }
+
+    .o_permission_matrix_cell {
+        padding: 12px 8px;
+        vertical-align: middle;
+        
+        .form-check {
+            margin: 0;
+            
+            .form-check-input {
+                cursor: pointer;
+                width: 1.25em;
+                height: 1.25em;
+                margin: 0;
+                
+                &:disabled {
+                    cursor: not-allowed;
+                    opacity: 0.6;
+                }
+                
+                &:checked {
+                    background-color: #0d6efd;
+                    border-color: #0d6efd;
+                }
+            }
+            
+            .spinner-border-sm {
+                width: 1rem;
+                height: 1rem;
+                border-width: 0.15em;
+            }
+        }
+    }
+
+    // Responsive adjustments
+    @media (max-width: 1200px) {
+        .o_permission_matrix_role_col {
+            min-width: 120px;
+            
+            .o_permission_matrix_role_header {
+                height: 120px;
+                font-size: 0.9em;
+            }
+        }
+    }
+
+    @media (max-width: 768px) {
+        padding: 10px;
+        
+        .o_permission_matrix_permission_col {
+            min-width: 200px;
+        }
+        
+        .o_permission_matrix_role_col {
+            min-width: 100px;
+            
+            .o_permission_matrix_role_header {
+                height: 100px;
+                font-size: 0.8em;
+            }
+        }
+    }
+}

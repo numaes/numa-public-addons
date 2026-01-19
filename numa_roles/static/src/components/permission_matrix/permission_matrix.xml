@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="numa_roles.PermissionMatrix" owl="1">
+        <div class="o_permission_matrix_container">
+            <div class="o_permission_matrix_header">
+                <h2>Matriz de Permisos</h2>
+                <p class="text-muted">
+                    Gestione los permisos de los roles de forma masiva. 
+                    Marque o desmarque los checkboxes para agregar o quitar permisos de los roles.
+                </p>
+            </div>
+
+            <div t-if="state.loading" class="o_permission_matrix_loading">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+                <p class="mt-2">Cargando matriz de permisos...</p>
+            </div>
+
+            <div t-if="!state.loading" class="o_permission_matrix_content">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover o_list_view">
+                        <thead>
+                            <tr>
+                                <th class="o_permission_matrix_permission_col">
+                                    <div class="o_permission_matrix_sticky_header">
+                                        Permisos
+                                    </div>
+                                </th>
+                                <t t-foreach="state.roles" t-as="role" t-key="role.id">
+                                    <th class="o_permission_matrix_role_col">
+                                        <div class="o_permission_matrix_role_header" t-att-title="role.display_name">
+                                            <span class="o_permission_matrix_role_name">
+                                                <t t-esc="role.display_name"/>
+                                            </span>
+                                        </div>
+                                    </th>
+                                </t>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <t t-foreach="this.categoryNames" t-as="categoryName" t-key="categoryName">
+                                <!-- Category Header Row -->
+                                <tr class="o_permission_matrix_category_row">
+                                    <td colspan="1" class="o_permission_matrix_category_cell">
+                                        <strong>
+                                            <t t-esc="categoryName"/>
+                                        </strong>
+                                    </td>
+                                    <td t-att-colspan="state.roles.length" class="o_permission_matrix_category_spacer"></td>
+                                </tr>
+                                
+                                <!-- Permissions in this category -->
+                                <t t-foreach="state.permissionsByCategory[categoryName]" t-as="permission" t-key="permission.id">
+                                    <tr class="o_permission_matrix_permission_row">
+                                        <td class="o_permission_matrix_permission_cell">
+                                            <div class="o_permission_matrix_permission_info">
+                                                <span 
+                                                    class="o_permission_matrix_permission_name"
+                                                    t-att-title="getPermissionTooltip(permission)">
+                                                    <t t-esc="permission.display_name"/>
+                                                </span>
+                                                <t t-if="permission.technical_code">
+                                                    <small class="text-muted d-block">
+                                                        <code><t t-esc="permission.technical_code"/></code>
+                                                    </small>
+                                                </t>
+                                            </div>
+                                        </td>
+                                        <t t-foreach="state.roles" t-as="role" t-key="role.id">
+                                            <td class="o_permission_matrix_cell text-center">
+                                                <div class="form-check d-flex justify-content-center">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        class="form-check-input o_permission_matrix_checkbox"
+                                                        t-att-checked="state.matrix[role.id][permission.id]"
+                                                        t-att-disabled="isSaving(role.id, permission.id)"
+                                                        t-on-click="() => this.onTogglePermission(role.id, permission.id)"
+                                                    />
+                                                    <t t-if="isSaving(role.id, permission.id)">
+                                                        <span class="spinner-border spinner-border-sm ms-2" role="status">
+                                                            <span class="visually-hidden">Guardando...</span>
+                                                        </span>
+                                                    </t>
+                                                </div>
+                                            </td>
+                                        </t>
+                                    </tr>
+                                </t>
+                            </t>
+                        </tbody>
+                    </table>
+                </div>
+
+                <t t-if="state.roles.length === 0">
+                    <div class="alert alert-info">
+                        <p>No hay roles configurados. Cree roles desde el menú <strong>Gestión de Accesos > Roles</strong>.</p>
+                    </div>
+                </t>
+
+                <t t-if="state.permissions.length === 0">
+                    <div class="alert alert-info">
+                        <p>No hay permisos configurados. Cree permisos desde el menú <strong>Gestión de Accesos > Permisos</strong>.</p>
+                    </div>
+                </t>
+            </div>
+        </div>
+    </t>
+</templates>
