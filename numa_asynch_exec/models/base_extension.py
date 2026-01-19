@@ -1,5 +1,5 @@
 from odoo import models, api
-from ..utils import get_asynch_executor, _run_in_thread
+from ..utils import get_asynch_executor, _run_in_thread, make_json_serializable
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -30,9 +30,9 @@ class AsynchProxy:
                 'model_name': model_name,
                 'res_ids': self.recordset.ids,
                 'method_name': name,
-                'args': args,
-                'kwargs': kwargs,
-                'context': self.recordset.env.context,
+                'args': make_json_serializable(args),
+                'kwargs': make_json_serializable(kwargs),
+                'context': make_json_serializable(self.recordset.env.context),
                 'uid': self.recordset.env.uid,
                 'max_retries': self.retry,
                 'retry_delay': self.retry_delay,

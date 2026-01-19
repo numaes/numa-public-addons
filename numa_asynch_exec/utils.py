@@ -31,8 +31,28 @@ except ImportError:
 
 import time
 import logging
+from datetime import date, datetime
+from odoo.models import BaseModel
 
 _logger = logging.getLogger(__name__)
+
+def make_json_serializable(data):
+    """
+    Recursively processes data to make it JSON serializable.
+    Converts:
+    - datetime/date objects to ISO format strings.
+    - Recordsets to lists of IDs.
+    - Other non-serializable objects to their string representation.
+    """
+    if isinstance(data, (datetime, date)):
+        return data.isoformat()
+    elif isinstance(data, BaseModel):
+        return data.ids
+    elif isinstance(data, dict):
+        return {k: make_json_serializable(v) for k, v in data.items()}
+    elif isinstance(data, (list, tuple)):
+        return [make_json_serializable(v) for v in data]
+    return data
 
 def _run_in_thread(job_id, db_name, context):
     """
