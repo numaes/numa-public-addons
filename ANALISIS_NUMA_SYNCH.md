@@ -67,6 +67,8 @@ El sistema **Numa Synch** es una solución de sincronización offline-first para
 - Sin cron jobs
 - Modelo abstracto para herencia
 - Métodos de serialización reutilizables
+- Validación de metadatos y esquema estricto
+- Generación de hashes de esquema para compatibilidad
 
 #### B. `numa_synch_master` (Master Server)
 **Propósito:** Servidor central que recibe y procesa datos de Slaves.
@@ -80,6 +82,8 @@ El sistema **Numa Synch** es una solución de sincronización offline-first para
 - Last Write Wins (LWW) conflict resolution
 - Namespace Safety (solo modelos permitidos)
 - Reference Safety (manejo graceful de referencias faltantes)
+- Validación estricta de metadatos (versión, esquema)
+- Prevención de corrupción de datos por incompatibilidades
 
 #### C. `numa_synch_slave` (Branch Node)
 **Propósito:** Nodo branch que detecta cambios locales y los envía al Master.
@@ -129,7 +133,17 @@ El sistema **Numa Synch** es una solución de sincronización offline-first para
 │     - Para cada registro: _serialize_record()               │
 │     - Convertir Many2one a {'__type__': 'ref', ...}         │
 │     - Convertir Date/Datetime a strings                      │
-│     - Ignorar Binary fields (performance)                   │
+│     - Manejar Binary fields (si está configurado)            │
+│     - Manejar Computed fields (según configuración)         │
+└───────────────────────┬──────────────────────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────────────────────┐
+│  3.5. Metadata Preparation                                   │
+│     - Extraer modelos únicos de registros serializados      │
+│     - Generar metadata del sistema (odoo_version, db_uuid)   │
+│     - Calcular hashes SHA256 de esquema por modelo           │
+│     - Incluir configuración de sync_rule en hash              │
 └───────────────────────┬──────────────────────────────────────┘
                         │
                         ▼
@@ -145,6 +159,10 @@ El sistema **Numa Synch** es una solución de sincronización offline-first para
 │     Headers: Authorization: Bearer {api_key}                │
 │     Body: {                                                  │
 │       "slave_token": "uuid",                                 │
+│       "meta": {                                              │
+│         "system": {"odoo_version": "...", "db_uuid": "..."},│
+│         "models": {"res.partner": "hash...", ...}         │
+│       },                                                      │
 │       "records": [...]                                      │
 │     }                                                        │
 └───────────────────────┬──────────────────────────────────────┘
@@ -177,6 +195,18 @@ El sistema **Numa Synch** es una solución de sincronización offline-first para
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  MASTER: Receive Batch                                       │
+└───────────────────────┬──────────────────────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────────────────────┐
+│  VALIDATION: Metadata & Schema Check                         │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │ 1. Validar versión de Odoo (debe coincidir exactamente)│ │
+│  │ 2. Validar hashes de esquema de modelos                │ │
+│  │ 3. Si hay incompatibilidad:                             │ │
+│  │    - Lanzar UserError y detener procesamiento          │ │
+│  │    - Prevenir corrupción de datos                       │ │
+│  └────────────────────────────────────────────────────────┘ │
 └───────────────────────┬──────────────────────────────────────┘
                         │
                         ▼
@@ -273,15 +303,34 @@ El sistema **Numa Synch** es una solución de sincronización offline-first para
 ### 3.3 Serialization Engine (`numa.synch.engine`)
 
 **Métodos Abstractos:**
-- `_serialize_record(record)`: Serializa un registro a dict
+- `_serialize_record(record, sync_rule=None)`: Serializa un registro a dict
   - Many2one → `{'__type__': 'ref', 'model': '...', 'id': ...}`
   - Date/Datetime → strings ISO
-  - Binary → skip (performance)
+  - Binary → Serialización opcional con compresión (según sync_rule)
+  - Computed fields → Según configuración (stored vs non-stored)
   - Retorna: `(vals_dict, dependencies_list)`
 
 - `_parse_incoming_ref(ref_dict, source_node)`: Parsea referencia entrante
   - Busca mapping usando `numa.synch.map`
   - Retorna: `local_id` o `False`
+
+**Métodos de Validación (Nuevos):**
+- `_get_system_metadata()`: Genera metadata del sistema
+  - `odoo_version`: Versión de Odoo (ej: "18.0")
+  - `db_uuid`: UUID de la base de datos
+  - `module_version`: Versión instalada de numa_synch
+
+- `_compute_model_hash(model_name, sync_rule=None)`: Calcula hash SHA256 del esquema
+  - Incluye: nombre, tipo, required, relación (para campos relacionales)
+  - Respeta configuración de sync_rule (computed fields, binary)
+  - Determinístico (orden alfabético de campos)
+  - Retorna: Hash SHA256 hexadecimal
+
+- `_validate_metadata(incoming_meta, active_models)`: Valida metadata entrante
+  - Verifica versión de Odoo (debe coincidir exactamente)
+  - Verifica hashes de esquema de modelos
+  - Lanza `UserError` si hay incompatibilidad
+  - Previene corrupción de datos por esquemas incompatibles
 
 ### 3.4 Two-Phase Write Strategy
 
@@ -395,6 +444,8 @@ while queue:
 - **Reference Safety**: Referencias faltantes no causan crashes
 - **Autenticación**: Bearer token para autenticación API
 - **UUID único**: Cada Slave tiene un token único e inmutable
+- **Validación de Esquema**: Verificación estricta de compatibilidad antes de procesar
+- **Prevención de Corrupción**: Detección temprana de incompatibilidades de esquema
 
 ### 4.4 Performance
 - **Batch Processing**: Procesa múltiples registros en una sola request
@@ -424,10 +475,10 @@ while queue:
 - **Impacto**: Conflictos de edición simultánea
 - **Solución futura**: Merge automático o resolución manual de conflictos
 
-#### C. No hay sincronización de campos Binary
-- **Problema**: Campos binarios se ignoran por performance
-- **Impacto**: Archivos adjuntos no se sincronizan
-- **Solución futura**: Sincronización opcional de binary con compresión
+#### C. ~~No hay sincronización de campos Binary~~ ✅ IMPLEMENTADO
+- ~~**Problema**: Campos binarios se ignoran por performance~~
+- ~~**Impacto**: Archivos adjuntos no se sincronizan~~
+- ✅ **Solución implementada**: Sincronización opcional de binary con compresión (configurable por regla)
 
 #### D. No hay manejo de eliminaciones
 - **Problema**: Registros eliminados no se sincronizan
@@ -465,13 +516,14 @@ while queue:
 - Métricas de latencia, throughput, errores
 - Alertas para fallos repetidos
 
-#### F. Validación de Datos
-- Validar datos antes de aplicar
-- Rollback automático en caso de errores de validación
+#### F. ~~Validación de Datos~~ ✅ PARCIALMENTE IMPLEMENTADO
+- ✅ Validación de metadatos y esquema (IMPLEMENTADO)
+- ⚠️ Validación de valores de campos antes de aplicar (PENDIENTE)
+- ⚠️ Rollback automático en caso de errores de validación (PENDIENTE)
 
-#### G. Soporte para Campos Computados
-- Sincronizar campos computados almacenados
-- Recalcular campos computados en destino
+#### G. ~~Soporte para Campos Computados~~ ✅ IMPLEMENTADO
+- ✅ Sincronizar campos computados almacenados (IMPLEMENTADO)
+- ✅ Recalcular campos computados en destino (IMPLEMENTADO)
 
 ### 5.3 Nuevas Funcionalidades Implementadas
 
@@ -487,6 +539,24 @@ while queue:
 - **Campos no almacenados (store=False)**: Recalculados en destino
 - **Configuración**: Por regla de sincronización
 - **Performance**: Recalculación automática después de escrituras
+- **Estado**: ✅ Implementado
+
+#### C. Validación de Metadatos y Esquema Estricto
+- **Implementación**: Validación de compatibilidad antes de procesar batches
+- **Componentes**:
+  - `_get_system_metadata()`: Genera metadata del sistema (versión, UUID, módulo)
+  - `_compute_model_hash()`: Calcula hash SHA256 determinístico del esquema del modelo
+  - `_validate_metadata()`: Valida metadata entrante contra sistema local
+- **Validaciones**:
+  1. **Versión de Odoo**: Debe coincidir exactamente entre Slave y Master
+  2. **Hashes de Esquema**: Estructura de modelos debe ser idéntica
+  3. **DB UUID**: Log informativo (opcional, no bloquea)
+- **Comportamiento**:
+  - Si hay incompatibilidad: Lanza `UserError` y detiene procesamiento
+  - No hay adaptación dinámica: Falla de forma segura
+  - Prevención de corrupción: No procesa datos con esquemas incompatibles
+- **Hash de Esquema**: Incluye nombre, tipo, required, relación (para campos relacionales)
+- **Respeto a Configuración**: Hash considera sync_rule (computed fields, binary)
 - **Estado**: ✅ Implementado
 
 ### 5.4 Consideraciones de Escalabilidad
@@ -521,8 +591,8 @@ while queue:
 - **Mejora**: Rate limiting por Slave token
 
 #### D. Validación de Datos
-- **Actual**: Validación básica
-- **Mejora**: Validación estricta de tipos, constraints
+- **Actual**: Validación básica + validación de metadatos y esquema
+- **Mejora**: Validación estricta de valores de campos, constraints
 
 ---
 
@@ -601,6 +671,9 @@ El sistema **Numa Synch** proporciona una solución robusta y flexible para sinc
 3. ✅ Two-Phase Write resuelve dependencias circulares
 4. ✅ Seguridad con namespace y reference safety
 5. ✅ Performance con batch processing y delta detection
+6. ✅ Validación estricta de metadatos y esquema (previene corrupción)
+7. ✅ Soporte para campos binary con compresión
+8. ✅ Soporte para campos computados (stored y non-stored)
 
 ### Áreas de Mejora:
 1. ⚠️ Sincronización bidireccional completa
@@ -609,12 +682,103 @@ El sistema **Numa Synch** proporciona una solución robusta y flexible para sinc
 4. ⚠️ Conflict resolution más avanzado
 5. ⚠️ Métricas y monitoreo
 6. ✅ Soporte para campos computados (IMPLEMENTADO)
+7. ✅ Validación de metadatos y esquema estricto (IMPLEMENTADO)
 
 ### Recomendación:
 El sistema está listo para uso en producción para casos de uso de sincronización unidireccional (Slave → Master). Para sincronización bidireccional completa, se recomienda implementar las mejoras sugeridas.
 
 ---
 
-**Versión del Análisis:** 1.0  
+---
+
+## 9. Protocolo de Validación de Metadatos
+
+### 9.1 Estructura de Metadata
+
+El sistema implementa validación estricta de metadatos para asegurar compatibilidad entre Slave y Master antes de procesar cualquier dato.
+
+**Estructura del Payload:**
+```json
+{
+  "slave_token": "uuid-string",
+  "meta": {
+    "system": {
+      "odoo_version": "18.0",
+      "db_uuid": "database-uuid",
+      "module_version": "18.0.1.0.0"
+    },
+    "models": {
+      "res.partner": "sha256_hash_string...",
+      "sale.order": "sha256_hash_string...",
+      ...
+    }
+  },
+  "records": [...]
+}
+```
+
+### 9.2 Generación de Metadata (Slave)
+
+**Proceso:**
+1. Después de serialización, extraer modelos únicos de registros
+2. Generar metadata del sistema usando `_get_system_metadata()`
+3. Para cada modelo activo:
+   - Obtener sync_rule correspondiente (si existe)
+   - Calcular hash usando `_compute_model_hash(model_name, sync_rule)`
+4. Incluir metadata solo en el primer batch (evita redundancia)
+
+**Hash de Esquema:**
+- Incluye: nombre de campo, tipo, required, relación (para campos relacionales)
+- Excluye: campos del sistema (id, create_date, write_date, etc.)
+- Respeta: configuración de sync_rule (computed fields, binary)
+- Determinístico: orden alfabético de campos
+
+### 9.3 Validación de Metadata (Master)
+
+**Proceso:**
+1. Extraer metadata del payload JSON
+2. Si metadata presente, validar antes de procesar batch
+3. Validaciones:
+   - **Versión de Odoo**: Debe coincidir exactamente
+   - **Hashes de Esquema**: Deben coincidir para cada modelo
+   - **DB UUID**: Log informativo (no bloquea)
+
+**Comportamiento en Error:**
+- Si versión no coincide: `UserError("Version Mismatch: ...")`
+- Si hash no coincide: `UserError("Schema Mismatch in model ...")`
+- Procesamiento se detiene inmediatamente
+- No se procesa ningún registro del batch
+
+### 9.4 Ventajas de la Validación
+
+1. **Prevención de Corrupción**: Detecta incompatibilidades antes de escribir datos
+2. **Detección Temprana**: Falla rápido, antes de procesar registros
+3. **Mensajes Claros**: Errores descriptivos indican qué modelo tiene problema
+4. **Determinístico**: Hash siempre igual para mismo esquema
+5. **Configurable**: Respeta configuración de sync_rule
+
+### 9.5 Casos de Uso
+
+**Escenario 1: Actualización de Módulo**
+- Slave actualiza módulo que agrega campo nuevo
+- Master aún no tiene el módulo actualizado
+- Hash de esquema difiere → Error detectado antes de procesar
+- Solución: Actualizar Master primero
+
+**Escenario 2: Versión de Odoo Diferente**
+- Slave en Odoo 18.0, Master en Odoo 17.0
+- Versión no coincide → Error detectado inmediatamente
+- Solución: Actualizar ambos a misma versión
+
+**Escenario 3: Configuración Diferente**
+- Slave tiene sync_rule con `sync_computed_fields=True`
+- Master tiene sync_rule con `sync_computed_fields=False`
+- Hash considera configuración → Diferencia detectada
+- Solución: Sincronizar configuración de reglas
+
+---
+
+**Versión del Análisis:** 2.0  
 **Fecha:** 2024  
-**Autor:** Análisis generado automáticamente
+**Autor:** Análisis generado automáticamente  
+**Última Actualización:** Incluye validación de metadatos y esquema estricto
