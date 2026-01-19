@@ -20,28 +20,26 @@
 #
 ##############################################################################
 
-from odoo import models, fields, api, _, registry, exceptions
-from odoo.exceptions import UserError, ValidationError, RedirectWarning
-from odoo import SUPERUSER_ID
-from odoo.loglevels import exception_to_unicode
-from odoo.http import request, Response, ROUTING_KEYS, Stream
+# Standard library
+import datetime
+import functools
+import inspect
+import json
+import logging
+import sys
 
-import odoo
-import werkzeug
+# Third-party
 import werkzeug.exceptions
 import werkzeug.routing
 import werkzeug.utils
 
-from odoo.http import SessionExpiredException
-
-import datetime
-import sys
-import inspect
-import functools
+# Odoo
+import odoo
+from odoo import api, exceptions, fields, models, registry, SUPERUSER_ID, _
+from odoo.exceptions import RedirectWarning, UserError, ValidationError
+from odoo.http import Response, ROUTING_KEYS, SessionExpiredException, Stream, request
+from odoo.loglevels import exception_to_unicode
 from odoo.osv import expression
-
-
-import logging
 _logger = logging.getLogger(__name__)
 
 DT_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -157,7 +155,9 @@ class GeneralException (models.Model):
         Scheduled action to purge exception logs older than 30 days.
         Records marked with 'do_not_purge' are ignored.
         """
-        now = datetime.datetime.utcnow()
+        # Use fields.Datetime.now() instead of deprecated datetime.utcnow()
+        # fields.Datetime handles timezone correctly
+        now = fields.Datetime.now()
         one_month_before_dt = now - datetime.timedelta(days=30)
         one_month_before = one_month_before_dt.strftime(DT_FORMAT)
         to_delete = super(GeneralException, self).search(
@@ -223,104 +223,151 @@ def register_exception(service_name, method, params, db, uid, e):
     
     :param service_name: String identifying the origin (e.g., 'sale.order')
     :param method: Method name where the error occurred
-    :param params: Arguments passed to the method
+    :param params: Arguments passed to the method (dict, list, or any serializable object)
     :param db: Database name
     :param uid: User ID
     :param e: Exception instance
     :return: Unique exception reference string (name) or None
+    
+    Raises:
+        None: This function is designed to never raise exceptions, even if logging fails.
     """
+    # Validate parameters
+    if not service_name:
+        _logger.warning("register_exception called with empty service_name, using 'unknown'")
+        service_name = 'unknown'
+    
     if not db:
+        _logger.debug("register_exception called with empty db, skipping logging")
         return None
 
-    db_registry = odoo.modules.registry.Registry(db)
+    try:
+        db_registry = odoo.modules.registry.Registry(db)
+    except Exception as registry_error:
+        _logger.error("Error accessing registry for database '%s' in register_exception: %s", 
+                     db, registry_error)
+        return None
 
     if not db_registry:
+        _logger.debug("Registry not available for database '%s' in register_exception", db)
         return None
 
     if "base.general_exception" in db_registry:
-        with db_registry.cursor() as new_cr:
-            env = api.Environment(new_cr, SUPERUSER_ID, {})
-            ge_obj = env["base.general_exception"]
+        try:
+            with db_registry.cursor() as new_cr:
+                env = api.Environment(new_cr, SUPERUSER_ID, {})
+                ge_obj = env["base.general_exception"]
 
-            tb = sys.exc_info()[2]
-            if tb:
-                frames = []
-                count = 0
-                while tb and count < MAX_STACK_FRAMES:
-                    frame = tb.tb_frame
-                    local_vars = []
-                    output = '<pre>\n'
-                    try:
-                        if count >= 0:
-                            # Filter sensitive variables to prevent logging passwords, tokens, etc.
-                            filtered_locals = {}
-                            for k, v in frame.f_locals.items():
-                                # Skip variables with sensitive keywords in their name
-                                if any(keyword in k.lower() for keyword in SENSITIVE_KEYWORDS):
-                                    filtered_locals[k] = '<FILTERED - sensitive information>'
-                                else:
-                                    try:
-                                        # Truncate very long values to prevent excessive storage
-                                        str_value = str(v)
-                                        if len(str_value) > 1000:
-                                            str_value = str_value[:1000] + '... (truncated)'
-                                        filtered_locals[k] = str_value
-                                    except Exception:
-                                        filtered_locals[k] = '<Cannot serialize>'
-                            
-                            local_vars = [(0, 0, {'name': str(k), 'value': v})
-                                          for k, v in filtered_locals.items()]
-                            local_vars.sort(key=lambda x: x[2]['name'])
-                            seq = 1
-                            for lv in local_vars:
-                                lv[2]['sequence'] = seq
-                                seq += 1
-                            lines, lineno = inspect.getsourcelines(frame)
-                            for line in lines:
-                                if (frame.f_lineno - 10) < lineno < (frame.f_lineno + 10):
-                                    if frame.f_lineno == lineno:
-                                        fmt = '<b>%5d: %s</b>'
+                tb = sys.exc_info()[2]
+                if tb:
+                    frames = []
+                    count = 0
+                    while tb and count < MAX_STACK_FRAMES:
+                        frame = tb.tb_frame
+                        local_vars = []
+                        output = '<pre>\n'
+                        try:
+                            if count >= 0:
+                                # Filter sensitive variables to prevent logging passwords, tokens, etc.
+                                filtered_locals = {}
+                                for k, v in frame.f_locals.items():
+                                    # Skip variables with sensitive keywords in their name
+                                    if any(keyword in k.lower() for keyword in SENSITIVE_KEYWORDS):
+                                        filtered_locals[k] = '<FILTERED - sensitive information>'
                                     else:
-                                        fmt = '%5d: %s'
-                                    output += fmt % (lineno, line)
-                                lineno += 1
-                    except Exception as process_exception:
-                        output += "\nEXCEPTION DURING PROCESSING: %s" % exception_to_unicode(process_exception)
+                                        try:
+                                            # Truncate very long values to prevent excessive storage
+                                            str_value = str(v)
+                                            if len(str_value) > 1000:
+                                                str_value = str_value[:1000] + '... (truncated)'
+                                            filtered_locals[k] = str_value
+                                        except Exception:
+                                            filtered_locals[k] = '<Cannot serialize>'
+                                
+                                local_vars = [(0, 0, {'name': str(k), 'value': v})
+                                              for k, v in filtered_locals.items()]
+                                local_vars.sort(key=lambda x: x[2]['name'])
+                                seq = 1
+                                for lv in local_vars:
+                                    lv[2]['sequence'] = seq
+                                    seq += 1
+                                lines, lineno = inspect.getsourcelines(frame)
+                                for line in lines:
+                                    if (frame.f_lineno - 10) < lineno < (frame.f_lineno + 10):
+                                        if frame.f_lineno == lineno:
+                                            fmt = '<b>%5d: %s</b>'
+                                        else:
+                                            fmt = '%5d: %s'
+                                        output += fmt % (lineno, line)
+                                    lineno += 1
+                        except Exception as process_exception:
+                            output += "\nEXCEPTION DURING PROCESSING: %s" % exception_to_unicode(process_exception)
 
-                    output += '</pre>\n'
-                    frames.append(
-                        (0, 0, {'file_name': frame.f_code.co_filename,
-                                'line_number': frame.f_lineno,
-                                'src_code': output,
-                                'locals': local_vars}))
-                    count += 1
-                    tb = tb.tb_next
-                frames.reverse()
+                        output += '</pre>\n'
+                        frames.append(
+                            (0, 0, {'file_name': frame.f_code.co_filename,
+                                    'line_number': frame.f_lineno,
+                                    'src_code': output,
+                                    'locals': local_vars}))
+                        count += 1
+                        tb = tb.tb_next
+                    frames.reverse()
 
-                def get_exception_chain(exc):
-                    if exc.__cause__:
-                        return "%s\n\nCaused by:\n%s" % (str(exc), get_exception_chain(exc.__cause__))
-                    return str(exc)
+                    def get_exception_chain(exc):
+                        if exc.__cause__:
+                            return "%s\n\nCaused by:\n%s" % (str(exc), get_exception_chain(exc.__cause__))
+                        return str(exc)
 
-                exc_description = get_exception_chain(e)
+                    exc_description = get_exception_chain(e)
 
-                vals = {
-                    'service': service_name,
-                    'exception': exc_description,
-                    'method': method,
-                    'params': params or [],
-                    'do_not_purge': False,
-                    'user': uid if uid else False,
-                    'frames': frames,
-                }
-                _logger.error("About to log exception [%s], on service [%s, %s, %s]" %
-                              (exc_description, service_name, method, params))
-                try:
-                    ge = ge_obj.sudo().create(vals)
-                    ename = ge.name
-                    return ename
-                except Exception as loggingException:
-                    _logger.error("Error logging exception, exception [%s]" % loggingException)
+                    # Serialize params safely to prevent issues with non-serializable objects
+                    params_str = None
+                    try:
+                        if params is None:
+                            params_str = None
+                        elif isinstance(params, (str, int, float, bool)):
+                            params_str = str(params)
+                        elif isinstance(params, (dict, list)):
+                            # Try JSON serialization first for structured data
+                            params_str = json.dumps(params, default=str, ensure_ascii=False)
+                        else:
+                            # Fallback to string representation
+                            params_str = str(params)
+                            # Truncate if too long
+                            if len(params_str) > 10000:
+                                params_str = params_str[:10000] + '... (truncated)'
+                    except Exception as serialize_error:
+                        _logger.warning("Error serializing params in register_exception: %s", serialize_error)
+                        params_str = '<Error serializing params: %s>' % str(serialize_error)
+
+                    vals = {
+                        'service': service_name,
+                        'exception': exc_description,
+                        'method': method or 'unknown',
+                        'params': params_str if params_str else '{}',
+                        'do_not_purge': False,
+                        'user': uid if uid else False,
+                        'frames': frames,
+                    }
+                    _logger.error("About to log exception [%s], on service [%s, %s, %s]" %
+                                  (exc_description, service_name, method, params))
+                    try:
+                        ge = ge_obj.sudo().create(vals)
+                        ename = ge.name
+                        new_cr.commit()
+                        return ename
+                    except Exception as create_exception:
+                        new_cr.rollback()
+                        _logger.error("Error creating exception record in database: %s. "
+                                     "Service: %s, Method: %s", 
+                                     create_exception, service_name, method, exc_info=True)
+                        return None
+        except Exception as cursor_error:
+            _logger.error("Error opening database cursor in register_exception: %s. "
+                         "Database: %s", cursor_error, db, exc_info=True)
+            return None
+    else:
+        _logger.debug("Model 'base.general_exception' not found in registry for database '%s'", db)
 
     return None
 
