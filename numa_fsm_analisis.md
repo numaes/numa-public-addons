@@ -295,9 +295,9 @@ def _execute_chain(self):
 - Claridad en diseño: eventos globales vs específicos de estado
 
 **Impacto:**
-- ⚠️ Cambio en estructura de datos: requiere actualizar definiciones existentes
-- ⚠️ Cambios en widget OWL: requiere desarrollo frontend
-- ⚠️ Migración: definiciones existentes necesitan recompilación
+- ⚠️ Cambio en estructura de datos: requiere actualizar definiciones existentes (compatible hacia atrás)
+- ✅ Widget OWL: implementación completa con UI para estados globales
+- ⚠️ Migración: definiciones existentes necesitan recompilación (automática)
 
 ---
 
