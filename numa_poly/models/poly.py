@@ -13,47 +13,26 @@ The polymorphic model system enables:
 """
 
 import logging
-import pprint
-from collections import OrderedDict, defaultdict, deque
-import inspect
+from collections import OrderedDict, defaultdict
+import typing
 
-from operator import attrgetter, itemgetter
-
-from attr import attributes
-from docutils.nodes import field_name
-
+# Odoo imports
 import odoo
-from odoo import api, _, exceptions
-from odoo import models, fields
-from odoo.models import BaseModel, MetaModel
-import odoo
+from odoo import api, models, fields, _
 from odoo import SUPERUSER_ID
-from odoo import api
-from odoo import tools
-from odoo.api import ContextType, DomainType, IdType, NewId, M, T
+from odoo.models import BaseModel, LOG_ACCESS_COLUMNS, INSERT_BATCH_SIZE, UPDATE_BATCH_SIZE, GC_UNLINK_LIMIT
 from odoo.exceptions import AccessError, MissingError, ValidationError, UserError
-from odoo.tools import (
-    clean_context, config, date_utils, discardattr,
-    DEFAULT_SERVER_DATE_FORMAT, DEFAULT_SERVER_DATETIME_FORMAT, format_list,
-    frozendict, get_lang, lazy_classproperty, OrderedSet,
-    ormcache, partition, Query, split_every, unique,
-    SQL, sql,
-)
-from odoo.tools.misc import LastOrderedSet, ReversedIterable, unquote, Sentinel, SENTINEL
+from odoo.tools import OrderedSet, Query, split_every, SQL, sql
+from odoo.tools.misc import LastOrderedSet, Sentinel, SENTINEL
+from odoo.api import Self, ValuesType, IdType
 
-from odoo.models import LOG_ACCESS_COLUMNS, INSERT_BATCH_SIZE, UPDATE_BATCH_SIZE, SQL_DEFAULT, GC_UNLINK_LIMIT
-
+# Local imports
 from . import expression
 
-from odoo.fields import first, MetaField, T
-
-
-import typing
+# Type checking imports
 if typing.TYPE_CHECKING:
     from collections.abc import Reversible
     from odoo.modules.registry import Registry
-
-from odoo.api import Self, ValuesType, IdType
 
 
 _logger = logging.getLogger(__name__)
@@ -282,6 +261,10 @@ class PolyBase(BaseModel):
         """
         Convert this record to its most concrete model representation.
         If no concrete model is defined (legacy records), returns self.
+        
+        Note: We use sudo() to read ir.poly_base because this field is part of the
+        polymorphic infrastructure and should be accessible regardless of record rules.
+        The actual data access is still controlled by the concrete model's access rules.
         """
         self.ensure_one()
         # If the field is not even defined on this model, we are the concrete representation
@@ -297,6 +280,10 @@ class PolyBase(BaseModel):
         """
         Compute the concrete_model_id field for polymorphic models.
         Handles fallback to current model for legacy records (no ir.poly_base entry).
+        
+        Note: We use sudo() to read ir.poly_base because this computed field is part of
+        the polymorphic infrastructure metadata and must be accessible to determine the
+        concrete model type, independent of access rules on the data itself.
         """
         for record in self:
             # Check existence in ir.poly_base using the shared ID
@@ -740,6 +727,19 @@ class PolyBase(BaseModel):
             return super().create(data_list)
         else:
             # It is a polymorphic create
+            # Validate permissions on dependent models before creating
+            for base_name in self._depend_models.keys():
+                if base_name not in self.pool:
+                    raise ValidationError(
+                        _('Dependent model %s does not exist') % base_name
+                    )
+                base_model = self.env[base_name]
+                if not base_model.check_access_rights('create', raise_exception=False):
+                    raise AccessError(
+                        _('You cannot create records: insufficient permissions on %s') %
+                        base_model._description
+                    )
+            
             new_records = self
 
             # Get all related fields and their definitions
@@ -766,17 +766,21 @@ class PolyBase(BaseModel):
                 if base not in bases_to_create:
                     bases_to_create[base] = set()
 
-            # Process each record to create
-            for data in data_list:
-                # Handle explicit ID or create a new one via ir.poly_base
-                if 'id' in data:
-                    # Check if record with this ID already exists
-                    existing_record = self.search([('id', '=', data['id'])], limit=1)
-                    if existing_record:
+            # Optimize: check all explicit IDs in batch before processing
+            explicit_ids = [data['id'] for data in data_list if 'id' in data]
+            if explicit_ids:
+                existing_ids = set(self.search([('id', 'in', explicit_ids)]).ids)
+                for data in data_list:
+                    if 'id' in data and data['id'] in existing_ids:
                         raise ValidationError(
                             _('You are trying to create a %s with explicit id %d. It exists already!') %
                             (self._name, data['id'])
                         )
+
+            # Process each record to create
+            for data in data_list:
+                # Handle explicit ID or create a new one via ir.poly_base
+                if 'id' in data:
                     new_id = data['id']
                 else:
                     # Create a new ir.poly_base record to get a new ID
@@ -1165,6 +1169,8 @@ class PolyTransientModel(PolyModel):
             SQL(f"LIMIT { GC_UNLINK_LIMIT }"),
         ))
         ids = [x[0] for x in self._cr.fetchall()]
+        # Use sudo() for autovacuum: transient records cleanup is a system operation
+        # that should proceed regardless of user permissions
         self.sudo().browse(ids).unlink()
         if len(ids) >= GC_UNLINK_LIMIT:
             self.env.ref('base.autovacuum_job')._trigger()
