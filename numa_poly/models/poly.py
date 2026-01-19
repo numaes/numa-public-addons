@@ -285,7 +285,7 @@ class PolyBase(BaseModel):
         """
         self.ensure_one()
         # If the field is not even defined on this model, we are the concrete representation
-        if self._depend_models == None:
+        if self._depend_models is None:
             return self
         poly_base = self.env['ir.poly_base'].sudo().browse(self.id)
         if poly_base.concrete_model_id.model == self._name:
@@ -340,12 +340,15 @@ class PolyBase(BaseModel):
 
         Raises:
             TypeError: If a dependent model doesn't exist or is not polymorphic
+            ValueError: If circular dependencies are detected
         """
         # First build the model using the standard Odoo mechanism
         model_class_without_depends = super(PolyBase, cls)._build_model(pool, cr)
 
         # Only apply polymorphic inheritance if _depend_models is defined
-        if hasattr(cls, '_depend_models') and cls._depend_models != None:
+        if hasattr(cls, '_depend_models') and cls._depend_models is not None:
+            # Validate dependency cycles before building
+            cls._validate_dependency_cycles(pool)
 
             # All models except 'ir.poly_base' implicitly depend on 'ir.poly_base'
             name = cls._name
@@ -369,7 +372,7 @@ class PolyBase(BaseModel):
                         bases.add(base)
                 else:
                     # Check that the parent is polymorphic (except for ir.poly_base)
-                    if parent_class._name != 'ir.poly_base' and parent_class._depend_models == None:
+                    if parent_class._name != 'ir.poly_base' and parent_class._depend_models is None:
                         raise TypeError("Model %r depends from non-polymorphic model %r. Only polymorphic is allowed" %
                                         (name, parent))
 
@@ -388,6 +391,48 @@ class PolyBase(BaseModel):
             pool[name] = model_class_without_depends
 
         return model_class_without_depends
+
+    @classmethod
+    def _validate_dependency_cycles(cls, pool, visited=None, rec_stack=None):
+        """
+        Validate that there are no circular dependencies in polymorphic models.
+
+        This method uses depth-first search to detect cycles in the dependency graph.
+
+        Args:
+            pool: The model registry pool
+            visited: Set of already visited models (for recursion)
+            rec_stack: Set of models in the current recursion stack (for cycle detection)
+
+        Raises:
+            ValueError: If a circular dependency is detected
+        """
+        if visited is None:
+            visited = set()
+        if rec_stack is None:
+            rec_stack = set()
+
+        name = cls._name
+        if name in rec_stack:
+            raise ValueError(
+                f"Circular dependency detected in polymorphic model {name}. "
+                f"Path: {' -> '.join(rec_stack)} -> {name}"
+            )
+
+        if name in visited:
+            return
+
+        visited.add(name)
+        rec_stack.add(name)
+
+        if hasattr(cls, '_depend_models') and cls._depend_models:
+            for parent_name in cls._depend_models.keys():
+                if parent_name in pool:
+                    parent_class = pool[parent_name]
+                    if hasattr(parent_class, '_validate_dependency_cycles'):
+                        parent_class._validate_dependency_cycles(pool, visited, rec_stack)
+
+        rec_stack.remove(name)
 
     def _setup_base(self):
         """
@@ -434,7 +479,7 @@ class PolyBase(BaseModel):
                 return 1
 
         # Only perform ID conflict resolution for polymorphic models
-        if self._depend_models != None:
+        if self._depend_models is not None:
             # Ensure no polymorphic models have existing records
             # with IDs clashing with newly created polymorphic records
             poly_base_id = get_next_id('ir.poly_base')
@@ -690,7 +735,7 @@ class PolyBase(BaseModel):
 
         TODO: Investigate if access rules should be applied base by base also
         """
-        if self._depend_models == None:
+        if self._depend_models is None:
             # Normal Odoo ORM model, just process it the normal way
             return super().create(data_list)
         else:
@@ -853,7 +898,7 @@ class PolyBase(BaseModel):
         result = super().unlink()
 
         # For polymorphic models, also delete records in dependent models
-        if self._depend_models != None:
+        if self._depend_models is not None:
             for base in self._depend_models:
                 base_model = self.env[base]
                 base_model.browse(self.ids).unlink()
@@ -954,24 +999,26 @@ class PolyBase(BaseModel):
 
 
         # Update audit fields for polymorphic models
-        if self._log_access and self._depend_models != None and self._name != 'ir.poly_base':
+        if self._log_access and self._depend_models is not None and self._name != 'ir.poly_base':
             poly_base_model = self.env['ir.poly_base']
             log_vals = {'write_uid': self.env.uid, 'write_date': self.env.cr.now()}
             poly_base_model.browse(self.ids).write(log_vals)
 
     @api.model
     def fields_get(self, allfields=None, attributes=None):
-        fields = super().fields_get(allfields=allfields, attributes=attributes)
-        if self._depends != None and list(self._depends.keys()):
+        result = super().fields_get(allfields=allfields, attributes=attributes)
+        if self._depend_models is not None and self._depend_models:
             # Ensure all dependent models are in the bases_to_create dict
-            depends_reverse = list(self._depends.keys())
+            depends_reverse = list(self._depend_models.keys())
             depends_reverse.reverse()
             for base in depends_reverse:
                 base_model = self.env[base]
-                for inherited_field in base_model.fields_get(allfields=allfields, attributes=attributes):
-                    if inherited_field not in fields:
-                        fields[inherited_field] = inherited_field
-        return fields
+                base_fields = base_model.fields_get(allfields=allfields, attributes=attributes)
+                # Add inherited fields that don't exist in result
+                for field_name, field_attrs in base_fields.items():
+                    if field_name not in result:
+                        result[field_name] = field_attrs
+        return result
 
     def _field_to_sql(self, alias: str, fname: str, query: (Query | None) = None, flush: bool = True) -> SQL:
         """ Return an :class:`SQL` object that represents the value of the given

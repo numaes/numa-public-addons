@@ -429,11 +429,15 @@ class PolyExpression(expression):
                 # Non-stored field should provide an implementation of search.
                 if not field.search:
                     # field does not support search!
-                    _logger.error("Non-stored field %s cannot be searched.", field, exc_info=True)
+                    _logger.warning(
+                        "Non-stored field %s.%s cannot be searched. "
+                        "Search condition will be ignored.",
+                        model._name, field.name, exc_info=True
+                    )
                     if _logger.isEnabledFor(logging.DEBUG):
                         _logger.debug(''.join(traceback.format_stack()))
-                    # Ignore it: generate a dummy leaf.
-                    domain = []
+                    # Generate a domain that matches nothing instead of empty domain
+                    domain = [('id', '=', False)]
                 else:
                     # Let the field generate a domain.
                     if len(path) > 1:
@@ -458,11 +462,15 @@ class PolyExpression(expression):
                 # Odoo 18: no todos los modelos definen _depend_models (ej: res.users)
                 if not field.search:
                     # field does not support search!
-                    _logger.error("Non-stored field %s cannot be searched.", field, exc_info=True)
+                    _logger.warning(
+                        "Non-stored field %s.%s cannot be searched. "
+                        "Search condition will be ignored.",
+                        model._name, field.name, exc_info=True
+                    )
                     if _logger.isEnabledFor(logging.DEBUG):
                         _logger.debug(''.join(traceback.format_stack()))
-                    # Ignore it: generate a dummy leaf.
-                    domain = []
+                    # Generate a domain that matches nothing instead of empty domain
+                    domain = [('id', '=', False)]
                 else:
                     right = comodel._search([(path[1], operator, right)])
                     domain = [('id', 'in', right)]
