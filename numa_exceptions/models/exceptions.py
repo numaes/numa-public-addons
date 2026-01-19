@@ -46,6 +46,13 @@ _logger = logging.getLogger(__name__)
 
 DT_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+# Maximum number of frames to process in stack trace (prevents memory issues)
+MAX_STACK_FRAMES = 100
+
+# Keywords to filter from local variables (security: prevent logging sensitive data)
+SENSITIVE_KEYWORDS = ['password', 'passwd', 'pwd', 'token', 'secret', 'key', 'api_key', 
+                      'access_token', 'auth', 'credential', 'private', 'sensitive']
+
 
 class VariableValue(models.Model):
     """
@@ -239,14 +246,30 @@ def register_exception(service_name, method, params, db, uid, e):
             if tb:
                 frames = []
                 count = 0
-                while tb:
+                while tb and count < MAX_STACK_FRAMES:
                     frame = tb.tb_frame
                     local_vars = []
                     output = '<pre>\n'
                     try:
                         if count >= 0:
-                            local_vars = [(0, 0, {'name': str(k), 'value': str(v)})
-                                          for k, v in frame.f_locals.items()]
+                            # Filter sensitive variables to prevent logging passwords, tokens, etc.
+                            filtered_locals = {}
+                            for k, v in frame.f_locals.items():
+                                # Skip variables with sensitive keywords in their name
+                                if any(keyword in k.lower() for keyword in SENSITIVE_KEYWORDS):
+                                    filtered_locals[k] = '<FILTERED - sensitive information>'
+                                else:
+                                    try:
+                                        # Truncate very long values to prevent excessive storage
+                                        str_value = str(v)
+                                        if len(str_value) > 1000:
+                                            str_value = str_value[:1000] + '... (truncated)'
+                                        filtered_locals[k] = str_value
+                                    except Exception:
+                                        filtered_locals[k] = '<Cannot serialize>'
+                            
+                            local_vars = [(0, 0, {'name': str(k), 'value': v})
+                                          for k, v in filtered_locals.items()]
                             local_vars.sort(key=lambda x: x[2]['name'])
                             seq = 1
                             for lv in local_vars:
@@ -287,7 +310,7 @@ def register_exception(service_name, method, params, db, uid, e):
                     'method': method,
                     'params': params or [],
                     'do_not_purge': False,
-                    'user': uid,
+                    'user': uid if uid else False,
                     'frames': frames,
                 }
                 _logger.error("About to log exception [%s], on service [%s, %s, %s]" %
@@ -316,13 +339,24 @@ class IrHttp(models.AbstractModel):
         except Exception as e:
             _logger.exception(e)
             # Log the exception and get a unique reference ID
-            ename = register_exception(
-                'Endpoint %s' % request.httprequest,
-                'IrHttp.dispatch',
-                request.params,
-                request.db or False,
-                request.env.uid,
-                e)
+            # Validate request is available before accessing its attributes
+            if request:
+                ename = register_exception(
+                    'Endpoint %s' % (request.httprequest if hasattr(request, 'httprequest') else 'Unknown'),
+                    'IrHttp.dispatch',
+                    request.params if hasattr(request, 'params') else {},
+                    request.db if hasattr(request, 'db') else False,
+                    request.env.uid if hasattr(request, 'env') else SUPERUSER_ID,
+                    e)
+            else:
+                # Fallback for non-HTTP contexts (e.g., tests, cron)
+                ename = register_exception(
+                    'IrHttp.dispatch (no request context)',
+                    'IrHttp.dispatch',
+                    {},
+                    False,
+                    SUPERUSER_ID,
+                    e)
 
             # For critical system errors, wrap the exception in a UserError 
             # with the reference ID to help the user report it.
