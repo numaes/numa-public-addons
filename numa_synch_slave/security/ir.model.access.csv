@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_numa_synch_connection_user,numa.synch.connection - User,model_numa_synch_connection,base.group_user,1,1,1,1
+access_numa_synch_connection_system,numa.synch.connection - System,model_numa_synch_connection,base.group_system,1,1,1,1

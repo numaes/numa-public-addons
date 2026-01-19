@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+        <!-- Tree View for numa.synch.connection -->
+        <record id="view_numa_synch_connection_tree" model="ir.ui.view">
+            <field name="name">numa.synch.connection.tree</field>
+            <field name="model">numa.synch.connection</field>
+            <field name="arch" type="xml">
+                <tree string="Synchronization Connections" decoration-muted="not active">
+                    <field name="name"/>
+                    <field name="master_url"/>
+                    <field name="slave_token"/>
+                    <field name="last_sync_date"/>
+                    <field name="active"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- Form View for numa.synch.connection -->
+        <record id="view_numa_synch_connection_form" model="ir.ui.view">
+            <field name="name">numa.synch.connection.form</field>
+            <field name="model">numa.synch.connection</field>
+            <field name="arch" type="xml">
+                <form string="Synchronization Connection">
+                    <header>
+                        <button name="action_test_connection"
+                                type="object"
+                                string="Test Connection"
+                                class="btn-primary"
+                                icon="fa-plug"/>
+                        <button name="action_run_sync"
+                                type="object"
+                                string="Run Sync Now"
+                                class="btn-secondary"
+                                icon="fa-refresh"/>
+                    </header>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="name"/>
+                                <field name="active"/>
+                            </group>
+                            <group>
+                                <field name="slave_token" readonly="1"/>
+                                <field name="last_sync_date" readonly="1"/>
+                            </group>
+                        </group>
+                        <group string="Master Server Configuration">
+                            <group>
+                                <field name="master_url" placeholder="https://my-central-odoo.com"/>
+                                <field name="master_db"/>
+                            </group>
+                            <group>
+                                <field name="api_key" password="True"/>
+                            </group>
+                        </group>
+                        <group string="Synchronization Settings">
+                            <field name="batch_size"/>
+                            <div class="alert alert-info" role="alert">
+                                <p>
+                                    <strong>Batch Size:</strong> Number of records to send per HTTP request.
+                                    Larger batches are more efficient but may timeout on slow connections.
+                                    Recommended: 50-200 records.
+                                </p>
+                            </div>
+                        </group>
+                        <div class="alert alert-warning" role="alert">
+                            <p>
+                                <strong>Slave Token:</strong> This UUID uniquely identifies this Slave node to the Master.
+                                It is generated automatically and cannot be changed. Make sure to keep it secure.
+                            </p>
+                        </div>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Search View for numa.synch.connection -->
+        <record id="view_numa_synch_connection_search" model="ir.ui.view">
+            <field name="name">numa.synch.connection.search</field>
+            <field name="model">numa.synch.connection</field>
+            <field name="arch" type="xml">
+                <search string="Search Synchronization Connections">
+                    <field name="name"/>
+                    <field name="master_url"/>
+                    <field name="slave_token"/>
+                    <separator/>
+                    <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+                    <filter string="Inactive" name="inactive" domain="[('active', '=', False)]"/>
+                </search>
+            </field>
+        </record>
+
+        <!-- Action for numa.synch.connection -->
+        <record id="action_numa_synch_connection" model="ir.actions.act_window">
+            <field name="name">Synchronization Connections</field>
+            <field name="res_model">numa.synch.connection</field>
+            <field name="view_mode">tree,form</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    Create a connection to the Master server
+                </p>
+                <p>
+                    Configure the connection details to synchronize this Slave node
+                    with the Master server. The Slave Token is automatically generated
+                    and uniquely identifies this node.
+                </p>
+            </field>
+        </record>
+
+        <!-- Menu Items -->
+        <menuitem id="menu_numa_synch_slave_connection"
+                  name="Slave Connections"
+                  parent="numa_synch.menu_numa_synch_root"
+                  action="action_numa_synch_connection"
+                  sequence="30"/>
+    </data>
+</odoo>
