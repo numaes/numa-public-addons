@@ -27,7 +27,7 @@ class NumaSynchEngineMaster(models.Model):
     _inherit = 'numa.synch.engine'
     _description = 'Master Synchronization Engine'
 
-    def process_incoming_batch_master(self, slave_token, records):
+    def process_incoming_batch_master(self, slave_token, records, metadata=None):
         """
         Process an incoming synchronization batch from a Slave.
         
@@ -46,6 +46,7 @@ class NumaSynchEngineMaster(models.Model):
                 },
                 ...
             ]
+        :param dict metadata: Optional metadata for protocol validation
         :return: Dictionary with updated mappings:
             {
                 "updated_mappings": [
@@ -64,6 +65,13 @@ class NumaSynchEngineMaster(models.Model):
         
         if not records or not isinstance(records, list):
             raise ValidationError(_('records must be a non-empty list'))
+        
+        # Validate metadata if provided (strict schema validation)
+        if metadata:
+            # Extract unique model names from records
+            active_models = list(set(rec.get('model') for rec in records if rec.get('model')))
+            if active_models:
+                self._validate_metadata(metadata, active_models)
         
         # Wrap everything in sync context to disable automations
         with self.env.context(sync_mode=True, tracking_disable=True):

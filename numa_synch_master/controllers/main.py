@@ -69,6 +69,7 @@ class NumaSynchMasterController(http.Controller):
             
             slave_token = json_data.get('slave_token')
             records = json_data.get('records', [])
+            metadata = json_data.get('meta')
             
             # Validate required fields
             if not slave_token:
@@ -95,8 +96,8 @@ class NumaSynchMasterController(http.Controller):
             # Get the synchronization engine
             engine = request.env['numa.synch.engine']
             
-            # Process the batch
-            result = engine.process_incoming_batch_master(slave_token, records)
+            # Process the batch (metadata validation happens inside)
+            result = engine.process_incoming_batch_master(slave_token, records, metadata)
             
             return {
                 'status': 'success',

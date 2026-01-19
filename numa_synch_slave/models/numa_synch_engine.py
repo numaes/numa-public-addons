@@ -74,6 +74,11 @@ class NumaSynchEngineSlave(models.Model):
             
             serialized_records = self._serialize_records(records_to_sync, rules_by_model)
             
+            # Step 2.5: Prepare metadata for protocol validation
+            # Get unique models from serialized records
+            active_models = list(set(rec.get('model') for rec in serialized_records if rec.get('model')))
+            metadata = self._prepare_metadata(active_models, rules_by_model)
+            
             # Step 3: Batching & Transport
             batches = self._create_batches(serialized_records, connection.batch_size)
             
@@ -85,7 +90,7 @@ class NumaSynchEngineSlave(models.Model):
                     batch_idx, len(batches), len(batch)
                 )
                 
-                success = self._send_batch(connection, batch, batch_idx)
+                success = self._send_batch(connection, batch, batch_idx, metadata)
                 
                 if not success:
                     all_batches_succeeded = False
@@ -341,13 +346,39 @@ class NumaSynchEngineSlave(models.Model):
         
         return batches
 
-    def _send_batch(self, connection, batch, batch_number):
+    def _prepare_metadata(self, active_models, rules_by_model):
+        """
+        Prepare metadata for protocol validation.
+        
+        :param list active_models: List of model names in the batch
+        :param dict rules_by_model: Dictionary mapping model_name to sync_rule
+        :return: Metadata dictionary
+        :rtype: dict
+        """
+        # Get system metadata
+        system_meta = self._get_system_metadata()
+        
+        # Calculate model hashes
+        model_hashes = {}
+        for model_name in active_models:
+            sync_rule = rules_by_model.get(model_name)
+            model_hash = self._compute_model_hash(model_name, sync_rule)
+            if model_hash:
+                model_hashes[model_name] = model_hash
+        
+        return {
+            'system': system_meta,
+            'models': model_hashes,
+        }
+
+    def _send_batch(self, connection, batch, batch_number, metadata=None):
         """
         Send a batch of records to the Master server.
         
         :param recordset connection: numa.synch.connection record
         :param list batch: List of serialized records
         :param int batch_number: Batch number for logging
+        :param dict metadata: Optional metadata for protocol validation
         :return: True if successful, False otherwise
         :rtype: bool
         """
@@ -355,11 +386,15 @@ class NumaSynchEngineSlave(models.Model):
         master_url = connection.master_url.rstrip('/')
         endpoint = f"{master_url}/numa_synch/api/v1/sync_batch"
         
-        # Prepare payload
+        # Prepare payload with metadata
         payload = {
             'slave_token': connection.slave_token,
             'records': batch
         }
+        
+        # Add metadata if provided (only for first batch to avoid redundancy)
+        if metadata and batch_number == 1:
+            payload['meta'] = metadata
         
         # Prepare headers
         headers = {

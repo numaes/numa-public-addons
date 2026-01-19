@@ -7,10 +7,11 @@ logic for serializing and deserializing records.
 """
 
 from odoo import models, fields, api, _
-from odoo.exceptions import ValidationError
+from odoo.exceptions import ValidationError, UserError
 import logging
 import base64
 import gzip
+import hashlib
 from datetime import datetime
 
 _logger = logging.getLogger(__name__)
@@ -319,3 +320,194 @@ class NumaSynchEngine(models.AbstractModel):
         except Exception as e:
             _logger.error('Error deserializing binary field: %s', str(e))
             return None
+
+    def _get_system_metadata(self):
+        """
+        Generate system metadata for protocol validation.
+        
+        Returns a dictionary containing identifying information about the local instance:
+        - odoo_version: Odoo server version (e.g., "18.0")
+        - db_uuid: Database UUID
+        - module_version: Installed version of numa_synch
+        
+        :return: Dictionary with system metadata
+        :rtype: dict
+        """
+        try:
+            import odoo
+            odoo_version = odoo.service.common.exp_version()['server_version']
+        except Exception:
+            # Fallback if exp_version is not available
+            odoo_version = self.env['ir.module.module'].search([
+                ('name', '=', 'base')
+            ], limit=1).latest_version or '18.0'
+        
+        db_uuid = self.env['ir.config_parameter'].sudo().get_param('database.uuid') or ''
+        
+        # Get module version
+        module = self.env['ir.module.module'].search([
+            ('name', '=', 'numa_synch')
+        ], limit=1)
+        module_version = module.latest_version if module else '18.0.1.0.0'
+        
+        return {
+            'odoo_version': odoo_version,
+            'db_uuid': db_uuid,
+            'module_version': module_version,
+        }
+
+    def _compute_model_hash(self, model_name, sync_rule=None):
+        """
+        Calculate a deterministic SHA256 hash representing the current structure
+        of the model restricted to whitelisted fields from sync rules.
+        
+        The hash is based on:
+        - Field name
+        - Field type
+        - Required status
+        - Relation (for relational fields)
+        
+        :param str model_name: Technical name of the model
+        :param recordset sync_rule: Optional numa.synch.rule for field filtering
+        :return: SHA256 hash string
+        :rtype: str
+        """
+        try:
+            model = self.env[model_name]
+        except KeyError:
+            _logger.warning('Model %s does not exist', model_name)
+            return None
+        
+        model_fields = model._fields
+        
+        # System fields to exclude from hash
+        system_fields = {
+            'id', 'create_date', 'create_uid', 'write_date', 'write_uid',
+            '__last_update', 'display_name', 'display_type',
+        }
+        
+        # Build field signatures
+        field_signatures = []
+        
+        for field_name, field in model_fields.items():
+            # Skip system fields
+            if field_name in system_fields:
+                continue
+            
+            # Skip computed fields that are not stored (unless sync_rule allows)
+            if field.compute and not field.store:
+                if not sync_rule or not sync_rule.sync_computed_fields:
+                    continue
+            
+            # Skip related fields
+            if field.related:
+                continue
+            
+            # Build signature: name:type:required:relation
+            signature_parts = [
+                field_name,
+                field.type,
+                str(field.required),
+            ]
+            
+            # Add relation info for relational fields
+            if field.type in ('many2one', 'one2many', 'many2many'):
+                signature_parts.append(field.comodel_name or '')
+            else:
+                signature_parts.append('')
+            
+            signature = ':'.join(signature_parts)
+            field_signatures.append(signature)
+        
+        # Sort signatures alphabetically for determinism
+        field_signatures.sort()
+        
+        # Concatenate and hash
+        concatenated = '\n'.join(field_signatures)
+        hash_obj = hashlib.sha256(concatenated.encode('utf-8'))
+        
+        return hash_obj.hexdigest()
+
+    def _validate_metadata(self, incoming_meta, active_models):
+        """
+        Validate incoming metadata against local system.
+        
+        Performs:
+        1. Version check (Odoo version must match)
+        2. DB UUID check (optional, logs warning if different)
+        3. Schema check (model hashes must match)
+        
+        :param dict incoming_meta: Metadata dictionary from incoming JSON
+        :param list active_models: List of model names in the batch
+        :raises UserError: If validation fails
+        """
+        if not incoming_meta:
+            raise UserError(_('Metadata is required for synchronization'))
+        
+        # Get local system metadata
+        local_meta = self._get_system_metadata()
+        
+        # 1. Version Check
+        incoming_version = incoming_meta.get('system', {}).get('odoo_version')
+        if incoming_version != local_meta['odoo_version']:
+            raise UserError(_(
+                'Version Mismatch: Remote Odoo version (%s) does not match '
+                'local version (%s). Synchronization requires identical Odoo versions.'
+            ) % (incoming_version, local_meta['odoo_version']))
+        
+        # 2. DB UUID Check (Optional - just log)
+        incoming_db_uuid = incoming_meta.get('system', {}).get('db_uuid')
+        if incoming_db_uuid and incoming_db_uuid != local_meta['db_uuid']:
+            _logger.info(
+                'Database UUID differs: Remote=%s, Local=%s (This is expected for different databases)',
+                incoming_db_uuid, local_meta['db_uuid']
+            )
+        
+        # 3. Schema Check
+        incoming_models = incoming_meta.get('models', {})
+        
+        if not incoming_models:
+            _logger.warning('No model hashes in incoming metadata')
+            return
+        
+        # Get sync rules for models to determine which fields to include
+        rules_by_model = {}
+        for rule in self.env['numa.synch.rule'].search([
+            ('active', '=', True),
+            ('model_name', 'in', active_models)
+        ]):
+            if rule.model_name:
+                rules_by_model[rule.model_name] = rule
+        
+        for model_name in active_models:
+            if model_name not in incoming_models:
+                _logger.warning(
+                    'Model %s not found in incoming metadata hashes',
+                    model_name
+                )
+                continue
+            
+            incoming_hash = incoming_models[model_name]
+            
+            # Get sync rule for this model (if available)
+            sync_rule = rules_by_model.get(model_name)
+            
+            # Calculate local hash
+            local_hash = self._compute_model_hash(model_name, sync_rule)
+            
+            if not local_hash:
+                _logger.warning(
+                    'Could not compute hash for model %s',
+                    model_name
+                )
+                continue
+            
+            if incoming_hash != local_hash:
+                raise UserError(_(
+                    'Schema Mismatch in model %s.\n'
+                    'Remote hash: %s\n'
+                    'Local hash: %s\n\n'
+                    'This indicates that the model structure differs between '
+                    'the Slave and Master. Ensure both servers have the same '
+                    'modules installed and the same field definitions.'
+                ) % (model_name, incoming_hash[:16], local_hash[:16]))
