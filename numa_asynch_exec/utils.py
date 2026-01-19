@@ -38,6 +38,8 @@ def _run_in_thread(job_id, db_name, context):
     """
     Orchestrates the asynchronous execution of the job in a separate thread.
     Handles environment recreation, execution, exception logging, and retries.
+    
+    Supports infinite retries when max_retries < 0 (system threads only).
     """
 
     registry = Registry(db_name)
@@ -49,58 +51,95 @@ def _run_in_thread(job_id, db_name, context):
         if not job:
             _logger.warning(f'Asynchronous job {job_id} not found, skipping execution')
             return
-        # Respect configured delay before starting
-        if job.retry_count > 0 and job.retry_delay > 0:
+        
+        # Validate user exists before proceeding
+        if not job.uid:
+            _logger.error(f'Asynchronous job {job.id} has no user assigned, marking as failed')
+            job.write({'state': 'failed'})
+            cr.commit()
+            return
+            
+        user = env['res.users'].browse(job.uid.id).exists()
+        if not user:
+            _logger.error(f'Asynchronous job {job.id} user {job.uid.id} not found, marking as failed')
+            job.write({'state': 'failed'})
+            cr.commit()
+            return
+
+        # Validate recordset exists before proceeding
+        env_worker = api.Environment(cr, job.uid.id, job.context or context or {})
+        recordset = env_worker[job.model_name].browse(job.res_ids).exists()
+        if not recordset:
+            _logger.error(f'Asynchronous job {job.id} no target records found (model: {job.model_name}, ids: {job.res_ids}), marking as failed')
+            job.write({'state': 'failed'})
+            cr.commit()
+            return
+
+        # Validate method exists and is callable before proceeding
+        if not hasattr(recordset, job.method_name):
+            _logger.error(f'Asynchronous job {job.id} method "{job.method_name}" does not exist on model "{job.model_name}", marking as failed')
+            job.write({'state': 'failed'})
+            cr.commit()
+            return
+            
+        method = getattr(recordset, job.method_name)
+        if not callable(method):
+            _logger.error(f'Asynchronous job {job.id} "{job.method_name}" is not a callable method on model "{job.model_name}", marking as failed')
+            job.write({'state': 'failed'})
+            cr.commit()
+            return
+
+        # Apply configured delay if set (for initial execution or retries)
+        if job.retry_delay > 0:
             time.sleep(job.retry_delay / 1000.0)
 
         # Update state to running and commit immediately to avoid re-recovery
+        # Only after all validations passed
         job.write({'state': 'running'})
         cr.commit()
 
         try:
-            # Browse records and execute method
+            # Execute the method
+            method(*job.args, **job.kwargs)
 
-            user = env['res.users'].browse(job.uid.id).exists()
-            if user:
-                # impersonar al usuario que creó el job para la lógica de negocio
-                # Esto garantiza que el Audit Trail registre al usuario real
-                env_worker = api.Environment(cr, job.uid.id, job.context or context or {})
-
-                recordset = env_worker[job.model_name].browse(job.res_ids).exists()
-                if recordset:
-                    method = getattr(recordset, job.method_name)
-                    method(*job.args, **job.kwargs)
-
-                    # Mark as successfully completed
-                    _logger.debug(f'Asynchronous job {job.id} succesfully executed')
-                    job.write({'state': 'done'})
-                    cr.commit()
-                else:
-                    _logger.warning(f'Asynchronous job {job.id} no target found, skipping execution')
-            else:
-                _logger.warning(f'Asynchronous job {job.id} no target user found, skipping execution')
+            # Mark as successfully completed
+            _logger.debug(f'Asynchronous job {job.id} successfully executed')
+            job.write({'state': 'done'})
+            cr.commit()
 
         except Exception as e:
             cr.rollback()
             # Log the exception for traceability via numa_exceptions module
+            uid_for_logging = job.uid.id if job.uid else None
             register_exception(
                 f'numa_asynch_exec - job({job.id})',
                 job.method_name,
                 {'args': job.args, 'kwargs': job.kwargs},
                 db_name,
-                job.uid.id,
+                uid_for_logging,
                 e
             )
 
-            if job.retry_count < job.max_retries:
+            # Check if we should retry (infinite retries if max_retries < 0)
+            should_retry = False
+            if job.max_retries < 0:
+                # Infinite retries (system threads only)
+                should_retry = True
+                _logger.warning(
+                    f'Asynchronous job {job.id} failed, retrying (infinite retries mode, attempt {job.retry_count + 1})')
+            elif job.retry_count < job.max_retries:
+                # Finite retries
+                should_retry = True
+                _logger.warning(
+                    f'Asynchronous job {job.id} failed, retrying {job.retry_count + 1}/{job.max_retries}')
+
+            if should_retry:
                 # Logic for automatic retry: create a copy of the job with incremented retry count
                 new_job = job.sudo().copy({
                     'retry_count': job.retry_count + 1,
                     'state': 'pending',
                 })
-                # Mark current job as failed
-                _logger.warning(
-                    f'Asynchronous job {job.id} failed, retrying {new_job.retry_count}/{new_job.max_retries}')
+                # Mark current job as failed (for tracking)
                 job.write({'state': 'failed'})
 
                 executor = get_asynch_executor()

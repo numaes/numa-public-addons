@@ -10,7 +10,7 @@ class AsynchProxy:
     A proxy object that intercepts method calls on a recordset and
     enqueues them for asynchronous execution.
     """
-    def __init__(self, recordset, retry=0, retry_delay=100):
+    def __init__(self, recordset, retry=0, retry_delay=0):
         self.recordset = recordset
         self.retry = retry
         self.retry_delay = retry_delay
@@ -61,15 +61,30 @@ class Base(models.AbstractModel):
     """
     _inherit = 'base'
 
-    def asynch_exec(self, retry=0, retry_delay=100):
+    def asynch_exec(self, retry=0, retry_delay=0):
         """
         Entry point for asynchronous execution. Returns an AsynchProxy.
         
         :param retry: Number of times to retry the job on failure.
-        :param retry_delay: Delay in milliseconds before each execution/retry.
+                     Use -1 for infinite retries (system threads only - WARNING: Use with extreme caution).
+                     Default: 0 (no retries)
+        :param retry_delay: Delay in milliseconds before each execution/retry. Default: 0 (no delay)
         :return: AsynchProxy instance
         
         Example:
-            recordset.asynch_exec(retry=3).some_heavy_method(arg1)
+            recordset.asynch_exec(retry=3, retry_delay=500).some_heavy_method(arg1)
+            
+        WARNING - Infinite Retries (retry=-1):
+        ----------------------------------------
+        Setting retry=-1 creates an infinite retry loop. This should ONLY be used for
+        system-level background threads that need to run continuously (e.g., polling,
+        monitoring, periodic tasks). Using this for regular business logic can cause:
+        - Uncontrolled resource consumption
+        - Database bloat from retry records
+        - Thread pool exhaustion
+        
+        Example (system thread only):
+            # System monitoring thread - runs forever
+            self.env['system.monitor'].asynch_exec(retry=-1, retry_delay=60000).poll_system_health()
         """
         return AsynchProxy(self, retry=retry, retry_delay=retry_delay)

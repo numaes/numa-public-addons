@@ -29,9 +29,14 @@ class NumaAsynchJob(models.Model):
     context = fields.Json(string='Context', help="Serialized environment context")
     uid = fields.Many2one('res.users', string='User', help="User to impersonate during execution")
     
-    max_retries = fields.Integer(string='Max Retries', default=0)
+    max_retries = fields.Integer(
+        string='Max Retries',
+        default=0,
+        help="Maximum number of retries on failure. Use -1 for infinite retries "
+             "(system threads only - see documentation). Default: 0 (no retries)"
+    )
     retry_count = fields.Integer(string='Retry Count', default=0)
-    retry_delay = fields.Integer(string='Retry Delay (ms)', default=100)
+    retry_delay = fields.Integer(string='Retry Delay (ms)', default=0, help="Delay in milliseconds before execution/retry. Default: 0 (no delay)")
     
     state = fields.Selection([
         ('pending', 'Pending'),
