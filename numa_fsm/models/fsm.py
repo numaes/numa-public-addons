@@ -329,53 +329,96 @@ class FSMTimer(models.Model):
     database_name = fields.Char('Database name')
 
     @api.model
-    def schedule_timers(self):
+    def _process_timers(self):
         """
         Process timers that have reached their trigger time.
-
-        This method is called by a scheduled action to check for timers that have
-        reached their trigger time. For each such timer, it sends the associated
-        event to the target FSM instance and then deletes the timer.
-
-        The event processing is done asynchronously using the FSM executor thread pool
-        to avoid blocking the scheduler.
-
+        
+        This method processes all timers that have reached their trigger time,
+        sends the associated events to the target FSM instances, and then
+        deletes the processed timers. After processing, it auto-schedules the
+        next execution in 1 second using numa_asynch_exec with retry_count = -1
+        (infinite retries for continuous execution).
+        
+        This method is designed to be called continuously via numa_asynch_exec
+        with retry_count = -1 and retry_delay = 1000 (1 second).
+        
         Returns:
             None
         """
         now = fields.Datetime.now()
-
-        triggered_timers = self.search([('trigger_at', '<', now)])
-        dbname = self.env.cr.dbname
-        _context = self.env.context
-
+        triggered_timers = self.search([('trigger_at', '<=', now)])
+        
         for timer in triggered_timers:
-            def trigger():
-                instance_id = timer.fsm_instance_id.id
-                event = json.loads(timer.json_event)
-                event['name'] = timer.name
-
-                last_event = timer.fsm_instance_id.events_queue[-1] if timer.fsm_instance_id.events_queue else None
-
-                timer.fsm_instance_id.events_queue = [(0, 0, {
-                    'name': event['name'],
-                    'json_definition': json.dumps(event),
-                    'sequence': last_event.sequence + 1 if last_event else 1,
-                })]
-
-                @self.env.cr.postcommit.add
-                def trigger_timer():
-                    db_registry = Registry(dbname)
-                    with db_registry.cursor() as cr:
-                        env = api.Environment(cr, SUPERUSER_ID, _context)
-                        fsm_instance = env['fsm.instance'].browse(instance_id).exists()
-                        fsm_executor.submit(fsm_consume_event, dbname, _context, fsm_instance.id, event)
-                        fsm_instance.on_send_event(event)
-
-            trigger()
-
+            fsm_instance = timer.fsm_instance_id
+            if not fsm_instance.exists():
+                # Skip if instance no longer exists
+                continue
+            
+            try:
+                # Parse event from JSON
+                event_data = json.loads(timer.json_event) if timer.json_event else {}
+                event_data['name'] = timer.name
+                
+                # Send event to FSM instance (will be processed asynchronously via process_event)
+                fsm_instance.send_event(event_data)
+                
+            except Exception as e:
+                _logger.error("Error processing timer %s for FSM instance %s: %s", 
+                            timer.name, fsm_instance.id, e)
+                # Continue with other timers even if one fails
+        
+        # Delete processed timers
         if triggered_timers:
             triggered_timers.unlink()
+        
+        # Auto-schedule next execution in 1 second using infinite retries
+        # This ensures the timer processor runs continuously
+        # Use self.env to get the model recordset for asynch_exec
+        self.env['fsm.timer'].asynch_exec(retry=-1, retry_delay=1000)._process_timers()
+
+    @api.model
+    def schedule_timers(self):
+        """
+        Legacy method kept for backward compatibility with cron.
+        
+        This method is deprecated in favor of _process_timers() which uses
+        numa_asynch_exec for continuous execution. This method now simply
+        calls _process_timers() for compatibility with existing cron jobs.
+        
+        Note: The cron should be disabled once _schedule_timer_task() is
+        initialized via post_init_hook.
+        
+        Returns:
+            None
+        """
+        self._process_timers()
+
+    @api.model
+    def _schedule_timer_task(self):
+        """
+        Initialize the continuous timer processing task.
+        
+        This method should be called from post_init_hook to start the
+        timer processing task that runs continuously with retry_count = -1.
+        It checks if there's already a pending job running to avoid duplicates.
+        
+        Returns:
+            None
+        """
+        # Check if there's already a pending/running job for timer processing
+        existing_jobs = self.env['numa.asynch.job'].search([
+            ('model_name', '=', 'fsm.timer'),
+            ('method_name', '=', '_process_timers'),
+            ('state', 'in', ['pending', 'running']),
+        ])
+        
+        if not existing_jobs:
+            # Start the continuous timer processing task
+            _logger.info("Initializing FSM timer processing task with infinite retries")
+            self.asynch_exec(retry=-1, retry_delay=1000)._process_timers()
+        else:
+            _logger.debug("FSM timer processing task already running (found %d existing jobs)", 
+                         len(existing_jobs))
 
 
 class FSMInstance(models.Model):

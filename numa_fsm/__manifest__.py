@@ -19,6 +19,7 @@
         'views/fsm_views.xml',
         'views/menu_views.xml',
     ],
+    'post_init_hook': 'post_init_hook',
     'assets': {
         'web.assets_backend': [
             'numa_fsm/static/src/components/fsm_diagram/fsm_diagram.scss',
