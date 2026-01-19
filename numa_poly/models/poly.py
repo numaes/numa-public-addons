@@ -229,10 +229,24 @@ class PolyBase(BaseModel):
     which is a position-ordered dictionary mapping parent model names to field names:
 
     Example:
-        _depend_models = {
-            'a.model': 'a_field_id',
-            'b.model': 'b_field_id'
-        }
+        class MyPolymorphicModel(PolyModel):
+            _name = 'my.polymorphic.model'
+            _depend_models = {
+                'res.partner': 'partner_id',
+                'hr.employee': 'employee_id',
+            }
+            
+            custom_field = fields.Char('Custom Field')
+        
+        # Now MyPolymorphicModel has all fields from res.partner and hr.employee
+        record = self.env['my.polymorphic.model'].create({
+            'name': 'John Doe',  # From res.partner
+            'work_email': 'john@example.com',  # From hr.employee
+            'custom_field': 'Value',  # From MyPolymorphicModel
+        })
+        
+        # All records share the same ID across all models
+        assert record.id == record.partner_id.id == record.employee_id.id
 
     This implements full polymorphic inheritance: the new model exposes all
     the fields of the dependent models but stores none of them directly.
@@ -492,6 +506,13 @@ class PolyBase(BaseModel):
 
         This is the core of the polymorphic inheritance mechanism, as it makes
         all fields from dependent models available on the polymorphic model.
+
+        Returns:
+            None: This method modifies the model class in place.
+
+        Raises:
+            TypeError: If an unsupported field type is encountered when creating
+                related fields from dependent models.
         """
         def set(name, field, related_base=None):
             """
@@ -712,13 +733,20 @@ class PolyBase(BaseModel):
         with the same ID, allowing the polymorphic inheritance to work.
 
         Args:
-            data_list: List of dictionaries containing field values
+            data_list: List of dictionaries containing field values. Each dictionary
+                can contain fields from this model and from all dependent models.
+                Optionally, an 'id' key can be provided to use a specific ID.
 
         Returns:
-            The newly created records
+            Self: Recordset containing the newly created records. All records in the
+                polymorphic hierarchy (base models and dependent models) will share
+                the same ID.
 
         Raises:
-            ValidationError: If trying to create a record with an ID that already exists
+            ValidationError: If trying to create a record with an ID that already exists,
+                or if a dependent model does not exist.
+            AccessError: If the current user does not have permission to create records
+                in one or more of the dependent models.
 
         TODO: Investigate if access rules should be applied base by base also
         """
@@ -910,7 +938,6 @@ class PolyBase(BaseModel):
         return result
 
     def _write_multi(self, vals_list):
-
         """
         Low-level implementation of write() for multiple records.
 
@@ -919,7 +946,16 @@ class PolyBase(BaseModel):
         (write_uid, write_date) are properly updated in the ir.poly_base record.
 
         Args:
-            vals_list: List of dictionaries containing values to write
+            vals_list: List of dictionaries containing values to write.
+                Must have the same length as the recordset.
+
+        Returns:
+            None: This method performs the write operation in place.
+
+        Note:
+            For polymorphic models, this method also updates the write_uid and
+            write_date fields in the ir.poly_base record to maintain consistency
+            across the polymorphic hierarchy.
         """
         assert len(self) == len(vals_list)
 
@@ -1010,6 +1046,22 @@ class PolyBase(BaseModel):
 
     @api.model
     def fields_get(self, allfields=None, attributes=None):
+        """
+        Get fields definition with inherited fields from dependent models.
+
+        This method extends the standard fields_get() to include fields from
+        all dependent models in the polymorphic hierarchy.
+
+        Args:
+            allfields: Optional list of field names to include. If None, all fields
+                are returned.
+            attributes: Optional list of attribute names to include in the result.
+                If None, all attributes are returned.
+
+        Returns:
+            dict: Dictionary mapping field names to field attribute dictionaries.
+                Includes both local fields and fields inherited from dependent models.
+        """
         result = super().fields_get(allfields=allfields, attributes=attributes)
         if self._depend_models is not None and self._depend_models:
             # Ensure all dependent models are in the bases_to_create dict
@@ -1025,16 +1077,29 @@ class PolyBase(BaseModel):
         return result
 
     def _field_to_sql(self, alias: str, fname: str, query: (Query | None) = None, flush: bool = True) -> SQL:
-        """ Return an :class:`SQL` object that represents the value of the given
-        field from the given table alias, in the context of the given query.
-        The method also checks that the field is accessible for reading.
+        """
+        Return an :class:`SQL` object that represents the value of the given field.
 
-        The query object is necessary for inherited fields, many2one fields and
-        properties fields, where joins are added to the query.
+        This method extends the standard _field_to_sql to handle PolyReference fields,
+        which are non-stored Many2one fields that reference polymorphic models by ID.
 
-        When parameter ``flush`` is true, the method adds some metadata in the
-        result to make method :meth:`~odoo.api.Environment.execute_query` flush
-        the field before executing the query.
+        Args:
+            alias: The table alias to use in the SQL expression.
+            fname: The name of the field to convert to SQL.
+            query: Optional Query object. Required for inherited fields, many2one fields,
+                and properties fields where joins are added to the query.
+            flush: If True, adds metadata to ensure the field is flushed before
+                executing the query. Defaults to True.
+
+        Returns:
+            SQL: An SQL object representing the field value in the SQL query.
+
+        Raises:
+            ValueError: If the field name is invalid or doesn't exist on the model.
+
+        Note:
+            For PolyReference fields, this method converts them to use the record's ID
+            directly from ir.poly_base, as these fields are not stored as foreign keys.
         """
         property_name = None
         if '.' in fname:
