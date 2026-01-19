@@ -339,10 +339,11 @@ def _execute_chain(self):
    - Primero busca handler en estado actual (prioridad)
    - Si no encuentra, busca en estado global
    - Commit: `c1cdacbfe741` - feat(numa_fsm): implementar soporte para estados globales con eventos
-3. ⚠️ **PENDIENTE (Frontend)** - Actualizar widget OWL para soportar estados globales
-   - Marcar estados como 'global' en el editor
-   - Visual diferenciación en el diagrama
-   - Validación de que solo haya un estado global por FSM
+3. ✅ **COMPLETADO** - Actualizar widget OWL para soportar estados globales
+   - Checkbox "Global State" en editor de estados (FSMStateEditor)
+   - Visual diferenciación con borde punteado azul e icono de globo
+   - Validación de un solo estado global por FSM en `validateDiagram()`
+   - Commit: `c359eed46097` - feat(numa_fsm): completar implementación de estados globales en widget OWL
 4. ⏳ Testing: verificar prioridad y funcionamiento de eventos globales (pendiente validación)
 
 ### Fase 5: Documentación y Refinamiento
@@ -415,9 +416,18 @@ def _execute_chain(self):
 - ✅ **COMPLETADO** - Desactivar `ir_cron_fsm_timers` (marcado como DEPRECATED, `active=False`)
 
 ### Widget OWL (`static/src/components/fsm_diagram/`)
-- ⚠️ **PENDIENTE (Frontend)** - Agregar opción "Global State" en editor de estados
-- ⚠️ **PENDIENTE (Frontend)** - Actualizar renderizado para mostrar diferencia visual
-- ⚠️ **PENDIENTE (Frontend)** - Actualizar validación de diagrama
+- ✅ **COMPLETADO** - Agregar opción "Global State" en editor de estados
+  - Checkbox `is_global` en `FSMStateEditor`
+  - Descripción explicativa del checkbox
+- ✅ **COMPLETADO** - Actualizar renderizado para mostrar diferencia visual
+  - Clase CSS `o_fsm_node_global` con borde punteado azul (#17a2b8)
+  - Icono de globo (`fa-globe`) en el header del nodo
+  - Estilos específicos para hover y selección de estados globales
+- ✅ **COMPLETADO** - Actualizar validación de diagrama
+  - Validación de un solo estado global por FSM en `validateDiagram()`
+  - Notificación de error si hay múltiples estados globales
+- ✅ **COMPLETADO** - Documentación de auditoría de capacidades
+  - Archivo `CAPABILITIES_AUDIT.md` con análisis completo del widget
 
 ---
 
@@ -458,10 +468,13 @@ Las mejoras han sido implementadas exitosamente, transformando `numa_fsm` en un 
   - Precisión mejorada: cada segundo vs cada minuto anteriormente
   - No depende de cron activo, auto-programación persistente
 
-- ✅ **COMPLETADO (Backend)** - **Eventos globales** para diseño más limpio y mantenible
+- ✅ **COMPLETADO** - **Eventos globales** para diseño más limpio y mantenible
   - Estados globales detectados en compilación
   - Prioridad: eventos del estado actual tienen precedencia sobre globales
-  - Backend completo, frontend pendiente para edición visual
+  - Backend y frontend completamente implementados
+  - UI para marcar estados como globales en el editor
+  - Visual diferenciación con borde punteado azul e icono de globo
+  - Validación de un solo estado global por FSM
 
 - ✅ **COMPLETADO** - **Ejecución con `fsm.instance` como self**
   - Ya estaba implementado: `model` = `fsm.instance` en `_get_execution_globals()`
@@ -470,18 +483,22 @@ Las mejoras han sido implementadas exitosamente, transformando `numa_fsm` en un 
 **Estado de Implementación:**
 1. ✅ **Completado:** Integración con `numa_asynch_exec` (eventos) - Fase 2
 2. ✅ **Completado:** Timers con `retry_count = -1` - Fase 3
-3. ✅ **Completado (Backend):** Eventos globales (estado especial) - Fase 4
-4. ⏳ **Pendiente (Frontend):** Widget OWL para edición de estados globales
-5. ⏳ **Pendiente:** Testing integrado completo y documentación con ejemplos
+3. ✅ **Completado:** Eventos globales (estado especial) - Fase 4 (Backend + Frontend)
+4. ✅ **Completado:** Widget OWL para edición de estados globales - Fase 4 (Frontend)
+5. ✅ **Completado:** Documentación de usuario completa en inglés - USER_GUIDE.md
+6. ⏳ **Pendiente:** Testing integrado completo en producción
 
 **Commits Realizados:**
 - `1a62052a3131` - Fase 1: Agregar `numa_asynch_exec` como dependencia
 - `f4d7e9a95c9c` - Fase 2: Integrar `numa_asynch_exec` para procesamiento de eventos
 - `520737870e5d` - Fase 3: Implementar timers con `retry_count = -1`
-- `c1cdacbfe741` - Fase 4: Implementar soporte para estados globales
+- `c1cdacbfe741` - Fase 4: Implementar soporte para estados globales (backend)
+- `c359eed46097` - Fase 4: Completar implementación de estados globales (frontend/widget OWL)
+- `d0a1e9e28589` - Documentación: Guía de usuario completa en inglés
+- `0c58512f24ff` - Documentación: Actualizar análisis con mejoras completadas
 
 **Próximos Pasos:**
-1. Testing en producción de eventos asíncronos y timers
-2. Desarrollo frontend (OWL) para soporte visual de estados globales
-3. Documentación adicional con ejemplos de uso
-4. Validación de funcionamiento integrado completo
+1. ⏳ Testing en producción de eventos asíncronos y timers
+2. ⏳ Testing de eventos globales y validación de prioridad
+3. ⏳ Validación de funcionamiento integrado completo
+4. ⏳ Validación de widgets OWL en diferentes navegadores
