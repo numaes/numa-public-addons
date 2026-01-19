@@ -75,10 +75,14 @@ class FSMDefinition(models.Model):
 
             compiled_nodes = {}
             start_node_id = None
+            global_state_id = None
             
             for node in nodes:
                 node_id = node.get('id')
                 if not node_id: continue
+                
+                # Check if node is a global state (special state with events available in any state)
+                is_global = node.get('is_global', False) or node.get('type') == 'global_state'
                 
                 compiled_nodes[node_id] = {
                     'id': node_id,
@@ -88,9 +92,18 @@ class FSMDefinition(models.Model):
                     'events': node.get('events', []),
                     'outcomes': node.get('outcomes', {}),
                     'is_breakpoint': node.get('is_breakpoint', False),
+                    'is_global': is_global,
                 }
+                
                 if node.get('type') == 'start':
                     start_node_id = node_id
+                elif is_global and node.get('type') == 'state':
+                    # Store the global state ID (only one allowed per FSM)
+                    if global_state_id:
+                        _logger.warning("Multiple global states found in FSM definition '%s'. Using first: %s", 
+                                      record.name, global_state_id)
+                    else:
+                        global_state_id = node_id
 
             for conn in connections:
                 from_node = compiled_nodes.get(conn.get('fromNodeId'))
@@ -112,6 +125,7 @@ class FSMDefinition(models.Model):
                 'start_node_id': start_node_id,
                 'nodes': compiled_nodes,
                 'all_state_events': {},
+                'global_state_id': global_state_id,  # State with events available in any state
             }
             
             record.json_compiled_definition = json.dumps(compiled_definition, indent=2)
@@ -604,20 +618,36 @@ class FSMInstance(models.Model):
         compiled_def = json.loads(self.definition_id.json_compiled_definition or '{}')
         nodes = compiled_def.get('nodes', {})
         current_state_node = nodes.get(self.current_state_id)
+        global_state_id = compiled_def.get('global_state_id')
         
         if not current_state_node:
             raise exceptions.UserError(f"Current state '{self.current_state_id}' not found in definition.")
 
         event_name = event.get('name')
+        
+        # Priority 1: Look for handler in current state
         handler = next((e for e in current_state_node.get('events', []) if e.get('name') == event_name), None)
+        handler_source = 'current_state'
+        
+        # Priority 2: If no handler in current state, check global state
+        if not handler and global_state_id:
+            global_state_node = nodes.get(global_state_id)
+            if global_state_node:
+                handler = next((e for e in global_state_node.get('events', []) if e.get('name') == event_name), None)
+                if handler:
+                    handler_source = 'global_state'
         
         if not handler:
-            self.log(f"Event '{event_name}' has no handler in state '{current_state_node.get('label')}'.")
+            handler_info = f"state '{current_state_node.get('label')}'"
+            if global_state_id:
+                handler_info += f" or global state"
+            self.log(f"Event '{event_name}' has no handler in {handler_info}.")
             return
 
         target_transition_id = handler.get('target_transition_id')
         if not target_transition_id:
-            self.log(f"Event handler for '{event_name}' in state '{current_state_node.get('label')}' has no target transition.")
+            handler_label = current_state_node.get('label') if handler_source == 'current_state' else nodes.get(global_state_id, {}).get('label')
+            self.log(f"Event handler for '{event_name}' in {handler_source} '{handler_label}' has no target transition.")
             return
 
         intermediate_vars = dict(self.instance_variables or {})
