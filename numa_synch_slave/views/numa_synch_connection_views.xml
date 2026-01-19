@@ -11,6 +11,8 @@
                     <field name="master_url"/>
                     <field name="slave_token"/>
                     <field name="last_sync_date"/>
+                    <field name="sync_interval_number"/>
+                    <field name="sync_interval_type"/>
                     <field name="active"/>
                 </tree>
             </field>
@@ -55,15 +57,41 @@
                             </group>
                         </group>
                         <group string="Synchronization Settings">
-                            <field name="batch_size"/>
-                            <div class="alert alert-info" role="alert">
-                                <p>
-                                    <strong>Batch Size:</strong> Number of records to send per HTTP request.
-                                    Larger batches are more efficient but may timeout on slow connections.
-                                    Recommended: 50-200 records.
-                                </p>
-                            </div>
+                            <group>
+                                <field name="batch_size"/>
+                            </group>
+                            <group>
+                                <field name="sync_interval_number"/>
+                                <field name="sync_interval_type"/>
+                            </group>
                         </group>
+                        <group string="Scheduling">
+                            <group>
+                                <field name="use_scheduled_time"/>
+                                <field name="sync_schedule_time" 
+                                       attrs="{'invisible': [('use_scheduled_time', '=', False)], 
+                                               'required': [('use_scheduled_time', '=', True)]}"/>
+                            </group>
+                            <group>
+                                <field name="cron_id" readonly="1"/>
+                            </group>
+                        </group>
+                        <div class="alert alert-info" role="alert">
+                            <p>
+                                <strong>Batch Size:</strong> Number of records to send per HTTP request.
+                                Larger batches are more efficient but may timeout on slow connections.
+                                Recommended: 50-200 records.
+                            </p>
+                            <p>
+                                <strong>Sync Interval:</strong> How often to run synchronization automatically.
+                                If "Use Scheduled Time" is enabled, synchronization will run at the specified
+                                time each day (or at the interval if less than 24 hours).
+                            </p>
+                            <p>
+                                <strong>Scheduled Time:</strong> Time in 24-hour format (e.g., 14.5 = 14:30).
+                                Only used if "Use Scheduled Time" is enabled.
+                            </p>
+                        </div>
                         <div class="alert alert-warning" role="alert">
                             <p>
                                 <strong>Slave Token:</strong> This UUID uniquely identifies this Slave node to the Master.

@@ -76,13 +76,71 @@ class NumaSynchConnection(models.Model):
         default=True,
         help='If unchecked, synchronization will be disabled'
     )
+    
+    sync_interval_number = fields.Integer(
+        string='Sync Interval',
+        default=15,
+        required=True,
+        help='Number of intervals between synchronizations'
+    )
+    
+    sync_interval_type = fields.Selection(
+        [
+            ('minutes', 'Minutes'),
+            ('hours', 'Hours'),
+            ('days', 'Days'),
+        ],
+        string='Interval Type',
+        default='minutes',
+        required=True,
+        help='Time unit for the synchronization interval'
+    )
+    
+    use_scheduled_time = fields.Boolean(
+        string='Use Scheduled Time',
+        default=False,
+        help='If enabled, synchronization will run at a specific time of day'
+    )
+    
+    sync_schedule_time = fields.Float(
+        string='Scheduled Time',
+        help='Time of day to run synchronization (24-hour format, e.g., 14.5 = 14:30)'
+    )
+    
+    cron_id = fields.Many2one(
+        'ir.cron',
+        string='Cron Job',
+        readonly=True,
+        copy=False,
+        help='Automatically created cron job for this connection'
+    )
 
     @api.model
     def create(self, vals):
-        """Ensure slave_token is generated if not provided"""
+        """Ensure slave_token is generated if not provided and create cron job"""
         if 'slave_token' not in vals or not vals.get('slave_token'):
             vals['slave_token'] = str(uuid.uuid4())
-        return super().create(vals)
+        record = super().create(vals)
+        record._create_or_update_cron()
+        return record
+    
+    def write(self, vals):
+        """Update cron job when sync settings change"""
+        result = super().write(vals)
+        # Update cron if sync-related fields changed
+        sync_fields = {'active', 'sync_interval_number', 'sync_interval_type', 
+                      'use_scheduled_time', 'sync_schedule_time'}
+        if sync_fields.intersection(set(vals.keys())):
+            for record in self:
+                record._create_or_update_cron()
+        return result
+    
+    def unlink(self):
+        """Delete associated cron jobs when connection is deleted"""
+        for record in self:
+            if record.cron_id:
+                record.cron_id.unlink()
+        return super().unlink()
 
     @api.constrains('master_url')
     def _check_master_url(self):
@@ -103,6 +161,98 @@ class NumaSynchConnection(models.Model):
                 raise ValidationError(_(
                     'Batch size must be greater than 0'
                 ))
+    
+    @api.constrains('sync_interval_number')
+    def _check_sync_interval_number(self):
+        """Validate sync interval is positive"""
+        for record in self:
+            if record.sync_interval_number <= 0:
+                raise ValidationError(_(
+                    'Sync interval must be greater than 0'
+                ))
+    
+    @api.constrains('sync_schedule_time')
+    def _check_sync_schedule_time(self):
+        """Validate scheduled time is in valid range"""
+        for record in self:
+            if record.use_scheduled_time and record.sync_schedule_time is not False:
+                if record.sync_schedule_time < 0 or record.sync_schedule_time >= 24:
+                    raise ValidationError(_(
+                        'Scheduled time must be between 0.0 and 23.99 (24-hour format)'
+                    ))
+    
+    def _create_or_update_cron(self):
+        """
+        Create or update the cron job for this connection.
+        
+        This method is called automatically when sync settings change.
+        """
+        self.ensure_one()
+        
+        cron_model = self.env['ir.cron']
+        
+        # Prepare cron name
+        cron_name = f'Sync: {self.name}'
+        
+        # Prepare code to call
+        # In Odoo cron with state='code', 'env' is the environment
+        # We need to browse the specific connection and call its method
+        cron_code = f'env["numa.synch.connection"].browse({self.id}).action_run_sync()'
+        
+        # Calculate nextcall based on scheduled time if enabled
+        nextcall = False
+        if self.use_scheduled_time and self.sync_schedule_time is not False:
+            from datetime import datetime, time
+            from odoo import fields as odoo_fields
+            
+            # Get current date/time
+            now = datetime.now()
+            
+            # Convert float time to time object
+            hours = int(self.sync_schedule_time)
+            minutes = int((self.sync_schedule_time - hours) * 60)
+            scheduled_time = time(hours, minutes)
+            
+            # Create datetime for today at scheduled time
+            nextcall_dt = datetime.combine(now.date(), scheduled_time)
+            
+            # If scheduled time has passed today, schedule for tomorrow
+            if nextcall_dt <= now:
+                from datetime import timedelta
+                nextcall_dt += timedelta(days=1)
+            
+            # Convert to Odoo datetime string
+            nextcall = odoo_fields.Datetime.to_string(nextcall_dt)
+        
+        if self.cron_id:
+            # Update existing cron
+            self.cron_id.write({
+                'name': cron_name,
+                'active': self.active,
+                'interval_number': self.sync_interval_number,
+                'interval_type': self.sync_interval_type,
+                'code': cron_code,
+                'nextcall': nextcall or self.cron_id.nextcall,
+            })
+        else:
+            # Create new cron
+            cron_vals = {
+                'name': cron_name,
+                'model_id': self.env['ir.model']._get_id('numa.synch.connection'),
+                'state': 'code',
+                'code': cron_code,
+                'interval_number': self.sync_interval_number,
+                'interval_type': self.sync_interval_type,
+                'numbercall': -1,  # Unlimited
+                'active': self.active,
+                'doall': False,
+            }
+            
+            if nextcall:
+                cron_vals['nextcall'] = nextcall
+            
+            cron = cron_model.create(cron_vals)
+            self.cron_id = cron.id
 
     def action_test_connection(self):
         """
