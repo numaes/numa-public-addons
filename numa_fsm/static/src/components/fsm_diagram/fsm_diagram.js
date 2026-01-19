@@ -597,6 +597,13 @@ export class FSMDiagram extends Component {
         const nodes = this.state.nodes;
         const conns = this.state.connections;
 
+        // Validate global states (only one allowed)
+        const globalStates = nodes.filter(n => n.type === 'state' && n.is_global);
+        if (globalStates.length > 1) {
+            const globalStateNames = globalStates.map(s => `"${s.label}"`).join(', ');
+            errors.push(`Multiple global states found: ${globalStateNames}. Only one global state is allowed per FSM.`);
+        }
+
         nodes.forEach(node => {
             if (node.type === 'start') {
                 const hasOut = conns.some(c => c.fromNodeId === node.id);

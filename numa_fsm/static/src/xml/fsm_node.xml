@@ -9,6 +9,7 @@
                 'o_fsm_node_selected': props.selected,
                 'o_fsm_node_hover': props.hovered,
                 'o_fsm_node_connecting': props.isConnecting,
+                'o_fsm_node_global': props.node.is_global && props.node.type === 'state',
                 ['o_fsm_node_' + props.node.type]: true
              }"
              t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'"
@@ -19,6 +20,7 @@
 
             <div class="o_fsm_node_header">
                 <i t-if="props.node.is_breakpoint" class="fa fa-hand-paper-o me-2" title="Breakpoint"/>
+                <i t-if="props.node.is_global && props.node.type === 'state'" class="fa fa-globe me-2 text-info" title="Global State - Events available in any state"/>
                 <t t-esc="props.node.label"/>
             </div>
             <div class="o_fsm_node_body">

@@ -127,6 +127,32 @@
         border-top-left-radius: 20px;
         border-top-right-radius: 20px;
     }
+
+    &.o_fsm_node_global {
+        border: 2px dashed #17a2b8;
+        background-color: #f0f9ff;
+        
+        .o_fsm_node_header {
+            background-color: #d1ecf1;
+            border-top-left-radius: 18px;
+            border-top-right-radius: 18px;
+        }
+
+        &:hover, &.o_fsm_node_hover {
+            border-color: #138496 !important;
+            box-shadow: 0 0 0 2px #17a2b8, 0 4px 12px rgba(23, 162, 184, 0.4) !important;
+        }
+
+        &.o_fsm_node_selected {
+            border-color: #17a2b8;
+            box-shadow: 0 0 0 3px rgba(23, 162, 184, 0.4);
+
+            &:hover, &.o_fsm_node_hover {
+                box-shadow: 0 0 0 4px rgba(23, 162, 184, 0.6) !important;
+                border-color: #138496 !important;
+            }
+        }
+    }
 }
 
 .o_fsm_node_transition {

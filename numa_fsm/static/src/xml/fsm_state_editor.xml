@@ -12,6 +12,15 @@
                     <input type="text" class="form-control" id="stateName" t-model="state.label" t-att-disabled="props.readonly"/>
                 </div>
                 <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="isGlobal" t-model="state.is_global" t-att-disabled="props.readonly"/>
+                        <label class="form-check-label" for="isGlobal">
+                            <strong>Global State</strong>
+                            <small class="d-block text-muted">Events in this state are available in any state. Only one global state allowed per FSM.</small>
+                        </label>
+                    </div>
+                </div>
+                <div class="mb-3">
                     <label class="form-label">Events (Outputs)</label>
                     <div t-foreach="state.events" t-as="event" t-key="event_index" class="input-group mb-2">
                         <input type="text" class="form-control" placeholder="Event Name" t-model="event.name" t-att-disabled="props.readonly"/>

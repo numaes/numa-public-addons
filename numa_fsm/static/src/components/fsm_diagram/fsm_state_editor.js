@@ -15,6 +15,7 @@ export class FSMStateEditor extends Component {
         this.state = useState({
             label: this.props.node.label || '',
             events: [...(this.props.node.events || [])],
+            is_global: this.props.node.is_global || false,
         });
     }
 
@@ -31,6 +32,7 @@ export class FSMStateEditor extends Component {
             ...this.props.node,
             label: this.state.label,
             events: this.state.events,
+            is_global: this.state.is_global,
         });
     }
 }
