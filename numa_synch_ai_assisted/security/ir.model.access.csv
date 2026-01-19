@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_numa_synch_ai_map_user,numa.synch.ai.map.user,model_numa_synch_ai_map,base.group_user,1,1,1,1
+access_numa_synch_ai_map_system,numa.synch.ai.map.system,model_numa_synch_ai_map,base.group_system,1,1,1,1
+access_numa_synch_issue_user,numa.synch.issue.user,model_numa_synch_issue,base.group_user,1,0,0,0
+access_numa_synch_issue_system,numa.synch.issue.system,model_numa_synch_issue,base.group_system,1,1,1,1

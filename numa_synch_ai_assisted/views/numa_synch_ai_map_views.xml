@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+        <!-- Tree View for numa.synch.ai.map -->
+        <record id="view_numa_synch_ai_map_tree" model="ir.ui.view">
+            <field name="name">numa.synch.ai.map.tree</field>
+            <field name="model">numa.synch.ai.map</field>
+            <field name="arch" type="xml">
+                <tree string="AI Mapping" decoration-muted="not active">
+                    <field name="display_name"/>
+                    <field name="remote_token"/>
+                    <field name="model_name"/>
+                    <field name="confidence_score"/>
+                    <field name="active"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- Form View for numa.synch.ai.map -->
+        <record id="view_numa_synch_ai_map_form" model="ir.ui.view">
+            <field name="name">numa.synch.ai.map.form</field>
+            <field name="model">numa.synch.ai.map</field>
+            <field name="arch" type="xml">
+                <form string="AI Mapping">
+                    <header>
+                        <button name="toggle_active" type="object" string="Deactivate" 
+                                class="oe_highlight" attrs="{'invisible': [('active', '=', False)]}"/>
+                        <button name="toggle_active" type="object" string="Activate" 
+                                attrs="{'invisible': [('active', '=', True)]}"/>
+                    </header>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="remote_token"/>
+                                <field name="model_name"/>
+                                <field name="confidence_score"/>
+                                <field name="active"/>
+                            </group>
+                            <group>
+                                <field name="create_date" readonly="1"/>
+                                <field name="create_uid" readonly="1"/>
+                            </group>
+                        </group>
+                        <group string="Field Mapping">
+                            <field name="mapping_json" widget="ace" 
+                                   options="{'mode': 'json'}" 
+                                   placeholder='{"remote_field": "local_field", ...}'/>
+                        </group>
+                        <group string="Transformation Script (Optional)">
+                            <field name="transformation_script" widget="ace" 
+                                   options="{'mode': 'python'}"
+                                   placeholder="# Python code to transform field values&#10;# Available variables: value, field_name&#10;# Set result = transformed_value"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Search View for numa.synch.ai.map -->
+        <record id="view_numa_synch_ai_map_search" model="ir.ui.view">
+            <field name="name">numa.synch.ai.map.search</field>
+            <field name="model">numa.synch.ai.map</field>
+            <field name="arch" type="xml">
+                <search string="Search AI Mappings">
+                    <field name="remote_token"/>
+                    <field name="model_name"/>
+                    <separator/>
+                    <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+                    <filter string="Inactive" name="inactive" domain="[('active', '=', False)]"/>
+                </search>
+            </field>
+        </record>
+
+        <!-- Action for numa.synch.ai.map -->
+        <record id="action_numa_synch_ai_map" model="ir.actions.act_window">
+            <field name="name">AI Mappings</field>
+            <field name="res_model">numa.synch.ai.map</field>
+            <field name="view_mode">tree,form</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    No AI mappings yet
+                </p>
+                <p>
+                    AI-generated mappings will appear here when the system
+                    automatically resolves schema mismatches.
+                </p>
+            </field>
+        </record>
+    </data>
+</odoo>

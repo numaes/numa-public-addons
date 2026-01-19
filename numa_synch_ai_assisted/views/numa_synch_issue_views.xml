@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <data>
+        <!-- Tree View for numa.synch.issue -->
+        <record id="view_numa_synch_issue_tree" model="ir.ui.view">
+            <field name="name">numa.synch.issue.tree</field>
+            <field name="model">numa.synch.issue</field>
+            <field name="arch" type="xml">
+                <tree string="Synchronization Issues" decoration-success="resolved" decoration-muted="resolved">
+                    <field name="display_name"/>
+                    <field name="remote_token"/>
+                    <field name="model_name"/>
+                    <field name="issue_type"/>
+                    <field name="confidence_score"/>
+                    <field name="resolved"/>
+                    <field name="create_date"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- Form View for numa.synch.issue -->
+        <record id="view_numa_synch_issue_form" model="ir.ui.view">
+            <field name="name">numa.synch.issue.form</field>
+            <field name="model">numa.synch.issue</field>
+            <field name="arch" type="xml">
+                <form string="Synchronization Issue">
+                    <header>
+                        <button name="action_resolve" type="object" string="Mark as Resolved" 
+                                class="oe_highlight" attrs="{'invisible': [('resolved', '=', True)]}"/>
+                    </header>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="batch_id"/>
+                                <field name="remote_token"/>
+                                <field name="model_name"/>
+                                <field name="issue_type"/>
+                            </group>
+                            <group>
+                                <field name="confidence_score"/>
+                                <field name="resolved"/>
+                                <field name="create_date" readonly="1"/>
+                                <field name="create_uid" readonly="1"/>
+                            </group>
+                        </group>
+                        <group string="Issue Details">
+                            <field name="description" widget="text"/>
+                        </group>
+                        <group string="Remote Field Sample">
+                            <field name="remote_field_sample" widget="text" readonly="1"/>
+                        </group>
+                        <group string="AI Suggestion">
+                            <field name="suggestion" widget="text"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Search View for numa.synch.issue -->
+        <record id="view_numa_synch_issue_search" model="ir.ui.view">
+            <field name="name">numa.synch.issue.search</field>
+            <field name="model">numa.synch.issue</field>
+            <field name="arch" type="xml">
+                <search string="Search Synchronization Issues">
+                    <field name="remote_token"/>
+                    <field name="model_name"/>
+                    <field name="issue_type"/>
+                    <separator/>
+                    <filter string="Resolved" name="resolved" domain="[('resolved', '=', True)]"/>
+                    <filter string="Unresolved" name="unresolved" domain="[('resolved', '=', False)]"/>
+                    <filter string="Missing Field" name="missing_field" domain="[('issue_type', '=', 'missing_field')]"/>
+                    <filter string="Type Mismatch" name="type_mismatch" domain="[('issue_type', '=', 'type_mismatch')]"/>
+                    <filter string="Ambiguity" name="ambiguity" domain="[('issue_type', '=', 'ambiguity')]"/>
+                </search>
+            </field>
+        </record>
+
+        <!-- Action for numa.synch.issue -->
+        <record id="action_numa_synch_issue" model="ir.actions.act_window">
+            <field name="name">Synchronization Issues</field>
+            <field name="res_model">numa.synch.issue</field>
+            <field name="view_mode">tree,form</field>
+            <field name="domain">[('resolved', '=', False)]</field>
+            <field name="context">{'search_default_unresolved': 1}</field>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    No synchronization issues
+                </p>
+                <p>
+                    Issues detected by AI during schema mapping will appear here.
+                    Review and resolve them to enable synchronization.
+                </p>
+            </field>
+        </record>
+
+        <!-- Menu Items -->
+        <menuitem id="menu_numa_synch_ai_assisted"
+                  name="AI Assisted"
+                  parent="numa_synch.menu_numa_synch_root"
+                  sequence="40"/>
+        
+        <menuitem id="menu_numa_synch_ai_map"
+                  name="AI Mappings"
+                  parent="menu_numa_synch_ai_assisted"
+                  action="action_numa_synch_ai_map"
+                  sequence="10"/>
+        
+        <menuitem id="menu_numa_synch_issue"
+                  name="Synchronization Issues"
+                  parent="menu_numa_synch_ai_assisted"
+                  action="action_numa_synch_issue"
+                  sequence="20"/>
+    </data>
+</odoo>
