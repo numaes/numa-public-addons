@@ -49,6 +49,42 @@
                                 </p>
                             </div>
                         </group>
+                        <group string="Binary Fields Synchronization">
+                            <field name="sync_binary_fields"/>
+                            <field name="binary_max_size_mb" attrs="{'invisible': [('sync_binary_fields', '=', False)]}"/>
+                            <field name="binary_compress" attrs="{'invisible': [('sync_binary_fields', '=', False)]}"/>
+                            <div class="alert alert-warning" role="alert" attrs="{'invisible': [('sync_binary_fields', '=', False)]}">
+                                <p>
+                                    <strong>Warning:</strong> Synchronizing binary fields can significantly increase:
+                                </p>
+                                <ul>
+                                    <li>Payload size (JSON requests)</li>
+                                    <li>Transfer time</li>
+                                    <li>Memory usage</li>
+                                </ul>
+                                <p>
+                                    Binary fields larger than the maximum size will be skipped.
+                                    Compression is recommended to reduce payload size.
+                                </p>
+                            </div>
+                        </group>
+                        <group string="Computed Fields Synchronization">
+                            <field name="sync_computed_fields"/>
+                            <field name="recalculate_computed" attrs="{'invisible': [('sync_computed_fields', '=', False)]}"/>
+                            <div class="alert alert-info" role="alert" attrs="{'invisible': [('sync_computed_fields', '=', False)]}">
+                                <p>
+                                    <strong>Computed Fields:</strong>
+                                </p>
+                                <ul>
+                                    <li><strong>Stored computed fields</strong> (store=True): Synced directly with their values</li>
+                                    <li><strong>Non-stored computed fields</strong> (store=False): Recalculated on destination if enabled</li>
+                                </ul>
+                                <p>
+                                    Recalculating non-stored computed fields ensures they are up-to-date
+                                    but may have a performance impact, especially for complex computations.
+                                </p>
+                            </div>
+                        </group>
                     </sheet>
                 </form>
             </field>

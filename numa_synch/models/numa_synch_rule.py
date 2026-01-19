@@ -73,6 +73,43 @@ class NumaSynchRule(models.Model):
         default=True,
         help='If unchecked, this rule will be ignored during synchronization'
     )
+    
+    sync_binary_fields = fields.Boolean(
+        string='Sync Binary Fields',
+        default=False,
+        help='If enabled, binary fields will be synchronized. '
+             'Note: This can significantly increase payload size and transfer time.'
+    )
+    
+    binary_max_size_mb = fields.Float(
+        string='Max Binary Size (MB)',
+        default=10.0,
+        help='Maximum size in MB for binary fields to be synchronized. '
+             'Fields larger than this will be skipped. Default: 10 MB'
+    )
+    
+    binary_compress = fields.Boolean(
+        string='Compress Binary Fields',
+        default=True,
+        help='If enabled, binary fields will be compressed before sending. '
+             'This reduces payload size but requires decompression on the receiving end.'
+    )
+    
+    sync_computed_fields = fields.Boolean(
+        string='Sync Computed Fields',
+        default=True,
+        help='If enabled, computed fields will be synchronized. '
+             'Stored computed fields (store=True) are synced directly. '
+             'Non-stored computed fields (store=False) are recalculated on the destination.'
+    )
+    
+    recalculate_computed = fields.Boolean(
+        string='Recalculate Non-Stored Computed',
+        default=True,
+        help='If enabled, non-stored computed fields will be recalculated '
+             'on the destination after synchronization. This ensures computed '
+             'fields are up-to-date but may have performance impact.'
+    )
 
     @api.model
     def get_delta_domain(self, last_sync_date):
