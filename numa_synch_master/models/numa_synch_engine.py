@@ -9,6 +9,8 @@ from odoo import models, api, _
 from odoo.exceptions import ValidationError, UserError
 from odoo.fields import Datetime
 import logging
+import base64
+import gzip
 from datetime import datetime
 
 _logger = logging.getLogger(__name__)
@@ -70,6 +72,15 @@ class NumaSynchEngineMaster(models.Model):
             # Namespace Safety: Get allowed models from sync rules
             allowed_models = self._get_allowed_models()
             
+            # Get sync rules by model for computed fields configuration
+            rules_by_model = {}
+            for rule in self.env['numa.synch.rule'].search([
+                ('active', '=', True),
+                ('direction', 'in', ['bidirectional', 'incoming'])
+            ]):
+                if rule.model_name:
+                    rules_by_model[rule.model_name] = rule
+            
             # Phase 1: Create skeleton records (scalar fields only)
             phase1_results = {}
             for record_data in records:
@@ -94,12 +105,14 @@ class NumaSynchEngineMaster(models.Model):
                     continue
                 
                 try:
+                    sync_rule = rules_by_model.get(model_name)
                     result = self._process_record_phase1(
                         model_name,
                         slave_local_id,
                         vals,
                         slave_token,
-                        incoming_write_date
+                        incoming_write_date,
+                        sync_rule
                     )
                     if result:
                         phase1_results[(model_name, slave_local_id)] = result
@@ -134,11 +147,13 @@ class NumaSynchEngineMaster(models.Model):
                 master_id = phase1_results[phase1_key]['master_id']
                 
                 try:
+                    sync_rule = rules_by_model.get(model_name)
                     self._process_record_phase2(
                         model_name,
                         master_id,
                         vals,
-                        slave_token
+                        slave_token,
+                        sync_rule
                     )
                 except Exception as e:
                     _logger.error(
@@ -172,7 +187,7 @@ class NumaSynchEngineMaster(models.Model):
         
         return allowed_models
 
-    def _process_record_phase1(self, model_name, slave_local_id, vals, slave_token, incoming_write_date=None):
+    def _process_record_phase1(self, model_name, slave_local_id, vals, slave_token, incoming_write_date=None, sync_rule=None):
         """
         Phase 1: Create or identify skeleton record (scalar fields only).
         
@@ -229,7 +244,8 @@ class NumaSynchEngineMaster(models.Model):
                     master_record,
                     vals,
                     incoming_timestamp,
-                    slave_token
+                    slave_token,
+                    sync_rule
                 )
                 if not applied:
                     # Changes were ignored due to conflict
@@ -237,6 +253,10 @@ class NumaSynchEngineMaster(models.Model):
                         'master_id': existing_master_id,
                         'action': 'ignored'
                     }
+                else:
+                    # Recalculate computed fields if needed
+                    if sync_rule and sync_rule.sync_computed_fields and sync_rule.recalculate_computed:
+                        self._recalculate_computed_fields(master_record, sync_rule)
         
         if not existing_master_id:
             # New record - create skeleton (scalar fields only)
@@ -253,6 +273,10 @@ class NumaSynchEngineMaster(models.Model):
                     slave_local_id,  # In Master, slave_id is the "remote_id"
                     slave_token
                 )
+                
+                # Recalculate computed fields if needed
+                if sync_rule and sync_rule.sync_computed_fields and sync_rule.recalculate_computed:
+                    self._recalculate_computed_fields(master_record, sync_rule)
                 
                 return {
                     'master_id': master_id,
@@ -271,7 +295,7 @@ class NumaSynchEngineMaster(models.Model):
             'action': 'updated'
         }
 
-    def _process_record_phase2(self, model_name, master_id, vals, slave_token):
+    def _process_record_phase2(self, model_name, master_id, vals, slave_token, sync_rule=None):
         """
         Phase 2: Decorate record with relational fields.
         
@@ -299,6 +323,10 @@ class NumaSynchEngineMaster(models.Model):
         
         try:
             master_record.write(relational_vals)
+            
+            # Recalculate computed fields if needed
+            if sync_rule and sync_rule.sync_computed_fields and sync_rule.recalculate_computed:
+                self._recalculate_computed_fields(master_record, sync_rule)
         except Exception as e:
             _logger.error(
                 'Error updating relational fields in Phase 2: %s (model: %s, ID: %s): %s',
@@ -309,8 +337,9 @@ class NumaSynchEngineMaster(models.Model):
 
     def _extract_scalar_fields(self, model_name, vals):
         """
-        Extract only scalar fields from vals (Char, Integer, Float, Boolean, Date, Datetime, Text, Selection).
-        Exclude Many2one, One2many, Many2many, and Binary fields.
+        Extract only scalar fields from vals (Char, Integer, Float, Boolean, Date, Datetime, Text, Selection, Binary).
+        Exclude Many2one, One2many, Many2many fields.
+        Binary fields are included if they are in the expected format.
         
         :param str model_name: Technical name of the model
         :param dict vals: Full field values dictionary
@@ -332,8 +361,27 @@ class NumaSynchEngineMaster(models.Model):
             if field.type in ('many2one', 'one2many', 'many2many'):
                 continue
             
-            # Skip binary fields (performance)
+            # Handle binary fields
             if field.type == 'binary':
+                # Check if it's a serialized binary field
+                if isinstance(field_value, dict) and field_value.get('__type__') == 'binary':
+                    # Deserialize binary field
+                    binary_data = self._deserialize_binary_field(field_value)
+                    if binary_data:
+                        scalar_vals[field_name] = binary_data
+                    else:
+                        _logger.warning(
+                            'Could not deserialize binary field %s.%s',
+                            model_name, field_name
+                        )
+                elif isinstance(field_value, str):
+                    # Already in base64 format, use as is
+                    scalar_vals[field_name] = field_value
+                else:
+                    _logger.debug(
+                        'Skipping binary field %s.%s (unexpected format)',
+                        model_name, field_name
+                    )
                 continue
             
             # Skip computed fields that are not stored
@@ -487,7 +535,7 @@ class NumaSynchEngineMaster(models.Model):
         
         return relational_vals
 
-    def _apply_conflict_logic(self, record, vals, incoming_timestamp, slave_token):
+    def _apply_conflict_logic(self, record, vals, incoming_timestamp, slave_token, sync_rule=None):
         """
         Apply Last Write Wins (LWW) conflict resolution logic.
         
@@ -550,3 +598,109 @@ class NumaSynchEngineMaster(models.Model):
                 )
             )
             return False
+
+    def _deserialize_binary_field(self, binary_dict):
+        """
+        Deserialize a binary field dictionary back to binary data.
+        
+        :param dict binary_dict: Dictionary with format:
+            {
+                '__type__': 'binary',
+                'data': 'base64_string',
+                'compressed': True/False,
+                ...
+            }
+        :return: Binary data as base64 string (Odoo format) or None
+        :rtype: str or None
+        """
+        if not binary_dict or not isinstance(binary_dict, dict):
+            return None
+        
+        if binary_dict.get('__type__') != 'binary':
+            return None
+        
+        base64_data = binary_dict.get('data')
+        is_compressed = binary_dict.get('compressed', False)
+        
+        if not base64_data:
+            return None
+        
+        try:
+            # Decode from base64
+            binary_data = base64.b64decode(base64_data)
+            
+            # Decompress if needed
+            if is_compressed:
+                try:
+                    binary_data = gzip.decompress(binary_data)
+                except Exception as e:
+                    _logger.error('Error decompressing binary data: %s', str(e))
+                    return None
+            
+            # Return as base64 string (Odoo format)
+            return base64.b64encode(binary_data).decode('utf-8')
+            
+        except Exception as e:
+            _logger.error('Error deserializing binary field: %s', str(e))
+            return None
+
+    def _recalculate_computed_fields(self, record, sync_rule):
+        """
+        Recalculate non-stored computed fields for a record.
+        
+        This method triggers recalculation of computed fields that are not stored
+        (store=False) by calling their compute methods.
+        
+        :param recordset record: Single record
+        :param recordset sync_rule: numa.synch.rule record with configuration
+        """
+        if not record or len(record) != 1:
+            return
+        
+        record.ensure_one()
+        
+        if not sync_rule or not sync_rule.sync_computed_fields or not sync_rule.recalculate_computed:
+            return
+        
+        try:
+            model_fields = record._fields
+            computed_fields_to_recalculate = []
+            
+            # Find all non-stored computed fields
+            for field_name, field in model_fields.items():
+                if field.compute and not field.store:
+                    # Check if field has dependencies that might have changed
+                    if hasattr(field, 'depends'):
+                        computed_fields_to_recalculate.append(field_name)
+            
+            if computed_fields_to_recalculate:
+                # Trigger recalculation by calling the compute methods
+                # Odoo will automatically recalculate when we access the fields
+                # or we can explicitly trigger with invalidate_cache
+                record.invalidate_recordset()
+                
+                # Access each computed field to trigger recalculation
+                for field_name in computed_fields_to_recalculate:
+                    try:
+                        # Accessing the field will trigger its compute method
+                        _ = record[field_name]
+                    except Exception as e:
+                        _logger.debug(
+                            'Error recalculating computed field %s.%s: %s',
+                            record._name, field_name, str(e)
+                        )
+                        # Continue with other fields
+                        continue
+                
+                _logger.debug(
+                    'Recalculated %d computed fields for %s (ID: %s)',
+                    len(computed_fields_to_recalculate),
+                    record._name,
+                    record.id
+                )
+        except Exception as e:
+            _logger.warning(
+                'Error recalculating computed fields for %s (ID: %s): %s',
+                record._name, record.id, str(e)
+            )
+            # Don't raise - this is not critical
