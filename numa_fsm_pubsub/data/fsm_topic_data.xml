@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Test Ping Topic -->
+        <record id="topic_test_ping" model="numa.fsm.topic">
+            <field name="name">test_ping</field>
+            <field name="description">Test topic for ping/pong communication between FSM instances. Used for testing the pub/sub infrastructure.</field>
+            <field name="payload_example">{"message": "ping", "timestamp": "2024-01-01T00:00:00", "sender_id": 123}</field>
+            <field name="active">True</field>
+        </record>
+
+        <!-- System Ping Topic for Diagnostics -->
+        <record id="topic_system_ping" model="numa.fsm.topic">
+            <field name="name">system.ping</field>
+            <field name="description">Tópico de diagnóstico para verificar conectividad entre FSMs. Permite validar que el circuito pub/sub funciona correctamente.</field>
+            <field name="payload_example">{"sender": "fsm_x", "timestamp": "2024-01-01T12:00:00"}</field>
+            <field name="active">True</field>
+        </record>
+    </data>
+</odoo>

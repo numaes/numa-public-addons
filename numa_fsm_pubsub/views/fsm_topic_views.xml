@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_fsm_topic_tree" model="ir.ui.view">
+        <field name="name">numa.fsm.topic.tree</field>
+        <field name="model">numa.fsm.topic</field>
+        <field name="arch" type="xml">
+            <tree string="FSM Topics">
+                <field name="name"/>
+                <field name="active"/>
+                <field name="subscription_count"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_fsm_topic_form" model="ir.ui.view">
+        <field name="name">numa.fsm.topic.form</field>
+        <field name="model">numa.fsm.topic</field>
+        <field name="arch" type="xml">
+            <form string="FSM Topic">
+                <header>
+                    <field name="active" widget="boolean_toggle"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="subscription_count"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="description" placeholder="Describe what this topic represents and when it should be used..."/>
+                    </group>
+                    <group string="Payload Example">
+                        <field name="payload_example" widget="text" placeholder='{"key": "value", ...}'/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_fsm_subscription_tree" model="ir.ui.view">
+        <field name="name">numa.fsm.subscription.tree</field>
+        <field name="model">numa.fsm.subscription</field>
+        <field name="arch" type="xml">
+            <tree string="FSM Subscriptions">
+                <field name="topic_id"/>
+                <field name="subscriber_fsm_id"/>
+                <field name="is_active"/>
+                <field name="last_notification_date"/>
+                <field name="notification_count"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_fsm_subscription_form" model="ir.ui.view">
+        <field name="name">numa.fsm.subscription.form</field>
+        <field name="model">numa.fsm.subscription</field>
+        <field name="arch" type="xml">
+            <form string="FSM Subscription">
+                <header>
+                    <field name="is_active" widget="boolean_toggle"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="topic_id"/>
+                            <field name="subscriber_fsm_id"/>
+                        </group>
+                        <group>
+                            <field name="last_notification_date"/>
+                            <field name="notification_count"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_fsm_topic" model="ir.actions.act_window">
+        <field name="name">FSM Topics</field>
+        <field name="res_model">numa.fsm.topic</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <record id="action_fsm_subscription" model="ir.actions.act_window">
+        <field name="name">FSM Subscriptions</field>
+        <field name="res_model">numa.fsm.subscription</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <!-- Add subscription count to FSM instance form -->
+    <record id="view_fsm_instance_form_pubsub" model="ir.ui.view">
+        <field name="name">fsm.instance.form.pubsub</field>
+        <field name="model">fsm.instance</field>
+        <field name="inherit_id" ref="numa_fsm.instance_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='state']" position="after">
+                <field name="subscription_count"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

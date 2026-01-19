@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_fsm_topic_user,numa.fsm.topic,model_numa_fsm_topic,base.group_user,1,1,1,1
+access_fsm_subscription_user,numa.fsm.subscription,model_numa_fsm_subscription,base.group_user,1,1,1,1
+access_fsm_topic_manager,numa.fsm.topic,model_numa_fsm_topic,base.group_system,1,1,1,1
+access_fsm_subscription_manager,numa.fsm.subscription,model_numa_fsm_subscription,base.group_system,1,1,1,1

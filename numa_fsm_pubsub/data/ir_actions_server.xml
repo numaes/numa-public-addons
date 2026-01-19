@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- Server Action: TEST: Enviar Ping a Suscriptores -->
+        <record id="action_server_test_ping" model="ir.actions.server">
+            <field name="name">TEST: Enviar Ping a Suscriptores</field>
+            <field name="model_id" ref="numa_fsm.model_fsm_instance"/>
+            <field name="binding_model_id" ref="numa_fsm.model_fsm_instance"/>
+            <field name="binding_view_types">form</field>
+            <field name="state">code</field>
+            <field name="code">
+# Simular payload
+import datetime
+payload = {
+    'sender': record.display_name or f"FSM-{record.id}",
+    'timestamp': str(datetime.datetime.now()),
+    'fsm_id': record.id,
+    'fsm_name': record.name,
+}
+# Publicar (esto debería disparar la cola asincrónica)
+notified_count = record.publish('system.ping', payload)
+if notified_count > 0:
+    log(f"✅ Ping enviado a {notified_count} suscriptor(es)")
+else:
+    log(f"⚠️ No hay suscriptores activos para el tópico 'system.ping'")
+            </field>
+        </record>
+    </data>
+</odoo>
