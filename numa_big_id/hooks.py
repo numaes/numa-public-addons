@@ -100,26 +100,95 @@ def pre_init_hook(cr):
     # Step 3: Migrate integer columns to BIGINT
     _logger.info("Step 3: Migrating integer columns to BIGINT...")
     columns_migrated = 0
+    id_columns_migrated = 0
     
+    # First pass: Convert all 'id' columns first (they are critical)
+    _logger.info("Step 3a: Converting 'id' columns first (priority)...")
     for table_name in all_tables:
         try:
-            # Get all integer columns in this table
+            # Check if table has an 'id' column that is integer
+            cr.execute("""
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                AND table_name = %s
+                AND column_name = 'id'
+                AND data_type = 'integer'
+            """, (table_name,))
+            
+            id_column = cr.fetchone()
+            if not id_column:
+                continue
+            
+            column_name = id_column[0]
+            _logger.info("*** Converting ID column: %s.%s ***", table_name, column_name)
+            
+            try:
+                # Check if already BIGINT
+                cr.execute("""
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                    AND table_name = %s
+                    AND column_name = %s
+                """, (table_name, column_name))
+                
+                result = cr.fetchone()
+                if result and result[0] == 'bigint':
+                    _logger.info("Column %s.%s is already BIGINT, skipping", table_name, column_name)
+                    continue
+                
+                # Convert ID column to BIGINT
+                sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint USING %s::bigint" % (
+                    table_name, column_name, column_name
+                )
+                _logger.info("Executing SQL for ID: %s", sql)
+                cr.execute(sql)
+                columns_migrated += 1
+                id_columns_migrated += 1
+                _logger.info("*** Successfully converted ID column %s.%s to BIGINT ***", table_name, column_name)
+            except Exception as e:
+                _logger.error("*** ERROR converting ID column %s.%s: %s ***", table_name, column_name, e)
+                # Try to get more details about the error
+                try:
+                    # Check for foreign key constraints
+                    cr.execute("""
+                        SELECT conname, conrelid::regclass, confrelid::regclass
+                        FROM pg_constraint
+                        WHERE conrelid = %s::regclass
+                        AND contype = 'f'
+                    """, (table_name,))
+                    fks = cr.fetchall()
+                    if fks:
+                        _logger.warning("Table %s has %s foreign key constraints that may need attention", table_name, len(fks))
+                except:
+                    pass
+        except Exception as e:
+            _logger.error("Error processing ID column for table %s: %s", table_name, e)
+    
+    _logger.info("Converted %s ID columns to BIGINT", id_columns_migrated)
+    
+    # Second pass: Convert all other integer columns
+    _logger.info("Step 3b: Converting other integer columns...")
+    for table_name in all_tables:
+        try:
+            # Get all integer columns in this table (excluding 'id' which we already did)
             cr.execute("""
                 SELECT column_name, data_type
                 FROM information_schema.columns
                 WHERE table_schema = 'public'
                 AND table_name = %s
                 AND data_type = 'integer'
+                AND column_name != 'id'
                 ORDER BY column_name
             """, (table_name,))
             
             integer_columns = cr.fetchall()
             
             if not integer_columns:
-                _logger.debug("Table %s: No integer columns found", table_name)
                 continue
             
-            _logger.info("Table %s: Found %s integer columns", table_name, len(integer_columns))
+            _logger.info("Table %s: Found %s non-ID integer columns", table_name, len(integer_columns))
             
             for column_name, _ in integer_columns:
                 try:
@@ -183,7 +252,35 @@ def pre_init_hook(cr):
             _logger.error("Error processing table %s: %s", table_name, e)
             # Continue with other tables
     
-    _logger.info("Migrated %s columns to BIGINT", columns_migrated)
+    _logger.info("Migrated %s columns to BIGINT (%s ID columns, %s other columns)", 
+                 columns_migrated, id_columns_migrated, columns_migrated - id_columns_migrated)
+    
+    # Step 3.5: Verify conversion of ID columns
+    _logger.info("Step 3.5: Verifying ID column conversions...")
+    id_columns_verified = 0
+    id_columns_failed = 0
+    for table_name in all_tables:
+        try:
+            cr.execute("""
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                AND table_name = %s
+                AND column_name = 'id'
+            """, (table_name,))
+            result = cr.fetchone()
+            if result:
+                col_name, data_type = result
+                if data_type == 'bigint':
+                    id_columns_verified += 1
+                    _logger.debug("Verified: %s.%s is BIGINT", table_name, col_name)
+                elif data_type == 'integer':
+                    id_columns_failed += 1
+                    _logger.warning("WARNING: %s.%s is still INTEGER (conversion may have failed)", table_name, col_name)
+        except Exception as e:
+            _logger.error("Error verifying ID column for %s: %s", table_name, e)
+    
+    _logger.info("ID column verification: %s BIGINT, %s still INTEGER", id_columns_verified, id_columns_failed)
     
     # Step 4: Convert sequences to BIGINT
     _logger.info("Step 4: Converting sequences to BIGINT...")
@@ -259,6 +356,15 @@ def pre_init_hook(cr):
     
     _logger.info("Migrated %s sequences to BIGINT", sequences_migrated)
     
+    # Step 5: Summary and warnings
     _logger.info("=" * 80)
-    _logger.info("NUMA BIG ID: Pre-installation migration completed successfully")
+    _logger.info("NUMA BIG ID: Pre-installation migration completed")
+    _logger.info("=" * 80)
+    _logger.info("Summary:")
+    _logger.info("  - Tables analyzed: %s", len(all_tables))
+    _logger.info("  - Columns migrated: %s", columns_migrated)
+    _logger.info("  - ID columns migrated: %s", id_columns_migrated)
+    _logger.info("  - Sequences migrated: %s", sequences_migrated)
+    if id_columns_failed > 0:
+        _logger.warning("  - WARNING: %s ID columns are still INTEGER - manual intervention may be required", id_columns_failed)
     _logger.info("=" * 80)
