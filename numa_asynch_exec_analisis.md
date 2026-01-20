@@ -259,7 +259,7 @@ recordset.job_wait().method1().job_wait().method2().method3()
 
 ```python
 # Múltiples niveles de paralelismo y secuencia
-recordset.await().fetch_data1().await().fetch_data2().process().await().validate().save()
+recordset.job_wait().fetch_data1().job_wait().fetch_data2().process().job_wait().validate().save()
 ```
 
 **Flujo:**
@@ -344,7 +344,7 @@ recordset.job_wait().fetch_from_api1().job_wait().fetch_from_api2().merge_result
 
 ```python
 # Validar en paralelo, luego notificar
-recordset.await().validate_business_rules().await().check_permissions().send_notification()
+recordset.job_wait().validate_business_rules().job_wait().check_permissions().send_notification()
 ```
 
 ---
@@ -544,7 +544,7 @@ Esta funcionalidad **NO debe implementarse en este módulo**. El objetivo es man
 recordset.await().method1().method2()
 
 # Paralelo
-recordset.await().method1().await().method2().method3()
+recordset.job_wait().method1().job_wait().method2().method3()
 
 # Complejo
 recordset.await().fetch1().await().fetch2().process().save()
