@@ -23,28 +23,59 @@ from odoo.tools.func import lazy_property
 _logger = logging.getLogger(__name__)
 
 
+class SubscriptableTuple:
+    """
+    A tuple wrapper that supports lazy evaluation.
+    
+    This is needed because Odoo sometimes accesses field.column_type[1]
+    directly, and we need to ensure the value is evaluated first.
+    """
+    def __init__(self, value):
+        if not isinstance(value, (tuple, list)):
+            raise TypeError(f"SubscriptableTuple requires tuple/list, got {type(value)}")
+        self._value = tuple(value)
+    
+    def __getitem__(self, key):
+        return self._value[key]
+    
+    def __iter__(self):
+        return iter(self._value)
+    
+    def __len__(self):
+        return len(self._value)
+    
+    def __repr__(self):
+        return repr(self._value)
+    
+    def __eq__(self, other):
+        return self._value == other
+    
+    def __hash__(self):
+        return hash(self._value)
+
+
 class SubscriptableLazyProperty:
     """
     A lazy_property wrapper that supports subscript operations.
     
     This is needed because Odoo sometimes accesses field.column_type[1]
     directly, which fails with a regular lazy_property.
+    
+    The key insight is that we need to return a SubscriptableTuple
+    that wraps the tuple value, so subscript operations work.
     """
     def __init__(self, fget):
-        self._lazy_prop = lazy_property(fget)
         self.fget = fget
     
     def __get__(self, obj, cls=None):
         if obj is None:
             return self
-        # Delegate to the lazy_property
-        return self._lazy_prop.__get__(obj, cls)
-    
-    def __getitem__(self, key):
-        # This should never be called on the descriptor itself,
-        # but if it is, we need to evaluate it somehow
-        # In practice, this should only be called after __get__ returns a value
-        raise TypeError("SubscriptableLazyProperty.__getitem__ called on descriptor")
+        # Evaluate the property
+        value = self.fget(obj)
+        # Cache it on the instance using the function name
+        setattr(obj, self.fget.__name__, value)
+        # Return a SubscriptableTuple wrapper so [1] access works
+        return SubscriptableTuple(value)
     
     def reset_all(self, obj):
         """Reset the cached value on the object."""
