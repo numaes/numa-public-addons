@@ -135,6 +135,19 @@ def pre_init_hook(env):
             if not id_column:
                 continue
             
+            # Check if this table inherits from another table (table inheritance)
+            # PostgreSQL doesn't allow altering inherited columns
+            cr.execute("""
+                SELECT COUNT(*)
+                FROM pg_inherits
+                WHERE inhrelid = %s::regclass
+            """, (table_name,))
+            
+            is_inherited = cr.fetchone()[0] > 0
+            if is_inherited:
+                _logger.debug("  Skipping %s.id - column is inherited (table inheritance)", table_name)
+                continue
+            
             # Check if already BIGINT (double check)
             cr.execute("""
                 SELECT data_type
