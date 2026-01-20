@@ -16,6 +16,11 @@ _logger = logging.getLogger(__name__)
 # abort the installation to prevent unsafe automatic migration
 MAX_SAFE_ROWS = 500000
 
+# Enable foreign key handling (can be very heavy on medium databases)
+# Set to True only if you have a small database or can afford downtime
+# When False, ID column conversion may fail if foreign keys block it
+HANDLE_FOREIGN_KEYS = False
+
 # Critical tables to check before migration
 CRITICAL_TABLES = [
     'res_partner',
@@ -104,6 +109,12 @@ def pre_init_hook(cr):
     
     # First pass: Convert all 'id' columns first (they are critical)
     _logger.info("Step 3a: Converting 'id' columns first (priority)...")
+    
+    if HANDLE_FOREIGN_KEYS:
+        _logger.warning("=" * 80)
+        _logger.warning("FOREIGN KEY HANDLING ENABLED - This may be very slow on medium/large databases")
+        _logger.warning("=" * 80)
+    
     for table_name in all_tables:
         try:
             # Check if table has an 'id' column that is integer
@@ -138,6 +149,47 @@ def pre_init_hook(cr):
                     _logger.info("Column %s.%s is already BIGINT, skipping", table_name, column_name)
                     continue
                 
+                # Check for foreign keys that reference this column
+                foreign_keys_to_handle = []
+                if HANDLE_FOREIGN_KEYS:
+                    # Find all foreign keys that reference this ID column
+                    cr.execute("""
+                        SELECT 
+                            conname,
+                            conrelid::regclass as referencing_table,
+                            confrelid::regclass as referenced_table,
+                            a.attname as referencing_column,
+                            af.attname as referenced_column
+                        FROM pg_constraint c
+                        JOIN pg_class r ON c.conrelid = r.oid
+                        JOIN pg_class rf ON c.confrelid = rf.oid
+                        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+                        JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = ANY(c.confkey)
+                        WHERE c.contype = 'f'
+                        AND (rf.relname = %s AND af.attname = 'id')
+                        ORDER BY conname
+                    """, (table_name,))
+                    foreign_keys_to_handle = cr.fetchall()
+                    
+                    if foreign_keys_to_handle:
+                        _logger.info("Found %s foreign keys referencing %s.id - will temporarily disable", 
+                                   len(foreign_keys_to_handle), table_name)
+                
+                # Temporarily disable foreign keys if handling is enabled
+                disabled_fks = []
+                if HANDLE_FOREIGN_KEYS and foreign_keys_to_handle:
+                    for fk_info in foreign_keys_to_handle:
+                        fk_name, ref_table, refed_table, ref_col, refed_col = fk_info
+                        try:
+                            # Drop the foreign key constraint
+                            sql_drop = "ALTER TABLE %s DROP CONSTRAINT %s" % (ref_table, fk_name)
+                            _logger.debug("Dropping FK: %s", sql_drop)
+                            cr.execute(sql_drop)
+                            disabled_fks.append((ref_table, fk_name, fk_info))
+                            _logger.debug("Dropped FK %s on table %s", fk_name, ref_table)
+                        except Exception as fk_err:
+                            _logger.warning("Could not drop FK %s: %s", fk_name, fk_err)
+                
                 # Convert ID column to BIGINT
                 sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint USING %s::bigint" % (
                     table_name, column_name, column_name
@@ -147,8 +199,49 @@ def pre_init_hook(cr):
                 columns_migrated += 1
                 id_columns_migrated += 1
                 _logger.info("*** Successfully converted ID column %s.%s to BIGINT ***", table_name, column_name)
+                
+                # Recreate foreign keys if they were disabled
+                if HANDLE_FOREIGN_KEYS and disabled_fks:
+                    _logger.info("Recreating %s foreign keys for %s.id...", len(disabled_fks), table_name)
+                    for ref_table, fk_name, fk_info in disabled_fks:
+                        fk_name_orig, ref_table_orig, refed_table_orig, ref_col, refed_col = fk_info
+                        try:
+                            # Recreate the foreign key constraint
+                            sql_create = """
+                                ALTER TABLE %s 
+                                ADD CONSTRAINT %s 
+                                FOREIGN KEY (%s) 
+                                REFERENCES %s(%s)
+                            """ % (ref_table, fk_name, ref_col, refed_table, refed_col)
+                            _logger.debug("Recreating FK: %s", sql_create)
+                            cr.execute(sql_create)
+                            _logger.debug("Recreated FK %s on table %s", fk_name, ref_table)
+                        except Exception as fk_err:
+                            _logger.error("ERROR recreating FK %s on table %s: %s", fk_name, ref_table, fk_err)
+                            # This is critical - log it prominently
+                            _logger.error("*** MANUAL INTERVENTION REQUIRED: FK %s needs to be recreated manually ***", fk_name)
+                
             except Exception as e:
                 _logger.error("*** ERROR converting ID column %s.%s: %s ***", table_name, column_name, e)
+                
+                # If we disabled FKs, try to recreate them even on error
+                if HANDLE_FOREIGN_KEYS and disabled_fks:
+                    _logger.warning("Attempting to restore %s foreign keys after error...", len(disabled_fks))
+                    for ref_table, fk_name, fk_info in disabled_fks:
+                        fk_name_orig, ref_table_orig, refed_table_orig, ref_col, refed_col = fk_info
+                        try:
+                            sql_create = """
+                                ALTER TABLE %s 
+                                ADD CONSTRAINT %s 
+                                FOREIGN KEY (%s) 
+                                REFERENCES %s(%s)
+                            """ % (ref_table, fk_name, ref_col, refed_table, refed_col)
+                            cr.execute(sql_create)
+                            _logger.info("Restored FK %s on table %s", fk_name, ref_table)
+                        except Exception as fk_err:
+                            _logger.error("CRITICAL: Could not restore FK %s: %s", fk_name, fk_err)
+                            _logger.error("*** MANUAL INTERVENTION REQUIRED: FK %s needs to be recreated manually ***", fk_name)
+                
                 # Try to get more details about the error
                 try:
                     # Check for foreign key constraints
@@ -161,6 +254,8 @@ def pre_init_hook(cr):
                     fks = cr.fetchall()
                     if fks:
                         _logger.warning("Table %s has %s foreign key constraints that may need attention", table_name, len(fks))
+                        if not HANDLE_FOREIGN_KEYS:
+                            _logger.warning("Consider setting HANDLE_FOREIGN_KEYS = True in hooks.py if conversion fails")
                 except:
                     pass
         except Exception as e:
