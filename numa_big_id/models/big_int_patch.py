@@ -101,17 +101,7 @@ def column_type(self):
         
         # Replace int4 with int8 (bigint)
         if pg_type in ('int4', 'integer'):
-            # Only log at INFO level for ID fields, DEBUG for others
-            if hasattr(self, 'name') and self.name == 'id':
-                _logger.info(
-                    "Patching column_type for ID field %s: %s -> bigint",
-                    self.name, pg_type
-                )
-            else:
-                _logger.debug(
-                    "Patching column_type for field %s: %s -> bigint",
-                    self.name if hasattr(self, 'name') else 'unknown', pg_type
-                )
+            # Logging removed per user request - too verbose
             return ('int8', 'bigint')
     
     return original_type
@@ -160,10 +150,9 @@ def apply_bigint_patch():
                 # It's a lazy_property - get the underlying function
                 original_getter = original_column_type_descriptor.fget
                 if original_getter:
-                    # Store as a function that will be called with self
-                    def _wrapped_original(self):
-                        return original_getter(self)
-                    fields.Integer._original_get_column_type = _wrapped_original
+                    # Store the getter directly - it will be called with self by the descriptor
+                    # The getter from lazy_property already expects (self) as argument
+                    fields.Integer._original_get_column_type = original_getter
                 else:
                     def _default_get_column_type(self):
                         return ('int4', 'int4')
@@ -172,9 +161,8 @@ def apply_bigint_patch():
                 # It's a regular property - get the getter
                 original_getter = original_column_type_descriptor.fget
                 if original_getter:
-                    def _wrapped_original(self):
-                        return original_getter(self)
-                    fields.Integer._original_get_column_type = _wrapped_original
+                    # Store the getter directly - it already expects (self) as argument
+                    fields.Integer._original_get_column_type = original_getter
                 else:
                     def _default_get_column_type(self):
                         return ('int4', 'int4')
@@ -228,9 +216,8 @@ def apply_bigint_patch():
                     # It's a lazy_property - get the underlying function
                     original_getter = original_column_type_descriptor.fget
                     if original_getter:
-                        def _wrapped_original(self):
-                            return original_getter(self)
-                        fields.Many2one._original_get_column_type = _wrapped_original
+                        # Store the getter directly - it will be called with self by the descriptor
+                        fields.Many2one._original_get_column_type = original_getter
                     else:
                         def _default_get_column_type(self):
                             return ('int4', 'int4')
@@ -239,9 +226,8 @@ def apply_bigint_patch():
                     # It's a regular property - get the getter
                     original_getter = original_column_type_descriptor.fget
                     if original_getter:
-                        def _wrapped_original(self):
-                            return original_getter(self)
-                        fields.Many2one._original_get_column_type = _wrapped_original
+                        # Store the getter directly - it already expects (self) as argument
+                        fields.Many2one._original_get_column_type = original_getter
                     else:
                         def _default_get_column_type(self):
                             return ('int4', 'int4')
