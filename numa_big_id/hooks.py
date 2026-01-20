@@ -317,11 +317,6 @@ def pre_init_hook(env):
                 # If we disabled FKs, try to recreate them even on error
                 if HANDLE_FOREIGN_KEYS and disabled_fks:
                     _logger.warning("  Attempting to restore %s foreign keys after error...", len(disabled_fks))
-    
-    # Final commit for ID columns
-    if commit_counter > 0:
-        cr.commit()
-        commit_counter = 0
                     for ref_table, fk_name, fk_info in disabled_fks:
                         fk_name_orig, ref_table_orig, refed_table_orig, ref_col, refed_col = fk_info
                         try:
@@ -351,12 +346,13 @@ def pre_init_hook(env):
                             _logger.warning("  Table has %s foreign keys - consider enabling HANDLE_FOREIGN_KEYS", fk_count)
                     except:
                         pass
-        except Exception as e:
-            _logger.error("Error processing table %s: %s", table_name, e)
+            except Exception as e:
+                _logger.error("Error processing table %s: %s", table_name, e)
     
-    # Final commit for other columns
+    # Final commit for ID columns
     if commit_counter > 0:
         cr.commit()
+        commit_counter = 0
     
     _logger.info("Converted %s ID columns to BIGINT", id_columns_migrated)
     
