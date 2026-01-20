@@ -142,14 +142,16 @@ def apply_bigint_patch():
     _logger.info("Applying BIGINT patch to Odoo ORM...")
     
     # Store original methods if they exist
+    # We need to get the original getter before replacing the descriptor
     if hasattr(fields.Integer, 'column_type'):
         if not hasattr(fields.Integer, '_original_get_column_type'):
-            original_column_type = fields.Integer.column_type
+            # Access the descriptor at class level - it will return itself
+            original_column_type_descriptor = fields.Integer.column_type
             
             # Check if it's a lazy_property (Odoo 18)
-            if hasattr(original_column_type, 'fget'):
+            if hasattr(original_column_type_descriptor, 'fget'):
                 # It's a lazy_property - get the underlying function
-                original_getter = original_column_type.fget
+                original_getter = original_column_type_descriptor.fget
                 if original_getter:
                     # Store as a function that will be called with self
                     def _wrapped_original(self):
@@ -159,9 +161,9 @@ def apply_bigint_patch():
                     def _default_get_column_type(self):
                         return ('int4', 'int4')
                     fields.Integer._original_get_column_type = _default_get_column_type
-            elif isinstance(original_column_type, property):
+            elif isinstance(original_column_type_descriptor, property):
                 # It's a regular property - get the getter
-                original_getter = original_column_type.fget
+                original_getter = original_column_type_descriptor.fget
                 if original_getter:
                     def _wrapped_original(self):
                         return original_getter(self)
@@ -172,8 +174,9 @@ def apply_bigint_patch():
                     fields.Integer._original_get_column_type = _default_get_column_type
             else:
                 # If it's not a property/lazy_property, it's a direct value
+                # This shouldn't happen for column_type, but handle it anyway
                 def _get_direct_value(self):
-                    return original_column_type
+                    return original_column_type_descriptor
                 fields.Integer._original_get_column_type = _get_direct_value
     
     # Patch column_type property
@@ -202,35 +205,36 @@ def apply_bigint_patch():
         try:
             # Store original if not already stored
             if not hasattr(fields.Many2one, '_original_get_column_type'):
-                original_column_type = fields.Many2one.column_type
+                # Access the descriptor at class level - it will return itself
+                original_column_type_descriptor = fields.Many2one.column_type
                 
                 # Check if it's a lazy_property (Odoo 18)
-                if hasattr(original_column_type, 'fget'):
+                if hasattr(original_column_type_descriptor, 'fget'):
                     # It's a lazy_property - get the underlying function
-                    original_getter = original_column_type.fget
+                    original_getter = original_column_type_descriptor.fget
                     if original_getter:
                         def _wrapped_original(self):
                             return original_getter(self)
                         fields.Many2one._original_get_column_type = _wrapped_original
                     else:
                         def _default_get_column_type(self):
-                            return ('integer', 'integer')
+                            return ('int4', 'int4')
                         fields.Many2one._original_get_column_type = _default_get_column_type
-                elif isinstance(original_column_type, property):
+                elif isinstance(original_column_type_descriptor, property):
                     # It's a regular property - get the getter
-                    original_getter = original_column_type.fget
+                    original_getter = original_column_type_descriptor.fget
                     if original_getter:
                         def _wrapped_original(self):
                             return original_getter(self)
                         fields.Many2one._original_get_column_type = _wrapped_original
                     else:
                         def _default_get_column_type(self):
-                            return ('integer', 'integer')
+                            return ('int4', 'int4')
                         fields.Many2one._original_get_column_type = _default_get_column_type
                 else:
                     # If it's not a property/lazy_property, it's a direct value
                     def _get_direct_value(self):
-                        return original_column_type
+                        return original_column_type_descriptor
                     fields.Many2one._original_get_column_type = _get_direct_value
             
             # Apply same patch to Many2one
