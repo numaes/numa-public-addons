@@ -39,9 +39,10 @@ class SubscriptableLazyProperty:
     def __get__(self, obj, cls=None):
         if obj is None:
             return self
-        # Check if already cached
-        if hasattr(obj, self.attrname):
-            cached = getattr(obj, self.attrname)
+        # Check if already cached using __dict__ to avoid recursion
+        # Using __dict__ directly prevents triggering the descriptor again
+        if self.attrname in obj.__dict__:
+            cached = obj.__dict__[self.attrname]
             _logger.debug("SubscriptableLazyProperty: Returning cached value for %s.%s: %s", 
                          type(obj).__name__, self.attrname, cached)
             return cached
@@ -54,16 +55,16 @@ class SubscriptableLazyProperty:
             value = (value, value) if value else None
         else:
             value = tuple(value)
-        # Cache it on the instance
-        setattr(obj, self.attrname, value)
+        # Cache it on the instance using __dict__ to avoid recursion
+        obj.__dict__[self.attrname] = value
         _logger.debug("SubscriptableLazyProperty: Cached value for %s.%s: %s", 
                      type(obj).__name__, self.attrname, value)
         return value
     
     def reset_all(self, obj):
         """Reset the cached value on the object."""
-        if hasattr(obj, self.attrname):
-            delattr(obj, self.attrname)
+        if self.attrname in obj.__dict__:
+            del obj.__dict__[self.attrname]
 
 
 def column_type(self):
