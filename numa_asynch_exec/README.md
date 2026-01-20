@@ -114,5 +114,115 @@ recordset.await(retry=3, retry_delay=500).validate().process().save()
 
 If an exception occurs during execution, the module performs a rollback of the background transaction and calls `register_exception` from the `numa_exceptions` module, providing full traceability of the error in the context of the asynchronous job.
 
+### Dependency Resolution
+
+When using `await()`, jobs with dependencies are automatically managed:
+
+1. **Creation**: Jobs with unmet dependencies are created in `waiting` state
+2. **Monitoring**: The system tracks when dependencies complete
+3. **Activation**: When all dependencies are `done`, the dependent job automatically moves to `pending` and is submitted to the executor
+4. **Failure Handling**: If a dependency fails, dependent jobs remain in `waiting` state (they will not execute)
+
+### Models
+
+#### `numa.asynch.job`
+
+Stores asynchronous job records with all metadata needed for execution.
+
+**Key Fields:**
+- `model_name`: Target Odoo model
+- `res_ids`: Record IDs to execute method on
+- `method_name`: Method to call
+- `args`, `kwargs`: Method arguments
+- `state`: Current state (pending, running, done, failed, waiting)
+- `dependency_ids`: Jobs this job depends on
+- `dependent_job_ids`: Jobs that depend on this job
+
+#### `numa.asynch.job.dependency`
+
+Tracks dependency relationships between jobs.
+
+**Key Fields:**
+- `job_id`: Dependent job
+- `depends_on_id`: Job that must complete first
+
+**Validations:**
+- Prevents self-dependencies
+- Detects circular dependencies
+
+---
+
+## Examples
+
+### Example 1: Simple Async Task
+
+```python
+# Send email without blocking
+self.env['mail.mail'].asynch_exec().send()
+```
+
+### Example 2: Sequential Processing
+
+```python
+# Process order steps in sequence
+order.await().validate().process_payment().send_confirmation()
+```
+
+### Example 3: Parallel Data Fetching
+
+```python
+# Fetch from multiple sources simultaneously, then process
+recordset.await().fetch_customers().await().fetch_products().merge_data()
+```
+
+### Example 4: Complex Workflow
+
+```python
+# Parallel validation, then sequential processing
+recordset.await().validate_rules().await().check_permissions().process().notify()
+```
+
+---
+
+## Best Practices
+
+1. **Use `asynch_exec()` for simple, independent tasks**
+2. **Use `await()` for coordinated workflows**
+3. **Handle errors appropriately** - check job states
+4. **Avoid blocking operations** in async methods
+5. **Consider transaction boundaries** - each job runs in its own transaction
+6. **Monitor job states** for long-running operations
+7. **Use parallel execution** to improve throughput when possible
+
+---
+
+## Troubleshooting
+
+### Jobs Not Executing
+
+- Check thread pool configuration
+- Verify job records exist
+- Check server logs for errors
+- Ensure `numa_exceptions` module is installed
+
+### Jobs Stuck in 'waiting'
+
+- Check if dependency jobs completed
+- Verify dependency relationships
+- Check if dependencies failed
+
+### Circular Dependencies
+
+- Review your `await()` chain structure
+- Simplify dependency relationships
+- Ensure no job depends on itself
+
+---
+
+## See Also
+
+- **User Guide**: See `USER_GUIDE.md` for detailed usage examples and best practices
+- **Analysis Document**: See `numa_asynch_exec_analisis.md` for technical analysis
+
 ---
 Developed by **Numaes** - [www.numaes.com](https://www.numaes.com)
