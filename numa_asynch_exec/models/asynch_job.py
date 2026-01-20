@@ -63,7 +63,6 @@ class NumaAsynchJob(models.Model):
     has_dependencies = fields.Boolean(
         string='Has Dependencies',
         compute='_compute_has_dependencies',
-        store=True,
         help='True if this job has dependencies that must complete first'
     )
     
