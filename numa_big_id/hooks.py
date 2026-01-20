@@ -111,9 +111,7 @@ def pre_init_hook(cr):
     _logger.info("Step 3a: Converting 'id' columns first (priority)...")
     
     if HANDLE_FOREIGN_KEYS:
-        _logger.warning("=" * 80)
         _logger.warning("FOREIGN KEY HANDLING ENABLED - This may be very slow on medium/large databases")
-        _logger.warning("=" * 80)
     
     for table_name in all_tables:
         try:
@@ -131,102 +129,107 @@ def pre_init_hook(cr):
             if not id_column:
                 continue
             
-            column_name = id_column[0]
-            _logger.info("*** Converting ID column: %s.%s ***", table_name, column_name)
+            # Check if already BIGINT (double check)
+            cr.execute("""
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                AND table_name = %s
+                AND column_name = 'id'
+            """, (table_name,))
+            
+            result = cr.fetchone()
+            if result and result[0] == 'bigint':
+                continue
+            
+            # Check for foreign keys that reference this column
+            foreign_keys_to_handle = []
+            fk_count = 0
+            if HANDLE_FOREIGN_KEYS:
+                # Find all foreign keys that reference this ID column
+                cr.execute("""
+                    SELECT 
+                        conname,
+                        conrelid::regclass as referencing_table,
+                        confrelid::regclass as referenced_table,
+                        a.attname as referencing_column,
+                        af.attname as referenced_column
+                    FROM pg_constraint c
+                    JOIN pg_class r ON c.conrelid = r.oid
+                    JOIN pg_class rf ON c.confrelid = rf.oid
+                    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+                    JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = ANY(c.confkey)
+                    WHERE c.contype = 'f'
+                    AND (rf.relname = %s AND af.attname = 'id')
+                    ORDER BY conname
+                """, (table_name,))
+                foreign_keys_to_handle = cr.fetchall()
+                fk_count = len(foreign_keys_to_handle)
+            
+            # Log table processing (simplified)
+            if fk_count > 0:
+                _logger.info("Processing table %s: ID column + %s FKs", table_name, fk_count)
+            else:
+                _logger.info("Processing table %s: ID column", table_name)
             
             try:
-                # Check if already BIGINT
-                cr.execute("""
-                    SELECT data_type
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public'
-                    AND table_name = %s
-                    AND column_name = %s
-                """, (table_name, column_name))
-                
-                result = cr.fetchone()
-                if result and result[0] == 'bigint':
-                    _logger.info("Column %s.%s is already BIGINT, skipping", table_name, column_name)
-                    continue
-                
-                # Check for foreign keys that reference this column
-                foreign_keys_to_handle = []
-                if HANDLE_FOREIGN_KEYS:
-                    # Find all foreign keys that reference this ID column
-                    cr.execute("""
-                        SELECT 
-                            conname,
-                            conrelid::regclass as referencing_table,
-                            confrelid::regclass as referenced_table,
-                            a.attname as referencing_column,
-                            af.attname as referenced_column
-                        FROM pg_constraint c
-                        JOIN pg_class r ON c.conrelid = r.oid
-                        JOIN pg_class rf ON c.confrelid = rf.oid
-                        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
-                        JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = ANY(c.confkey)
-                        WHERE c.contype = 'f'
-                        AND (rf.relname = %s AND af.attname = 'id')
-                        ORDER BY conname
-                    """, (table_name,))
-                    foreign_keys_to_handle = cr.fetchall()
-                    
-                    if foreign_keys_to_handle:
-                        _logger.info("Found %s foreign keys referencing %s.id - will temporarily disable", 
-                                   len(foreign_keys_to_handle), table_name)
-                
                 # Temporarily disable foreign keys if handling is enabled
                 disabled_fks = []
                 if HANDLE_FOREIGN_KEYS and foreign_keys_to_handle:
                     for fk_info in foreign_keys_to_handle:
                         fk_name, ref_table, refed_table, ref_col, refed_col = fk_info
                         try:
-                            # Drop the foreign key constraint
                             sql_drop = "ALTER TABLE %s DROP CONSTRAINT %s" % (ref_table, fk_name)
-                            _logger.debug("Dropping FK: %s", sql_drop)
                             cr.execute(sql_drop)
                             disabled_fks.append((ref_table, fk_name, fk_info))
-                            _logger.debug("Dropped FK %s on table %s", fk_name, ref_table)
                         except Exception as fk_err:
-                            _logger.warning("Could not drop FK %s: %s", fk_name, fk_err)
+                            _logger.warning("  Could not drop FK %s: %s", fk_name, fk_err)
                 
                 # Convert ID column to BIGINT
-                sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint USING %s::bigint" % (
-                    table_name, column_name, column_name
-                )
-                _logger.info("Executing SQL for ID: %s", sql)
+                sql = "ALTER TABLE %s ALTER COLUMN id TYPE bigint USING id::bigint" % table_name
+                _logger.debug("  Executing: %s", sql)
                 cr.execute(sql)
-                columns_migrated += 1
-                id_columns_migrated += 1
-                _logger.info("*** Successfully converted ID column %s.%s to BIGINT ***", table_name, column_name)
+                
+                # Verify conversion
+                cr.execute("""
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                    AND table_name = %s
+                    AND column_name = 'id'
+                """, (table_name,))
+                verify_result = cr.fetchone()
+                if verify_result and verify_result[0] == 'bigint':
+                    columns_migrated += 1
+                    id_columns_migrated += 1
+                    _logger.info("  ✓ Converted %s.id to BIGINT (verified)", table_name)
+                else:
+                    _logger.error("  ✗ Conversion failed - %s.id is still %s", table_name, verify_result[0] if verify_result else 'unknown')
                 
                 # Recreate foreign keys if they were disabled
                 if HANDLE_FOREIGN_KEYS and disabled_fks:
-                    _logger.info("Recreating %s foreign keys for %s.id...", len(disabled_fks), table_name)
                     for ref_table, fk_name, fk_info in disabled_fks:
                         fk_name_orig, ref_table_orig, refed_table_orig, ref_col, refed_col = fk_info
                         try:
-                            # Recreate the foreign key constraint
                             sql_create = """
                                 ALTER TABLE %s 
                                 ADD CONSTRAINT %s 
                                 FOREIGN KEY (%s) 
                                 REFERENCES %s(%s)
                             """ % (ref_table, fk_name, ref_col, refed_table, refed_col)
-                            _logger.debug("Recreating FK: %s", sql_create)
                             cr.execute(sql_create)
-                            _logger.debug("Recreated FK %s on table %s", fk_name, ref_table)
                         except Exception as fk_err:
-                            _logger.error("ERROR recreating FK %s on table %s: %s", fk_name, ref_table, fk_err)
-                            # This is critical - log it prominently
-                            _logger.error("*** MANUAL INTERVENTION REQUIRED: FK %s needs to be recreated manually ***", fk_name)
+                            _logger.error("  ✗ ERROR recreating FK %s: %s", fk_name, fk_err)
+                            _logger.error("  MANUAL INTERVENTION REQUIRED for FK %s", fk_name)
+                    if disabled_fks:
+                        _logger.info("  ✓ Recreated %s foreign keys", len(disabled_fks))
                 
             except Exception as e:
-                _logger.error("*** ERROR converting ID column %s.%s: %s ***", table_name, column_name, e)
+                _logger.error("  ✗ ERROR converting %s.id: %s", table_name, e)
                 
                 # If we disabled FKs, try to recreate them even on error
                 if HANDLE_FOREIGN_KEYS and disabled_fks:
-                    _logger.warning("Attempting to restore %s foreign keys after error...", len(disabled_fks))
+                    _logger.warning("  Attempting to restore %s foreign keys after error...", len(disabled_fks))
                     for ref_table, fk_name, fk_info in disabled_fks:
                         fk_name_orig, ref_table_orig, refed_table_orig, ref_col, refed_col = fk_info
                         try:
@@ -237,34 +240,32 @@ def pre_init_hook(cr):
                                 REFERENCES %s(%s)
                             """ % (ref_table, fk_name, ref_col, refed_table, refed_col)
                             cr.execute(sql_create)
-                            _logger.info("Restored FK %s on table %s", fk_name, ref_table)
+                            _logger.info("  ✓ Restored FK %s", fk_name)
                         except Exception as fk_err:
-                            _logger.error("CRITICAL: Could not restore FK %s: %s", fk_name, fk_err)
-                            _logger.error("*** MANUAL INTERVENTION REQUIRED: FK %s needs to be recreated manually ***", fk_name)
+                            _logger.error("  ✗ CRITICAL: Could not restore FK %s: %s", fk_name, fk_err)
+                            _logger.error("  MANUAL INTERVENTION REQUIRED for FK %s", fk_name)
                 
-                # Try to get more details about the error
-                try:
-                    # Check for foreign key constraints
-                    cr.execute("""
-                        SELECT conname, conrelid::regclass, confrelid::regclass
-                        FROM pg_constraint
-                        WHERE conrelid = %s::regclass
-                        AND contype = 'f'
-                    """, (table_name,))
-                    fks = cr.fetchall()
-                    if fks:
-                        _logger.warning("Table %s has %s foreign key constraints that may need attention", table_name, len(fks))
-                        if not HANDLE_FOREIGN_KEYS:
-                            _logger.warning("Consider setting HANDLE_FOREIGN_KEYS = True in hooks.py if conversion fails")
-                except:
-                    pass
+                # Check for foreign key constraints that might be blocking
+                if not HANDLE_FOREIGN_KEYS:
+                    try:
+                        cr.execute("""
+                            SELECT COUNT(*)
+                            FROM pg_constraint
+                            WHERE confrelid = %s::regclass
+                            AND contype = 'f'
+                        """, (table_name,))
+                        fk_count = cr.fetchone()[0]
+                        if fk_count > 0:
+                            _logger.warning("  Table has %s foreign keys - consider enabling HANDLE_FOREIGN_KEYS", fk_count)
+                    except:
+                        pass
         except Exception as e:
-            _logger.error("Error processing ID column for table %s: %s", table_name, e)
+            _logger.error("Error processing table %s: %s", table_name, e)
     
     _logger.info("Converted %s ID columns to BIGINT", id_columns_migrated)
     
-    # Second pass: Convert all other integer columns
-    _logger.info("Step 3b: Converting other integer columns...")
+    # Second pass: Convert all other integer columns (including FKs)
+    _logger.info("Step 3b: Converting other integer columns (FKs and others)...")
     for table_name in all_tables:
         try:
             # Get all integer columns in this table (excluding 'id' which we already did)
@@ -283,7 +284,18 @@ def pre_init_hook(cr):
             if not integer_columns:
                 continue
             
-            _logger.info("Table %s: Found %s non-ID integer columns", table_name, len(integer_columns))
+            # Count FK columns (those ending in _id)
+            fk_columns = [col for col in integer_columns if col[0].endswith('_id')]
+            other_columns = [col for col in integer_columns if not col[0].endswith('_id')]
+            
+            if fk_columns or other_columns:
+                if fk_columns and other_columns:
+                    _logger.info("Processing table %s: %s FK columns, %s other integer columns", 
+                               table_name, len(fk_columns), len(other_columns))
+                elif fk_columns:
+                    _logger.info("Processing table %s: %s FK columns", table_name, len(fk_columns))
+                else:
+                    _logger.info("Processing table %s: %s other integer columns", table_name, len(other_columns))
             
             for column_name, _ in integer_columns:
                 try:
@@ -302,39 +314,55 @@ def pre_init_hook(cr):
                         continue
                     
                     # Convert column to BIGINT
-                    _logger.info("Converting column %s.%s from integer to BIGINT", table_name, column_name)
-                    
-                    # Use USING clause to ensure proper conversion
-                    # This is important for foreign keys and constraints
                     try:
                         # First, try with USING clause (recommended for PostgreSQL)
                         sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint USING %s::bigint" % (
                             table_name, column_name, column_name
                         )
-                        _logger.debug("Executing SQL: %s", sql)
+                        _logger.debug("  Executing: %s", sql)
                         cr.execute(sql)
-                        columns_migrated += 1
-                        _logger.info("Successfully converted %s.%s to BIGINT", table_name, column_name)
+                        
+                        # Verify conversion
+                        cr.execute("""
+                            SELECT data_type
+                            FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                            AND table_name = %s
+                            AND column_name = %s
+                        """, (table_name, column_name))
+                        verify_result = cr.fetchone()
+                        if verify_result and verify_result[0] == 'bigint':
+                            columns_migrated += 1
+                        else:
+                            _logger.warning("  ⚠ Conversion may have failed - %s.%s is %s", 
+                                          table_name, column_name, verify_result[0] if verify_result else 'unknown')
                     except Exception as e:
                         # If USING fails, try without it (for some constraint issues)
                         try:
-                            _logger.warning(
-                                "First attempt failed for %s.%s, trying without USING: %s",
-                                table_name, column_name, e
-                            )
                             sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint" % (
                                 table_name, column_name
                             )
-                            _logger.debug("Executing SQL (fallback): %s", sql)
+                            _logger.debug("  Executing (fallback): %s", sql)
                             cr.execute(sql)
-                            columns_migrated += 1
-                            _logger.info("Successfully converted %s.%s to BIGINT (without USING)", table_name, column_name)
+                            
+                            # Verify conversion
+                            cr.execute("""
+                                SELECT data_type
+                                FROM information_schema.columns
+                                WHERE table_schema = 'public'
+                                AND table_name = %s
+                                AND column_name = %s
+                            """, (table_name, column_name))
+                            verify_result = cr.fetchone()
+                            if verify_result and verify_result[0] == 'bigint':
+                                columns_migrated += 1
+                            else:
+                                _logger.warning("  ⚠ Conversion may have failed - %s.%s is %s", 
+                                              table_name, column_name, verify_result[0] if verify_result else 'unknown')
                         except Exception as e2:
-                            _logger.error(
-                                "Error converting column %s.%s: %s",
-                                table_name, column_name, e2
-                            )
+                            _logger.error("  ✗ ERROR converting %s.%s: %s", table_name, column_name, e2)
                             # Continue with other columns
+                            continue
                     
                 except Exception as e:
                     _logger.error(
@@ -347,8 +375,9 @@ def pre_init_hook(cr):
             _logger.error("Error processing table %s: %s", table_name, e)
             # Continue with other tables
     
-    _logger.info("Migrated %s columns to BIGINT (%s ID columns, %s other columns)", 
-                 columns_migrated, id_columns_migrated, columns_migrated - id_columns_migrated)
+    other_columns_migrated = columns_migrated - id_columns_migrated
+    _logger.info("Step 3 summary: %s total columns migrated (%s ID, %s other)", 
+                 columns_migrated, id_columns_migrated, other_columns_migrated)
     
     # Step 3.5: Verify conversion of ID columns
     _logger.info("Step 3.5: Verifying ID column conversions...")
