@@ -9,6 +9,9 @@ The monkey patch is applied immediately when this module is loaded to ensure
 that all new Integer fields created after installation will be BIGINT.
 """
 
+# Import hooks - this makes them available to Odoo
+from . import hooks
+
 # Import the patch module to apply monkey patches immediately
 # This ensures that all Integer fields created after module load will be BIGINT
 try:

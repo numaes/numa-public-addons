@@ -37,4 +37,6 @@ to guarantee infinite scalability.
     'auto_install': False,
     # This module should be installed first, before any polymorphic models
     'sequence': 0,
+    # Register pre-installation hook for database migration
+    'pre_init_hook': 'pre_init_hook',
 }

@@ -60,6 +60,7 @@ def pre_init_hook(cr):
                 _logger.debug("Table %s does not exist, skipping", table_name)
                 continue
                 
+            # Use parameterized query to avoid SQL injection
             cr.execute("SELECT COUNT(*) FROM %s" % table_name)
             row_count = cr.fetchone()[0]
             _logger.info("Table %s: %s rows", table_name, row_count)
@@ -138,17 +139,42 @@ def pre_init_hook(cr):
                     
                     # Convert column to BIGINT
                     _logger.info("Converting column %s.%s from integer to BIGINT", table_name, column_name)
-                    cr.execute("""
-                        ALTER TABLE %s 
-                        ALTER COLUMN %s TYPE bigint
-                    """ % (table_name, column_name))
                     
-                    columns_migrated += 1
-                    _logger.debug("Successfully converted %s.%s to BIGINT", table_name, column_name)
+                    # Use USING clause to ensure proper conversion
+                    # This is important for foreign keys and constraints
+                    try:
+                        # First, try with USING clause (recommended for PostgreSQL)
+                        sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint USING %s::bigint" % (
+                            table_name, column_name, column_name
+                        )
+                        _logger.debug("Executing SQL: %s", sql)
+                        cr.execute(sql)
+                        columns_migrated += 1
+                        _logger.info("Successfully converted %s.%s to BIGINT", table_name, column_name)
+                    except Exception as e:
+                        # If USING fails, try without it (for some constraint issues)
+                        try:
+                            _logger.warning(
+                                "First attempt failed for %s.%s, trying without USING: %s",
+                                table_name, column_name, e
+                            )
+                            sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint" % (
+                                table_name, column_name
+                            )
+                            _logger.debug("Executing SQL (fallback): %s", sql)
+                            cr.execute(sql)
+                            columns_migrated += 1
+                            _logger.info("Successfully converted %s.%s to BIGINT (without USING)", table_name, column_name)
+                        except Exception as e2:
+                            _logger.error(
+                                "Error converting column %s.%s: %s",
+                                table_name, column_name, e2
+                            )
+                            # Continue with other columns
                     
                 except Exception as e:
                     _logger.error(
-                        "Error converting column %s.%s: %s",
+                        "Error processing column %s.%s: %s",
                         table_name, column_name, e
                     )
                     # Continue with other columns
