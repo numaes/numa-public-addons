@@ -190,12 +190,12 @@ def pre_init_hook(env):
             
             if row_count > MAX_SAFE_ROWS:
                 error_msg = (
-                    "La base de datos es demasiado grande para una migración automática segura.\n\n"
-                    "La tabla '%s' contiene %s registros, lo cual excede el límite seguro de %s.\n\n"
-                    "Por favor, realice la conversión a BIGINT mediante scripts externos controlados "
-                    "por un DBA antes de instalar este módulo.\n\n"
-                    "Este módulo requiere una migración manual para bases de datos grandes.\n\n"
-                    "Nota: Puede ajustar MAX_SAFE_ROWS en hooks.py si desea cambiar este límite."
+                    "The database is too large for safe automatic migration.\n\n"
+                    "Table '%s' contains %s records, which exceeds the safe limit of %s.\n\n"
+                    "Please perform the conversion to BIGINT using external scripts controlled "
+                    "by a DBA before installing this module.\n\n"
+                    "This module requires manual migration for large databases.\n\n"
+                    "Note: You can adjust MAX_SAFE_ROWS in hooks.py if you wish to change this limit."
                 ) % (table_name, row_count, MAX_SAFE_ROWS)
                 
                 _logger.error(error_msg)

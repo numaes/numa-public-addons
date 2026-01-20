@@ -1,229 +1,229 @@
 # Numa Big ID
 
-## Descripción
+## Description
 
-Este módulo es una dependencia crítica de `numa_poly`. Odoo usa por defecto `int4` (Integer) para los IDs y claves foráneas, lo que limita los registros a 2.147 millones. `numa_poly` unifica secuencias, lo que agotará rápidamente este límite.
+This module is a critical dependency of `numa_poly`. Odoo uses `int4` (Integer) by default for IDs and foreign keys, which limits records to 2.147 billion. `numa_poly` unifies sequences, which will quickly exhaust this limit.
 
-El objetivo de `numa_big_id` es convertir **toda la aritmética de enteros de la base de datos a 64 bits (`int8` / `BIGINT`)** para garantizar escalabilidad infinita.
+The objective of `numa_big_id` is to convert **all integer arithmetic in the database to 64-bit (`int8` / `BIGINT`)** to guarantee infinite scalability.
 
-## Características
+## Features
 
-- **Migración Pre-instalación**: Convierte automáticamente todas las columnas `integer` a `BIGINT` durante la instalación
-- **Safety Check**: Verifica que las tablas críticas no excedan 500,000 registros antes de la migración
-- **Monkey Patch del ORM**: Fuerza que todos los campos `Integer` se mapeen a `BIGINT` en PostgreSQL
-- **Conversión de Secuencias**: Convierte todas las secuencias a `BIGINT`
-- **Manejo de Vistas**: Detecta y recrea automáticamente vistas que dependen de columnas convertidas
-- **Manejo de Herencia de Tablas**: Omite columnas heredadas (no se pueden alterar directamente)
-- **Manejo de Palabras Reservadas**: Escapa correctamente nombres de columnas que son palabras reservadas de PostgreSQL
-- **Commits Periódicos**: Realiza commits cada 50 conversiones para evitar agotamiento de locks
+- **Pre-installation Migration**: Automatically converts all `integer` columns to `BIGINT` during installation
+- **Safety Check**: Verifies that critical tables do not exceed 500,000 records before migration
+- **ORM Monkey Patch**: Forces all `Integer` fields to map to `BIGINT` in PostgreSQL
+- **Sequence Conversion**: Converts all sequences to `BIGINT`
+- **View Handling**: Automatically detects and recreates views that depend on converted columns
+- **Table Inheritance Handling**: Skips inherited columns (cannot be altered directly)
+- **Reserved Words Handling**: Properly escapes column names that are PostgreSQL reserved words
+- **Periodic Commits**: Performs commits every 50 conversions to avoid lock exhaustion
 
-## Arquitectura
+## Architecture
 
 ### Pre-installation Hook (`hooks.py`)
 
-El hook `pre_init_hook` se ejecuta durante la instalación del módulo y realiza:
+The `pre_init_hook` runs during module installation and performs:
 
-1. **Safety Check**: Verifica que tablas críticas comunes no excedan `MAX_SAFE_ROWS` (500,000 por defecto)
-2. **Migración de Columnas ID**: Convierte todas las columnas `id` de tipo `integer` a `bigint`
-3. **Migración de Otras Columnas**: Convierte todas las demás columnas `integer` (FKs, campos numéricos, etc.)
-4. **Migración de Secuencias**: Convierte todas las secuencias a `bigint`
-5. **Verificación Final**: Verifica que las conversiones fueron exitosas
+1. **Safety Check**: Verifies that common critical tables do not exceed `MAX_SAFE_ROWS` (500,000 by default)
+2. **ID Column Migration**: Converts all `id` columns of type `integer` to `bigint`
+3. **Other Columns Migration**: Converts all other `integer` columns (FKs, numeric fields, etc.)
+4. **Sequence Migration**: Converts all sequences to `bigint`
+5. **Final Verification**: Verifies that conversions were successful
 
-**Características del Hook:**
-- Procesa **TODAS** las tablas del esquema `public`, sin depender de módulos específicos
-- Maneja automáticamente vistas dependientes (las elimina temporalmente y las recrea)
-- Omite tablas con herencia (las columnas heredadas se convierten en la tabla padre)
-- Escapa nombres de columnas que son palabras reservadas de PostgreSQL
-- Realiza commits periódicos para evitar agotamiento de locks
+**Hook Features:**
+- Processes **ALL** tables in the `public` schema, without depending on specific modules
+- Automatically handles dependent views (temporarily drops and recreates them)
+- Skips tables with inheritance (inherited columns are converted in the parent table)
+- Escapes column names that are PostgreSQL reserved words
+- Performs periodic commits to avoid lock exhaustion
 
-### Monkey Patch del ORM (`models/big_int_patch.py`)
+### ORM Monkey Patch (`models/big_int_patch.py`)
 
-El patch se aplica al cargar el módulo y modifica:
+The patch is applied when the module loads and modifies:
 
-- `fields.Integer.column_type`: Devuelve `('int8', 'bigint')` en lugar de `('int4', 'int4')`
-- `fields.Many2one.column_type`: Aplica el mismo patch para claves foráneas
-- `fields.Many2many._update_relation_table`: Asegura que las tablas de relación usen `BIGINT`
+- `fields.Integer.column_type`: Returns `('int8', 'bigint')` instead of `('int4', 'int4')`
+- `fields.Many2one.column_type`: Applies the same patch for foreign keys
+- `fields.Many2many._update_relation_table`: Ensures that relation tables use `BIGINT`
 
-**Compatibilidad:**
-- Compatible con Odoo 18 (usa `lazy_property` correctamente)
-- Maneja correctamente el acceso con subscript (`field.column_type[1]`)
-- No interfiere con otros módulos
+**Compatibility:**
+- Compatible with Odoo 18 (uses `lazy_property` correctly)
+- Correctly handles subscript access (`field.column_type[1]`)
+- Does not interfere with other modules
 
-## Instalación
+## Installation
 
-**IMPORTANTE**: Este módulo debe instalarse **ANTES** que cualquier otro módulo que use modelos polimórficos (como `numa_poly`).
+**IMPORTANT**: This module must be installed **BEFORE** any other module that uses polymorphic models (such as `numa_poly`).
 
-1. Agregar el módulo a la lista de addons
-2. Actualizar la lista de módulos
-3. Instalar `numa_big_id` primero
-4. Luego instalar otros módulos que dependan de él
+1. Add the module to the addons list
+2. Update the module list
+3. Install `numa_big_id` first
+4. Then install other modules that depend on it
 
-**Nota**: El hook `pre_init_hook` solo se ejecuta durante la instalación inicial. Si el módulo ya está instalado y necesita ejecutar la migración, debe desinstalarlo y reinstalarlo.
+**Note**: The `pre_init_hook` only runs during initial installation. If the module is already installed and you need to run the migration, you must uninstall and reinstall it.
 
-## Configuración
+## Configuration
 
-El módulo tiene dos constantes configurables en `hooks.py`:
+The module has two configurable constants in `hooks.py`:
 
-- `MAX_SAFE_ROWS = 500000`: Límite de registros en tablas críticas antes de abortar la migración
-- `HANDLE_FOREIGN_KEYS = False`: Si es `True`, elimina y recrea foreign keys durante la conversión de columnas `id` (puede ser muy lento en bases medianas/grandes)
+- `MAX_SAFE_ROWS = 500000`: Record limit in critical tables before aborting migration
+- `HANDLE_FOREIGN_KEYS = False`: If `True`, drops and recreates foreign keys during `id` column conversion (can be very slow on medium/large databases)
 
-## Limitaciones y Riesgos
+## Limitations and Risks
 
-### Limitaciones Técnicas
+### Technical Limitations
 
-- **Migración Irreversible**: La migración a BIGINT no puede revertirse automáticamente
-- **Bases de Datos Grandes**: Si alguna tabla crítica tiene más de 500,000 registros, la instalación se abortará y se requerirá migración manual por un DBA
-- **Compatibilidad**: Compatible con Odoo 18 (probado), debería funcionar en 16 y 17
-- **Tablas con Herencia**: Las columnas heredadas se omiten (se convierten en la tabla padre)
-- **Vistas Complejas**: Algunas vistas muy complejas pueden requerir recreación manual si falla la recreación automática
+- **Irreversible Migration**: The migration to BIGINT cannot be automatically reverted
+- **Large Databases**: If any critical table has more than 500,000 records, installation will be aborted and manual migration by a DBA will be required
+- **Compatibility**: Compatible with Odoo 18 (tested), should work on 16 and 17
+- **Tables with Inheritance**: Inherited columns are skipped (converted in the parent table)
+- **Complex Views**: Some very complex views may require manual recreation if automatic recreation fails
 
-### Riesgos Críticos en Bases Grandes
+### Critical Risks in Large Databases
 
-⚠️ **ADVERTENCIA**: Este módulo está diseñado para bases de datos relativamente pequeñas (<500k registros en tablas críticas). Para bases grandes, use migración manual por DBA.
+⚠️ **WARNING**: This module is designed for relatively small databases (<500k records in critical tables). For large databases, use manual migration by a DBA.
 
-#### 1. Migración No Atómica
-- **Problema**: Los commits intermedios (cada 50 tablas) hacen que la migración NO sea atómica
-- **Riesgo**: Si hay un corte (power failure, crash, etc.), la base quedará en estado parcialmente migrado
-- **Impacto**: NO hay rollback automático - requiere intervención manual para restaurar desde backup o completar la migración
-- **Mitigación**: 
-  - Hacer backup completo antes de instalar
-  - Tener plan de rollback (restaurar desde backup)
-  - Monitorear el proceso y tener ventana de mantenimiento suficiente
+#### 1. Non-Atomic Migration
+- **Problem**: Intermediate commits (every 50 tables) make the migration NOT atomic
+- **Risk**: If there is an interruption (power failure, crash, etc.), the database will be left in a partially migrated state
+- **Impact**: NO automatic rollback - requires manual intervention to restore from backup or complete the migration
+- **Mitigation**: 
+  - Perform full backup before installing
+  - Have a rollback plan (restore from backup)
+  - Monitor the process and have sufficient maintenance window
 
-#### 2. Espacio en Disco
-- **Problema**: PostgreSQL crea nuevos archivos antes de eliminar los antiguos durante `ALTER TABLE`
-- **Riesgo**: Puede requerir hasta **2x el tamaño actual de la base de datos** temporalmente
-- **Impacto**: Si no hay espacio suficiente, la migración fallará y dejará la base en estado inconsistente
-- **Mitigación**: 
-  - Verificar espacio disponible antes de migrar
-  - Tener al menos 2x el tamaño de la base disponible
-  - Monitorear espacio durante la migración
+#### 2. Disk Space
+- **Problem**: PostgreSQL creates new files before deleting old ones during `ALTER TABLE`
+- **Risk**: May require up to **2x the current database size** temporarily
+- **Impact**: If there is insufficient space, the migration will fail and leave the database in an inconsistent state
+- **Mitigation**: 
+  - Verify available space before migrating
+  - Have at least 2x the database size available
+  - Monitor space during migration
 
-#### 3. Bloqueos Prolongados
-- **Problema**: `ALTER TABLE ... ALTER COLUMN TYPE` adquiere locks exclusivos en las tablas
-- **Riesgo**: Bloquea lecturas y escrituras durante la conversión (puede ser minutos u horas en tablas grandes)
-- **Impacto**: Aplicación inaccesible durante la migración de tablas críticas
-- **Mitigación**:
-  - Ejecutar durante ventana de mantenimiento
-  - Considerar downtime planificado
-  - Para bases grandes, usar técnicas de migración online (requiere DBA)
+#### 3. Prolonged Locks
+- **Problem**: `ALTER TABLE ... ALTER COLUMN TYPE` acquires exclusive locks on tables
+- **Risk**: Blocks reads and writes during conversion (can be minutes or hours on large tables)
+- **Impact**: Application inaccessible during migration of critical tables
+- **Mitigation**:
+  - Execute during maintenance window
+  - Consider planned downtime
+  - For large databases, use online migration techniques (requires DBA)
 
-#### 4. Índices
-- **Problema**: Los índices en columnas convertidas pueden quedar inconsistentes o necesitar recreación
-- **Riesgo**: Performance degradada hasta que se reconstruyan los índices
-- **Impacto**: Queries lentas, posible degradación de performance general
-- **Mitigación**:
-  - Planificar `REINDEX` después de la migración
-  - Monitorear performance post-migración
-  - Considerar recrear índices críticos manualmente
+#### 4. Indexes
+- **Problem**: Indexes on converted columns may become inconsistent or need recreation
+- **Risk**: Degraded performance until indexes are rebuilt
+- **Impact**: Slow queries, possible general performance degradation
+- **Mitigation**:
+  - Plan `REINDEX` after migration
+  - Monitor post-migration performance
+  - Consider manually recreating critical indexes
 
-#### 5. Vistas Materializadas
-- **Problema**: No se manejan vistas materializadas (solo vistas regulares)
-- **Riesgo**: Vistas materializadas pueden quedar inconsistentes o requerir refresco manual
-- **Impacto**: Datos incorrectos en reportes que usen vistas materializadas
-- **Mitigación**:
-  - Identificar vistas materializadas antes de migrar
-  - Refrescar manualmente después de la migración
-  - Verificar integridad de datos
+#### 5. Materialized Views
+- **Problem**: Materialized views are not handled (only regular views)
+- **Risk**: Materialized views may become inconsistent or require manual refresh
+- **Impact**: Incorrect data in reports that use materialized views
+- **Mitigation**:
+  - Identify materialized views before migrating
+  - Manually refresh after migration
+  - Verify data integrity
 
-#### 6. Triggers Personalizados
-- **Problema**: Triggers que dependen de tipos específicos pueden fallar
-- **Riesgo**: Triggers pueden no ejecutarse correctamente o causar errores
-- **Impacto**: Lógica de negocio personalizada puede fallar
-- **Mitigación**:
-  - Auditar triggers antes de migrar
-  - Probar en ambiente de desarrollo primero
-  - Tener plan de rollback para triggers críticos
+#### 6. Custom Triggers
+- **Problem**: Triggers that depend on specific types may fail
+- **Risk**: Triggers may not execute correctly or cause errors
+- **Impact**: Custom business logic may fail
+- **Mitigation**:
+  - Audit triggers before migrating
+  - Test in development environment first
+  - Have rollback plan for critical triggers
 
-#### 7. Replicación
-- **Problema**: Si hay replicación streaming, los cambios masivos pueden causar lag o fallos
-- **Riesgo**: Replicación puede quedar desincronizada o fallar
-- **Impacto**: Standby servers pueden quedar inconsistentes
-- **Mitigación**:
-  - Pausar replicación durante migración (si es posible)
-  - Monitorear lag de replicación
-  - Tener plan de resincronización
+#### 7. Replication
+- **Problem**: If there is streaming replication, massive changes can cause lag or failures
+- **Risk**: Replication may become desynchronized or fail
+- **Impact**: Standby servers may become inconsistent
+- **Mitigation**:
+  - Pause replication during migration (if possible)
+  - Monitor replication lag
+  - Have resynchronization plan
 
-#### 8. Tiempo de Ejecución
-- **Problema**: En bases grandes, la migración puede tomar horas
-- **Riesgo**: Ventana de mantenimiento insuficiente
-- **Impacto**: Migración incompleta si se interrumpe
-- **Mitigación**:
-  - Estimar tiempo basado en tamaño de base
-  - Tener ventana de mantenimiento suficiente (horas, no minutos)
-  - Monitorear progreso continuamente
+#### 8. Execution Time
+- **Problem**: On large databases, migration can take hours
+- **Risk**: Insufficient maintenance window
+- **Impact**: Incomplete migration if interrupted
+- **Mitigation**:
+  - Estimate time based on database size
+  - Have sufficient maintenance window (hours, not minutes)
+  - Continuously monitor progress
 
 #### 9. Foreign Keys
-- **Problema**: Manejo de FKs está deshabilitado por defecto (`HANDLE_FOREIGN_KEYS = False`)
-- **Riesgo**: Conversión de columnas `id` puede fallar si hay FKs bloqueantes
-- **Impacto**: Algunas tablas pueden no migrarse
-- **Mitigación**:
-  - Habilitar `HANDLE_FOREIGN_KEYS = True` solo si base es pequeña
-  - Para bases grandes, migrar FKs manualmente antes de convertir columnas
-  - Verificar que todas las columnas se migraron correctamente
+- **Problem**: FK handling is disabled by default (`HANDLE_FOREIGN_KEYS = False`)
+- **Risk**: `id` column conversion may fail if there are blocking FKs
+- **Impact**: Some tables may not be migrated
+- **Mitigation**:
+  - Enable `HANDLE_FOREIGN_KEYS = True` only if database is small
+  - For large databases, migrate FKs manually before converting columns
+  - Verify that all columns were migrated correctly
 
-### Recomendaciones para Bases Grandes
+### Recommendations for Large Databases
 
-1. **NO usar migración automática** si:
-   - Base tiene >500k registros en tablas críticas
-   - Es un sistema de producción crítico
-   - No hay ventana de mantenimiento suficiente (horas)
-   - No hay backup reciente y plan de rollback
+1. **DO NOT use automatic migration** if:
+   - Database has >500k records in critical tables
+   - It is a critical production system
+   - There is no sufficient maintenance window (hours)
+   - There is no recent backup and rollback plan
 
-2. **Usar migración manual por DBA** que incluya:
-   - Backup completo antes de empezar
-   - Migración por lotes (tabla por tabla)
-   - Verificación de integridad después de cada lote
-   - Plan de rollback detallado
-   - Monitoreo continuo de espacio, locks, y performance
-   - Recreación de índices después de la migración
-   - Refresco de vistas materializadas
-   - Validación de triggers
+2. **Use manual migration by DBA** that includes:
+   - Full backup before starting
+   - Batch migration (table by table)
+   - Integrity verification after each batch
+   - Detailed rollback plan
+   - Continuous monitoring of space, locks, and performance
+   - Index recreation after migration
+   - Materialized view refresh
+   - Trigger validation
 
-## Uso
+## Usage
 
-Una vez instalado, el módulo:
+Once installed, the module:
 
-1. Migra automáticamente todas las columnas `integer` existentes a `BIGINT`
-2. Parchea el ORM para que todos los nuevos campos `Integer` se creen como `BIGINT`
-3. Asegura que las secuencias usen `BIGINT`
+1. Automatically migrates all existing `integer` columns to `BIGINT`
+2. Patches the ORM so all new `Integer` fields are created as `BIGINT`
+3. Ensures sequences use `BIGINT`
 
-No se requiere configuración adicional después de la instalación.
+No additional configuration is required after installation.
 
-## Generalización
+## Generalization
 
-Este módulo está completamente generalizado y no depende de módulos específicos:
+This module is completely generalized and does not depend on specific modules:
 
-- **Procesa todas las tablas**: No hay hardcoding de nombres de tablas específicas (excepto para el safety check)
-- **Safety check genérico**: Las tablas en `CRITICAL_TABLES` son solo para estimar el tamaño de la base de datos
-- **Sin dependencias de módulos**: Funciona con cualquier combinación de módulos instalados
-- **Manejo automático**: Detecta y maneja automáticamente vistas, herencia, palabras reservadas, etc.
+- **Processes all tables**: No hardcoding of specific table names (except for safety check)
+- **Generic safety check**: Tables in `CRITICAL_TABLES` are only for estimating database size
+- **No module dependencies**: Works with any combination of installed modules
+- **Automatic handling**: Automatically detects and handles views, inheritance, reserved words, etc.
 
 ## Troubleshooting
 
-### Error: "La base de datos es demasiado grande para una migración automática segura"
+### Error: "The database is too large for safe automatic migration"
 
-Si recibe este error, significa que alguna tabla crítica tiene más de 500,000 registros. Opciones:
+If you receive this error, it means that some critical table has more than 500,000 records. Options:
 
-1. **Ajustar el límite**: Modifique `MAX_SAFE_ROWS` en `hooks.py` si confía en que la migración funcionará
-2. **Migración manual**: Contacte a un DBA para realizar la migración manual mediante scripts SQL
-3. **Una vez completada la migración manual**: Puede instalar el módulo (el hook detectará que las columnas ya son BIGINT y las omitirá)
+1. **Adjust the limit**: Modify `MAX_SAFE_ROWS` in `hooks.py` if you trust that the migration will work
+2. **Manual migration**: Contact a DBA to perform manual migration using SQL scripts
+3. **Once manual migration is completed**: You can install the module (the hook will detect that columns are already BIGINT and skip them)
 
 ### Error: "cannot alter inherited column"
 
-Este error indica que una tabla usa herencia de tablas de PostgreSQL. El módulo omite automáticamente estas columnas. La tabla padre debería convertirse, y las hijas heredarán el tipo `BIGINT`.
+This error indicates that a table uses PostgreSQL table inheritance. The module automatically skips these columns. The parent table should be converted, and children will inherit the `BIGINT` type.
 
 ### Error: "cannot alter type of a column used by a view or rule"
 
-Este error no debería ocurrir, ya que el módulo detecta y maneja vistas automáticamente. Si ocurre:
+This error should not occur, as the module automatically detects and handles views. If it occurs:
 
-1. Verifique los logs para ver si hubo un error al recrear la vista
-2. Recrear la vista manualmente si es necesario
-3. Reportar el caso para mejorar el manejo de vistas
+1. Check logs to see if there was an error recreating the view
+2. Manually recreate the view if necessary
+3. Report the case to improve view handling
 
-### Verificar que la migración fue exitosa
+### Verify that migration was successful
 
-Puede verificar que las columnas fueron convertidas ejecutando:
+You can verify that columns were converted by executing:
 
 ```sql
 SELECT table_name, column_name, data_type
@@ -233,9 +233,9 @@ AND data_type = 'integer'
 ORDER BY table_name, column_name;
 ```
 
-Si la migración fue exitosa, esta consulta no debería devolver resultados (o solo columnas que no deberían ser BIGINT, como columnas heredadas que se convertirán en la tabla padre).
+If the migration was successful, this query should not return results (or only columns that should not be BIGINT, such as inherited columns that will be converted in the parent table).
 
-### Verificar secuencias
+### Verify sequences
 
 ```sql
 SELECT sequence_name, data_type
@@ -244,12 +244,12 @@ WHERE sequence_schema = 'public'
 AND data_type != 'bigint';
 ```
 
-Todas las secuencias deberían ser `bigint` después de la migración.
+All sequences should be `bigint` after migration.
 
-## Autor
+## Author
 
 NUMA Extreme Systems
 
-## Licencia
+## License
 
 AGPL-3
