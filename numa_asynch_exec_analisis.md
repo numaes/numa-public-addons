@@ -541,13 +541,13 @@ Esta funcionalidad **NO debe implementarse en este módulo**. El objetivo es man
 **Ejemplos de Uso:**
 ```python
 # Secuencial
-recordset.await().method1().method2()
+recordset.job_wait().method1().method2()
 
 # Paralelo
 recordset.job_wait().method1().job_wait().method2().method3()
 
 # Complejo
-recordset.await().fetch1().await().fetch2().process().save()
+recordset.job_wait().fetch1().job_wait().fetch2().process().save()
 ```
 
 **Estado:** ✅ Implementado y documentado
