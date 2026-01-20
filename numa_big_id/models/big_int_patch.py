@@ -31,10 +31,24 @@ def _get_column_type_bigint(self):
     """
     # Call the original method to get the base column type
     # For Integer fields, this typically returns ('integer', 'integer')
-    original_type = self._original_get_column_type()
+    try:
+        if hasattr(self, '_original_get_column_type'):
+            # If it's a callable (function), call it with self
+            if callable(self._original_get_column_type):
+                original_type = self._original_get_column_type(self)
+            else:
+                # If it's stored as a value, use it directly
+                original_type = self._original_get_column_type
+        else:
+            # Fallback: return default integer type
+            original_type = ('integer', 'integer')
+    except Exception as e:
+        _logger.debug("Error getting original column_type: %s", e)
+        original_type = ('integer', 'integer')
     
     # If it's an integer type, convert to bigint
-    if original_type and len(original_type) >= 2:
+    # Check if original_type is a tuple/list with at least 2 elements
+    if isinstance(original_type, (tuple, list)) and len(original_type) >= 2:
         sql_type, pg_type = original_type[0], original_type[1]
         
         # Replace integer with bigint
@@ -131,7 +145,10 @@ def apply_bigint_patch():
                 if isinstance(fields.Many2one.column_type, property):
                     original_getter = fields.Many2one.column_type.fget
                     if original_getter:
-                        fields.Many2one._original_get_column_type = original_getter
+                        # Store as a function that will be called with self
+                        def _wrapped_original(self):
+                            return original_getter(self)
+                        fields.Many2one._original_get_column_type = _wrapped_original
                     else:
                         def _default_get_column_type(self):
                             return ('integer', 'integer')
