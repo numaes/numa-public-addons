@@ -17,16 +17,16 @@ class AwaitProxy:
     Proxy object that builds a chain of dependent asynchronous jobs.
     
     Supports:
-    - Sequential execution: await().method1().method2()
-    - Parallel execution: await().method1().await().method2().method3()
+    - Sequential execution: job_wait().method1().method2()
+    - Parallel execution: job_wait().method1().job_wait().method2().method3()
     - Complex chains with multiple levels
     
     Example:
         # Sequential: method2 runs after method1 completes
-        recordset.await().method1().method2()
+        recordset.job_wait().method1().method2()
         
         # Parallel: method1 and method2 run simultaneously, method3 runs after both complete
-        recordset.await().method1().await().method2().method3()
+        recordset.job_wait().method1().job_wait().method2().method3()
     """
     
     def __init__(self, recordset, parent_job_ids=None, retry=0, retry_delay=0, parent_proxy=None):
@@ -47,7 +47,7 @@ class AwaitProxy:
         self.parallel_groups = []  # List of parallel AwaitProxy instances
         self.parent_proxy = parent_proxy  # Reference to parent proxy
     
-    def await(self, retry=0, retry_delay=0):
+    def job_wait(self, retry=0, retry_delay=0):
         """
         Start a new parallel execution branch.
         
@@ -135,7 +135,7 @@ class AwaitProxy:
         Create all jobs for this chain.
         
         Note: Parallel groups should be finalized before calling this method
-        (they are handled in __getattr__ when a method is called after await()).
+        (they are handled in __getattr__ when a method is called after job_wait()).
         
         :return: List of created job IDs (for the final job's dependencies)
         """

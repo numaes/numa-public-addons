@@ -5,7 +5,7 @@ This module provides a robust, persistent, and traceable infrastructure for exec
 ## Features
 
 - **Fluent API**: Trigger asynchronous execution with a simple `.asynch_exec()` call.
-- **Chained Execution**: Use `.await()` to create dependent job chains with sequential and parallel execution.
+- **Chained Execution**: Use `.job_wait()` to create dependent job chains with sequential and parallel execution.
 - **Persistence**: Jobs are stored in the database (`numa.asynch.job`), allowing for status tracking (Pending, Running, Done, Failed, Waiting for Dependencies).
 - **Automatic Recovery**: Interrupted or pending jobs are automatically re-queued when the Odoo server starts.
 - **Error Handling**: Comprehensive logging of exceptions using the `numa_exceptions` module.
@@ -50,34 +50,34 @@ recordset.asynch_exec(retry=3, retry_delay=500).my_heavy_method(arg1)
 
 ### Chained Execution with Dependencies
 
-Use `await()` to create chains of dependent jobs:
+Use `job_wait()` to create chains of dependent jobs:
 
 #### Sequential Execution
 
 ```python
 # method2 runs only after method1 completes successfully
-recordset.await().method1().method2()
+recordset.job_wait().method1().method2()
 ```
 
 #### Parallel Execution
 
 ```python
 # method1 and method2 run simultaneously, method3 runs after both complete
-recordset.await().method1().await().method2().method3()
+recordset.job_wait().method1().job_wait().method2().method3()
 ```
 
 #### Complex Chains
 
 ```python
 # Multiple parallel branches, then sequential execution
-recordset.await().fetch_data1().await().fetch_data2().process_results().send_notification()
+recordset.job_wait().fetch_data1().job_wait().fetch_data2().process_results().send_notification()
 ```
 
 #### With Retries
 
 ```python
 # All jobs in the chain will retry 3 times with 500ms delay
-recordset.await(retry=3, retry_delay=500).validate().process().save()
+recordset.job_wait(retry=3, retry_delay=500).validate().process().save()
 ```
 
 ## Technical Details
@@ -97,9 +97,9 @@ recordset.await(retry=3, retry_delay=500).validate().process().save()
     - Updates the job state to `done` or `failed`.
 5. **Recovery**: On server startup, a `post_init_hook` triggers `_recover_pending_jobs()`, which finds any jobs still in `pending` state and re-submits them to the executor.
 
-#### Chained Execution (`await`)
+#### Chained Execution (`job_wait`)
 
-1. **Chain Building**: `await()` returns an `AwaitProxy` object that builds a chain of dependent jobs.
+1. **Chain Building**: `job_wait()` returns an `AwaitProxy` object that builds a chain of dependent jobs.
 2. **Job Creation**: Each method call in the chain creates a `numa.asynch.job` record.
 3. **Dependency Creation**: Jobs are linked via `numa.asynch.job.dependency` records:
    - Sequential jobs: Each job depends on the previous one
@@ -116,7 +116,7 @@ If an exception occurs during execution, the module performs a rollback of the b
 
 ### Dependency Resolution
 
-When using `await()`, jobs with dependencies are automatically managed:
+When using `job_wait()`, jobs with dependencies are automatically managed:
 
 1. **Creation**: Jobs with unmet dependencies are created in `waiting` state
 2. **Monitoring**: The system tracks when dependencies complete
@@ -165,21 +165,21 @@ self.env['mail.mail'].asynch_exec().send()
 
 ```python
 # Process order steps in sequence
-order.await().validate().process_payment().send_confirmation()
+order.job_wait().validate().process_payment().send_confirmation()
 ```
 
 ### Example 3: Parallel Data Fetching
 
 ```python
 # Fetch from multiple sources simultaneously, then process
-recordset.await().fetch_customers().await().fetch_products().merge_data()
+recordset.job_wait().fetch_customers().job_wait().fetch_products().merge_data()
 ```
 
 ### Example 4: Complex Workflow
 
 ```python
 # Parallel validation, then sequential processing
-recordset.await().validate_rules().await().check_permissions().process().notify()
+recordset.job_wait().validate_rules().job_wait().check_permissions().process().notify()
 ```
 
 ---
@@ -187,7 +187,7 @@ recordset.await().validate_rules().await().check_permissions().process().notify(
 ## Best Practices
 
 1. **Use `asynch_exec()` for simple, independent tasks**
-2. **Use `await()` for coordinated workflows**
+2. **Use `job_wait()` for coordinated workflows**
 3. **Handle errors appropriately** - check job states
 4. **Avoid blocking operations** in async methods
 5. **Consider transaction boundaries** - each job runs in its own transaction
@@ -213,7 +213,7 @@ recordset.await().validate_rules().await().check_permissions().process().notify(
 
 ### Circular Dependencies
 
-- Review your `await()` chain structure
+- Review your `job_wait()` chain structure
 - Simplify dependency relationships
 - Ensure no job depends on itself
 

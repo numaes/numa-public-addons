@@ -2,13 +2,13 @@
 
 ## Resumen Ejecutivo
 
-El módulo `numa_asynch_exec` proporciona una infraestructura **simple y ligera** para ejecutar métodos de Odoo de forma asíncrona en threads de fondo, con persistencia en base de datos, recuperación automática y trazabilidad de errores. El módulo ahora incluye soporte para **ejecución encadenada con dependencias** mediante el método `await()`, permitiendo programación asíncrona con transacciones separadas.
+El módulo `numa_asynch_exec` proporciona una infraestructura **simple y ligera** para ejecutar métodos de Odoo de forma asíncrona en threads de fondo, con persistencia en base de datos, recuperación automática y trazabilidad de errores. El módulo ahora incluye soporte para **ejecución encadenada con dependencias** mediante el método `job_wait()`, permitiendo programación asíncrona con transacciones separadas.
 
 **Principio de Diseño:**
 Este módulo tiene como objetivo mantenerse **simple y minimalista**. Funcionalidades avanzadas como sistemas de prioridades, monitoreo detallado, dashboards y métricas deberían implementarse en **módulos dependientes** que extiendan la funcionalidad base sin complicar el núcleo.
 
 **Nueva Funcionalidad:**
-El método `await()` permite crear cadenas de jobs dependientes con ejecución secuencial y paralela, simulando programación asíncrona con transacciones separadas.
+El método `job_wait()` permite crear cadenas de jobs dependientes con ejecución secuencial y paralela, simulando programación asíncrona con transacciones separadas.
 
 ---
 
@@ -28,8 +28,8 @@ Proxy que intercepta llamadas a métodos y las convierte en jobs asíncronos.
 Proxy que construye cadenas de jobs dependientes usando builder pattern.
 
 **Características:**
-- Soporta ejecución secuencial: `await().method1().method2()`
-- Soporta ejecución paralela: `await().method1().await().method2().method3()`
+- Soporta ejecución secuencial: `job_wait().method1().method2()`
+- Soporta ejecución paralela: `job_wait().method1().job_wait().method2().method3()`
 - Maneja proxies anidados con referencias `parent_proxy`
 - Crea dependencias automáticamente entre jobs
 
@@ -71,10 +71,10 @@ Modelo que rastrea dependencias entre jobs.
 8. Job se marca como 'done' o 'failed'
 ```
 
-#### Flujo Encadenado (`await`)
+#### Flujo Encadenado (`job_wait`)
 
 ```
-1. Usuario llama: recordset.await().method1().method2()
+1. Usuario llama: recordset.job_wait().method1().method2()
 2. AwaitProxy construye cadena:
    - method1 → job1
    - method2 → job2 (depende de job1)
@@ -87,10 +87,10 @@ Modelo que rastrea dependencias entre jobs.
 9. job2 se ejecuta en nueva transacción
 ```
 
-#### Flujo Paralelo (`await` con múltiples branches)
+#### Flujo Paralelo (`job_wait` con múltiples branches)
 
 ```
-1. Usuario llama: recordset.await().method1().await().method2().method3()
+1. Usuario llama: recordset.job_wait().method1().job_wait().method2().method3()
 2. AwaitProxy construye:
    - Root proxy con method1 en chain
    - Parallel proxy con method2 en chain
@@ -215,11 +215,11 @@ method(*job.args, **job.kwargs)
 
 ---
 
-## 3. Nueva Funcionalidad: `await()` para Ejecución Encadenada
+## 3. Nueva Funcionalidad: `job_wait()` para Ejecución Encadenada
 
 ### 3.1 Propósito
 
-El método `await()` permite crear cadenas de jobs asíncronos con dependencias, simulando programación asíncrona con transacciones separadas. Esto permite:
+El método `job_wait()` permite crear cadenas de jobs asíncronos con dependencias, simulando programación asíncrona con transacciones separadas. Esto permite:
 
 - **Ejecución Secuencial**: Un job solo se ejecuta después de que otro complete
 - **Ejecución Paralela**: Múltiples jobs ejecutan simultáneamente
@@ -231,7 +231,7 @@ El método `await()` permite crear cadenas de jobs asíncronos con dependencias,
 
 ```python
 # method2 solo se ejecuta después de que method1 complete exitosamente
-recordset.await().method1().method2()
+recordset.job_wait().method1().method2()
 ```
 
 **Flujo:**
@@ -244,12 +244,12 @@ recordset.await().method1().method2()
 ```python
 # method1 y method2 ejecutan simultáneamente
 # method3 ejecuta después de que ambos completen
-recordset.await().method1().await().method2().method3()
+recordset.job_wait().method1().job_wait().method2().method3()
 ```
 
 **Flujo:**
 1. `method1` crea job1 (sin dependencias)
-2. `await()` crea nuevo proxy paralelo
+2. `job_wait()` crea nuevo proxy paralelo
 3. `method2` crea job2 (sin dependencias, paralelo a job1)
 4. `method3` crea job3 (depende de job1 Y job2)
 5. job1 y job2 ejecutan en paralelo
@@ -281,7 +281,7 @@ class AwaitProxy:
         self.parallel_groups = []  # Proxies paralelos
         self.parent_proxy = parent_proxy  # Referencia al proxy raíz
     
-    def await(self):
+    def job_wait(self):
         # Crea nuevo proxy paralelo
         # Lo agrega a parallel_groups del root
         # Retorna el nuevo proxy para continuar cadena
@@ -330,14 +330,14 @@ class AwaitProxy:
 
 ```python
 # Procesar datos en etapas
-recordset.await().fetch_data().transform().validate().save()
+recordset.job_wait().fetch_data().transform().validate().save()
 ```
 
 #### Caso 2: Agregación Paralela
 
 ```python
 # Obtener datos de múltiples fuentes en paralelo, luego procesar
-recordset.await().fetch_from_api1().await().fetch_from_api2().merge_results()
+recordset.job_wait().fetch_from_api1().job_wait().fetch_from_api2().merge_results()
 ```
 
 #### Caso 3: Validación y Notificación
@@ -520,7 +520,7 @@ Esta funcionalidad **NO debe implementarse en este módulo**. El objetivo es man
 
 ## 9. Funcionalidades Implementadas Recientemente
 
-### 9.1 Método `await()` para Ejecución Encadenada ✅ IMPLEMENTADO
+### 9.1 Método `job_wait()` para Ejecución Encadenada ✅ IMPLEMENTADO
 
 **Características:**
 - Builder pattern para construir cadenas de jobs
@@ -534,7 +534,7 @@ Esta funcionalidad **NO debe implementarse en este módulo**. El objetivo es man
 - Nuevo estado: `'waiting'` para jobs con dependencias no satisfechas
 
 **Métodos Nuevos:**
-- `Base.await()`: Punto de entrada para ejecución encadenada
+- `Base.job_wait()`: Punto de entrada para ejecución encadenada
 - `AwaitProxy`: Proxy builder para construir cadenas
 - `NumaAsynchJob._check_and_trigger_dependents()`: Activa jobs dependientes
 
@@ -598,11 +598,11 @@ Deben implementarse en **módulos dependientes** que extiendan `numa_asynch_exec
 - Evitar dependencias innecesarias para usuarios básicos
 
 **Recomendación Final:**
-✅ Las mejoras de alta prioridad han sido implementadas. El módulo está listo para uso en producción. La nueva funcionalidad `await()` permite programación asíncrona avanzada con transacciones separadas, manteniendo la simplicidad del núcleo. Funcionalidades avanzadas adicionales deben desarrollarse en módulos dependientes siguiendo el principio de simplicidad del núcleo.
+✅ Las mejoras de alta prioridad han sido implementadas. El módulo está listo para uso en producción. La nueva funcionalidad `job_wait()` permite programación asíncrona avanzada con transacciones separadas, manteniendo la simplicidad del núcleo. Funcionalidades avanzadas adicionales deben desarrollarse en módulos dependientes siguiendo el principio de simplicidad del núcleo.
 
 ---
 
-## 11. Comparación: `asynch_exec()` vs `await()`
+## 11. Comparación: `asynch_exec()` vs `job_wait()`
 
 ### `asynch_exec()` - Ejecución Simple
 
@@ -617,11 +617,11 @@ recordset.asynch_exec().method()
 - Se ejecuta inmediatamente después del commit
 - Ideal para tareas independientes
 
-### `await()` - Ejecución Encadenada
+### `job_wait()` - Ejecución Encadenada
 
 **Uso:**
 ```python
-recordset.await().method1().method2()
+recordset.job_wait().method1().method2()
 ```
 
 **Características:**
@@ -637,7 +637,7 @@ recordset.await().method1().method2()
 - No necesitas coordinar múltiples jobs
 - Quieres ejecución simple y directa
 
-**Usa `await()` cuando:**
+**Usa `job_wait()` cuando:**
 - Necesitas ejecutar jobs en secuencia
 - Quieres paralelizar tareas independientes
 - Necesitas coordinar múltiples jobs
@@ -647,4 +647,4 @@ recordset.await().method1().method2()
 
 **Versión del Análisis:** 2.0  
 **Fecha:** 2024  
-**Última Actualización:** Incluye funcionalidad `await()` para ejecución encadenada
+**Última Actualización:** Incluye funcionalidad `job_wait()` para ejecución encadenada

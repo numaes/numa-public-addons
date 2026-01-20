@@ -90,7 +90,7 @@ class Base(models.AbstractModel):
         """
         return AsynchProxy(self, retry=retry, retry_delay=retry_delay)
     
-    def await(self, retry=0, retry_delay=0):
+    def job_wait(self, retry=0, retry_delay=0):
         """
         Entry point for chained asynchronous execution with dependencies.
         Returns an AwaitProxy that allows building chains of dependent jobs.
@@ -101,17 +101,17 @@ class Base(models.AbstractModel):
         
         Examples:
             # Sequential execution: method2 runs after method1 completes
-            recordset.await().method1().method2()
+            recordset.job_wait().method1().method2()
             
             # Parallel execution: method1 and method2 run simultaneously, 
             # method3 runs after both complete
-            recordset.await().method1().await().method2().method3()
+            recordset.job_wait().method1().job_wait().method2().method3()
             
             # Complex chain: method1 and method2 run in parallel,
             # then method3 runs after both, then method4 runs after method3
-            recordset.await().method1().await().method2().method3().method4()
+            recordset.job_wait().method1().job_wait().method2().method3().method4()
             
             # With retries
-            recordset.await(retry=3, retry_delay=500).process_data().send_email()
+            recordset.job_wait(retry=3, retry_delay=500).process_data().send_email()
         """
         return AwaitProxy(self, retry=retry, retry_delay=retry_delay)

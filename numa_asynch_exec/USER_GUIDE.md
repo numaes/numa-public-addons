@@ -105,11 +105,11 @@ recordset.asynch_exec(retry=3, retry_delay=1000).method()
 
 ---
 
-## Using `await()` - Chained Execution with Dependencies
+## Using `job_wait()` - Chained Execution with Dependencies
 
 ### When to Use
 
-Use `await()` when you need to:
+Use `job_wait()` when you need to:
 - Execute multiple methods in sequence
 - Coordinate parallel execution of independent tasks
 - Build complex asynchronous workflows
@@ -119,15 +119,15 @@ Use `await()` when you need to:
 
 ```python
 # Sequential
-recordset.await().method1().method2()
+recordset.job_wait().method1().method2()
 
 # Parallel
-recordset.await().method1().await().method2().method3()
+recordset.job_wait().method1().job_wait().method2().method3()
 ```
 
 ### Sequential Execution
 
-**Pattern:** `await().method1().method2()`
+**Pattern:** `job_wait().method1().method2()`
 
 **Behavior:**
 - `method1` executes first
@@ -139,7 +139,7 @@ recordset.await().method1().await().method2().method3()
 ```python
 # Process order and then send confirmation
 order = self.env['sale.order'].browse(order_id)
-order.await().process_payment().send_confirmation_email()
+order.job_wait().process_payment().send_confirmation_email()
 ```
 
 **Flow:**
@@ -152,7 +152,7 @@ order.await().process_payment().send_confirmation_email()
 
 ### Parallel Execution
 
-**Pattern:** `await().method1().await().method2().method3()`
+**Pattern:** `job_wait().method1().job_wait().method2().method3()`
 
 **Behavior:**
 - `method1` and `method2` execute **simultaneously**
@@ -163,7 +163,7 @@ order.await().process_payment().send_confirmation_email()
 
 ```python
 # Fetch data from multiple sources in parallel, then process
-recordset.await().fetch_from_api1().await().fetch_from_api2().merge_results()
+recordset.job_wait().fetch_from_api1().job_wait().fetch_from_api2().merge_results()
 ```
 
 **Flow:**
@@ -177,13 +177,13 @@ recordset.await().fetch_from_api1().await().fetch_from_api2().merge_results()
 
 ### Complex Chains
 
-**Pattern:** Multiple `await()` calls create parallel branches
+**Pattern:** Multiple `job_wait()` calls create parallel branches
 
 **Example:**
 
 ```python
 # Complex workflow: parallel data fetching, sequential processing
-recordset.await().fetch_customer_data().await().fetch_product_data().validate().await().check_inventory().process_order()
+recordset.job_wait().fetch_customer_data().job_wait().fetch_product_data().validate().job_wait().check_inventory().process_order()
 ```
 
 **Flow:**
@@ -195,13 +195,13 @@ recordset.await().fetch_customer_data().await().fetch_product_data().validate().
 5. process_order() → Job5 (depends on Job3 AND Job4)
 ```
 
-**Note:** The exact dependency structure depends on how `await()` is called. Each `await()` creates a new parallel branch.
+**Note:** The exact dependency structure depends on how `job_wait()` is called. Each `job_wait()` creates a new parallel branch.
 
 ### With Retries
 
 ```python
 # All jobs in the chain will retry 3 times
-recordset.await(retry=3, retry_delay=500).validate().process().save()
+recordset.job_wait(retry=3, retry_delay=500).validate().process().save()
 ```
 
 **Important:** Retry configuration applies to **all jobs** in the chain.
@@ -218,7 +218,7 @@ def action_confirm_order(self):
     self.ensure_one()
     
     # Process in background: validate → process payment → send email → update inventory
-    self.await().validate_order().process_payment().send_confirmation().update_inventory()
+    self.job_wait().validate_order().process_payment().send_confirmation().update_inventory()
     
     return {
         'type': 'ir.actions.client',
@@ -237,7 +237,7 @@ def action_confirm_order(self):
 def sync_with_external_system(self):
     """Sync data with external system"""
     # Fetch from multiple sources in parallel, then sync
-    self.await().fetch_customers().await().fetch_products().await().fetch_orders().sync_all()
+    self.job_wait().fetch_customers().job_wait().fetch_products().job_wait().fetch_orders().sync_all()
 ```
 
 ### Example 3: Report Generation and Delivery
@@ -246,7 +246,7 @@ def sync_with_external_system(self):
 def generate_and_send_report(self):
     """Generate report and send via email"""
     # Generate report, then send email (sequential)
-    self.await().generate_pdf_report().send_via_email()
+    self.job_wait().generate_pdf_report().send_via_email()
 ```
 
 ### Example 4: Validation and Notification
@@ -255,7 +255,7 @@ def generate_and_send_report(self):
 def validate_and_notify(self):
     """Validate data and notify stakeholders"""
     # Validate in parallel, then notify
-    self.await().validate_business_rules().await().check_permissions().notify_stakeholders()
+    self.job_wait().validate_business_rules().job_wait().check_permissions().notify_stakeholders()
 ```
 
 ---
@@ -268,7 +268,7 @@ Jobs can be in one of these states:
 - **Running**: Job is currently executing
 - **Done**: Job completed successfully
 - **Failed**: Job failed and has no retries left
-- **Waiting**: Job is waiting for dependencies to complete (new state for `await()`)
+- **Waiting**: Job is waiting for dependencies to complete (new state for `job_wait()`)
 
 ### Checking Job Status
 
@@ -297,17 +297,17 @@ for job in jobs:
 recordset.asynch_exec().send_email()
 
 # ❌ Avoid: Over-engineering simple tasks
-recordset.await().send_email()  # Unnecessary complexity
+recordset.job_wait().send_email()  # Unnecessary complexity
 ```
 
-### 2. Use `await()` for Workflows
+### 2. Use `job_wait()` for Workflows
 
 ```python
 # ✅ Good: Coordinated workflow
-recordset.await().validate().process().save()
+recordset.job_wait().validate().process().save()
 
 # ❌ Avoid: Independent tasks in chain
-recordset.await().task1().task2()  # If tasks are independent, use separate asynch_exec()
+recordset.job_wait().task1().task2()  # If tasks are independent, use separate asynch_exec()
 ```
 
 ### 3. Handle Errors Appropriately
@@ -370,20 +370,20 @@ recordset.asynch_exec().log_activity()
 
 ```python
 # Execute steps in order
-recordset.await().step1().step2().step3()
+recordset.job_wait().step1().step2().step3()
 ```
 
 ### Pattern 3: Parallel Aggregation
 
 ```python
 # Execute multiple tasks in parallel, then aggregate
-recordset.await().task1().await().task2().aggregate()
+recordset.job_wait().task1().job_wait().task2().aggregate()
 ```
 
 ### Pattern 4: Conditional Execution
 
 ```python
-# Note: await() doesn't support conditional logic directly
+# Note: job_wait() doesn't support conditional logic directly
 # You need to handle this in your methods or use separate asynch_exec() calls
 
 if condition:
@@ -426,7 +426,7 @@ else:
 **Problem:** Error: "Circular dependency detected"
 
 **Solution:**
-- Review your `await()` chain
+- Review your `job_wait()` chain
 - Ensure jobs don't depend on themselves (directly or indirectly)
 - Simplify the dependency structure
 
@@ -447,7 +447,7 @@ else:
 
 ### Understanding Dependencies
 
-Dependencies are created automatically by `await()`. You can also inspect them:
+Dependencies are created automatically by `job_wait()`. You can also inspect them:
 
 ```python
 # Get all jobs that depend on a specific job
@@ -494,7 +494,7 @@ failed = self.env['numa.asynch.job'].search_count([('state', '=', 'failed')])
 2. **No Timeout**: Jobs can wait indefinitely if dependencies fail
 3. **No Cancellation**: Cannot cancel jobs in a chain if one fails
 4. **Simple Dependencies**: Only checks if dependencies are 'done', not their results
-5. **No Conditional Logic**: `await()` doesn't support if/else in the chain
+5. **No Conditional Logic**: `job_wait()` doesn't support if/else in the chain
 
 ### Performance Considerations
 
@@ -535,15 +535,15 @@ if job.state == 'done':
     pass
 ```
 
-### Q: Can I use `await()` with `asynch_exec()`?
+### Q: Can I use `job_wait()` with `asynch_exec()`?
 
-**A:** They are separate APIs. Use `await()` for chains, `asynch_exec()` for independent tasks.
+**A:** They are separate APIs. Use `job_wait()` for chains, `asynch_exec()` for independent tasks.
 
-### Q: What's the difference between `await()` and `asynch_exec()`?
+### Q: What's the difference between `job_wait()` and `asynch_exec()`?
 
 **A:** 
 - `asynch_exec()`: Single independent job
-- `await()`: Chain of dependent jobs with sequential/parallel execution
+- `job_wait()`: Chain of dependent jobs with sequential/parallel execution
 
 ---
 
