@@ -31,6 +31,83 @@ CRITICAL_TABLES = [
 ]
 
 
+def get_and_drop_dependent_views(cr, table_name, column_name):
+    """
+    Get views that depend on a specific column and drop them temporarily.
+    
+    Returns:
+        list: List of (view_schema, view_name, view_definition) tuples
+    """
+    # Check for views that depend on this column
+    cr.execute("""
+        SELECT DISTINCT dependent_ns.nspname as dependent_schema,
+               dependent_view.relname as dependent_view
+        FROM pg_depend
+        JOIN pg_rewrite ON pg_depend.objid = pg_rewrite.oid
+        JOIN pg_class as dependent_view ON pg_rewrite.ev_class = dependent_view.oid
+        JOIN pg_class as source_table ON pg_depend.refobjid = source_table.oid
+        JOIN pg_namespace dependent_ns ON dependent_view.relnamespace = dependent_ns.oid
+        JOIN pg_namespace source_ns ON source_table.relnamespace = source_ns.oid
+        WHERE source_ns.nspname = 'public'
+        AND source_table.relname = %s
+        AND dependent_view.relkind = 'v'
+    """, (table_name,))
+    
+    dependent_views = cr.fetchall()
+    view_definitions = []
+    
+    # Store view definitions before dropping
+    for view_schema, view_name in dependent_views:
+        try:
+            # Use pg_get_viewdef to get the complete view definition
+            cr.execute("""
+                SELECT pg_get_viewdef('%s.%s'::regclass, true)
+            """ % (view_schema, view_name))
+            view_def = cr.fetchone()
+            if view_def and view_def[0]:
+                view_definitions.append((view_schema, view_name, view_def[0]))
+            else:
+                _logger.warning("  Could not get definition for view %s.%s", view_schema, view_name)
+        except Exception as e:
+            _logger.warning("  Could not get definition for view %s.%s: %s", view_schema, view_name, e)
+    
+    # Remove duplicates (CASCADE may drop multiple views)
+    unique_views = {}
+    for view_schema, view_name, view_def in view_definitions:
+        view_key = (view_schema, view_name)
+        if view_key not in unique_views:
+            unique_views[view_key] = view_def
+    
+    # Drop views temporarily
+    for (view_schema, view_name), _ in unique_views.items():
+        try:
+            cr.execute("DROP VIEW IF EXISTS %s.%s CASCADE" % (view_schema, view_name))
+            _logger.debug("  Dropped view %s.%s temporarily (depends on %s.%s)", 
+                         view_schema, view_name, table_name, column_name)
+        except Exception as e:
+            _logger.warning("  Could not drop view %s.%s: %s", view_schema, view_name, e)
+    
+    return unique_views
+
+
+def recreate_views(cr, unique_views):
+    """
+    Recreate views that were dropped temporarily.
+    
+    Args:
+        cr: Database cursor
+        unique_views: Dict of {(view_schema, view_name): view_definition}
+    """
+    for (view_schema, view_name), view_def in unique_views.items():
+        try:
+            # Use CREATE OR REPLACE to handle cases where view still exists
+            cr.execute("CREATE OR REPLACE VIEW %s.%s AS %s" % (view_schema, view_name, view_def))
+            _logger.debug("  Recreated view %s.%s", view_schema, view_name)
+        except Exception as e:
+            _logger.error("  ✗ ERROR recreating view %s.%s: %s", view_schema, view_name, e)
+            _logger.error("  MANUAL INTERVENTION REQUIRED for view %s.%s", view_schema, view_name)
+
+
 def pre_init_hook(env):
     """
     Pre-installation hook that migrates all integer columns to BIGINT.
@@ -164,39 +241,8 @@ def pre_init_hook(env):
             if result and result[0] == 'bigint':
                 continue
             
-            # Check for views that depend on this column
-            # PostgreSQL doesn't allow altering column type if used by views
-            cr.execute("""
-                SELECT DISTINCT dependent_ns.nspname as dependent_schema,
-                       dependent_view.relname as dependent_view
-                FROM pg_depend
-                JOIN pg_rewrite ON pg_depend.objid = pg_rewrite.oid
-                JOIN pg_class as dependent_view ON pg_rewrite.ev_class = dependent_view.oid
-                JOIN pg_class as source_table ON pg_depend.refobjid = source_table.oid
-                JOIN pg_namespace dependent_ns ON dependent_view.relnamespace = dependent_ns.oid
-                JOIN pg_namespace source_ns ON source_table.relnamespace = source_ns.oid
-                WHERE source_ns.nspname = 'public'
-                AND source_table.relname = %s
-                AND dependent_view.relkind = 'v'
-            """, (table_name,))
-            
-            dependent_views = cr.fetchall()
-            view_definitions = []
-            
-            # Store view definitions before dropping
-            for view_schema, view_name in dependent_views:
-                try:
-                    # Use pg_get_viewdef to get the complete view definition
-                    cr.execute("""
-                        SELECT pg_get_viewdef('%s.%s'::regclass, true)
-                    """ % (view_schema, view_name))
-                    view_def = cr.fetchone()
-                    if view_def and view_def[0]:
-                        view_definitions.append((view_schema, view_name, view_def[0]))
-                    else:
-                        _logger.warning("  Could not get definition for view %s.%s", view_schema, view_name)
-                except Exception as e:
-                    _logger.warning("  Could not get definition for view %s.%s: %s", view_schema, view_name, e)
+            # Check for views that depend on this column and drop them
+            unique_views = get_and_drop_dependent_views(cr, table_name, 'id')
             
             # Check for foreign keys that reference this column
             foreign_keys_to_handle = []
@@ -241,34 +287,12 @@ def pre_init_hook(env):
                         except Exception as fk_err:
                             _logger.warning("  Could not drop FK %s: %s", fk_name, fk_err)
                 
-                # Drop dependent views temporarily
-                # Remove duplicates first (CASCADE may drop multiple views, causing duplicates in list)
-                unique_views = {}
-                for view_schema, view_name, view_def in view_definitions:
-                    view_key = (view_schema, view_name)
-                    if view_key not in unique_views:
-                        unique_views[view_key] = view_def
-                
-                for (view_schema, view_name), _ in unique_views.items():
-                    try:
-                        cr.execute("DROP VIEW IF EXISTS %s.%s CASCADE" % (view_schema, view_name))
-                        _logger.debug("  Dropped view %s.%s temporarily", view_schema, view_name)
-                    except Exception as e:
-                        _logger.warning("  Could not drop view %s.%s: %s", view_schema, view_name, e)
-                
                 # Convert ID column to BIGINT
                 sql = "ALTER TABLE %s ALTER COLUMN id TYPE bigint USING id::bigint" % table_name
                 cr.execute(sql)
                 
-                # Recreate views (using unique list to avoid duplicates)
-                for (view_schema, view_name), view_def in unique_views.items():
-                    try:
-                        # Use CREATE OR REPLACE to handle cases where view still exists
-                        cr.execute("CREATE OR REPLACE VIEW %s.%s AS %s" % (view_schema, view_name, view_def))
-                        _logger.debug("  Recreated view %s.%s", view_schema, view_name)
-                    except Exception as e:
-                        _logger.error("  ✗ ERROR recreating view %s.%s: %s", view_schema, view_name, e)
-                        _logger.error("  MANUAL INTERVENTION REQUIRED for view %s.%s", view_schema, view_name)
+                # Recreate views
+                recreate_views(cr, unique_views)
                 
                 # Verify conversion
                 cr.execute("""
@@ -406,6 +430,9 @@ def pre_init_hook(env):
                         _logger.debug("Column %s.%s is already BIGINT, skipping", table_name, column_name)
                         continue
                     
+                    # Check for views that depend on this column and drop them
+                    unique_views = get_and_drop_dependent_views(cr, table_name, column_name)
+                    
                     # Convert column to BIGINT
                     try:
                         # First, try with USING clause (recommended for PostgreSQL)
@@ -413,6 +440,9 @@ def pre_init_hook(env):
                             table_name, column_name, column_name
                         )
                         cr.execute(sql)
+                        
+                        # Recreate views
+                        recreate_views(cr, unique_views)
                         
                         # Verify conversion
                         cr.execute("""
@@ -437,11 +467,20 @@ def pre_init_hook(env):
                                           table_name, column_name, verify_result[0] if verify_result else 'unknown')
                     except Exception as e:
                         # If USING fails, try without it (for some constraint issues)
+                        # But first check if it's a view dependency error
+                        if 'view or rule' in str(e).lower() or 'rule' in str(e).lower():
+                            # Views should have been handled, but maybe there are more
+                            unique_views = get_and_drop_dependent_views(cr, table_name, column_name)
+                        
                         try:
                             sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint" % (
                                 table_name, column_name
                             )
                             cr.execute(sql)
+                            
+                            # Recreate views if we dropped them
+                            if 'unique_views' in locals() and unique_views:
+                                recreate_views(cr, unique_views)
                             
                             # Verify conversion
                             cr.execute("""
