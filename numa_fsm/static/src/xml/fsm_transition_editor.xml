@@ -19,10 +19,10 @@
                     <label class="form-label">Code</label>
                     <div style="flex-grow: 1; border: 1px solid #ccc; position: relative;">
                         <CodeEditor
-                            mode="'python'"
+                            mode="python"
                             value="state.code"
                             onChange.bind="onCodeChange"
-                            theme="'monokai'"
+                            theme="monokai"
                             class="'h-100 w-100'"
                             readonly="props.readonly"
                         />

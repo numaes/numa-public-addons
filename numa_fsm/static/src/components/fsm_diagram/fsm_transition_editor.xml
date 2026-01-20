@@ -14,14 +14,9 @@
                 <div class="mb-3">
                     <label class="form-label">Code</label>
                     <CodeEditor
-                        mode="'python'"
+                        mode="python"
                         value="state.code"
                         onChange.bind="onCodeChange"
-                        options="{
-                            showLineNumbers: true,
-                            showFoldWidgets: true,
-                            showPrintMargin: false,
-                        }"
                     />
                 </div>
                 <div class="mb-3">
