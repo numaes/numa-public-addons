@@ -288,7 +288,8 @@ def pre_init_hook(env):
                             _logger.warning("  Could not drop FK %s: %s", fk_name, fk_err)
                 
                 # Convert ID column to BIGINT
-                sql = "ALTER TABLE %s ALTER COLUMN id TYPE bigint USING id::bigint" % table_name
+                # 'id' is not a reserved word, but we escape it for consistency
+                sql = "ALTER TABLE %s ALTER COLUMN \"id\" TYPE bigint USING \"id\"::bigint" % table_name
                 cr.execute(sql)
                 
                 # Recreate views
@@ -435,9 +436,11 @@ def pre_init_hook(env):
                     
                     # Convert column to BIGINT
                     try:
+                        # Escape column names (some are PostgreSQL reserved words like 'user')
+                        escaped_column = '"%s"' % column_name
                         # First, try with USING clause (recommended for PostgreSQL)
                         sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint USING %s::bigint" % (
-                            table_name, column_name, column_name
+                            table_name, escaped_column, escaped_column
                         )
                         cr.execute(sql)
                         
@@ -473,8 +476,10 @@ def pre_init_hook(env):
                             unique_views = get_and_drop_dependent_views(cr, table_name, column_name)
                         
                         try:
+                            # Escape column names (some are PostgreSQL reserved words like 'user')
+                            escaped_column = '"%s"' % column_name
                             sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint" % (
-                                table_name, column_name
+                                table_name, escaped_column
                             )
                             cr.execute(sql)
                             
