@@ -226,15 +226,14 @@ def pre_init_hook(env):
                             _logger.warning("  Could not drop FK %s: %s", fk_name, fk_err)
                 
                 # Drop dependent views temporarily
-                for view_schema, view_name, _ in view_definitions:
-                    try:
-                        cr.execute("DROP VIEW IF EXISTS %s.%s CASCADE" % (view_schema, view_name))
-                        _logger.debug("  Dropped view %s.%s temporarily", view_schema, view_name)
-                    except Exception as e:
-                        _logger.warning("  Could not drop view %s.%s: %s", view_schema, view_name, e)
+                # Remove duplicates first (CASCADE may drop multiple views, causing duplicates in list)
+                unique_views = {}
+                for view_schema, view_name, view_def in view_definitions:
+                    view_key = (view_schema, view_name)
+                    if view_key not in unique_views:
+                        unique_views[view_key] = view_def
                 
-                # Drop dependent views temporarily
-                for view_schema, view_name, _ in view_definitions:
+                for (view_schema, view_name), _ in unique_views.items():
                     try:
                         cr.execute("DROP VIEW IF EXISTS %s.%s CASCADE" % (view_schema, view_name))
                         _logger.debug("  Dropped view %s.%s temporarily", view_schema, view_name)
@@ -245,21 +244,11 @@ def pre_init_hook(env):
                 sql = "ALTER TABLE %s ALTER COLUMN id TYPE bigint USING id::bigint" % table_name
                 cr.execute(sql)
                 
-                # Recreate views
-                for view_schema, view_name, view_def in view_definitions:
+                # Recreate views (using unique list to avoid duplicates)
+                for (view_schema, view_name), view_def in unique_views.items():
                     try:
-                        # Recreate view with the same definition
-                        cr.execute("CREATE VIEW %s.%s AS %s" % (view_schema, view_name, view_def))
-                        _logger.debug("  Recreated view %s.%s", view_schema, view_name)
-                    except Exception as e:
-                        _logger.error("  ✗ ERROR recreating view %s.%s: %s", view_schema, view_name, e)
-                        _logger.error("  MANUAL INTERVENTION REQUIRED for view %s.%s", view_schema, view_name)
-                
-                # Recreate views
-                for view_schema, view_name, view_def in view_definitions:
-                    try:
-                        # Recreate view with the same definition
-                        cr.execute("CREATE VIEW %s.%s AS %s" % (view_schema, view_name, view_def))
+                        # Use CREATE OR REPLACE to handle cases where view still exists
+                        cr.execute("CREATE OR REPLACE VIEW %s.%s AS %s" % (view_schema, view_name, view_def))
                         _logger.debug("  Recreated view %s.%s", view_schema, view_name)
                     except Exception as e:
                         _logger.error("  ✗ ERROR recreating view %s.%s: %s", view_schema, view_name, e)
