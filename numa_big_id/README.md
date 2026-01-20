@@ -67,13 +67,118 @@ El módulo tiene dos constantes configurables en `hooks.py`:
 - `MAX_SAFE_ROWS = 500000`: Límite de registros en tablas críticas antes de abortar la migración
 - `HANDLE_FOREIGN_KEYS = False`: Si es `True`, elimina y recrea foreign keys durante la conversión de columnas `id` (puede ser muy lento en bases medianas/grandes)
 
-## Limitaciones
+## Limitaciones y Riesgos
+
+### Limitaciones Técnicas
 
 - **Migración Irreversible**: La migración a BIGINT no puede revertirse automáticamente
 - **Bases de Datos Grandes**: Si alguna tabla crítica tiene más de 500,000 registros, la instalación se abortará y se requerirá migración manual por un DBA
 - **Compatibilidad**: Compatible con Odoo 18 (probado), debería funcionar en 16 y 17
 - **Tablas con Herencia**: Las columnas heredadas se omiten (se convierten en la tabla padre)
 - **Vistas Complejas**: Algunas vistas muy complejas pueden requerir recreación manual si falla la recreación automática
+
+### Riesgos Críticos en Bases Grandes
+
+⚠️ **ADVERTENCIA**: Este módulo está diseñado para bases de datos relativamente pequeñas (<500k registros en tablas críticas). Para bases grandes, use migración manual por DBA.
+
+#### 1. Migración No Atómica
+- **Problema**: Los commits intermedios (cada 50 tablas) hacen que la migración NO sea atómica
+- **Riesgo**: Si hay un corte (power failure, crash, etc.), la base quedará en estado parcialmente migrado
+- **Impacto**: NO hay rollback automático - requiere intervención manual para restaurar desde backup o completar la migración
+- **Mitigación**: 
+  - Hacer backup completo antes de instalar
+  - Tener plan de rollback (restaurar desde backup)
+  - Monitorear el proceso y tener ventana de mantenimiento suficiente
+
+#### 2. Espacio en Disco
+- **Problema**: PostgreSQL crea nuevos archivos antes de eliminar los antiguos durante `ALTER TABLE`
+- **Riesgo**: Puede requerir hasta **2x el tamaño actual de la base de datos** temporalmente
+- **Impacto**: Si no hay espacio suficiente, la migración fallará y dejará la base en estado inconsistente
+- **Mitigación**: 
+  - Verificar espacio disponible antes de migrar
+  - Tener al menos 2x el tamaño de la base disponible
+  - Monitorear espacio durante la migración
+
+#### 3. Bloqueos Prolongados
+- **Problema**: `ALTER TABLE ... ALTER COLUMN TYPE` adquiere locks exclusivos en las tablas
+- **Riesgo**: Bloquea lecturas y escrituras durante la conversión (puede ser minutos u horas en tablas grandes)
+- **Impacto**: Aplicación inaccesible durante la migración de tablas críticas
+- **Mitigación**:
+  - Ejecutar durante ventana de mantenimiento
+  - Considerar downtime planificado
+  - Para bases grandes, usar técnicas de migración online (requiere DBA)
+
+#### 4. Índices
+- **Problema**: Los índices en columnas convertidas pueden quedar inconsistentes o necesitar recreación
+- **Riesgo**: Performance degradada hasta que se reconstruyan los índices
+- **Impacto**: Queries lentas, posible degradación de performance general
+- **Mitigación**:
+  - Planificar `REINDEX` después de la migración
+  - Monitorear performance post-migración
+  - Considerar recrear índices críticos manualmente
+
+#### 5. Vistas Materializadas
+- **Problema**: No se manejan vistas materializadas (solo vistas regulares)
+- **Riesgo**: Vistas materializadas pueden quedar inconsistentes o requerir refresco manual
+- **Impacto**: Datos incorrectos en reportes que usen vistas materializadas
+- **Mitigación**:
+  - Identificar vistas materializadas antes de migrar
+  - Refrescar manualmente después de la migración
+  - Verificar integridad de datos
+
+#### 6. Triggers Personalizados
+- **Problema**: Triggers que dependen de tipos específicos pueden fallar
+- **Riesgo**: Triggers pueden no ejecutarse correctamente o causar errores
+- **Impacto**: Lógica de negocio personalizada puede fallar
+- **Mitigación**:
+  - Auditar triggers antes de migrar
+  - Probar en ambiente de desarrollo primero
+  - Tener plan de rollback para triggers críticos
+
+#### 7. Replicación
+- **Problema**: Si hay replicación streaming, los cambios masivos pueden causar lag o fallos
+- **Riesgo**: Replicación puede quedar desincronizada o fallar
+- **Impacto**: Standby servers pueden quedar inconsistentes
+- **Mitigación**:
+  - Pausar replicación durante migración (si es posible)
+  - Monitorear lag de replicación
+  - Tener plan de resincronización
+
+#### 8. Tiempo de Ejecución
+- **Problema**: En bases grandes, la migración puede tomar horas
+- **Riesgo**: Ventana de mantenimiento insuficiente
+- **Impacto**: Migración incompleta si se interrumpe
+- **Mitigación**:
+  - Estimar tiempo basado en tamaño de base
+  - Tener ventana de mantenimiento suficiente (horas, no minutos)
+  - Monitorear progreso continuamente
+
+#### 9. Foreign Keys
+- **Problema**: Manejo de FKs está deshabilitado por defecto (`HANDLE_FOREIGN_KEYS = False`)
+- **Riesgo**: Conversión de columnas `id` puede fallar si hay FKs bloqueantes
+- **Impacto**: Algunas tablas pueden no migrarse
+- **Mitigación**:
+  - Habilitar `HANDLE_FOREIGN_KEYS = True` solo si base es pequeña
+  - Para bases grandes, migrar FKs manualmente antes de convertir columnas
+  - Verificar que todas las columnas se migraron correctamente
+
+### Recomendaciones para Bases Grandes
+
+1. **NO usar migración automática** si:
+   - Base tiene >500k registros en tablas críticas
+   - Es un sistema de producción crítico
+   - No hay ventana de mantenimiento suficiente (horas)
+   - No hay backup reciente y plan de rollback
+
+2. **Usar migración manual por DBA** que incluya:
+   - Backup completo antes de empezar
+   - Migración por lotes (tabla por tabla)
+   - Verificación de integridad después de cada lote
+   - Plan de rollback detallado
+   - Monitoreo continuo de espacio, locks, y performance
+   - Recreación de índices después de la migración
+   - Refresco de vistas materializadas
+   - Validación de triggers
 
 ## Uso
 

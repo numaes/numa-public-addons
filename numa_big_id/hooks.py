@@ -14,11 +14,27 @@ _logger = logging.getLogger(__name__)
 
 # Safety threshold: if any critical table exceeds this number of rows,
 # abort the installation to prevent unsafe automatic migration
+# 
+# IMPORTANT RISKS FOR LARGE DATABASES:
+# - Partial transactions: Intermediate commits can leave database in inconsistent state if interrupted
+# - Disk space: Conversion may require up to 2x disk space temporarily (PostgreSQL creates new files)
+# - Long locks: ALTER TABLE can lock tables for extended periods, blocking other operations
+# - Index recreation: Indexes may need to be rebuilt, which can be very slow on large tables
+# - Materialized views: Not currently handled (may need manual intervention)
+# - Triggers: Not validated (may have issues with type changes)
+# - Replication: Can cause issues with streaming replication if not properly handled
+# - Rollback: No automatic rollback mechanism - manual intervention required if migration fails
+# - Execution time: Can take hours on very large databases
+#
+# RECOMMENDATION: For databases with >500k records, use manual migration by DBA
 MAX_SAFE_ROWS = 500000
 
 # Enable foreign key handling (can be very heavy on medium databases)
 # Set to True only if you have a small database or can afford downtime
 # When False, ID column conversion may fail if foreign keys block it
+# 
+# WARNING: Enabling this can make migration 10-100x slower on large databases
+# as it requires dropping and recreating all foreign keys
 HANDLE_FOREIGN_KEYS = False
 
 # Critical tables to check before migration
@@ -41,10 +57,14 @@ def get_and_drop_dependent_views(cr, table_name, column_name):
     """
     Get views that depend on a specific column and drop them temporarily.
     
+    Note: This handles regular views ('v'), but NOT materialized views ('m').
+    Materialized views need to be refreshed manually after migration.
+    
     Returns:
-        list: List of (view_schema, view_name, view_definition) tuples
+        dict: Dict of {(view_schema, view_name): view_definition}
     """
     # Check for views that depend on this column
+    # Note: This query finds regular views ('v'), not materialized views ('m')
     cr.execute("""
         SELECT DISTINCT dependent_ns.nspname as dependent_schema,
                dependent_view.relname as dependent_view
@@ -204,6 +224,22 @@ def pre_init_hook(env):
     all_tables = [row[0] for row in cr.fetchall()]
     _logger.info("Found %s tables to analyze", len(all_tables))
     
+    # Check for materialized views (not handled automatically)
+    cr.execute("""
+        SELECT COUNT(*)
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+        AND c.relkind = 'm'
+    """)
+    mat_view_count = cr.fetchone()[0]
+    if mat_view_count > 0:
+        _logger.warning("=" * 80)
+        _logger.warning("WARNING: Found %s materialized views - these are NOT handled automatically", mat_view_count)
+        _logger.warning("  Materialized views may need manual refresh after migration")
+        _logger.warning("  Check logs and refresh manually: REFRESH MATERIALIZED VIEW <view_name>")
+        _logger.warning("=" * 80)
+    
     # Step 3: Migrate integer columns to BIGINT
     _logger.info("Step 3: Migrating integer columns to BIGINT...")
     columns_migrated = 0
@@ -217,6 +253,11 @@ def pre_init_hook(env):
     
     commit_counter = 0
     COMMIT_INTERVAL = 50  # Commit every 50 tables to avoid lock exhaustion
+    # 
+    # WARNING: Intermediate commits mean the migration is NOT atomic.
+    # If interrupted, the database will be in a partially migrated state.
+    # There is NO automatic rollback - manual intervention will be required.
+    # Consider this when deciding if automatic migration is appropriate.
     
     for table_name in all_tables:
         try:
@@ -664,6 +705,13 @@ def pre_init_hook(env):
     _logger.info("  - Sequences migrated: %s", sequences_migrated)
     if id_columns_failed > 0:
         _logger.warning("  - WARNING: %s ID columns are still INTEGER - manual intervention may be required", id_columns_failed)
+    _logger.info("=" * 80)
+    _logger.warning("POST-MIGRATION ACTIONS REQUIRED:")
+    _logger.warning("  1. Verify all columns were converted (check logs for errors)")
+    _logger.warning("  2. Consider running REINDEX on converted tables for optimal performance")
+    _logger.warning("  3. Refresh any materialized views that depend on converted columns")
+    _logger.warning("  4. Test application functionality to ensure triggers/custom code work correctly")
+    _logger.warning("  5. Monitor database performance - indexes may need rebuilding")
     _logger.info("=" * 80)
     
     # Final verification: Check a few sample tables to confirm conversion
