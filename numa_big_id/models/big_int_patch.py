@@ -18,6 +18,7 @@ The patch is applied at module load time and affects:
 
 import logging
 from odoo import fields
+from odoo.tools.func import lazy_property
 
 _logger = logging.getLogger(__name__)
 
@@ -135,7 +136,8 @@ def apply_bigint_patch():
     # Patch column_type property
     try:
         # Replace the column_type property with our patched version
-        fields.Integer.column_type = property(_get_column_type_bigint)
+        # Use lazy_property to match Odoo's expected behavior
+        fields.Integer.column_type = lazy_property(_get_column_type_bigint)
         _logger.info("Patched fields.Integer.column_type to return BIGINT")
     except Exception as e:
         _logger.warning("Could not patch column_type property: %s", e)
@@ -156,10 +158,24 @@ def apply_bigint_patch():
         try:
             # Store original if not already stored
             if not hasattr(fields.Many2one, '_original_get_column_type'):
-                if isinstance(fields.Many2one.column_type, property):
-                    original_getter = fields.Many2one.column_type.fget
+                original_column_type = fields.Many2one.column_type
+                
+                # Check if it's a lazy_property (Odoo 18)
+                if hasattr(original_column_type, 'func'):
+                    # It's a lazy_property - get the underlying function
+                    original_getter = original_column_type.func
                     if original_getter:
-                        # Store as a function that will be called with self
+                        def _wrapped_original(self):
+                            return original_getter(self)
+                        fields.Many2one._original_get_column_type = _wrapped_original
+                    else:
+                        def _default_get_column_type(self):
+                            return ('integer', 'integer')
+                        fields.Many2one._original_get_column_type = _default_get_column_type
+                elif isinstance(original_column_type, property):
+                    # It's a regular property - get the getter
+                    original_getter = original_column_type.fget
+                    if original_getter:
                         def _wrapped_original(self):
                             return original_getter(self)
                         fields.Many2one._original_get_column_type = _wrapped_original
@@ -168,14 +184,14 @@ def apply_bigint_patch():
                             return ('integer', 'integer')
                         fields.Many2one._original_get_column_type = _default_get_column_type
                 else:
-                    # If it's not a property, it's a direct value - create a getter that returns it
-                    original_value = fields.Many2one.column_type
+                    # If it's not a property/lazy_property, it's a direct value
                     def _get_direct_value(self):
-                        return original_value
+                        return original_column_type
                     fields.Many2one._original_get_column_type = _get_direct_value
             
             # Apply same patch to Many2one
-            fields.Many2one.column_type = property(_get_column_type_bigint)
+            # Use lazy_property to match Odoo's expected behavior
+            fields.Many2one.column_type = lazy_property(_get_column_type_bigint)
             _logger.info("Patched fields.Many2one.column_type to return BIGINT")
         except Exception as e:
             _logger.warning("Could not patch Many2one.column_type: %s", e)
