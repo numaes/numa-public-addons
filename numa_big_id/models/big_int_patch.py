@@ -80,9 +80,12 @@ def column_type(self):
     # Call the original method to get the base column type
     # For Integer fields, this typically returns ('int4', 'int4')
     try:
-        if hasattr(self, '_original_get_column_type'):
-            original_getter = self._original_get_column_type
-            # If it's a callable (function), call it with self
+        # Check if we have the original getter stored on the class
+        # The getter is stored on the class, not the instance
+        field_class = type(self)
+        if hasattr(field_class, '_original_get_column_type'):
+            original_getter = field_class._original_get_column_type
+            # The getter already expects (self) as argument
             if callable(original_getter):
                 original_type = original_getter(self)
             else:
