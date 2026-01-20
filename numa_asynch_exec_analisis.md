@@ -2,14 +2,110 @@
 
 ## Resumen Ejecutivo
 
-El módulo `numa_asynch_exec` proporciona una infraestructura **simple y ligera** para ejecutar métodos de Odoo de forma asíncrona en threads de fondo, con persistencia en base de datos, recuperación automática y trazabilidad de errores. El análisis revela un código funcional con áreas de mejora en validaciones, manejo de errores y documentación.
+El módulo `numa_asynch_exec` proporciona una infraestructura **simple y ligera** para ejecutar métodos de Odoo de forma asíncrona en threads de fondo, con persistencia en base de datos, recuperación automática y trazabilidad de errores. El módulo ahora incluye soporte para **ejecución encadenada con dependencias** mediante el método `await()`, permitiendo programación asíncrona con transacciones separadas.
 
 **Principio de Diseño:**
 Este módulo tiene como objetivo mantenerse **simple y minimalista**. Funcionalidades avanzadas como sistemas de prioridades, monitoreo detallado, dashboards y métricas deberían implementarse en **módulos dependientes** que extiendan la funcionalidad base sin complicar el núcleo.
 
+**Nueva Funcionalidad:**
+El método `await()` permite crear cadenas de jobs dependientes con ejecución secuencial y paralela, simulando programación asíncrona con transacciones separadas.
+
 ---
 
-## 1. Problemas Críticos Detectados
+## 1. Arquitectura y Componentes
+
+### 1.1 Componentes Principales
+
+#### A. `AsynchProxy`
+Proxy que intercepta llamadas a métodos y las convierte en jobs asíncronos.
+
+**Características:**
+- Intercepta cualquier llamada a método
+- Crea registro `numa.asynch.job` con metadata completa
+- Envía job al executor después del commit de la transacción actual
+
+#### B. `AwaitProxy` (Nuevo)
+Proxy que construye cadenas de jobs dependientes usando builder pattern.
+
+**Características:**
+- Soporta ejecución secuencial: `await().method1().method2()`
+- Soporta ejecución paralela: `await().method1().await().method2().method3()`
+- Maneja proxies anidados con referencias `parent_proxy`
+- Crea dependencias automáticamente entre jobs
+
+#### C. `numa.asynch.job`
+Modelo que almacena jobs asíncronos.
+
+**Estados:**
+- `pending`: Listo para ejecutar
+- `running`: Ejecutándose actualmente
+- `done`: Completado exitosamente
+- `failed`: Falló (sin retries disponibles)
+- `waiting`: Esperando que dependencias se completen (NUEVO)
+
+**Campos de Dependencias (Nuevos):**
+- `dependency_ids`: Jobs que deben completarse antes
+- `dependent_job_ids`: Jobs que dependen de este
+- `has_dependencies`: Computado - True si tiene dependencias
+- `all_dependencies_done`: Computado - True si todas las dependencias están 'done'
+
+#### D. `numa.asynch.job.dependency` (Nuevo)
+Modelo que rastrea dependencias entre jobs.
+
+**Validaciones:**
+- Previene auto-dependencias
+- Previene dependencias circulares (detección básica)
+
+### 1.2 Flujos de Ejecución
+
+#### Flujo Estándar (`asynch_exec`)
+
+```
+1. Usuario llama: recordset.asynch_exec().method()
+2. AsynchProxy intercepta la llamada
+3. Crea numa.asynch.job con metadata
+4. Registra hook postcommit
+5. Transacción actual se commitea
+6. Hook ejecuta: envía job a ThreadPoolExecutor
+7. Thread ejecuta método en nueva transacción
+8. Job se marca como 'done' o 'failed'
+```
+
+#### Flujo Encadenado (`await`)
+
+```
+1. Usuario llama: recordset.await().method1().method2()
+2. AwaitProxy construye cadena:
+   - method1 → job1
+   - method2 → job2 (depende de job1)
+3. job1 se crea sin dependencias → estado 'pending'
+4. job2 se crea con dependencia a job1 → estado 'waiting'
+5. job1 se ejecuta cuando transacción commitea
+6. job1 completa → _check_and_trigger_dependents()
+7. job2 verifica: all_dependencies_done = True
+8. job2 cambia a 'pending' y se envía al executor
+9. job2 se ejecuta en nueva transacción
+```
+
+#### Flujo Paralelo (`await` con múltiples branches)
+
+```
+1. Usuario llama: recordset.await().method1().await().method2().method3()
+2. AwaitProxy construye:
+   - Root proxy con method1 en chain
+   - Parallel proxy con method2 en chain
+   - method3 se agrega al root después de finalizar paralelos
+3. Jobs creados:
+   - job1 (sin dependencias)
+   - job2 (sin dependencias, paralelo a job1)
+   - job3 (depende de job1 Y job2)
+4. job1 y job2 ejecutan simultáneamente
+5. Cuando ambos completan, job3 se activa automáticamente
+```
+
+---
+
+## 2. Problemas Críticos Detectados
 
 ### 1.1 Acceso a `uid.id` sin Validación
 
@@ -119,7 +215,141 @@ method(*job.args, **job.kwargs)
 
 ---
 
-## 2. Problemas de Calidad de Código
+## 3. Nueva Funcionalidad: `await()` para Ejecución Encadenada
+
+### 3.1 Propósito
+
+El método `await()` permite crear cadenas de jobs asíncronos con dependencias, simulando programación asíncrona con transacciones separadas. Esto permite:
+
+- **Ejecución Secuencial**: Un job solo se ejecuta después de que otro complete
+- **Ejecución Paralela**: Múltiples jobs ejecutan simultáneamente
+- **Combinación**: Paralelo seguido de secuencial
+
+### 3.2 API y Uso
+
+#### Ejecución Secuencial
+
+```python
+# method2 solo se ejecuta después de que method1 complete exitosamente
+recordset.await().method1().method2()
+```
+
+**Flujo:**
+1. `method1` crea job1 (sin dependencias) → ejecuta inmediatamente
+2. `method2` crea job2 (depende de job1) → espera en estado 'waiting'
+3. Cuando job1 completa, job2 se activa automáticamente
+
+#### Ejecución Paralela
+
+```python
+# method1 y method2 ejecutan simultáneamente
+# method3 ejecuta después de que ambos completen
+recordset.await().method1().await().method2().method3()
+```
+
+**Flujo:**
+1. `method1` crea job1 (sin dependencias)
+2. `await()` crea nuevo proxy paralelo
+3. `method2` crea job2 (sin dependencias, paralelo a job1)
+4. `method3` crea job3 (depende de job1 Y job2)
+5. job1 y job2 ejecutan en paralelo
+6. Cuando ambos completan, job3 se activa
+
+#### Cadenas Complejas
+
+```python
+# Múltiples niveles de paralelismo y secuencia
+recordset.await().fetch_data1().await().fetch_data2().process().await().validate().save()
+```
+
+**Flujo:**
+1. `fetch_data1` y `fetch_data2` en paralelo
+2. `process` después de ambos
+3. `validate` en paralelo con... (depende del contexto)
+4. `save` después de validación
+
+### 3.3 Implementación Técnica
+
+#### Builder Pattern
+
+`AwaitProxy` implementa el patrón Builder:
+
+```python
+class AwaitProxy:
+    def __init__(self, recordset, parent_job_ids=None, retry=0, retry_delay=0, parent_proxy=None):
+        self.chain = []  # Métodos secuenciales
+        self.parallel_groups = []  # Proxies paralelos
+        self.parent_proxy = parent_proxy  # Referencia al proxy raíz
+    
+    def await(self):
+        # Crea nuevo proxy paralelo
+        # Lo agrega a parallel_groups del root
+        # Retorna el nuevo proxy para continuar cadena
+    
+    def __getattr__(self, name):
+        # Si tiene parent_proxy: finaliza branch y redirige a root
+        # Si es root con parallel_groups: finaliza paralelos primero
+        # Agrega método a chain
+```
+
+#### Gestión de Dependencias
+
+1. **Creación de Dependencias:**
+   - Cada job en cadena secuencial depende del anterior
+   - Jobs paralelos no tienen dependencias entre sí
+   - Job final después de paralelos depende de todos los paralelos
+
+2. **Resolución de Dependencias:**
+   - Jobs con dependencias se crean en estado 'waiting'
+   - Cuando un job completa, llama `_check_and_trigger_dependents()`
+   - Si todas las dependencias están 'done', job se mueve a 'pending'
+   - Job se envía automáticamente al executor
+
+3. **Validaciones:**
+   - No permite auto-dependencias
+   - Detecta dependencias circulares (básico)
+
+### 3.4 Ventajas
+
+1. **Simula Programación Asíncrona**: Permite escribir código asíncrono con transacciones separadas
+2. **API Fluida**: Sintaxis natural y legible
+3. **Paralelización Automática**: Detecta oportunidades de paralelismo
+4. **Transacciones Separadas**: Cada job ejecuta en su propia transacción
+5. **Dependencias Automáticas**: No requiere gestión manual de dependencias
+
+### 3.5 Limitaciones
+
+1. **Dependencias Simples**: Solo verifica que dependencias estén 'done', no maneja resultados
+2. **Sin Timeout**: Jobs pueden esperar indefinidamente si una dependencia falla
+3. **Detección Circular Básica**: La detección de dependencias circulares es básica
+4. **Sin Cancelación**: No hay forma de cancelar jobs en cadena si uno falla
+
+### 3.6 Casos de Uso
+
+#### Caso 1: Pipeline de Procesamiento
+
+```python
+# Procesar datos en etapas
+recordset.await().fetch_data().transform().validate().save()
+```
+
+#### Caso 2: Agregación Paralela
+
+```python
+# Obtener datos de múltiples fuentes en paralelo, luego procesar
+recordset.await().fetch_from_api1().await().fetch_from_api2().merge_results()
+```
+
+#### Caso 3: Validación y Notificación
+
+```python
+# Validar en paralelo, luego notificar
+recordset.await().validate_business_rules().await().check_permissions().send_notification()
+```
+
+---
+
+## 4. Problemas de Calidad de Código
 
 ### 2.1 Imports Después de Definiciones
 
@@ -177,7 +407,7 @@ Agregar soporte opcional de timeout con configuración.
 
 ---
 
-## 3. Problemas de Documentación
+## 5. Problemas de Documentación
 
 ### 3.1 Docstrings Incompletos
 
@@ -220,7 +450,7 @@ Agregar lista blanca/negra de métodos permitidos, o validar que el método sea 
 
 ---
 
-## 5. Problemas de Rendimiento
+## 7. Problemas de Rendimiento
 
 ### 5.1 Múltiples Commits en Misma Función
 
@@ -242,7 +472,7 @@ Agregar límite configurable o validación de capacidad del thread pool.
 
 ---
 
-## 6. Mejoras Sugeridas Adicionales
+## 8. Mejoras Sugeridas Adicionales
 
 ### 6.1 Agregar Campo de Resultado
 
@@ -272,7 +502,7 @@ Esta funcionalidad **NO debe implementarse en este módulo**. El objetivo de `nu
 
 **Solución:** Implementar en un módulo dependiente (ej: `numa_asynch_exec_priority`) que extienda `numa_asynch_exec` con estas capacidades avanzadas.
 
-### 6.4 Agregar Métricas y Monitoreo ⚠️ MÓDULO DEPENDIENTE
+### 8.4 Agregar Métricas y Monitoreo ⚠️ MÓDULO DEPENDIENTE
 
 **Mejora:**
 Contador de jobs por estado, tiempo promedio de ejecución, dashboards, etc.
@@ -288,7 +518,43 @@ Esta funcionalidad **NO debe implementarse en este módulo**. El objetivo es man
 
 ---
 
-## 7. Resumen de Prioridades
+## 9. Funcionalidades Implementadas Recientemente
+
+### 9.1 Método `await()` para Ejecución Encadenada ✅ IMPLEMENTADO
+
+**Características:**
+- Builder pattern para construir cadenas de jobs
+- Soporte para ejecución secuencial y paralela
+- Gestión automática de dependencias
+- Activación automática de jobs dependientes
+
+**Modelos Nuevos:**
+- `numa.asynch.job.dependency`: Rastrea dependencias entre jobs
+- Campos en `numa.asynch.job`: `dependency_ids`, `dependent_job_ids`, `has_dependencies`, `all_dependencies_done`
+- Nuevo estado: `'waiting'` para jobs con dependencias no satisfechas
+
+**Métodos Nuevos:**
+- `Base.await()`: Punto de entrada para ejecución encadenada
+- `AwaitProxy`: Proxy builder para construir cadenas
+- `NumaAsynchJob._check_and_trigger_dependents()`: Activa jobs dependientes
+
+**Ejemplos de Uso:**
+```python
+# Secuencial
+recordset.await().method1().method2()
+
+# Paralelo
+recordset.await().method1().await().method2().method3()
+
+# Complejo
+recordset.await().fetch1().await().fetch2().process().save()
+```
+
+**Estado:** ✅ Implementado y documentado
+
+---
+
+## 10. Resumen de Prioridades
 
 ### Alta Prioridad (Corregir Inmediatamente)
 1. ⚠️ Validar `job.uid` antes de acceder a `.id`
@@ -332,4 +598,53 @@ Deben implementarse en **módulos dependientes** que extiendan `numa_asynch_exec
 - Evitar dependencias innecesarias para usuarios básicos
 
 **Recomendación Final:**
-✅ Las mejoras de alta prioridad han sido implementadas. El módulo está listo para uso en producción. Funcionalidades avanzadas deben desarrollarse en módulos dependientes siguiendo el principio de simplicidad del núcleo.
+✅ Las mejoras de alta prioridad han sido implementadas. El módulo está listo para uso en producción. La nueva funcionalidad `await()` permite programación asíncrona avanzada con transacciones separadas, manteniendo la simplicidad del núcleo. Funcionalidades avanzadas adicionales deben desarrollarse en módulos dependientes siguiendo el principio de simplicidad del núcleo.
+
+---
+
+## 11. Comparación: `asynch_exec()` vs `await()`
+
+### `asynch_exec()` - Ejecución Simple
+
+**Uso:**
+```python
+recordset.asynch_exec().method()
+```
+
+**Características:**
+- Ejecuta un método en otra transacción
+- No tiene dependencias
+- Se ejecuta inmediatamente después del commit
+- Ideal para tareas independientes
+
+### `await()` - Ejecución Encadenada
+
+**Uso:**
+```python
+recordset.await().method1().method2()
+```
+
+**Características:**
+- Permite crear cadenas de jobs dependientes
+- Soporta ejecución secuencial y paralela
+- Cada job ejecuta en su propia transacción
+- Ideal para pipelines y workflows complejos
+
+### Cuándo Usar Cada Uno
+
+**Usa `asynch_exec()` cuando:**
+- Tienes una tarea independiente
+- No necesitas coordinar múltiples jobs
+- Quieres ejecución simple y directa
+
+**Usa `await()` cuando:**
+- Necesitas ejecutar jobs en secuencia
+- Quieres paralelizar tareas independientes
+- Necesitas coordinar múltiples jobs
+- Quieres simular programación asíncrona con transacciones
+
+---
+
+**Versión del Análisis:** 2.0  
+**Fecha:** 2024  
+**Última Actualización:** Incluye funcionalidad `await()` para ejecución encadenada
