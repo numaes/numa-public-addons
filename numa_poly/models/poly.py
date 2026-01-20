@@ -732,6 +732,14 @@ class PolyBase(BaseModel):
         This ensures that all parts of the polymorphic record are created
         with the same ID, allowing the polymorphic inheritance to work.
 
+        In case the data_list contains a 'concrete_model_id' key, the create will be handled by the concrete model.
+        This is useful for polymorphic creates of subclasses.
+        ATTENTION: all returned records will be of only one concrete model, the first one found in the data_list.
+                   Odoo does no support different models as part of the returned recordset.
+                   This is a limitation of Odoo's ORM.
+                   It is caller responsibility to ensure that the concrete_model_id is set to a subclass of 
+                   the polymorphic model. No validation is done on the concrete_model_id.
+
         Args:
             data_list: List of dictionaries containing field values. Each dictionary
                 can contain fields from this model and from all dependent models.
@@ -767,8 +775,32 @@ class PolyBase(BaseModel):
                         _('You cannot create records: insufficient permissions on %s') %
                         base_model._description
                     )
-            
+
+            # If this is a polymorphic create of a subclass handle it recursively
+
             new_records = self
+            concrete_model_id = None
+
+            for data in data_list:
+                if 'concrete_model_id' in data:
+                    concrete_model_id = data['concrete_model_id']
+                    break
+            
+            if concrete_model_id:
+                concrete_model = self.env['ir.model'].browse(concrete_model_id).exists()
+                if concrete_model and concrete_model._name != self._name:
+                    # clean the data_list from the concrete_model_id
+                    # Create a copy to avoid modifying the original data
+                    new_vals_list = []
+                    for data in data_list:
+                        new_data = dict(data)
+                        if 'concrete_model_id' in new_data:
+                            del new_data['concrete_model_id']
+                        new_vals_list.append(new_data)
+
+                    _logger.debug(f'Creating subclass {concrete_model._name} with {new_vals_list}')
+                    new_records = concrete_model.create(new_vals_list)
+                    return new_records
 
             # Get all related fields and their definitions
             inverse_related = {field_name.split('.')[-1]: field_definition
