@@ -31,7 +31,7 @@ CRITICAL_TABLES = [
 ]
 
 
-def pre_init_hook(cr):
+def pre_init_hook(env):
     """
     Pre-installation hook that migrates all integer columns to BIGINT.
     
@@ -41,11 +41,14 @@ def pre_init_hook(cr):
     3. Converts all sequences to BIGINT
     
     Args:
-        cr: Database cursor
+        env: Odoo Environment (in Odoo 18, hooks receive env instead of cr)
         
     Raises:
         UserError: If database is too large for safe automatic migration
     """
+    # In Odoo 18, hooks receive env instead of cr
+    # Get the cursor from the environment
+    cr = env.cr
     _logger.info("=" * 80)
     _logger.info("NUMA BIG ID: Starting pre-installation migration")
     _logger.info("=" * 80)
