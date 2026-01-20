@@ -261,10 +261,12 @@ def apply_bigint_patch():
                     integer_columns = cr.fetchall()
                     for column_name, _ in integer_columns:
                         try:
+                            # Escape column names (some may be reserved words)
+                            escaped_column = '"%s"' % column_name
                             cr.execute("""
                                 ALTER TABLE %s 
-                                ALTER COLUMN %s TYPE bigint
-                            """ % (table_name, column_name))
+                                ALTER COLUMN %s TYPE bigint USING %s::bigint
+                            """ % (table_name, escaped_column, escaped_column))
                             _logger.debug(
                                 "Converted Many2many relation column %s.%s to BIGINT",
                                 table_name, column_name

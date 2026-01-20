@@ -22,12 +22,18 @@ MAX_SAFE_ROWS = 500000
 HANDLE_FOREIGN_KEYS = False
 
 # Critical tables to check before migration
+# These are common Odoo core tables that typically have the most records.
+# The safety check uses these to estimate database size. If any of these
+# tables exceed MAX_SAFE_ROWS, the migration is aborted for safety.
+# This list is not exhaustive - it's just a sample of high-volume tables.
+# The actual migration processes ALL tables in the database, regardless
+# of whether they're in this list.
 CRITICAL_TABLES = [
-    'res_partner',
-    'mail_message',
-    'ir_attachment',
-    'ir_model_data',
-    'res_users',
+    'res_partner',      # Partners/contacts (high volume in most installations)
+    'mail_message',     # Messages (can grow very large)
+    'ir_attachment',    # Attachments (can grow very large)
+    'ir_model_data',    # Module data (grows with each module)
+    'res_users',        # Users (typically small but important)
 ]
 
 
@@ -134,7 +140,14 @@ def pre_init_hook(env):
     _logger.info("If module is already installed, uninstall and reinstall to run migration")
     
     # Step 1: Safety Check
+    # This check uses a sample of common high-volume tables to estimate database size.
+    # It's not exhaustive - the actual migration processes ALL tables in the database.
+    # The purpose is to prevent accidental migration of very large databases where
+    # the migration might take too long or cause issues.
     _logger.info("Step 1: Performing safety check on critical tables...")
+    _logger.info("Note: This checks a sample of common tables. Migration will process ALL tables.")
+    
+    tables_checked = 0
     for table_name in CRITICAL_TABLES:
         try:
             cr.execute("""
@@ -147,6 +160,8 @@ def pre_init_hook(env):
             if cr.fetchone()[0] == 0:
                 _logger.debug("Table %s does not exist, skipping", table_name)
                 continue
+            
+            tables_checked += 1
                 
             # Use parameterized query to avoid SQL injection
             cr.execute("SELECT COUNT(*) FROM %s" % table_name)
@@ -159,7 +174,8 @@ def pre_init_hook(env):
                     "La tabla '%s' contiene %s registros, lo cual excede el límite seguro de %s.\n\n"
                     "Por favor, realice la conversión a BIGINT mediante scripts externos controlados "
                     "por un DBA antes de instalar este módulo.\n\n"
-                    "Este módulo requiere una migración manual para bases de datos grandes."
+                    "Este módulo requiere una migración manual para bases de datos grandes.\n\n"
+                    "Nota: Puede ajustar MAX_SAFE_ROWS en hooks.py si desea cambiar este límite."
                 ) % (table_name, row_count, MAX_SAFE_ROWS)
                 
                 _logger.error(error_msg)
@@ -170,6 +186,9 @@ def pre_init_hook(env):
         except Exception as e:
             _logger.warning("Error checking table %s: %s", table_name, e)
             # Continue with other tables, but log the warning
+    
+    if tables_checked == 0:
+        _logger.warning("No critical tables found - database may be empty or use custom table names")
     
     _logger.info("Safety check passed. Proceeding with migration...")
     
@@ -648,10 +667,21 @@ def pre_init_hook(env):
     _logger.info("=" * 80)
     
     # Final verification: Check a few sample tables to confirm conversion
+    # Use the same critical tables for verification (they should exist in most Odoo installations)
     _logger.info("Final verification: Checking sample ID columns...")
-    sample_tables = ['res_partner', 'res_users', 'ir_model_data', 'mail_message']
-    for sample_table in sample_tables:
+    for sample_table in CRITICAL_TABLES:
         try:
+            # Check if table exists first
+            cr.execute("""
+                SELECT COUNT(*) 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = %s
+            """, (sample_table,))
+            
+            if cr.fetchone()[0] == 0:
+                continue  # Table doesn't exist, skip
+                
             cr.execute("""
                 SELECT data_type
                 FROM information_schema.columns
