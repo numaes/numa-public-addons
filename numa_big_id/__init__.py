@@ -12,6 +12,10 @@ that all new Integer fields created after installation will be BIGINT.
 # Import hooks - this makes them available to Odoo
 from . import hooks
 
+# Export pre_init_hook at module level for Odoo's hook system
+# Odoo looks for pre_init_hook as a module attribute, not just imported
+pre_init_hook = hooks.pre_init_hook
+
 # Import the patch module to apply monkey patches immediately
 # This ensures that all Integer fields created after module load will be BIGINT
 try:
