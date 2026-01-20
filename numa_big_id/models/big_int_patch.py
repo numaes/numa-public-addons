@@ -32,13 +32,24 @@ def _get_column_type_bigint(self):
     # Call the original method to get the base column type
     # For Integer fields, this typically returns ('integer', 'integer')
     try:
-        original_type = self._original_get_column_type()
+        # Check if _original_get_column_type is a property and handle it
+        if hasattr(self, '_original_get_column_type'):
+            orig = self._original_get_column_type
+            # Check for standard property or Odoo's lazy_property
+            if hasattr(orig, 'fget'):
+                original_type = orig.fget(self)
+            elif callable(orig):
+                original_type = orig(self)
+            else:
+                original_type = orig
+        else:
+            original_type = ('integer', 'integer')
     except Exception:
         # Fallback: return default integer type if original fails
         original_type = ('integer', 'integer')
     
     # If it's an integer type, convert to bigint
-    if original_type and len(original_type) >= 2:
+    if original_type and isinstance(original_type, (list, tuple)) and len(original_type) >= 2:
         sql_type, pg_type = original_type[0], original_type[1]
         
         # Replace integer with bigint
@@ -86,17 +97,10 @@ def apply_bigint_patch():
     # Store original methods if they exist
     if hasattr(fields.Integer, 'column_type'):
         if not hasattr(fields.Integer, '_original_get_column_type'):
-            # Store original column_type property
-            if isinstance(fields.Integer.column_type, property):
-                # Get the original getter
-                original_getter = fields.Integer.column_type.fget
-                if original_getter:
-                    fields.Integer._original_get_column_type = original_getter
-                else:
-                    # If no getter, create a default one
-                    def _default_get_column_type(self):
-                        return ('integer', 'integer')
-                    fields.Integer._original_get_column_type = _default_get_column_type
+            # Store original column_type property (can be property or lazy_property)
+            orig = fields.Integer.column_type
+            if hasattr(orig, 'fget') or isinstance(orig, property):
+                fields.Integer._original_get_column_type = orig
             else:
                 # If it's not a property, store it directly
                 fields.Integer._original_get_column_type = lambda self: fields.Integer.column_type
@@ -125,14 +129,9 @@ def apply_bigint_patch():
         try:
             # Store original if not already stored
             if not hasattr(fields.Many2one, '_original_get_column_type'):
-                if isinstance(fields.Many2one.column_type, property):
-                    original_getter = fields.Many2one.column_type.fget
-                    if original_getter:
-                        fields.Many2one._original_get_column_type = original_getter
-                    else:
-                        def _default_get_column_type(self):
-                            return ('integer', 'integer')
-                        fields.Many2one._original_get_column_type = _default_get_column_type
+                orig = fields.Many2one.column_type
+                if hasattr(orig, 'fget') or isinstance(orig, property):
+                    fields.Many2one._original_get_column_type = orig
                 else:
                     fields.Many2one._original_get_column_type = lambda self: fields.Many2one.column_type
             
