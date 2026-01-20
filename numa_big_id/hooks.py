@@ -191,9 +191,27 @@ def pre_init_hook(env):
                         except Exception as fk_err:
                             _logger.warning("  Could not drop FK %s: %s", fk_name, fk_err)
                 
+                # Drop dependent views temporarily
+                for view_schema, view_name, _ in view_definitions:
+                    try:
+                        cr.execute("DROP VIEW IF EXISTS %s.%s CASCADE" % (view_schema, view_name))
+                        _logger.debug("  Dropped view %s.%s temporarily", view_schema, view_name)
+                    except Exception as e:
+                        _logger.warning("  Could not drop view %s.%s: %s", view_schema, view_name, e)
+                
                 # Convert ID column to BIGINT
                 sql = "ALTER TABLE %s ALTER COLUMN id TYPE bigint USING id::bigint" % table_name
                 cr.execute(sql)
+                
+                # Recreate views
+                for view_schema, view_name, view_def in view_definitions:
+                    try:
+                        # Recreate view with the same definition
+                        cr.execute("CREATE VIEW %s.%s AS %s" % (view_schema, view_name, view_def))
+                        _logger.debug("  Recreated view %s.%s", view_schema, view_name)
+                    except Exception as e:
+                        _logger.error("  ✗ ERROR recreating view %s.%s: %s", view_schema, view_name, e)
+                        _logger.error("  MANUAL INTERVENTION REQUIRED for view %s.%s", view_schema, view_name)
                 
                 # Verify conversion
                 cr.execute("""
