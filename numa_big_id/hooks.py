@@ -346,8 +346,8 @@ def pre_init_hook(env):
                             _logger.warning("  Table has %s foreign keys - consider enabling HANDLE_FOREIGN_KEYS", fk_count)
                     except:
                         pass
-            except Exception as e:
-                _logger.error("Error processing table %s: %s", table_name, e)
+        except Exception as e:
+            _logger.error("Error processing table %s: %s", table_name, e)
     
     # Final commit for ID columns
     if commit_counter > 0:
