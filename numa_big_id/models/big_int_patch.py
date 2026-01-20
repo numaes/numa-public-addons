@@ -23,6 +23,35 @@ from odoo.tools.func import lazy_property
 _logger = logging.getLogger(__name__)
 
 
+class SubscriptableLazyProperty:
+    """
+    A lazy_property wrapper that supports subscript operations.
+    
+    This is needed because Odoo sometimes accesses field.column_type[1]
+    directly, which fails with a regular lazy_property.
+    """
+    def __init__(self, fget):
+        self._lazy_prop = lazy_property(fget)
+        self.fget = fget
+    
+    def __get__(self, obj, cls=None):
+        if obj is None:
+            return self
+        # Delegate to the lazy_property
+        return self._lazy_prop.__get__(obj, cls)
+    
+    def __getitem__(self, key):
+        # This should never be called on the descriptor itself,
+        # but if it is, we need to evaluate it somehow
+        # In practice, this should only be called after __get__ returns a value
+        raise TypeError("SubscriptableLazyProperty.__getitem__ called on descriptor")
+    
+    def reset_all(self, obj):
+        """Reset the cached value on the object."""
+        if hasattr(obj, self.fget.__name__):
+            delattr(obj, self.fget.__name__)
+
+
 def column_type(self):
     """
     Override column_type property to return BIGINT instead of integer.
@@ -143,9 +172,9 @@ def apply_bigint_patch():
     # Patch column_type property
     try:
         # Replace the column_type property with our patched version
-        # Use lazy_property to match Odoo's expected behavior
-        # The function name must be 'column_type' for lazy_property to cache correctly
-        fields.Integer.column_type = lazy_property(column_type)
+        # We need to use a custom descriptor that supports subscript
+        # because Odoo sometimes accesses field.column_type[1] directly
+        fields.Integer.column_type = SubscriptableLazyProperty(column_type)
         _logger.info("Patched fields.Integer.column_type to return BIGINT")
     except Exception as e:
         _logger.warning("Could not patch column_type property: %s", e)
@@ -169,9 +198,9 @@ def apply_bigint_patch():
                 original_column_type = fields.Many2one.column_type
                 
                 # Check if it's a lazy_property (Odoo 18)
-                if hasattr(original_column_type, 'func'):
+                if hasattr(original_column_type, 'fget'):
                     # It's a lazy_property - get the underlying function
-                    original_getter = original_column_type.func
+                    original_getter = original_column_type.fget
                     if original_getter:
                         def _wrapped_original(self):
                             return original_getter(self)
@@ -198,9 +227,8 @@ def apply_bigint_patch():
                     fields.Many2one._original_get_column_type = _get_direct_value
             
             # Apply same patch to Many2one
-            # Use lazy_property to match Odoo's expected behavior
-            # The function name must be 'column_type' for lazy_property to cache correctly
-            fields.Many2one.column_type = lazy_property(column_type)
+            # We need to use a custom descriptor that supports subscript
+            fields.Many2one.column_type = SubscriptableLazyProperty(column_type)
             _logger.info("Patched fields.Many2one.column_type to return BIGINT")
         except Exception as e:
             _logger.warning("Could not patch Many2one.column_type: %s", e)
