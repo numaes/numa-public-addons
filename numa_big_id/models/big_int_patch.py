@@ -31,53 +31,45 @@ def column_type(self):
     it will use BIGINT (int8) instead of the default integer (int4).
     
     Note: The function name must be 'column_type' for lazy_property to work correctly.
+    lazy_property uses fget.__name__ to cache the value on the instance.
     """
     # Call the original method to get the base column type
-    # For Integer fields, this typically returns ('integer', 'integer')
+    # For Integer fields, this typically returns ('int4', 'int4')
     try:
         if hasattr(self, '_original_get_column_type'):
             original_getter = self._original_get_column_type
-            # If it's a callable (function), call it
+            # If it's a callable (function), call it with self
             if callable(original_getter):
-                # Try calling with self first (normal case)
-                try:
-                    original_type = original_getter(self)
-                except TypeError:
-                    # If that fails, try calling without self (for lambdas that don't need it)
-                    try:
-                        original_type = original_getter()
-                    except TypeError:
-                        # Last resort: return default
-                        original_type = ('integer', 'integer')
+                original_type = original_getter(self)
             else:
                 # If it's stored as a value, use it directly
                 original_type = original_getter
         else:
-            # Fallback: return default integer type
-            original_type = ('integer', 'integer')
+            # Fallback: return default integer type (int4 in Odoo)
+            original_type = ('int4', 'int4')
     except Exception as e:
         _logger.debug("Error getting original column_type: %s", e)
-        original_type = ('integer', 'integer')
+        original_type = ('int4', 'int4')
     
-    # If it's an integer type, convert to bigint
+    # If it's an integer type (int4), convert to bigint (int8)
     # Check if original_type is a tuple/list with at least 2 elements
     if isinstance(original_type, (tuple, list)) and len(original_type) >= 2:
         sql_type, pg_type = original_type[0], original_type[1]
         
-        # Replace integer with bigint
-        if pg_type == 'integer':
+        # Replace int4 with int8 (bigint)
+        if pg_type in ('int4', 'integer'):
             # Only log at INFO level for ID fields, DEBUG for others
             if hasattr(self, 'name') and self.name == 'id':
                 _logger.info(
-                    "Patching column_type for ID field %s: integer -> bigint",
-                    self.name
+                    "Patching column_type for ID field %s: %s -> bigint",
+                    self.name, pg_type
                 )
             else:
                 _logger.debug(
-                    "Patching column_type for field %s: integer -> bigint",
-                    self.name if hasattr(self, 'name') else 'unknown'
+                    "Patching column_type for field %s: %s -> bigint",
+                    self.name if hasattr(self, 'name') else 'unknown', pg_type
                 )
-            return (sql_type, 'bigint')
+            return ('int8', 'bigint')
     
     return original_type
 
@@ -116,23 +108,36 @@ def apply_bigint_patch():
     # Store original methods if they exist
     if hasattr(fields.Integer, 'column_type'):
         if not hasattr(fields.Integer, '_original_get_column_type'):
-            # Store original column_type property
-            if isinstance(fields.Integer.column_type, property):
-                # Get the original getter
-                original_getter = fields.Integer.column_type.fget
+            original_column_type = fields.Integer.column_type
+            
+            # Check if it's a lazy_property (Odoo 18)
+            if hasattr(original_column_type, 'fget'):
+                # It's a lazy_property - get the underlying function
+                original_getter = original_column_type.fget
                 if original_getter:
-                    fields.Integer._original_get_column_type = original_getter
+                    # Store as a function that will be called with self
+                    def _wrapped_original(self):
+                        return original_getter(self)
+                    fields.Integer._original_get_column_type = _wrapped_original
                 else:
-                    # If no getter, create a default one
                     def _default_get_column_type(self):
-                        return ('integer', 'integer')
+                        return ('int4', 'int4')
+                    fields.Integer._original_get_column_type = _default_get_column_type
+            elif isinstance(original_column_type, property):
+                # It's a regular property - get the getter
+                original_getter = original_column_type.fget
+                if original_getter:
+                    def _wrapped_original(self):
+                        return original_getter(self)
+                    fields.Integer._original_get_column_type = _wrapped_original
+                else:
+                    def _default_get_column_type(self):
+                        return ('int4', 'int4')
                     fields.Integer._original_get_column_type = _default_get_column_type
             else:
-                # If it's not a property, it's a direct value - create a getter that returns it
-                # Store the value directly and create a simple getter
-                original_value = fields.Integer.column_type
+                # If it's not a property/lazy_property, it's a direct value
                 def _get_direct_value(self):
-                    return original_value
+                    return original_column_type
                 fields.Integer._original_get_column_type = _get_direct_value
     
     # Patch column_type property
