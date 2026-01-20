@@ -49,6 +49,9 @@ def pre_init_hook(cr):
     _logger.info("=" * 80)
     _logger.info("NUMA BIG ID: Starting pre-installation migration")
     _logger.info("=" * 80)
+    _logger.info("This hook converts all integer columns to BIGINT")
+    _logger.info("IMPORTANT: This hook only runs during module installation")
+    _logger.info("If module is already installed, uninstall and reinstall to run migration")
     
     # Step 1: Safety Check
     _logger.info("Step 1: Performing safety check on critical tables...")
@@ -492,3 +495,21 @@ def pre_init_hook(cr):
     if id_columns_failed > 0:
         _logger.warning("  - WARNING: %s ID columns are still INTEGER - manual intervention may be required", id_columns_failed)
     _logger.info("=" * 80)
+    
+    # Final verification: Check a few sample tables to confirm conversion
+    _logger.info("Final verification: Checking sample ID columns...")
+    sample_tables = ['res_partner', 'res_users', 'ir_model_data', 'mail_message']
+    for sample_table in sample_tables:
+        try:
+            cr.execute("""
+                SELECT data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                AND table_name = %s
+                AND column_name = 'id'
+            """, (sample_table,))
+            result = cr.fetchone()
+            if result:
+                _logger.info("  %s.id: %s", sample_table, result[0])
+        except Exception as e:
+            _logger.debug("  Could not verify %s: %s", sample_table, e)
