@@ -193,7 +193,6 @@ def pre_init_hook(env):
                 
                 # Convert ID column to BIGINT
                 sql = "ALTER TABLE %s ALTER COLUMN id TYPE bigint USING id::bigint" % table_name
-                _logger.debug("  Executing: %s", sql)
                 cr.execute(sql)
                 
                 # Verify conversion
@@ -325,7 +324,6 @@ def pre_init_hook(env):
                         sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint USING %s::bigint" % (
                             table_name, column_name, column_name
                         )
-                        _logger.debug("  Executing: %s", sql)
                         cr.execute(sql)
                         
                         # Verify conversion
@@ -348,7 +346,6 @@ def pre_init_hook(env):
                             sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint" % (
                                 table_name, column_name
                             )
-                            _logger.debug("  Executing (fallback): %s", sql)
                             cr.execute(sql)
                             
                             # Verify conversion
@@ -448,7 +445,6 @@ def pre_init_hook(env):
                 # Try PostgreSQL 10+ syntax first
                 cr.execute("ALTER SEQUENCE %s AS bigint" % sequence_name)
                 sequences_migrated += 1
-                _logger.info("Converted sequence %s to BIGINT (PostgreSQL 10+ syntax)", sequence_name)
             except Exception:
                 # Fallback: Get current sequence properties and recreate
                 cr.execute("""
