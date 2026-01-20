@@ -119,6 +119,9 @@ def pre_init_hook(env):
     if HANDLE_FOREIGN_KEYS:
         _logger.warning("FOREIGN KEY HANDLING ENABLED - This may be very slow on medium/large databases")
     
+    commit_counter = 0
+    COMMIT_INTERVAL = 50  # Commit every 50 tables to avoid lock exhaustion
+    
     for table_name in all_tables:
         try:
             # Check if table has an 'id' column that is integer
@@ -279,7 +282,14 @@ def pre_init_hook(env):
                 if verify_result and verify_result[0] == 'bigint':
                     columns_migrated += 1
                     id_columns_migrated += 1
+                    commit_counter += 1
                     _logger.info("  ✓ Converted %s.id to BIGINT (verified)", table_name)
+                    
+                    # Commit periodically to avoid lock exhaustion
+                    if commit_counter >= COMMIT_INTERVAL:
+                        cr.commit()
+                        commit_counter = 0
+                        _logger.debug("  Committed transaction (processed %s ID columns so far)", id_columns_migrated)
                 else:
                     _logger.error("  ✗ Conversion failed - %s.id is still %s", table_name, verify_result[0] if verify_result else 'unknown')
                 
@@ -307,6 +317,11 @@ def pre_init_hook(env):
                 # If we disabled FKs, try to recreate them even on error
                 if HANDLE_FOREIGN_KEYS and disabled_fks:
                     _logger.warning("  Attempting to restore %s foreign keys after error...", len(disabled_fks))
+    
+    # Final commit for ID columns
+    if commit_counter > 0:
+        cr.commit()
+        commit_counter = 0
                     for ref_table, fk_name, fk_info in disabled_fks:
                         fk_name_orig, ref_table_orig, refed_table_orig, ref_col, refed_col = fk_info
                         try:
@@ -339,10 +354,15 @@ def pre_init_hook(env):
         except Exception as e:
             _logger.error("Error processing table %s: %s", table_name, e)
     
+    # Final commit for other columns
+    if commit_counter > 0:
+        cr.commit()
+    
     _logger.info("Converted %s ID columns to BIGINT", id_columns_migrated)
     
     # Second pass: Convert all other integer columns (including FKs)
     _logger.info("Step 3b: Converting other integer columns (FKs and others)...")
+    commit_counter = 0  # Reset counter for other columns
     for table_name in all_tables:
         try:
             # Get all integer columns in this table (excluding 'id' which we already did)
@@ -409,6 +429,13 @@ def pre_init_hook(env):
                         verify_result = cr.fetchone()
                         if verify_result and verify_result[0] == 'bigint':
                             columns_migrated += 1
+                            commit_counter += 1
+                            
+                            # Commit periodically to avoid lock exhaustion
+                            if commit_counter >= COMMIT_INTERVAL:
+                                cr.commit()
+                                commit_counter = 0
+                                _logger.debug("  Committed transaction (processed %s other columns so far)", columns_migrated)
                         else:
                             _logger.warning("  ⚠ Conversion may have failed - %s.%s is %s", 
                                           table_name, column_name, verify_result[0] if verify_result else 'unknown')
