@@ -23,12 +23,14 @@ from odoo.tools.func import lazy_property
 _logger = logging.getLogger(__name__)
 
 
-def _get_column_type_bigint(self):
+def column_type(self):
     """
     Override column_type property to return BIGINT instead of integer.
     
     This ensures that when Odoo creates a column for an Integer field,
     it will use BIGINT (int8) instead of the default integer (int4).
+    
+    Note: The function name must be 'column_type' for lazy_property to work correctly.
     """
     # Call the original method to get the base column type
     # For Integer fields, this typically returns ('integer', 'integer')
@@ -137,7 +139,8 @@ def apply_bigint_patch():
     try:
         # Replace the column_type property with our patched version
         # Use lazy_property to match Odoo's expected behavior
-        fields.Integer.column_type = lazy_property(_get_column_type_bigint)
+        # The function name must be 'column_type' for lazy_property to cache correctly
+        fields.Integer.column_type = lazy_property(column_type)
         _logger.info("Patched fields.Integer.column_type to return BIGINT")
     except Exception as e:
         _logger.warning("Could not patch column_type property: %s", e)
@@ -191,7 +194,8 @@ def apply_bigint_patch():
             
             # Apply same patch to Many2one
             # Use lazy_property to match Odoo's expected behavior
-            fields.Many2one.column_type = lazy_property(_get_column_type_bigint)
+            # The function name must be 'column_type' for lazy_property to cache correctly
+            fields.Many2one.column_type = lazy_property(column_type)
             _logger.info("Patched fields.Many2one.column_type to return BIGINT")
         except Exception as e:
             _logger.warning("Could not patch Many2one.column_type: %s", e)
