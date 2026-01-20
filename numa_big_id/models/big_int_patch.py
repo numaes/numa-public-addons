@@ -33,12 +33,22 @@ def _get_column_type_bigint(self):
     # For Integer fields, this typically returns ('integer', 'integer')
     try:
         if hasattr(self, '_original_get_column_type'):
-            # If it's a callable (function), call it with self
-            if callable(self._original_get_column_type):
-                original_type = self._original_get_column_type(self)
+            original_getter = self._original_get_column_type
+            # If it's a callable (function), call it
+            if callable(original_getter):
+                # Try calling with self first (normal case)
+                try:
+                    original_type = original_getter(self)
+                except TypeError:
+                    # If that fails, try calling without self (for lambdas that don't need it)
+                    try:
+                        original_type = original_getter()
+                    except TypeError:
+                        # Last resort: return default
+                        original_type = ('integer', 'integer')
             else:
                 # If it's stored as a value, use it directly
-                original_type = self._original_get_column_type
+                original_type = original_getter
         else:
             # Fallback: return default integer type
             original_type = ('integer', 'integer')
@@ -115,8 +125,12 @@ def apply_bigint_patch():
                         return ('integer', 'integer')
                     fields.Integer._original_get_column_type = _default_get_column_type
             else:
-                # If it's not a property, store it directly
-                fields.Integer._original_get_column_type = lambda self: fields.Integer.column_type
+                # If it's not a property, it's a direct value - create a getter that returns it
+                # Store the value directly and create a simple getter
+                original_value = fields.Integer.column_type
+                def _get_direct_value(self):
+                    return original_value
+                fields.Integer._original_get_column_type = _get_direct_value
     
     # Patch column_type property
     try:
@@ -154,7 +168,11 @@ def apply_bigint_patch():
                             return ('integer', 'integer')
                         fields.Many2one._original_get_column_type = _default_get_column_type
                 else:
-                    fields.Many2one._original_get_column_type = lambda self: fields.Many2one.column_type
+                    # If it's not a property, it's a direct value - create a getter that returns it
+                    original_value = fields.Many2one.column_type
+                    def _get_direct_value(self):
+                        return original_value
+                    fields.Many2one._original_get_column_type = _get_direct_value
             
             # Apply same patch to Many2one
             fields.Many2one.column_type = property(_get_column_type_bigint)
