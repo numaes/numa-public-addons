@@ -41,8 +41,13 @@ class SubscriptableLazyProperty:
             return self
         # Check if already cached
         if hasattr(obj, self.attrname):
-            return getattr(obj, self.attrname)
+            cached = getattr(obj, self.attrname)
+            _logger.debug("SubscriptableLazyProperty: Returning cached value for %s.%s: %s", 
+                         type(obj).__name__, self.attrname, cached)
+            return cached
         # Evaluate the property
+        _logger.debug("SubscriptableLazyProperty: Evaluating %s.%s", 
+                     type(obj).__name__, self.attrname)
         value = self.fget(obj)
         # Ensure it's a tuple
         if not isinstance(value, (tuple, list)):
@@ -51,6 +56,8 @@ class SubscriptableLazyProperty:
             value = tuple(value)
         # Cache it on the instance
         setattr(obj, self.attrname, value)
+        _logger.debug("SubscriptableLazyProperty: Cached value for %s.%s: %s", 
+                     type(obj).__name__, self.attrname, value)
         return value
     
     def reset_all(self, obj):
@@ -184,10 +191,18 @@ def apply_bigint_patch():
         # Replace the column_type property with our patched version
         # We need to use a custom descriptor that supports subscript
         # because Odoo sometimes accesses field.column_type[1] directly
+        old_descriptor = fields.Integer.column_type
         fields.Integer.column_type = SubscriptableLazyProperty(column_type)
-        _logger.info("Patched fields.Integer.column_type to return BIGINT")
+        _logger.info("Patched fields.Integer.column_type to return BIGINT (was: %s)", 
+                    type(old_descriptor).__name__)
+        # Verify the patch
+        if isinstance(fields.Integer.column_type, SubscriptableLazyProperty):
+            _logger.debug("✓ Verified: fields.Integer.column_type is now SubscriptableLazyProperty")
+        else:
+            _logger.warning("✗ Warning: fields.Integer.column_type is %s, not SubscriptableLazyProperty", 
+                          type(fields.Integer.column_type).__name__)
     except Exception as e:
-        _logger.warning("Could not patch column_type property: %s", e)
+        _logger.warning("Could not patch column_type property: %s", e, exc_info=True)
     
     # Patch _process_column_type if it exists
     if hasattr(fields.Integer, '_process_column_type'):
