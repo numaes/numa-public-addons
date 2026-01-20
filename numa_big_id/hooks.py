@@ -148,6 +148,40 @@ def pre_init_hook(env):
             if result and result[0] == 'bigint':
                 continue
             
+            # Check for views that depend on this column
+            # PostgreSQL doesn't allow altering column type if used by views
+            cr.execute("""
+                SELECT DISTINCT dependent_ns.nspname as dependent_schema,
+                       dependent_view.relname as dependent_view
+                FROM pg_depend
+                JOIN pg_rewrite ON pg_depend.objid = pg_rewrite.oid
+                JOIN pg_class as dependent_view ON pg_rewrite.ev_class = dependent_view.oid
+                JOIN pg_class as source_table ON pg_depend.refobjid = source_table.oid
+                JOIN pg_namespace dependent_ns ON dependent_view.relnamespace = dependent_ns.oid
+                JOIN pg_namespace source_ns ON source_table.relnamespace = source_ns.oid
+                WHERE source_ns.nspname = 'public'
+                AND source_table.relname = %s
+                AND dependent_view.relkind = 'v'
+            """, (table_name,))
+            
+            dependent_views = cr.fetchall()
+            view_definitions = []
+            
+            # Store view definitions before dropping
+            for view_schema, view_name in dependent_views:
+                try:
+                    # Use pg_get_viewdef to get the complete view definition
+                    cr.execute("""
+                        SELECT pg_get_viewdef('%s.%s'::regclass, true)
+                    """ % (view_schema, view_name))
+                    view_def = cr.fetchone()
+                    if view_def and view_def[0]:
+                        view_definitions.append((view_schema, view_name, view_def[0]))
+                    else:
+                        _logger.warning("  Could not get definition for view %s.%s", view_schema, view_name)
+                except Exception as e:
+                    _logger.warning("  Could not get definition for view %s.%s: %s", view_schema, view_name, e)
+            
             # Check for foreign keys that reference this column
             foreign_keys_to_handle = []
             fk_count = 0
@@ -199,9 +233,27 @@ def pre_init_hook(env):
                     except Exception as e:
                         _logger.warning("  Could not drop view %s.%s: %s", view_schema, view_name, e)
                 
+                # Drop dependent views temporarily
+                for view_schema, view_name, _ in view_definitions:
+                    try:
+                        cr.execute("DROP VIEW IF EXISTS %s.%s CASCADE" % (view_schema, view_name))
+                        _logger.debug("  Dropped view %s.%s temporarily", view_schema, view_name)
+                    except Exception as e:
+                        _logger.warning("  Could not drop view %s.%s: %s", view_schema, view_name, e)
+                
                 # Convert ID column to BIGINT
                 sql = "ALTER TABLE %s ALTER COLUMN id TYPE bigint USING id::bigint" % table_name
                 cr.execute(sql)
+                
+                # Recreate views
+                for view_schema, view_name, view_def in view_definitions:
+                    try:
+                        # Recreate view with the same definition
+                        cr.execute("CREATE VIEW %s.%s AS %s" % (view_schema, view_name, view_def))
+                        _logger.debug("  Recreated view %s.%s", view_schema, view_name)
+                    except Exception as e:
+                        _logger.error("  ✗ ERROR recreating view %s.%s: %s", view_schema, view_name, e)
+                        _logger.error("  MANUAL INTERVENTION REQUIRED for view %s.%s", view_schema, view_name)
                 
                 # Recreate views
                 for view_schema, view_name, view_def in view_definitions:
