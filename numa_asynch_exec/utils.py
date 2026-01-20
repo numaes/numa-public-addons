@@ -109,6 +109,16 @@ def _run_in_thread(job_id, db_name, context):
             cr.commit()
             return
 
+        # Check dependencies before execution
+        if job.has_dependencies:
+            if not job.all_dependencies_done:
+                # Still waiting for dependencies
+                if job.state != 'waiting':
+                    job.write({'state': 'waiting'})
+                    cr.commit()
+                return
+            # All dependencies done, can proceed
+
         # Apply configured delay if set (for initial execution or retries)
         if job.retry_delay > 0:
             time.sleep(job.retry_delay / 1000.0)
@@ -126,6 +136,9 @@ def _run_in_thread(job_id, db_name, context):
             _logger.debug(f'Asynchronous job {job.id} successfully executed')
             job.write({'state': 'done'})
             cr.commit()
+            
+            # Check and trigger dependent jobs
+            job._check_and_trigger_dependents()
 
         except Exception as e:
             cr.rollback()

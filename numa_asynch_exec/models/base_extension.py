@@ -1,5 +1,6 @@
 from odoo import models, api
 from ..utils import get_asynch_executor, _run_in_thread, make_json_serializable
+from .await_proxy import AwaitProxy
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -88,3 +89,29 @@ class Base(models.AbstractModel):
             self.env['system.monitor'].asynch_exec(retry=-1, retry_delay=60000).poll_system_health()
         """
         return AsynchProxy(self, retry=retry, retry_delay=retry_delay)
+    
+    def await(self, retry=0, retry_delay=0):
+        """
+        Entry point for chained asynchronous execution with dependencies.
+        Returns an AwaitProxy that allows building chains of dependent jobs.
+        
+        :param retry: Number of times to retry jobs on failure. Default: 0 (no retries)
+        :param retry_delay: Delay in milliseconds before each execution/retry. Default: 0 (no delay)
+        :return: AwaitProxy instance
+        
+        Examples:
+            # Sequential execution: method2 runs after method1 completes
+            recordset.await().method1().method2()
+            
+            # Parallel execution: method1 and method2 run simultaneously, 
+            # method3 runs after both complete
+            recordset.await().method1().await().method2().method3()
+            
+            # Complex chain: method1 and method2 run in parallel,
+            # then method3 runs after both, then method4 runs after method3
+            recordset.await().method1().await().method2().method3().method4()
+            
+            # With retries
+            recordset.await(retry=3, retry_delay=500).process_data().send_email()
+        """
+        return AwaitProxy(self, retry=retry, retry_delay=retry_delay)

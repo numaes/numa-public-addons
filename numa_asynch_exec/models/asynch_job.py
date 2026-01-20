@@ -43,22 +43,99 @@ class NumaAsynchJob(models.Model):
         ('running', 'Running'),
         ('done', 'Done'),
         ('failed', 'Failed'),
+        ('waiting', 'Waiting for Dependencies'),
     ], string='State', default='pending', index=True)
+    
+    dependency_ids = fields.One2many(
+        'numa.asynch.job.dependency',
+        'job_id',
+        string='Dependencies',
+        help='Jobs that must complete before this job can execute'
+    )
+    
+    dependent_job_ids = fields.One2many(
+        'numa.asynch.job.dependency',
+        'depends_on_id',
+        string='Dependent Jobs',
+        help='Jobs that depend on this job'
+    )
+    
+    has_dependencies = fields.Boolean(
+        string='Has Dependencies',
+        compute='_compute_has_dependencies',
+        store=True,
+        help='True if this job has dependencies that must complete first'
+    )
+    
+    all_dependencies_done = fields.Boolean(
+        string='All Dependencies Done',
+        compute='_compute_all_dependencies_done',
+        help='True if all dependency jobs are in done state'
+    )
+
+    @api.depends('dependency_ids')
+    def _compute_has_dependencies(self):
+        """Compute if job has dependencies"""
+        for record in self:
+            record.has_dependencies = bool(record.dependency_ids)
+
+    @api.depends('dependency_ids.depends_on_id.state')
+    def _compute_all_dependencies_done(self):
+        """Compute if all dependencies are done"""
+        for record in self:
+            if not record.dependency_ids:
+                record.all_dependencies_done = True
+            else:
+                all_done = all(
+                    dep.depends_on_id.state == 'done'
+                    for dep in record.dependency_ids
+                )
+                record.all_dependencies_done = all_done
 
     @api.model
     def _recover_pending_jobs(self):
         """
-        Retrieves all jobs in 'pending' state and re-submits them to the executor.
+        Retrieves all jobs in 'pending' or 'waiting' state and re-submits them to the executor.
         Typically called during module post-init to recover tasks interrupted
         by a server restart or crash.
         """
-        pending_jobs = self.sudo().search([('state', '=', 'pending')])
+        pending_jobs = self.sudo().search([
+            ('state', 'in', ['pending', 'waiting'])
+        ])
         if pending_jobs:
             _logger.info("Recovering %s pending asynchronous jobs...", len(pending_jobs))
             # Import here to avoid circular dependency
             from ..utils import get_asynch_executor, _run_in_thread
             executor = get_asynch_executor()
             for job in pending_jobs:
-                executor.submit(_run_in_thread, job.id, job.db_name, job.context)
+                # Check dependencies before submitting
+                if job.has_dependencies and not job.all_dependencies_done:
+                    job.write({'state': 'waiting'})
+                else:
+                    executor.submit(_run_in_thread, job.id, job.db_name, job.context)
+    
+    def _check_and_trigger_dependents(self):
+        """
+        Check if any dependent jobs can now execute (all their dependencies are done).
+        Called after a job completes successfully.
+        """
+        for record in self:
+            for dep_rel in record.dependent_job_ids:
+                dependent_job = dep_rel.job_id
+                if dependent_job.state == 'waiting' and dependent_job.all_dependencies_done:
+                    # All dependencies are done, trigger execution
+                    _logger.info(
+                        'Job %s dependencies satisfied, triggering execution',
+                        dependent_job.id
+                    )
+                    dependent_job.write({'state': 'pending'})
+                    from ..utils import get_asynch_executor, _run_in_thread
+                    executor = get_asynch_executor()
+                    executor.submit(
+                        _run_in_thread,
+                        dependent_job.id,
+                        dependent_job.db_name,
+                        dependent_job.context
+                    )
 
 
