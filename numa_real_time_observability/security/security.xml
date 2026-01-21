@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- No specific security rules needed for the mixin -->
+        <!-- The mixin is an AbstractModel and doesn't require direct access -->
+    </data>
+</odoo>
