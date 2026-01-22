@@ -1,6 +1,61 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <odoo>
     <data>
+        <!--
+        Example view demonstrating the use of numa_polimorphic_widget
+        
+        IMPORTANT: When using the numa_polimorphic_widget, you MUST include
+        the poly_payload field in the list view (even if invisible) for the
+        JavaScript widget to function correctly.
+        
+        The poly_payload field is a technical field that transports subclass-specific
+        data as JSON. It is store=False but writable via compute/inverse pattern.
+        
+        NOTE: Odoo 18.0 uses <list> instead of <tree> for list views.
+        -->
+        <record id="example_poly_list_view" model="ir.ui.view">
+            <field name="name">example.poly.list</field>
+            <field name="model">example.poly.model</field>
+            <field name="arch" type="xml">
+                <list string="Polymorphic Records">
+                    <field name="concrete_model_id" string="Type"/>
+                    <field name="name" string="Name"/>
+                    <!-- 
+                    CRITICAL: poly_payload must be included in the list view
+                    for the widget to work. It can be invisible but must be present.
+                    -->
+                    <field name="poly_payload" column_invisible="1"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="example_poly_form_view" model="ir.ui.view">
+            <field name="name">example.poly.form</field>
+            <field name="model">example.poly.model</field>
+            <field name="arch" type="xml">
+                <form string="Polymorphic Record">
+                    <sheet>
+                        <group>
+                            <field name="concrete_model_id" readonly="1"/>
+                            <field name="name"/>
+                        </group>
+                        <!-- 
+                        Example: Using the polymorphic widget for a One2Many field
+                        The widget="numa_polimorphic_widget" enables polymorphic
+                        creation and navigation.
+                        -->
+                        <field name="poly_children" widget="numa_polimorphic_widget">
+                            <list>
+                                <field name="concrete_model_id" string="Type"/>
+                                <field name="name" string="Name"/>
+                                <!-- poly_payload must be included in the list -->
+                                <field name="poly_payload" column_invisible="1"/>
+                            </list>
+                        </field>
+                    </sheet>
+                </form>
+            </field>
+        </record>
 
     </data>
 </odoo>

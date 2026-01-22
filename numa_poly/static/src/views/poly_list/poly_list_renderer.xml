@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <!-- Polymorphic List Renderer Template -->
+    <t t-name="numa_poly.PolyListRenderer" t-inherit="web.ListRenderer" t-inherit-mode="extension">
+        <!-- Inherit from standard ListRenderer -->
+    </t>
+
+    <!-- Type Selection Dialog -->
+    <t t-name="numa_poly.PolyTypeSelectionDialog" owl="1">
+        <Dialog title="'Select Type'" size="'md'">
+            <div class="p-4">
+                <p class="mb-3">
+                    <t t-esc="_t('Please select the type of record to create:')"/>
+                </p>
+                <div class="list-group">
+                    <t t-foreach="props.subclasses" t-as="subclass" t-key="subclass.model">
+                        <button
+                            type="button"
+                            class="list-group-item list-group-item-action"
+                            t-att-class="{'active': state.selectedModel === subclass.model}"
+                            t-on-click="() => this.onSelect(subclass.model)">
+                            <strong t-esc="subclass.name"/>
+                            <small class="d-block text-muted" t-esc="subclass.model"/>
+                        </button>
+                    </t>
+                </div>
+            </div>
+            <t t-set-slot="footer">
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    t-on-click="() => this.onCancel()">
+                    <t t-esc="_t('Cancel')"/>
+                </button>
+                <button
+                    type="button"
+                    class="btn btn-primary"
+                    t-att-disabled="!state.selectedModel"
+                    t-on-click="() => this.onConfirm()">
+                    <t t-esc="_t('Continue')"/>
+                </button>
+            </t>
+        </Dialog>
+    </t>
+</templates>

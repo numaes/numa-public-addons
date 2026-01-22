@@ -8,6 +8,7 @@
     'category': 'Extra Tools',
     'depends': [
         'base',
+        'web',
     ],
     'data': [
         'security/security.xml',
@@ -16,6 +17,14 @@
         'views/menu_views.xml',
     ],
     'installable': True,
+    'assets': {
+        'web.assets_backend': [
+            'numa_poly/static/src/index.js',
+            'numa_poly/static/src/views/poly_list/poly_list_renderer.js',
+            'numa_poly/static/src/views/poly_list/poly_list_renderer.xml',
+            'numa_poly/static/src/views/fields/poly_field.js',
+        ],
+    },
     'doc': [
         'readme/usage_guide.md',
     ],
