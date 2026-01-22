@@ -15,6 +15,7 @@ The polymorphic model system enables:
 import logging
 from collections import OrderedDict, defaultdict
 import typing
+import json
 
 # Odoo imports
 import odoo
@@ -52,6 +53,46 @@ class IrPolyBase(models.Model):
 
     concrete_model_id = fields.Many2one('ir.model', 'Concrete Model',
                                         ondelete='cascade', required=True)
+
+    # Technical field for DTO payload transport
+    poly_payload = fields.Text(
+        string='Polymorphic Payload',
+        store=False,
+        prefetch=False,
+        compute='_compute_payload_dummy',
+        inverse='_inverse_payload_dummy',
+        help='Technical field for transporting polymorphic subclass data as JSON'
+    )
+
+    @api.depends()
+    def _compute_payload_dummy(self):
+        """
+        Compute method for poly_payload.
+        Returns False to allow the field to be writable without storage.
+        """
+        for record in self:
+            record.poly_payload = False
+
+    def _inverse_payload_dummy(self):
+        """
+        Inverse method for poly_payload.
+        Does nothing - this allows the UI to send data to a non-stored field
+        without requiring force_save.
+        """
+        pass
+
+    def get_poly_subclasses_info(self):
+        """
+        Returns information about valid polymorphic subclasses.
+        
+        This method should be overridden by business models to return
+        a list of dictionaries with 'model' and 'name' keys.
+        
+        Returns:
+            list: List of dicts with 'model' and 'name' keys.
+                 Example: [{'model': 'project.crane', 'name': 'Crane'}]
+        """
+        return []
 
     def as_concrete_model(self):
         """
@@ -318,6 +359,36 @@ class PolyBase(BaseModel):
         for instance in self:
             instance.poly_base_id = instance.id
 
+    @api.depends()
+    def _compute_payload_dummy(self):
+        """
+        Compute method for poly_payload.
+        Returns False to allow the field to be writable without storage.
+        """
+        for record in self:
+            record.poly_payload = False
+
+    def _inverse_payload_dummy(self):
+        """
+        Inverse method for poly_payload.
+        Does nothing - this allows the UI to send data to a non-stored field
+        without requiring force_save.
+        """
+        pass
+
+    def get_poly_subclasses_info(self):
+        """
+        Returns information about valid polymorphic subclasses.
+        
+        This method should be overridden by business models to return
+        a list of dictionaries with 'model' and 'name' keys.
+        
+        Returns:
+            list: List of dicts with 'model' and 'name' keys.
+                 Example: [{'model': 'project.crane', 'name': 'Crane'}]
+        """
+        return []
+
     @classmethod
     def _build_model(cls, pool, cr):
         """
@@ -553,6 +624,19 @@ class PolyBase(BaseModel):
              )
         )
 
+        # Add poly_payload field for DTO-style injection
+        # This field allows transporting subclass-specific data as JSON
+        set('poly_payload',
+            fields.Text(
+                string='Polymorphic Payload',
+                store=False,
+                prefetch=False,
+                compute='_compute_payload_dummy',
+                inverse='_inverse_payload_dummy',
+                help='Technical field for transporting polymorphic subclass data as JSON'
+            )
+        )
+
         # set('id',
         #      fields.Id(string='id',
         #                related='poly_base_id.id',
@@ -781,10 +865,49 @@ class PolyBase(BaseModel):
             new_records = self
             concrete_model_id = None
 
-            for data in data_list:
-                if 'concrete_model_id' in data:
-                    concrete_model_id = data['concrete_model_id']
-                    break
+            processed_vals_list = []
+            for vals in data_list:
+                # Make a copy to avoid mutating the original
+                processed_vals = vals.copy()
+
+                if 'concrete_model_id' in processed_vals:
+                    concrete_model_id = processed_vals['concrete_model_id']
+
+                # Check if poly_payload exists and is not empty
+                payload = processed_vals.pop('poly_payload', None)
+                if payload:
+                    try:
+                        # Deserialize the JSON payload
+                        loaded_data = json.loads(payload)
+                        if isinstance(loaded_data, dict):
+                            # Merge the payload data into vals
+                            # Payload data takes precedence over existing vals
+                            processed_vals.update(loaded_data)
+                        else:
+                            _logger.warning(
+                                "poly_payload contains non-dict JSON data, ignoring: %s",
+                                payload
+                            )
+                    except json.JSONDecodeError as e:
+                        _logger.error(
+                            "Failed to parse poly_payload JSON: %s. Error: %s",
+                            payload, str(e)
+                        )
+                        raise ValidationError(
+                            _("Invalid JSON in polymorphic payload: %s") % str(e)
+                        ) from e
+                    except Exception as e:
+                        _logger.error(
+                            "Unexpected error processing poly_payload: %s",
+                            str(e)
+                        )
+                        raise UserError(
+                            _("Error processing polymorphic payload: %s") % str(e)
+                        ) from e
+                
+                processed_vals_list.append(processed_vals)
+
+            data_list = processed_vals_list
             
             if concrete_model_id:
                 concrete_model = self.env['ir.model'].browse(concrete_model_id).exists()
@@ -968,6 +1091,52 @@ class PolyBase(BaseModel):
                 base_model.browse(self.ids).unlink()
 
         return result
+
+
+    def write(self, vals):
+        """
+        Override write to intercept and merge poly_payload data.
+        
+        Similar to create, this allows updating subclass-specific fields
+        through the payload mechanism.
+        """
+        # Make a copy to avoid mutating the original
+        processed_vals = vals.copy()
+        
+        # Check if poly_payload exists and is not empty
+        payload = processed_vals.pop('poly_payload', None)
+        if payload:
+            try:
+                # Deserialize the JSON payload
+                loaded_data = json.loads(payload)
+                if isinstance(loaded_data, dict):
+                    # Merge the payload data into vals
+                    # Payload data takes precedence over existing vals
+                    processed_vals.update(loaded_data)
+                else:
+                    _logger.warning(
+                        "poly_payload contains non-dict JSON data, ignoring: %s",
+                        payload
+                    )
+            except json.JSONDecodeError as e:
+                _logger.error(
+                    "Failed to parse poly_payload JSON: %s. Error: %s",
+                    payload, str(e)
+                )
+                raise ValidationError(
+                    _("Invalid JSON in polymorphic payload: %s") % str(e)
+                ) from e
+            except Exception as e:
+                _logger.error(
+                    "Unexpected error processing poly_payload: %s",
+                    str(e)
+                )
+                raise UserError(
+                    _("Error processing polymorphic payload: %s") % str(e)
+                ) from e
+        
+        # Call super with processed values
+        return super().write(processed_vals)
 
     def _write_multi(self, vals_list):
         """

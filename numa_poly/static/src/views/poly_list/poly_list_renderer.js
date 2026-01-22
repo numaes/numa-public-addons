@@ -70,22 +70,61 @@ export class PolyListRenderer extends ListRenderer {
     /**
      * Override onOpenRecord to handle polymorphic navigation.
      * Opens the concrete model's form view based on concrete_model_id.
+     * 
+     * Note: concrete_model_id is a Many2one to ir.model, so we need to
+     * extract the model name from the record.
      */
     async onOpenRecord(record) {
         const concreteModelId = record.data.concrete_model_id;
         
         if (concreteModelId) {
-            // Open the concrete model's form view
-            await this.actionService.doAction({
-                type: "ir.actions.act_window",
-                res_model: concreteModelId,
-                res_id: record.resId,
-                views: [[false, "form"]],
-                target: "new", // Open in dialog
-                context: {
-                    ...this.props.context,
-                },
-            });
+            // concrete_model_id is a Many2one [id, display_name]
+            // We need to get the model name from ir.model
+            let modelName = null;
+            
+            if (Array.isArray(concreteModelId)) {
+                // Many2one format: [id, display_name]
+                // We need to fetch the model name via RPC
+                const modelId = concreteModelId[0];
+                if (modelId) {
+                    try {
+                        const modelData = await this.rpc("/web/dataset/call_kw", {
+                            model: "ir.model",
+                            method: "read",
+                            args: [[modelId], ["model"]],
+                            kwargs: {},
+                        });
+                        if (modelData && modelData[0]) {
+                            modelName = modelData[0].model;
+                        }
+                    } catch (error) {
+                        console.error("Error fetching model name:", error);
+                    }
+                }
+            } else if (typeof concreteModelId === 'object' && concreteModelId.model) {
+                // If the record already has the model field
+                modelName = concreteModelId.model;
+            } else if (typeof concreteModelId === 'string') {
+                // Fallback: assume it's already the model name
+                modelName = concreteModelId;
+            }
+            
+            if (modelName) {
+                // Open the concrete model's form view
+                await this.actionService.doAction({
+                    type: "ir.actions.act_window",
+                    res_model: modelName,
+                    res_id: record.resId,
+                    views: [[false, "form"]],
+                    target: "new", // Open in dialog
+                    context: {
+                        ...this.props.context,
+                    },
+                });
+            } else {
+                // Fallback to default behavior if we can't determine the model
+                super.onOpenRecord(record);
+            }
         } else {
             // Fallback to default behavior if no concrete_model_id
             super.onOpenRecord(record);

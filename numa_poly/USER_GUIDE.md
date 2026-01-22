@@ -52,16 +52,17 @@ User clicks "Add"
 
 ## Backend Setup
 
-### Step 1: Inherit from NumaPolyBase
+### Step 1: Declare Polymorphic Base Model
 
-Your polymorphic model must inherit from `numa.poly.base`:
+Your polymorphic base model must declare `_depend_models = {}` to enable polymorphic behavior:
 
 ```python
 from odoo import models, fields, api
 
 class MyPolyModel(models.Model):
     _name = 'my.poly.model'
-    _inherit = 'numa.poly.base'
+    # Declare as polymorphic base model
+    _depend_models = {}
     
     name = fields.Char('Name', required=True)
     
@@ -92,17 +93,43 @@ def get_poly_subclasses_info(self):
 Create the concrete subclass models:
 
 ```python
+# Base definition in inital module
+
+class Equipment(models.Model):
+    _name = 'project.equipment'
+    # declare a polimorphic base model
+    _depend_models = {}
+
+    manufacturers_name = fields.Char('Manufactures name')
+    quantity = fields.Integer('Quantity')
+
+    @api.model
+    def get_poly_subclasses_info(self):
+        base_subclasses = super().get_poly_subclasses_info()
+        return base_subclasses + [{'model': 'project.crane', 'name': 'Crane'}]
+
+
 class ProjectCrane(models.Model):
     _name = 'project.crane'
-    _inherit = 'numa.poly.base'
+    _depend_models = {'project.equipment': equipment_id}
     
     # Crane-specific fields
     lifting_capacity = fields.Float('Lifting Capacity (tons)')
     boom_length = fields.Float('Boom Length (meters)')
 
+# In an extension module
+class Equipment(models.Model):
+    _inherit = 'project.equipment'
+
+    @api.model
+    def get_poly_subclasses_info(self):
+        base_subclasses = super().get_poly_subclasses_info()
+        return base_subclasses + [{'model': 'project.excavator', 'name': 'Excavator'}]
+
+
 class ProjectExcavator(models.Model):
     _name = 'project.excavator'
-    _inherit = 'numa.poly.base'
+    _depend_models = {'project.equipment': equipment_id}
     
     # Excavator-specific fields
     bucket_capacity = fields.Float('Bucket Capacity (cubic meters)')
@@ -119,7 +146,7 @@ class ProjectSite(models.Model):
     
     # One2Many field pointing to polymorphic base
     equipment_ids = fields.One2many(
-        'numa.poly.base',  # or 'my.poly.model' if you have a base
+        'project.equipment', 
         'parent_id',
         string='Equipment'
     )
@@ -137,7 +164,8 @@ class ProjectSite(models.Model):
 <field name="equipment_ids" widget="numa_polimorphic_widget">
     <list>
         <field name="concrete_model_id" string="Type"/>
-        <field name="name" string="Name"/>
+        <field name="manufacturers_name" string="Man.Name"/>
+        <field name="quantity" string="Quantity used"/>
         <!-- 
         CRITICAL: poly_payload must be included in the list
         for the widget to function correctly. It can be invisible.
@@ -165,7 +193,8 @@ class ProjectSite(models.Model):
                         <field name="equipment_ids" widget="numa_polimorphic_widget">
                             <list>
                                 <field name="concrete_model_id" string="Type"/>
-                                <field name="name" string="Name"/>
+                                <field name="manufacturers_name" string="Man.Name"/>
+                                <field name="quantity" string="Quantity used"/>
                                 <field name="poly_payload" column_invisible="1"/>
                             </list>
                         </field>
@@ -187,8 +216,9 @@ If you want a standalone list view:
     <field name="model">project.site</field>
     <field name="arch" type="xml">
         <list string="Project Sites">
-            <field name="name"/>
             <field name="concrete_model_id" string="Type"/>
+            <field name="manufacturers_name" string="Man.Name"/>
+            <field name="quantity" string="Quantity used"/>
             <field name="poly_payload" column_invisible="1"/>
         </list>
     </field>
@@ -213,16 +243,11 @@ class ProjectSite(models.Model):
     
     name = fields.Char('Site Name', required=True)
     equipment_ids = fields.One2many(
-        'numa.poly.base',
+        'project.equipment',
         'site_id',
         string='Equipment'
     )
     
-    def get_poly_subclasses_info(self):
-        return [
-            {'model': 'project.crane', 'name': 'Crane'},
-            {'model': 'project.excavator', 'name': 'Excavator'},
-        ]
 ```
 
 **Frontend** (`views/project_site_views.xml`):
@@ -231,7 +256,8 @@ class ProjectSite(models.Model):
 <field name="equipment_ids" widget="numa_polimorphic_widget">
     <list>
         <field name="concrete_model_id" string="Type"/>
-        <field name="name"/>
+        <field name="manufactures_name"/>
+        <field name="quantity"/>
         <field name="poly_payload" column_invisible="1"/>
     </list>
 </field>
@@ -255,7 +281,8 @@ For more complex scenarios with multiple levels:
 ```python
 class BaseEquipment(models.Model):
     _name = 'base.equipment'
-    _inherit = 'numa.poly.base'
+
+    _depend_models = {}
     
     name = fields.Char('Name', required=True)
     purchase_date = fields.Date('Purchase Date')
@@ -263,7 +290,7 @@ class BaseEquipment(models.Model):
 
 class ProjectCrane(models.Model):
     _name = 'project.crane'
-    _inherit = 'base.equipment'
+    _depend_models = {'project.equipment': equipment_id}
     
     lifting_capacity = fields.Float('Lifting Capacity')
     certification_number = fields.Char('Certification Number')
@@ -353,10 +380,11 @@ def get_poly_subclasses_info(self):
 **Symptoms**: Data from form is not merged into the record.
 
 **Solutions**:
-1. Verify the model inherits from `numa.poly.base`
+1. Verify the model has `_depend_models = {}` declared (for base) or `_depend_models = {'base.model': 'field_id'}` (for subclasses)
 2. Check that `create()` and `write()` methods call `super()`
 3. Verify JSON payload is valid (check browser console)
 4. Check server logs for JSON parsing errors
+5. Ensure `poly_payload` field is included in the list view (even if invisible)
 
 ### Issue: Field Not Found Errors
 
