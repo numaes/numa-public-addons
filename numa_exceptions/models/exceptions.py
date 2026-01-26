@@ -384,9 +384,19 @@ class IrHttp(models.AbstractModel):
         try:
             return super(IrHttp, cls)._dispatch(endpoint)
         except Exception as e:
+            # Do not log or wrap flow-control exceptions (redirects, etc.)
+            if isinstance(e, (
+                    odoo.exceptions.RedirectWarning,
+                    SessionExpiredException,
+                    UserError,
+                    ValidationError,
+                    werkzeug.exceptions.HTTPException)):
+                raise e
+
             _logger.exception(e)
             # Log the exception and get a unique reference ID
             # Validate request is available before accessing its attributes
+            ename = None
             if request:
                 ename = register_exception(
                     'Endpoint %s' % (request.httprequest if hasattr(request, 'httprequest') else 'Unknown'),
@@ -407,13 +417,8 @@ class IrHttp(models.AbstractModel):
 
             # For critical system errors, wrap the exception in a UserError 
             # with the reference ID to help the user report it.
-            if not isinstance(e, (
-                    odoo.exceptions.RedirectWarning,
-                    SessionExpiredException,
-                    UserError,
-                    werkzeug.exceptions.NotFound)):
-                if ename:
-                    e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
+            if ename:
+                e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
             raise e
 
