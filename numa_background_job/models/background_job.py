@@ -16,6 +16,11 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+try:
+    from odoo.addons.numa_exceptions.models.exceptions import register_exception
+except ImportError:
+    register_exception = None
+
 
 class BackgroundJob(models.Model):
     _name = "res.background_job"
@@ -332,9 +337,19 @@ def background_thread(dbName, uid, name, jobId, context=None):
                             cr.rollback()
                         break
 
-                    except Exception:
+                    except Exception as e:
                         _logger.error(f'Unexpected exception raised for job {name} with id {jobId}', exc_info=True)
                         cr.rollback()
+
+                        if register_exception:
+                            register_exception(
+                                service_name=f"Background Job: {name}",
+                                method=bkJob.method,
+                                params=bkJob.args,
+                                db=dbName,
+                                uid=uid,
+                                e=e
+                            )
 
                         bkJob = bkJobObj.browse(jobId)
                         bkJob.abort(

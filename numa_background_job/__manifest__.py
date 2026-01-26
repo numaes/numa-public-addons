@@ -35,7 +35,7 @@ to process long processes without blocking the UI.
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'bus', 'web'],
+    'depends': ['base', 'bus', 'web', 'numa_exceptions'],
     'data': [
         'security/security.xml',
         'security/ir.model.access.csv',
