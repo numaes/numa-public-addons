@@ -71,11 +71,19 @@ class StockMove(models.Model):
             total_weight = 0.0
             total_volume = 0.0
             total_surface = 0.0
-            for ml in move.move_line_ids:
-                if ml.product_id:
-                    total_weight += ml.total_weight
-                    total_surface += ml.total_surface
-                    total_volume += ml.total_volume
+
+            if move.move_line_ids:
+                for ml in move.move_line_ids:
+                    if ml.product_id:
+                        total_weight += ml.total_weight
+                        total_surface += ml.total_surface
+                        total_volume += ml.total_volume
+            else:
+                if move.product_id:
+                    total_weight += move.unit_weight * move.quantity
+                    total_surface += move.unit_surface * move.quantity
+                    total_volume += move.unit_volume * move.quantity
+
             move.total_weight = total_weight
             move.total_surface = total_surface
             move.total_volume = total_volume
@@ -145,7 +153,7 @@ class StockMove(models.Model):
                         'unit_surface': move_line.product_id.surface,
                         'unit_volume': move_line.product_id.volume
                     })
-                move_line.onchange_qty()
+                move_line._onchange_quantity()
 
         return result
 
@@ -156,9 +164,9 @@ class StockMoveLine(models.Model):
     unit_width = fields.Float(string='Unit Width', related='product_id.product_width', readonly=True)
     unit_length = fields.Float(string='Unit Length', related='product_id.product_length', readonly=True)
     unit_height = fields.Float(string='Unit Height', related='product_id.product_height', readonly=True)
-    unit_surface = fields.Float(string='Unit Surface')
-    unit_weight = fields.Float(string='Unit Weight')
-    unit_volume = fields.Float(string='Unit Volume')
+    unit_surface = fields.Float(string='Unit Surface', related='product_id.surface', readonly=True)
+    unit_weight = fields.Float(string='Unit Weight', related='product_id.weight', readonly=True)
+    unit_volume = fields.Float(string='Unit Volume', related='product_id.volume', readonly=True)
 
     total_surface = fields.Float(string='Total Surface')
     total_weight = fields.Float(string='Total Weight')
@@ -169,7 +177,7 @@ class StockMoveLine(models.Model):
 
     @api.onchange('product_id', 'quantity_product_uom')
     @api.depends('product_id', 'quantity_product_uom')
-    def onchange_qty(self):
+    def _onchange_quantity(self):
         for move_line in self:
             normalized_qty = move_line.product_uom_id._compute_quantity(move_line.quantity_product_uom,
                                                                         move_line.product_id.uom_id) \
@@ -203,11 +211,11 @@ class StockMoveLine(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         new_move_lines = super().create(vals_list)
-        new_move_lines.onchange_qty()
+        new_move_lines._onchange_quantity()
         return new_move_lines
 
     def write(self, vals):
         ret = super().write(vals)
         if 'quantity_product_uom' in vals:
-            self.onchange_qty()
+            self._onchange_quantity()
         return ret
