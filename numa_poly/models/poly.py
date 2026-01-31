@@ -105,8 +105,10 @@ class IrPolyBase(models.Model):
         self.ensure_one()
         if not self.concrete_model_id:
             return self
-        concrete_model = self.env[self.concrete_model_id.model]
-        return concrete_model.browse(self.id).exists() or self
+        concrete_model_name = self.concrete_model_id.model
+        # Use explicitly browse on the target model to ensure we get a "pure" recordset
+        # of that model, which helps with super() calls in Odoo 18.
+        return self.env[concrete_model_name].browse(self.id).exists() or self
 
 
 def poly_many2one_convert_to_read(self, value, record, use_display_name=True):
@@ -325,7 +327,8 @@ class PolyBase(BaseModel):
         except TypeError:
             # Fallback for polymorphic models where super() might fail if self is a Recordset
             # with IDs from different models (unlikely here but safety first)
-            self.browse().check_access(operation)
+            # Use self.browse(self.ids) to ensure we have a "clean" recordset of the current model
+            self.env[self._name].browse(self.ids).check_access(operation)
         
         # Check access on all dependent base models
         for base_name in self._depend_models.keys():
@@ -343,7 +346,7 @@ class PolyBase(BaseModel):
             if not super().has_access(operation):
                 return False
         except TypeError:
-            if not self.browse().has_access(operation):
+            if not self.env[self._name].browse(self.ids).has_access(operation):
                 return False
             
         for base_name in self._depend_models.keys():
@@ -363,8 +366,10 @@ class PolyBase(BaseModel):
         self.ensure_one()
         if not self.concrete_model_id:
             return self
-        concrete_model = self.env[self.concrete_model_id.model]
-        return concrete_model.browse(self.id).exists() or self
+        concrete_model_name = self.concrete_model_id.model
+        # Use explicitly browse on the target model to ensure we get a "pure" recordset
+        # of that model, which helps with super() calls in Odoo 18.
+        return self.env[concrete_model_name].browse(self.id).exists() or self
 
     def _compute_concrete_model_id(self):
         """
