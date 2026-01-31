@@ -36,8 +36,8 @@ import werkzeug.utils
 # Odoo
 import odoo
 from odoo import api, exceptions, fields, models, registry, SUPERUSER_ID, _
-from odoo.exceptions import RedirectWarning, UserError, ValidationError
-from odoo.http import Response, ROUTING_KEYS, SessionExpiredException, Stream, request
+from odoo.exceptions import RedirectWarning, UserError, ValidationError, AccessDenied, AccessError
+from odoo.http import Response, ROUTING_KEYS, SessionExpiredException, Stream, request, HttpDispatcher, JsonRPCDispatcher
 from odoo.loglevels import exception_to_unicode
 from odoo.osv import expression
 _logger = logging.getLogger(__name__)
@@ -390,6 +390,8 @@ class IrHttp(models.AbstractModel):
                     SessionExpiredException,
                     UserError,
                     ValidationError,
+                    AccessDenied,
+                    AccessError,
                     werkzeug.exceptions.HTTPException)):
                 raise e
 
@@ -421,6 +423,51 @@ class IrHttp(models.AbstractModel):
                 e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
 
             raise e
+
+
+def _handle_dispatcher_exception(dispatcher, exc):
+    """
+    Common logic to log exceptions from dispatchers.
+    """
+    if isinstance(exc, (
+            odoo.exceptions.RedirectWarning,
+            SessionExpiredException,
+            UserError,
+            ValidationError,
+            AccessDenied,
+            AccessError,
+            werkzeug.exceptions.HTTPException)):
+        return
+
+    req = dispatcher.request
+    register_exception(
+        'Dispatcher %s (%s)' % (dispatcher.__class__.__name__, req.httprequest.path if req else 'unknown'),
+        'Dispatcher.handle_error',
+        req.params if req and hasattr(req, 'params') else {},
+        req.db if req and hasattr(req, 'db') else False,
+        req.env.uid if req and hasattr(req, 'env') else SUPERUSER_ID,
+        exc)
+
+
+original_http_handle_error = HttpDispatcher.handle_error
+
+
+def numa_http_handle_error(self, exc):
+    _handle_dispatcher_exception(self, exc)
+    return original_http_handle_error(self, exc)
+
+
+HttpDispatcher.handle_error = numa_http_handle_error
+
+original_json_handle_error = JsonRPCDispatcher.handle_error
+
+
+def numa_json_handle_error(self, exc):
+    _handle_dispatcher_exception(self, exc)
+    return original_json_handle_error(self, exc)
+
+
+JsonRPCDispatcher.handle_error = numa_json_handle_error
 
 
 class IrCron(models.Model):
