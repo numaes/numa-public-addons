@@ -340,6 +340,20 @@ class PolyBase(BaseModel):
                 return False
         return True
 
+    def as_concrete_model(self):
+        """
+        Convert this base record to its concrete model representation.
+        If no concrete model is defined (legacy records), returns self.
+
+        Returns:
+            The same record but as an instance of its concrete model class.
+        """
+        self.ensure_one()
+        if not self.concrete_model_id:
+            return self
+        concrete_model = self.env[self.concrete_model_id.model]
+        return concrete_model.browse(self.id).exists() or self
+
     def _compute_concrete_model_id(self):
         """
         Compute the concrete_model_id field for polymorphic models.
