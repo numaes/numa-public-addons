@@ -322,13 +322,16 @@ class PolyBase(BaseModel):
             return
 
         # Check access on the model itself first
+        # We MUST avoid calling super() on self if self is a recordset that might have
+        # mixed internal state or if the class hierarchy is complex.
+        # But here we want to call Odoo's base check_access.
         try:
-            super().check_access(operation)
-        except TypeError:
-            # Fallback for polymorphic models where super() might fail if self is a Recordset
-            # with IDs from different models (unlikely here but safety first)
-            # Use self.browse(self.ids) to ensure we have a "clean" recordset of the current model
-            self.env[self._name].browse(self.ids).check_access(operation)
+            # We use browse(self._ids) to ensure we have a fresh recordset of the current class
+            # this often helps super() find the right context in Odoo 18
+            self.env[self._name].browse(self._ids)._check_poly_access(operation)
+        except (AccessError, TypeError):
+            # If _check_poly_access fails or isn't found, fallback to standard check
+            super(PolyBase, self).check_access(operation)
         
         # Check access on all dependent base models
         for base_name in self._depend_models.keys():
@@ -343,17 +346,16 @@ class PolyBase(BaseModel):
             return True
 
         try:
-            if not super().has_access(operation):
-                return False
-        except TypeError:
-            if not self.env[self._name].browse(self.ids).has_access(operation):
-                return False
-            
-        for base_name in self._depend_models.keys():
-            base_model = self.env[base_name]
-            if not base_model.has_access(operation):
-                return False
-        return True
+            self.check_access(operation)
+            return True
+        except AccessError:
+            return False
+        except Exception:
+            return super(PolyBase, self).has_access(operation)
+
+    def _check_poly_access(self, operation):
+        """ Internal helper to call super().check_access() safely """
+        return super(PolyBase, self).check_access(operation)
 
     def as_concrete_model(self):
         """
