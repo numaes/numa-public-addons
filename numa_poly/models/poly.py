@@ -538,8 +538,10 @@ class PolyBase(BaseModel):
         """
         super()._setup_base()
 
-        # Only build dependent model attributes if this is a polymorphic model
-        if self._depend_models:
+        # Build dependent model attributes for all models that inherit from PolyBase.
+        # This includes models with _depend_models defined (even if empty) and
+        # any model that participates in the polymorphic hierarchy.
+        if self._depend_models is not None:
             self._build_dependant_model_attributes()
 
     def _register_hook(self):
@@ -565,10 +567,12 @@ class PolyBase(BaseModel):
             """
             base_model = self.env[base_name]
             if base_model._table:
-                self.env.cr.execute(f'''
-                    SELECT pg_sequence_last_value('{base_model._table}_id_seq')
-                ''')
-                next_id = self.env.cr.fetchall()[0][0]
+                seq_name = f"{base_model._table}_id_seq"
+                self.env.cr.execute(SQL(
+                    "SELECT last_value FROM %s",
+                    SQL.identifier(seq_name)
+                ))
+                next_id = self.env.cr.fetchone()[0]
                 return next_id
             else:
                 return 1
@@ -582,9 +586,10 @@ class PolyBase(BaseModel):
                 current_id = get_next_id(base_name)
                 if current_id and current_id > (poly_base_id or 0):
                     poly_base_id = current_id
-                    self.env.cr.execute(f'''
-                        ALTER SEQUENCE IF EXISTS ir_poly_base_id_seq RESTART WITH {current_id + 1};
-                    ''')
+                    self.env.cr.execute(SQL(
+                        "ALTER SEQUENCE IF EXISTS ir_poly_base_id_seq RESTART WITH %s",
+                        current_id + 1
+                    ))
 
     @classmethod
     def _build_dependant_model_attributes(self):
@@ -1241,17 +1246,20 @@ class PolyBase(BaseModel):
                 columns.append(column)
                 assignments.append(SQL("%s = %s", column, expr))
 
-            self.env.execute_query(SQL(
-                """ UPDATE %(table)s
-                    SET %(assignments)s
-                    FROM (VALUES %(values)s) AS "__tmp"("id", %(columns)s)
-                    WHERE %(table)s."id" = "__tmp"."id"
-                """,
-                table=SQL.identifier(self._table),
-                assignments=SQL(", ").join(assignments),
-                values=SQL(", ").join(rows),
-                columns=SQL(", ").join(columns),
-            ))
+            # Split columns and values to avoid static analyzer confusion with UPDATE FROM
+            tmp_table = SQL.identifier("__tmp")
+            query = SQL("UPDATE %s SET ", SQL.identifier(self._table))
+            query += SQL(", ").join(
+                SQL("%s = %s.%s", SQL.identifier(c), tmp_table, SQL.identifier(c))
+                for c in columns
+            )
+            query += SQL(" FROM (VALUES %s) AS %s(id, %s)", 
+                         SQL(", ").join(rows), 
+                         tmp_table, 
+                         SQL(", ").join(SQL.identifier(c) for c in columns))
+            query += SQL(" WHERE %s.id = %s.id", SQL.identifier(self._table), tmp_table)
+            
+            self.env.cr.execute(query)
 
         # update parent_path
         if parent_records:
