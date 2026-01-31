@@ -1227,9 +1227,10 @@ class PolyBase(BaseModel):
                 field = self._fields[fname]
                 if not(field.store and field.column_type):
                     continue
-                column = SQL.identifier(fname)
+                column_ident = SQL.identifier(fname)
                 # the type cast is necessary for some values, like NULLs
-                expr = SQL('"__tmp".%s::%s', column, SQL(field.column_type[1]))
+                # ensure column_ident is used as a positional parameter in SQL()
+                expr = SQL('"__tmp".%s::%s', column_ident, SQL(field.column_type[1]))
                 if field.translate is True:
                     # this is the SQL equivalent of:
                     # None if expr is None else (
@@ -1242,7 +1243,7 @@ class PolyBase(BaseModel):
                             )) || %(expr)s
                         END""",
                         table=SQL.identifier(self._table),
-                        column=column,
+                        column=column_ident,
                         expr=expr,
                     )
                 if field.company_dependent:
@@ -1253,24 +1254,22 @@ class PolyBase(BaseModel):
                         JOIN jsonb_each(%(fallbacks)s) f
                         ON d.key = f.key AND d.value != f.value)""",
                         table=SQL.identifier(self._table),
-                        column=column,
+                        column=column_ident,
                         expr=expr,
                         fallbacks=fallbacks
                     )
-                columns.append(column)
-                assignments.append(SQL("%s = %s", column, expr))
+                columns.append(column_ident)
+                assignments.append(SQL("%s = %s", column_ident, expr))
 
-            # Split columns and values to avoid static analyzer confusion with UPDATE FROM
             tmp_table = SQL.identifier("__tmp")
             query = SQL("UPDATE %s SET ", SQL.identifier(self._table))
             query += SQL(", ").join(
-                SQL("%s = %s.%s", c, tmp_table, c)
-                for c in columns
+                assignments
             )
             query += SQL(" FROM (VALUES %s) AS %s(id, %s)", 
                          SQL(", ").join(rows), 
                          tmp_table, 
-                         SQL(", ").join(c for c in columns))
+                         SQL(", ").join(columns))
             query += SQL(" WHERE %s.id = %s.id", SQL.identifier(self._table), tmp_table)
             
             self.env.cr.execute(query)
