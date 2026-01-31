@@ -854,7 +854,7 @@ class PolyBase(BaseModel):
                         _('Dependent model %s does not exist') % base_name
                     )
                 base_model = self.env[base_name]
-                if not base_model.check_access('create', raise_exception=False):
+                if not base_model.check_access('create'):
                     raise AccessError(
                         _('You cannot create records: insufficient permissions on %s') %
                         base_model._description
