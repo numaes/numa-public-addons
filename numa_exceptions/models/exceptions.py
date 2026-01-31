@@ -21,12 +21,14 @@
 ##############################################################################
 
 # Standard library
+import collections.abc
 import datetime
 import functools
 import inspect
 import json
 import logging
 import sys
+import threading
 
 # Third-party
 import werkzeug.exceptions
@@ -37,7 +39,7 @@ import werkzeug.utils
 import odoo
 from odoo import api, exceptions, fields, models, registry, SUPERUSER_ID, _
 from odoo.exceptions import RedirectWarning, UserError, ValidationError, AccessDenied, AccessError
-from odoo.http import Response, ROUTING_KEYS, SessionExpiredException, Stream, request, HttpDispatcher, JsonRPCDispatcher
+from odoo.http import Response, ROUTING_KEYS, SessionExpiredException, Stream, request, HttpDispatcher, JsonRPCDispatcher, Dispatcher
 from odoo.loglevels import exception_to_unicode
 from odoo.osv import expression
 _logger = logging.getLogger(__name__)
@@ -238,8 +240,11 @@ def register_exception(service_name, method, params, db, uid, e):
         service_name = 'unknown'
     
     if not db:
-        _logger.debug("register_exception called with empty db, skipping logging")
-        return None
+        # Try to get db from thread as fallback
+        db = getattr(threading.current_thread(), 'dbname', False)
+        if not db:
+            _logger.debug("register_exception called with empty db, skipping logging")
+            return None
 
     try:
         db_registry = odoo.modules.registry.Registry(db)
@@ -399,12 +404,16 @@ class IrHttp(models.AbstractModel):
             # Log the exception and get a unique reference ID
             # Validate request is available before accessing its attributes
             ename = None
+            db = getattr(request, 'db', False) if request else False
+            if not db:
+                db = getattr(threading.current_thread(), 'dbname', False)
+
             if request:
                 ename = register_exception(
                     'Endpoint %s' % (request.httprequest if hasattr(request, 'httprequest') else 'Unknown'),
                     'IrHttp.dispatch',
                     request.params if hasattr(request, 'params') else {},
-                    request.db if hasattr(request, 'db') else False,
+                    db,
                     request.env.uid if hasattr(request, 'env') else SUPERUSER_ID,
                     e)
             else:
@@ -413,7 +422,7 @@ class IrHttp(models.AbstractModel):
                     'IrHttp.dispatch (no request context)',
                     'IrHttp.dispatch',
                     {},
-                    False,
+                    db,
                     SUPERUSER_ID,
                     e)
 
@@ -439,13 +448,41 @@ def _handle_dispatcher_exception(dispatcher, exc):
             werkzeug.exceptions.HTTPException)):
         return
 
-    req = dispatcher.request
+    req = getattr(dispatcher, 'request', None)
+    if not req and request:
+        req = request
+
+    db = getattr(req, 'db', False) if req else False
+    if not db:
+        db = getattr(threading.current_thread(), 'dbname', False)
+
+    params = {}
+    if req:
+        try:
+            params = getattr(req, 'params', {})
+        except Exception:
+            pass
+
+    path = 'unknown'
+    if req:
+        try:
+            path = req.httprequest.path
+        except Exception:
+            pass
+
+    uid = SUPERUSER_ID
+    if req:
+        try:
+            uid = req.env.uid
+        except Exception:
+            pass
+
     register_exception(
-        'Dispatcher %s (%s)' % (dispatcher.__class__.__name__, req.httprequest.path if req else 'unknown'),
+        'Dispatcher %s (%s)' % (dispatcher.__class__.__name__, path),
         'Dispatcher.handle_error',
-        req.params if req and hasattr(req, 'params') else {},
-        req.db if req and hasattr(req, 'db') else False,
-        req.env.uid if req and hasattr(req, 'env') else SUPERUSER_ID,
+        params,
+        db,
+        uid,
         exc)
 
 
@@ -453,7 +490,10 @@ original_http_handle_error = HttpDispatcher.handle_error
 
 
 def numa_http_handle_error(self, exc):
-    _handle_dispatcher_exception(self, exc)
+    try:
+        _handle_dispatcher_exception(self, exc)
+    except Exception:
+        _logger.error("Error in numa_http_handle_error interception", exc_info=True)
     return original_http_handle_error(self, exc)
 
 
@@ -463,11 +503,29 @@ original_json_handle_error = JsonRPCDispatcher.handle_error
 
 
 def numa_json_handle_error(self, exc):
-    _handle_dispatcher_exception(self, exc)
+    try:
+        _handle_dispatcher_exception(self, exc)
+    except Exception:
+        _logger.error("Error in numa_json_handle_error interception", exc_info=True)
     return original_json_handle_error(self, exc)
 
 
 JsonRPCDispatcher.handle_error = numa_json_handle_error
+
+original_dispatcher_handle_error = Dispatcher.handle_error
+
+
+def numa_dispatcher_handle_error(self, exc):
+    # Only process if not already handled by subclasses (though it shouldn't hurt)
+    if self.__class__ is Dispatcher:
+        try:
+            _handle_dispatcher_exception(self, exc)
+        except Exception:
+            _logger.error("Error in numa_dispatcher_handle_error interception", exc_info=True)
+    return original_dispatcher_handle_error(self, exc)
+
+
+Dispatcher.handle_error = numa_dispatcher_handle_error
 
 
 class IrCron(models.Model):
@@ -482,7 +540,7 @@ class IrCron(models.Model):
         model = 'CRON %s' % (cron_name or '<unknown>')
         method = None
         params = [server_action_id, job_id]
-        db = self.env.cr.dbname
+        db = self.env.cr.dbname or getattr(threading.current_thread(), 'dbname', False)
         uid = self.env.user.id
 
         # Automatically log cron failures
