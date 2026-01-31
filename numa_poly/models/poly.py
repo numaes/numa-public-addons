@@ -312,24 +312,33 @@ class PolyBase(BaseModel):
     # Flag to track if ID has been checked
     _checked_id = False
 
-    def as_concrete_model(self):
-        """
-        Convert this record to its most concrete model representation.
-        If no concrete model is defined (legacy records), returns self.
-        
-        Note: We use sudo() to read ir.poly_base because this field is part of the
-        polymorphic infrastructure and should be accessible regardless of record rules.
-        The actual data access is still controlled by the concrete model's access rules.
-        """
-        self.ensure_one()
-        # If the field is not even defined on this model, we are the concrete representation
+    def check_access(self, operation: str) -> None:
         if self._depend_models is None:
-            return self
-        poly_base = self.env['ir.poly_base'].sudo().browse(self.id)
-        if poly_base.concrete_model_id.model == self._name:
-            return self
-        concrete_model = self.env[poly_base.concrete_model_id.model]
-        return concrete_model.browse(self.id).exists() or self
+            return super().check_access(operation)
+        
+        if self.env.su:
+            return
+
+        # Check access on the model itself first
+        super().check_access(operation)
+        
+        # Check access on all dependent base models
+        for base_name in self._depend_models.keys():
+            base_model = self.env[base_name]
+            base_model.check_access(operation)
+
+    def has_access(self, operation: str) -> bool:
+        if self._depend_models is None:
+            return super().has_access(operation)
+        
+        if not super().has_access(operation):
+            return False
+            
+        for base_name in self._depend_models.keys():
+            base_model = self.env[base_name]
+            if not base_model.has_access(operation):
+                return False
+        return True
 
     def _compute_concrete_model_id(self):
         """
@@ -854,11 +863,7 @@ class PolyBase(BaseModel):
                         _('Dependent model %s does not exist') % base_name
                     )
                 base_model = self.env[base_name]
-                if not base_model.check_access('create'):
-                    raise AccessError(
-                        _('You cannot create records: insufficient permissions on %s') %
-                        base_model._description
-                    )
+                base_model.check_access('create')
 
             # If this is a polymorphic create of a subclass handle it recursively
 
