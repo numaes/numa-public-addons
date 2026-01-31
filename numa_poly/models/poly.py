@@ -320,7 +320,12 @@ class PolyBase(BaseModel):
             return
 
         # Check access on the model itself first
-        super().check_access(operation)
+        try:
+            super().check_access(operation)
+        except TypeError:
+            # Fallback for polymorphic models where super() might fail if self is a Recordset
+            # with IDs from different models (unlikely here but safety first)
+            self.browse().check_access(operation)
         
         # Check access on all dependent base models
         for base_name in self._depend_models.keys():
@@ -331,8 +336,15 @@ class PolyBase(BaseModel):
         if self._depend_models is None:
             return super().has_access(operation)
         
-        if not super().has_access(operation):
-            return False
+        if self.env.su:
+            return True
+
+        try:
+            if not super().has_access(operation):
+                return False
+        except TypeError:
+            if not self.browse().has_access(operation):
+                return False
             
         for base_name in self._depend_models.keys():
             base_model = self.env[base_name]
@@ -586,8 +598,10 @@ class PolyBase(BaseModel):
                 current_id = get_next_id(base_name)
                 if current_id and current_id > (poly_base_id or 0):
                     poly_base_id = current_id
+                    # Use SQL.identifier for the sequence name string
                     self.env.cr.execute(SQL(
-                        "ALTER SEQUENCE IF EXISTS ir_poly_base_id_seq RESTART WITH %s",
+                        "ALTER SEQUENCE IF EXISTS %s RESTART WITH %s",
+                        SQL.identifier("ir_poly_base_id_seq"),
                         current_id + 1
                     ))
 
@@ -1250,13 +1264,13 @@ class PolyBase(BaseModel):
             tmp_table = SQL.identifier("__tmp")
             query = SQL("UPDATE %s SET ", SQL.identifier(self._table))
             query += SQL(", ").join(
-                SQL("%s = %s.%s", SQL.identifier(c), tmp_table, SQL.identifier(c))
+                SQL("%s = %s.%s", c, tmp_table, c)
                 for c in columns
             )
             query += SQL(" FROM (VALUES %s) AS %s(id, %s)", 
                          SQL(", ").join(rows), 
                          tmp_table, 
-                         SQL(", ").join(SQL.identifier(c) for c in columns))
+                         SQL(", ").join(c for c in columns))
             query += SQL(" WHERE %s.id = %s.id", SQL.identifier(self._table), tmp_table)
             
             self.env.cr.execute(query)
