@@ -1237,7 +1237,8 @@ class PolyBase(BaseModel):
                 column_ident = SQL.identifier(fname)
                 # the type cast is necessary for some values, like NULLs
                 # ensure column_ident is used as a positional parameter in SQL()
-                expr = SQL('"__tmp".%s::%s', SQL.identifier(fname), SQL(field.column_type[1]))
+                column_type = field.column_type[1]
+                expr = SQL('"__tmp".%s::%s', SQL.identifier(fname), SQL(column_type))
                 if field.translate is True:
                     # this is the SQL equivalent of:
                     # None if expr is None else (
@@ -1273,7 +1274,7 @@ class PolyBase(BaseModel):
             query = SQL(
                 "UPDATE %s SET %s FROM (VALUES %s) AS %s(id, %s) WHERE %s.id = %s.id",
                 SQL.identifier(self._table),
-                SQL(", ").join(SQL("%s = %s.%s", c, tmp_table, c) for c in columns),
+                SQL(", ").join(assignments),
                 SQL(", ").join(rows),
                 tmp_table,
                 SQL(", ").join(columns),
