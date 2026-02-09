@@ -1268,15 +1268,18 @@ class PolyBase(BaseModel):
                 columns.append(column_ident)
                 assignments.append(SQL("%s = %s", column_ident, expr))
 
+            # Split columns and values to avoid static analyzer confusion with UPDATE FROM
             tmp_table = SQL.identifier("__tmp")
-            query = SQL(
-                "UPDATE %(table)s SET %(assignments)s FROM (VALUES %(rows)s) AS %(tmp_table)s(id, %(columns)s) WHERE %(table)s.id = %(tmp_table)s.id",
-                table=SQL.identifier(self._table),
-                assignments=SQL(", ").join(assignments),
-                rows=SQL(", ").join(rows),
-                tmp_table=tmp_table,
-                columns=SQL(", ").join(columns)
+            query = SQL("UPDATE %s SET ", SQL.identifier(self._table))
+            query += SQL(", ").join(
+                SQL("%s = %s.%s", c, tmp_table, c)
+                for c in columns
             )
+            query += SQL(" FROM (VALUES %s) AS %s(id, %s)", 
+                         SQL(", ").join(rows), 
+                         tmp_table, 
+                         SQL(", ").join(columns))
+            query += SQL(" WHERE %s.id = %s.id", SQL.identifier(self._table), tmp_table)
             
             self.env.cr.execute(query)
 
