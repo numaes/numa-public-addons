@@ -1,54 +1,78 @@
-# Numa FSM: Visual Finite State Machine Engine
+# Numa FSM — Graph-First Definition and Schema
 
-`numa_fsm` provides a powerful, visual, and transactional engine for creating and executing Finite State Machines (FSMs) within Odoo. It replaces the legacy text-based definition with a modern, interactive graphical editor built with OWL.
+This document describes the graph-first paradigm and the structure of the UI and compiled definitions. For day-to-day usage, transition code reference, and integration, see [USER_GUIDE.md](USER_GUIDE.md) and [docs/TRANSITION_CODE_REFERENCE.md](docs/TRANSITION_CODE_REFERENCE.md).
 
-## Key Features
+---
 
-- **Visual Editor:** A drag-and-drop interface to design complex workflows by connecting states, transitions, and decision nodes.
-- **Transactional Execution:** The engine ensures that a chain of transitions is atomic. The instance's state is only updated upon successful completion, preventing data corruption.
-- **Live Debugging:** A visual debugger integrated into the FSM instance form, allowing developers to see the current state of execution directly on the diagram.
-- **Step-by-Step Execution:** Control the flow with "Next Step" and "Continue" buttons, and inspect variables at each stage.
-- **Breakpoints:** Mark any transition as a breakpoint to pause execution automatically for inspection.
-- **Polymorphic by Design:** Built on `numa_poly`, allowing any Odoo model to become a state machine.
+## Overview
 
-## Architecture Overview
+Numa FSM uses a **graph-first** design: the visual diagram defines the topology and routing; Python code in transitions only decides the **outcome**. The engine then uses the graph to determine the next state or end node from that outcome.
 
-### 1. `fsm.definition` - The Blueprint
+**Principle:** *Python code decides what happened (the outcome); the graph decides where to go next.*
 
-This model stores the FSM's design.
+---
 
-- **`json_ui_schema`:** A JSON field containing the visual representation of the diagram (node positions, connections, etc.), managed by the OWL editor.
-- **`json_compiled_definition`:** A read-only JSON field automatically generated from the UI schema. It contains a structured, optimized representation of the FSM used by the execution engine. This ensures a clean separation between presentation and logic.
+## Field Reference
 
-### 2. `fsm.instance` - The Execution
+### `json_ui_schema`
 
-This model represents a running instance of a state machine.
+Stores the visual layout and topology for the OWL editor: nodes (with positions, types, labels, code, events, outcomes) and connections.
 
-- **`state`:** The execution state (`init`, `running`, `paused`, `ended`, `error`).
-- **`current_state_id`:** The ID of the `state` node where the FSM is currently waiting for an event.
-- **`next_node_id`:** The ID of the next `transition` node to be executed when the FSM is paused.
-- **`instance_variables`:** A JSON field holding the persistent state (variables) of the instance.
-- **`intermediate_variables`:** A temporary JSON field to hold variables during a transition chain, enabling transactional execution and debugging.
+Example shape:
 
-### 3. The Execution Engine (`_execute_chain`)
+```json
+{
+  "nodes": [
+    {"id": "state_init", "x": 40, "y": 200, "type": "state", "label": "init"},
+    {"id": "dec_start", "x": 260, "y": 190, "type": "transition", "label": "start"},
+    {"id": "state_done", "x": 460, "y": 200, "type": "state", "label": "done"}
+  ],
+  "connections": [
+    {"fromNodeId": "state_init", "fromPortName": "event_go", "toNodeId": "dec_start"},
+    {"fromNodeId": "dec_start", "fromPortName": "success", "toNodeId": "state_done"}
+  ]
+}
+```
 
-- **Transactional Loop:** When an event is triggered, the engine starts a chain of transitions. It operates on a copy of the instance variables (`intermediate_variables`).
-- **Atomic Commits:** The main `instance_variables` are only updated if the entire chain completes successfully and reaches a new `state` or `end` node.
-- **Error Handling:** If any exception occurs, the chain is aborted, the error is logged to the chatter, and the instance state is rolled back, preserving data integrity.
+Node types: `start`, `state`, `transition`, `end`. A state can have `is_global: true` (at most one per definition). Transitions have `code` (Python) and `outcomes` (port name → target node id).
 
-## How to Use
+### `json_compiled_definition`
 
-1.  **Create a Definition:**
-    - Go to the FSM Definitions menu.
-    - Create a new record.
-    - Use the "Designer" tab to build your workflow visually:
-        - **Double-click** on the canvas to create new nodes (State, Transition, End).
-        - **Double-click** on a node to edit its properties (name, code, events, outcomes).
-        - **Drag** from a node's output port to another's input port to create a connection.
-2.  **Instantiate the FSM:**
-    - In your target model (e.g., `conversation.session`), create a `Many2one` field to `fsm.instance`.
-    - On a specific action (e.g., creating a new session), create a new `fsm.instance` record, linking it to your FSM definition.
-3.  **Execute and Debug:**
-    - Call the `start()` method on the instance to begin execution.
-    - Use the `process_event({'name': 'event_name', ...})` method to trigger events.
-    - Open the instance's form view to see the live state on the diagram, inspect variables, and use the debug controls.
+Read-only; generated from `json_ui_schema` on save. Used by the execution engine. Structure (conceptual):
+
+```json
+{
+  "start_node_id": "<id of start node>",
+  "global_state_id": "<id of global state or null>",
+  "nodes": {
+    "<node_id>": {
+      "id": "...",
+      "type": "start|state|transition|end",
+      "label": "...",
+      "code": "...",
+      "events": [{"name": "...", "target_transition_id": "..."}],
+      "outcomes": {"<outcome_name>": "<target_node_id>"},
+      "is_global": false,
+      "is_breakpoint": false
+    }
+  }
+}
+```
+
+---
+
+## Using the Engine
+
+1. In **fsm.definition**, design the graph in the Designer tab and save (compilation is automatic).
+2. Create an **fsm.instance** with that definition and call `start()`.
+3. At runtime, send events with `instance.send_event({"name": "event_name", ...})`. The engine finds the handler (current state or global state), runs the transition code, reads the outcome, and moves to the connected state or end.
+
+---
+
+## Backward Compatibility
+
+If the module is used with legacy text-based definitions, the engine can fall back to a compiled definition derived from `text_definition` when `json_compiled_definition` is empty. Prefer the visual designer and `json_ui_schema` for new workflows.
+
+---
+
+**See also:** [USER_GUIDE.md](USER_GUIDE.md), [docs/TRANSITION_CODE_REFERENCE.md](docs/TRANSITION_CODE_REFERENCE.md), [README.md](README.md).

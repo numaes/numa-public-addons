@@ -1,891 +1,396 @@
-# Numa FSM User Guide
+# Numa FSM — User and Developer Guide
+
+This guide describes how to use and extend Numa FSM: design workflows in the visual editor, write transition code, integrate with business models, and operate timers and global events. All documentation is in professional English.
+
+---
 
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Key Features](#key-features)
-3. [Architecture & Current Status](#architecture--current-status)
-4. [Integration with numa_poly](#integration-with-numa_poly)
-5. [Getting Started](#getting-started)
-6. [Advanced Features](#advanced-features)
-7. [Examples](#examples)
-8. [Best Practices](#best-practices)
-9. [Troubleshooting](#troubleshooting)
+1. [Overview](#1-overview)
+2. [Key Concepts](#2-key-concepts)
+3. [Core Components](#3-core-components)
+4. [Transition Code Reference](#4-transition-code-reference)
+5. [Integration with Business Models](#5-integration-with-business-models)
+6. [Getting Started](#6-getting-started)
+7. [Advanced Features](#7-advanced-features)
+8. [Examples](#8-examples)
+9. [Best Practices](#9-best-practices)
+10. [Troubleshooting](#10-troubleshooting)
 
 ---
 
-## Overview
+## 1. Overview
 
-**Numa FSM** is a powerful Finite State Machine (FSM) engine for Odoo that provides visual workflow design combined with robust asynchronous execution. Built on `numa_poly` for polymorphic inheritance support, it enables any Odoo model to become a state machine, making it ideal for complex business processes, workflow automation, and state-driven applications.
+**Numa FSM** is a finite state machine engine for Odoo that combines a visual, graph-first designer with Python transition code. Workflows are defined as diagrams (states, transitions, start/end); decision logic is written in short Python snippets that run in a controlled environment. Events are processed asynchronously via `numa_asynch_exec`, and execution is transactional: instance variables are updated only when a transition chain reaches a state or end node.
 
-### What Makes Numa FSM Special?
+### 1.1 What Numa FSM Provides
 
-- **Visual Designer**: Drag-and-drop interface to design workflows graphically
-- **Asynchronous Processing**: Events are processed asynchronously using `numa_asynch_exec`, ensuring non-blocking operations
-- **Persistent Execution**: All events are persisted in the database, allowing for retry and recovery
-- **Polymorphic by Design**: Built on `numa_poly`, enabling any model to inherit FSM capabilities
-- **Global Events**: Support for events that can be handled in any state
-- **Precise Timers**: Timer-based events execute every second with continuous retry capability
-
----
-
-## Key Features
-
-### 1. Visual Workflow Design
-
-Design complex workflows using an intuitive drag-and-drop interface:
-- **States**: Represent stable conditions where the FSM waits for events
-- **Transitions**: Execute Python code and determine outcomes
-- **Events**: Trigger transitions from states
-- **Outcomes**: Map transition results to destination states
-
-### 2. Asynchronous Event Processing
-
-All events are processed asynchronously through `numa_asynch_exec`:
-- Events are persisted in `numa.asynch.job` before execution
-- Automatic retries on failure
-- No blocking of calling threads or HTTP requests
-- Full visibility into job status and execution history
-
-### 3. Timer Management
-
-Timer-based events execute with high precision:
-- **Execution Frequency**: Every 1 second (configurable via `retry_delay`)
-- **Continuous Operation**: Uses `retry_count = -1` for infinite retries
-- **Self-Scheduling**: Automatically schedules next execution
-- **No Cron Dependency**: Runs independently of Odoo's cron system
-
-### 4. Global Events
-
-Support for events available in any state:
-- **Priority System**: Current state events have priority over global events
-- **Common Handlers**: Define once (e.g., `timeout`, `cancel`) and use everywhere
-- **Clean Design**: Reduces duplication and improves maintainability
-
-### 5. Polymorphic Integration
-
-Built on `numa_poly` for flexible inheritance:
-- Any Odoo model can become a state machine
-- Multiple inheritance support
-- Clean separation of concerns
+- **Visual designer:** Drag-and-drop canvas (OWL) to add states, transitions, and connections.
+- **Outcome-based routing:** Transition code sets an outcome; the graph maps outcomes to target states.
+- **Asynchronous event processing:** Events are queued and processed in the background (persistent, retriable).
+- **Timers:** Schedule events to fire at a given time; processed every second.
+- **Global state:** Optional state whose events are available in any current state.
+- **Polymorphic integration:** Any model can hold an FSM instance (via `numa_poly` and a Many2one to `fsm.instance`).
+- **Debugging:** Step-by-step execution, breakpoints, and chatter logs.
 
 ---
 
-## Architecture & Current Status
+## 2. Key Concepts
 
-### Current Implementation Status
+### 2.1 Graph-First, Outcome-Based Execution
 
-✅ **Fully Implemented:**
-- Integration with `numa_asynch_exec` for asynchronous event processing
-- Timer system with continuous execution (every 1 second)
-- Global event support with priority handling
-- Visual workflow designer (OWL-based)
-- Transactional execution engine
+- **The graph** defines the topology: which states exist, which events lead to which transitions, and which outcomes lead to which states (or end).
+- **Transition code** runs when the engine executes a transition node. It has access to a fixed set of objects (see [§4](#4-transition-code-reference)). It must set an **outcome** (e.g. `outcome = 'success'` or `set_outcome('success')`).
+- **The engine** reads the outcome and follows the connection from that outcome to the next node (state or end). It does not use return values or arbitrary state changes for routing.
 
-⏳ **Pending (Frontend):**
-- Visual editor support for marking states as "global"
-- UI differentiation for global states in the diagram
-- Validation UI for global state constraints
+**Golden rule:** *Python code decides what happened (the outcome); the graph decides where to go next.*
 
-### Core Components
+### 2.2 Node Types
 
-#### 1. `fsm.definition` - The Blueprint
+| Type | Role |
+|------|------|
+| **Start** | Single entry point; the first node executed when the instance is started. |
+| **State** | Stable node where the FSM waits for an event. Has a list of events; each event is connected to a transition. |
+| **Transition** | Contains Python code. When run, the code sets an outcome; outcomes are connected to states or End. |
+| **End** | Terminal node; instance state becomes `ended`. |
+| **Global state** | Optional single state whose events are available from any current state (current state handlers take priority). |
 
-Stores the FSM design:
-- **`json_ui_schema`**: Visual layout and topology (managed by OWL editor)
-- **`json_compiled_definition`**: Executable representation (auto-generated)
-- **`state`**: Definition lifecycle (`draft`, `test`, `production`)
+### 2.3 Execution States
 
-#### 2. `fsm.instance` - The Execution
-
-Represents a running FSM instance:
-- **`state`**: Execution state (`init`, `running`, `paused`, `ended`, `error`)
-- **`current_state_id`**: Current state node ID
-- **`instance_variables`**: Persistent variables across states
-- **`intermediate_variables`**: Temporary variables during transitions
-
-#### 3. `fsm.timer` - Timer Management
-
-Manages scheduled events:
-- **`trigger_at`**: When the timer should fire
-- **`json_event`**: Event data to send
-- **`fsm_instance_id`**: Target FSM instance
-
-### Execution Flow
-
-1. **Event Received**: `process_event()` queues event for asynchronous processing
-2. **Job Created**: Event persisted in `numa.asynch.job`
-3. **Async Execution**: `_process_event_sync()` processes the event
-4. **Handler Lookup**: Searches for event handler (current state → global state)
-5. **Transition Execution**: Executes Python code, determines outcome
-6. **State Update**: Updates instance state atomically
-7. **Chain Execution**: Continues until reaching a state or end node
+An FSM instance has an execution state: `init`, `running`, `paused`, `ended`, `error`. Only when it is `running` (or `paused` with a `next_node_id`) can it process events and advance.
 
 ---
 
-## Integration with numa_poly
+## 3. Core Components
 
-### Understanding Polymorphic Inheritance
+### 3.1 `fsm.definition` — The Blueprint
 
-`numa_poly` enables multiple inheritance in Odoo, allowing models to inherit from multiple base models simultaneously. `numa_fsm` is built on this foundation, enabling any Odoo model to become a state machine.
+- **`json_ui_schema`:** Visual layout (nodes, positions, connections). Managed by the OWL designer.
+- **`json_compiled_definition`:** Executable structure (start node, nodes, events, outcomes, global state). Generated from the UI schema on save.
+- **`state`:** Lifecycle of the definition: `draft`, `test`, `production`.
+- **`is_verified`:** Set by “Validate”; checks that all nodes have required connections.
 
-### Basic Integration Pattern
+### 3.2 `fsm.instance` — The Running Workflow
+
+- **`state`:** Execution state (`init`, `running`, `paused`, `ended`, `error`).
+- **`current_state_id`:** Node ID of the state where the FSM is waiting for an event.
+- **`next_node_id`:** When paused mid-chain, the next transition node to execute.
+- **`instance_variables`:** JSON dict of persistent variables (updated when a chain reaches a state or end).
+- **`intermediate_variables`:** JSON dict used during a transition chain; when the chain completes, its content is written to `instance_variables`.
+
+### 3.3 `fsm.timer` — Scheduled Events
+
+- **`trigger_at`:** When the event should be sent.
+- **`json_event`:** JSON-serialized event payload.
+- **`fsm_instance_id`:** Target instance. When `trigger_at` is reached, the timer processor sends the event and deletes the timer.
+
+---
+
+## 4. Transition Code Reference
+
+Transition code is the Python snippet executed when the engine runs a **transition** node. It runs in a restricted environment: only the names listed below are available. You **must** set an outcome so the engine can route to the next node.
+
+### 4.1 Objects Available in Transition Code
+
+The following names are injected as globals when your code runs. No other built-ins or imports are guaranteed.
+
+| Name | Type | Description |
+|------|------|-------------|
+| **`variables`** | dict | Read/write. The same dict as the FSM’s intermediate (then instance) variables. Use it to pass data between transitions and to the next state. |
+| **`set_outcome`** | callable | `set_outcome('outcome_name')` sets the outcome for this transition. |
+| **`log`** | callable | `log("message")` posts a message to the FSM instance’s chatter. |
+| **`env`** | `odoo.api.Environment` | Current Odoo environment. Use to access any model: `env['res.partner']`, `env['sale.order']`, etc. |
+| **`model`** | `fsm.instance` recordset | The current FSM instance (single record). Use for instance methods (timers, mail, render). |
+| **`datetime`** | Odoo field type | Use `datetime.now()` for current UTC datetime. |
+| **`date`** | Odoo field type | Use `date.today()` for current date. |
+| **`timedelta`** | `datetime.timedelta` | For date/datetime arithmetic. |
+| **`user`** | `res.users` | Current user (`env.user`). |
+| **`company`** | `res.company` | Current company (`env.company`). |
+
+**Setting the outcome:** Either assign `outcome = 'outcome_name'` or call `set_outcome('outcome_name')`. The engine reads `variables['outcome']` (default `'__default__'`) and looks up the next node from the transition’s outcome map in the graph.
+
+### 4.2 Event Data
+
+When the transition was triggered by an event, the event dict is stored in `variables['event']` before your code runs (e.g. `{'name': 'payment_received', 'amount': 100}`). Use it read-only:
+
+```python
+event = variables.get('event', {})
+event_name = event.get('name')
+amount = event.get('amount', 0)
+```
+
+### 4.3 Instance Methods (on `model`)
+
+You can call these on the FSM instance (`model`) from transition code:
+
+| Method | Description |
+|--------|-------------|
+| `model.start_timer(event_dict, delay=seconds)` | Schedule an event to be sent after `delay` seconds. |
+| `model.start_timer(event_dict, at=datetime)` | Schedule an event at a specific datetime. |
+| `model.stop_timer(event_name)` | Cancel timers with the given event name for this instance. |
+| `model.stop_all_timers()` | Cancel all timers for this instance. |
+| `model.log(message)` | Post a message to the instance chatter (same as global `log(message)`). |
+| `model.render_page(page_name, **params)` | Render an FSM page template by name (definition must have the page). |
+| `model.action_send_template_mail(target_record, template_name, subject=None)` | Render and send the definition’s mail template; `target_record` must support `message_notify` (e.g. a record with mail.thread). |
+
+### 4.4 Safety and Restrictions
+
+- **No routing via return:** The next node is determined only by the outcome and the graph.
+- **No arbitrary imports:** Only the names in the table above are available. Use `env` and `model` for Odoo data and services.
+- **Execution context:** Code runs in the same process as the FSM engine. Avoid long-running or blocking work; delegate heavy operations elsewhere (e.g. jobs, other models).
+- **Persistence:** Updates to `variables` are committed when the transition chain reaches a state or end node. If an exception is raised, the chain is aborted and instance state is not updated.
+
+### 4.5 Transition Code Examples
+
+**Minimal — set outcome only:**
+
+```python
+outcome = 'success'
+```
+
+**Using event data:**
+
+```python
+event = variables.get('event', {})
+approved = event.get('approved', False)
+outcome = 'approve' if approved else 'reject'
+```
+
+**Reading and writing variables:**
+
+```python
+order_id = variables.get('order_id')
+variables['processed_at'] = datetime.now().isoformat()
+if order_id:
+    order = env['sale.order'].browse(order_id)
+    if order.exists():
+        order.write({'state': 'processing'})
+outcome = 'success'
+```
+
+**Logging:**
+
+```python
+log("Starting validation.")
+log(f"Order ID: {variables.get('order_id')}")
+outcome = 'next'
+```
+
+**Timer (e.g. timeout in 5 minutes):**
+
+```python
+model.start_timer({'name': 'timeout'}, delay=300)
+outcome = 'waiting'
+```
+
+**Timer at a specific time:**
+
+```python
+model.start_timer({'name': 'reminder'}, at=datetime.now() + timedelta(hours=1))
+outcome = 'scheduled'
+```
+
+**Send mail using a definition template:**
+
+```python
+partner_id = variables.get('partner_id')
+if partner_id:
+    partner = env['res.partner'].browse(partner_id)
+    if partner.exists():
+        model.action_send_template_mail(partner, 'Order Confirmation')
+outcome = 'sent'
+```
+
+**Using a related business record stored in variables:**
+
+```python
+# Assume variables['res_model'] and variables['res_id'] were set when starting the FSM
+res_model = variables.get('res_model')
+res_id = variables.get('res_id')
+if res_model and res_id:
+    record = env[res_model].browse(res_id)
+    if record.exists():
+        record.write({'state': 'in_progress'})
+outcome = 'next'
+```
+
+A compact quick reference is in [docs/TRANSITION_CODE_REFERENCE.md](docs/TRANSITION_CODE_REFERENCE.md).
+
+---
+
+## 5. Integration with Business Models
+
+### 5.1 Polymorphic Relationship (Recommended for Existing Models)
+
+Attach an FSM instance to any model via a Many2one and optional `numa_poly` integration:
 
 ```python
 from collections import OrderedDict
 from odoo import models, fields, api
-
-class MyBusinessModel(models.Model):
-    _name = 'my.business.model'
-    _description = 'My Business Model'
-    
-    # Define polymorphic dependencies
-    _depend_models = OrderedDict({
-        'fsm.instance': 'fsm_instance_id'  # Map fsm.instance to a field
-    })
-    
-    name = fields.Char('Name')
-    fsm_instance_id = fields.Many2one('fsm.instance', 'FSM Instance')
-    
-    # Your business logic here
-    def process_data(self):
-        # Access FSM instance through polymorphic relationship
-        fsm_instance = self.as_fsm_instance()
-        if fsm_instance:
-            fsm_instance.send_event({'name': 'data_processed'})
-```
-
-### Direct Inheritance Pattern
-
-For simpler cases, you can inherit directly from `fsm.instance`:
-
-```python
-from collections import OrderedDict
-from odoo import models, fields, api
-
-class OrderWorkflow(models.Model):
-    _name = 'order.workflow'
-    _description = 'Order Workflow'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
-    
-    # Empty dependencies means no polymorphic relationship
-    # The model itself is an FSM instance
-    _depend_models = OrderedDict()
-    
-    # Standard fields
-    order_number = fields.Char('Order Number')
-    customer_id = fields.Many2one('res.partner', 'Customer')
-    
-    # FSM instance fields are inherited implicitly
-    # You can access: state, current_state_id, instance_variables, etc.
-    
-    def approve_order(self):
-        """Business method that triggers FSM event"""
-        self.send_event({'name': 'approve'})
-```
-
-### Practical Example: Order Management System
-
-Let's create a complete example showing how to integrate FSM with a business model:
-
-```python
-from collections import OrderedDict
-from odoo import models, fields, api, exceptions
 
 class SaleOrder(models.Model):
     _name = 'sale.order'
     _inherit = ['sale.order', 'mail.thread', 'mail.activity.mixin']
-    
-    # Polymorphic relationship to FSM instance
+
     _depend_models = OrderedDict({
         'fsm.instance': 'order_fsm_id'
     })
-    
-    order_fsm_id = fields.Many2one('fsm.instance', 'Order Workflow', readonly=True)
-    
+
+    order_fsm_id = fields.Many2one('fsm.instance', string='Order Workflow', readonly=True)
+
     def action_confirm(self):
-        """Override to integrate with FSM"""
         res = super().action_confirm()
-        
-        # Create FSM instance if not exists
         if not self.order_fsm_id:
             fsm_def = self.env['fsm.definition'].search([
                 ('name', '=', 'Order Processing'),
                 ('state', '=', 'production')
             ], limit=1)
-            
             if fsm_def:
-                fsm_instance = self.env['fsm.instance'].create({
+                self.order_fsm_id = self.env['fsm.instance'].create({
                     'definition_id': fsm_def.id,
                     'name': f'ORDER-{self.name}',
                 })
-                self.order_fsm_id = fsm_instance
-                fsm_instance.start()
-        
-        # Send event to FSM
+                self.order_fsm_id.start()
         if self.order_fsm_id:
             self.order_fsm_id.send_event({'name': 'order_confirmed'})
-        
         return res
-    
+
     def action_cancel(self):
-        """Cancel order and notify FSM"""
         res = super().action_cancel()
         if self.order_fsm_id:
             self.order_fsm_id.send_event({'name': 'cancel'})
         return res
-    
-    def action_process_payment(self):
-        """Process payment and notify FSM"""
-        # Your payment processing logic here
-        payment_success = self._process_payment()
-        
-        if payment_success and self.order_fsm_id:
-            self.order_fsm_id.send_event({
-                'name': 'payment_processed',
-                'amount': self.amount_total,
-                'payment_method': self.payment_method
-            })
 ```
 
-### Accessing FSM Instance in Transition Code
+When creating the instance, you can pass business context in initial variables (e.g. via a custom create or a first transition): store `order_id`, `partner_id`, `res_model`/`res_id`, etc., and use them in transition code as in §4.5.
 
-In your FSM transition Python code, the FSM instance is available as `model`:
+### 5.2 Sending Events from Outside the FSM
 
-```python
-# In a transition code snippet
-# Access the FSM instance
-fsm_instance = model  # model is the fsm.instance
-
-# Access related business model through polymorphic relationship
-if hasattr(fsm_instance, 'as_sale_order'):
-    sale_order = fsm_instance.as_sale_order()
-    if sale_order:
-        # Work with the sale order
-        sale_order.write({'state': 'processing'})
-        log(f"Processing order: {sale_order.name}")
-
-# Set outcome
-outcome = 'success'
-```
-
-### Example: Complete Order Processing Workflow
-
-Here's a complete example demonstrating a realistic order processing workflow:
+From controllers, crons, or other models:
 
 ```python
-# 1. FSM Definition (created via UI, but shown as conceptual structure)
-
-# State: "Pending Payment"
-#   Event: "payment_received"
-#   → Transition: "Process Payment"
-#   → Outcomes: "success" → "Processing", "failed" → "Payment Failed"
-
-# State: "Processing"
-#   Event: "inventory_reserved"
-#   → Transition: "Reserve Inventory"
-#   → Outcomes: "success" → "Shipped", "failed" → "Inventory Error"
-
-# State: "Shipped"
-#   Event: "delivery_confirmed"
-#   → Transition: "Complete Order"
-#   → Outcomes: "success" → "Completed"
-
-# Global State (for events available in any state)
-#   Event: "cancel"
-#   → Transition: "Cancel Order"
-#   → Outcomes: "success" → "Cancelled"
-
-# 2. Sale Order Model with FSM Integration
-
-class SaleOrder(models.Model):
-    _name = 'sale.order'
-    _inherit = ['sale.order']
-    
-    _depend_models = OrderedDict({
-        'fsm.instance': 'order_fsm_id'
-    })
-    
-    order_fsm_id = fields.Many2one('fsm.instance', 'Order FSM')
-    
-    def action_confirm(self):
-        """Start FSM workflow when order is confirmed"""
-        res = super().action_confirm()
-        
-        fsm_def = self.env['fsm.definition'].search([
-            ('name', '=', 'Order Processing'),
-            ('state', '=', 'production')
-        ], limit=1)
-        
-        if fsm_def and not self.order_fsm_id:
-            self.order_fsm_id = self.env['fsm.instance'].create({
-                'definition_id': fsm_def.id,
-                'name': f'ORDER-{self.name}',
-            })
-            self.order_fsm_id.start()
-        
-        return res
-
-# 3. Payment Processing Controller
-
-from odoo import http
-from odoo.http import request
-
-class PaymentController(http.Controller):
-    @http.route('/payment/notification', type='json', auth='public')
-    def payment_notification(self, order_id, status, **kwargs):
-        """Webhook from payment gateway"""
-        order = request.env['sale.order'].browse(order_id)
-        
-        if status == 'paid' and order.order_fsm_id:
-            order.order_fsm_id.send_event({
-                'name': 'payment_received',
-                'payment_id': kwargs.get('payment_id'),
-                'amount': kwargs.get('amount')
-            })
-        
-        return {'status': 'ok'}
-
-# 4. Transition Code Example (from "Process Payment" transition)
-
-# Access FSM instance
-fsm_instance = model  # model is the fsm.instance
-
-# Get related order through polymorphic relationship
-sale_order = None
-if hasattr(fsm_instance, 'as_sale_order'):
-    sale_order = fsm_instance.as_sale_order()
-
-if not sale_order:
-    outcome = 'failed'
-    log("No related sale order found")
-else:
-    # Access event data
-    event = variables.get('event', {})
-    payment_id = event.get('payment_id')
-    
-    # Business logic
-    try:
-        # Update order with payment info
-        sale_order.write({
-            'payment_status': 'paid',
-            'payment_id': payment_id
-        })
-        
-        # Log the event
-        log(f"Payment processed for order {sale_order.name}")
-        
-        outcome = 'success'
-    except Exception as e:
-        log(f"Payment processing failed: {e}")
-        outcome = 'failed'
-```
-
----
-
-## Getting Started
-
-### Step 1: Install Dependencies
-
-Ensure the following modules are installed:
-- `numa_poly` - Polymorphic inheritance support
-- `numa_asynch_exec` - Asynchronous execution infrastructure
-- `mail` - Messaging and chatter support
-
-### Step 2: Create an FSM Definition
-
-1. Navigate to **FSM > Definitions**
-2. Click **Create**
-3. Enter a name (e.g., "Order Processing")
-4. Switch to the **Designer** tab
-5. Design your workflow:
-   - Double-click canvas to add nodes (States, Transitions, End)
-   - Double-click nodes to edit properties
-   - Connect nodes by dragging from output ports to input ports
-
-### Step 3: Define States and Transitions
-
-**States:**
-- Represent stable conditions
-- Have associated events
-- Wait for events to trigger transitions
-
-**Transitions:**
-- Execute Python code
-- Set an `outcome` variable
-- Map outcomes to destination states
-
-**Example Transition Code:**
-```python
-# Access variables and FSM instance
-variables = variables  # Dict of instance variables
-model = model  # The fsm.instance object
-env = env  # Odoo environment
-log = log  # Logging function
-
-# Access event data (if available)
-event = variables.get('event', {})
-
-# Your business logic
-if some_condition:
-    outcome = 'success'
-else:
-    outcome = 'failed'
-```
-
-### Step 4: Integrate with Your Model
-
-**Option A: Polymorphic Relationship (Recommended for existing models)**
-
-```python
-class MyModel(models.Model):
-    _name = 'my.model'
-    _inherit = ['my.model']  # Your base model
-    
-    _depend_models = OrderedDict({
-        'fsm.instance': 'fsm_instance_id'
-    })
-    
-    fsm_instance_id = fields.Many2one('fsm.instance', 'FSM Instance')
-    
-    def start_workflow(self):
-        fsm_def = self.env['fsm.definition'].search([
-            ('name', '=', 'My Workflow'),
-            ('state', '=', 'production')
-        ], limit=1)
-        
-        if fsm_def:
-            self.fsm_instance_id = self.env['fsm.instance'].create({
-                'definition_id': fsm_def.id,
-            })
-            self.fsm_instance_id.start()
-```
-
-**Option B: Direct Inheritance (For new models)**
-
-```python
-class MyWorkflowModel(models.Model):
-    _name = 'my.workflow.model'
-    _inherit = ['mail.thread', 'mail.activity.mixin']
-    
-    _depend_models = OrderedDict()  # Empty = model IS the FSM instance
-    
-    # Your business fields
-    # FSM fields (state, current_state_id, etc.) are inherited
-```
-
-### Step 5: Send Events
-
-```python
-# Send event to FSM instance
 instance.send_event({
-    'name': 'event_name',
-    'data': 'your_data'
+    'name': 'payment_received',
+    'payment_id': payment_id,
+    'amount': amount,
 })
-
-# Events are processed asynchronously via numa_asynch_exec
-# Check numa.asynch.job for execution status
 ```
 
-### Step 6: Monitor Execution
-
-- Open the FSM instance form view
-- View the visual diagram with current state highlighted
-- Inspect `instance_variables` and `intermediate_variables`
-- Check `numa.asynch.job` for event processing status
-- Use chatter messages for execution logs
+Events are processed asynchronously via `numa_asynch_exec`. Status can be monitored in `numa.asynch.job`.
 
 ---
 
-## Advanced Features
+## 6. Getting Started
 
-### Global Events
+### 6.1 Install Dependencies
 
-Global events are available in any state. They're useful for common handlers like `timeout`, `cancel`, or `abort`.
+Ensure these modules are installed: `numa_poly`, `numa_asynch_exec`, `mail`, `website`.
 
-**How to Use:**
+### 6.2 Create an FSM Definition
 
-1. **Mark a state as global** in the UI schema (requires frontend support) or set `is_global: true` in JSON:
+1. Go to **FSM → Definitions** and create a new record.
+2. Open the **Designer** tab.
+3. Add nodes: double-click the canvas for State, Transition, End; ensure there is exactly one Start.
+4. For each **state**, define **events** (names) and connect each event to a **transition**.
+5. For each **transition**, add **Python code** that sets an outcome, and add **outcomes** (e.g. `success`, `failure`). Connect each outcome to a state or End.
+6. Save; the definition is compiled to `json_compiled_definition`.
+7. Use **Validate** to check connectivity, then set the definition to Test or Production.
 
-```json
-{
-  "nodes": [
-    {
-      "id": "global_state_1",
-      "type": "state",
-      "label": "Global Events",
-      "is_global": true,
-      "events": [
-        {"name": "timeout", "target_transition_id": "timeout_transition"},
-        {"name": "cancel", "target_transition_id": "cancel_transition"}
-      ]
-    }
-  ]
-}
-```
+### 6.3 Create and Start an Instance
 
-2. **Priority handling**: If an event exists in both current state and global state, the current state handler takes priority.
-
-### Timers
-
-Schedule events to fire at specific times:
+From your model or directly:
 
 ```python
-# In transition code
-# Start a timer that fires in 5 minutes
-model.start_timer({
-    'name': 'timeout',
-    'action': 'expire'
-}, delay=300)  # 300 seconds = 5 minutes
-
-# Start a timer for a specific datetime
-from odoo import fields
-target_time = fields.Datetime.now() + timedelta(hours=1)
-model.start_timer({
-    'name': 'reminder',
-    'message': 'Reminder notification'
-}, at=target_time)
-
-# Stop a specific timer
-model.stop_timer('timeout')
-
-# Stop all timers
-model.stop_all_timers()
+instance = env['fsm.instance'].create({
+    'definition_id': definition.id,
+    'name': 'MY-INSTANCE-001',
+})
+instance.start()
 ```
 
-### Variable Management
+Optionally pass initial context via variables in a first transition (e.g. from Start to a transition that sets `variables['order_id'] = ...` from a linked record).
 
-FSM instances maintain two types of variables:
-
-**Instance Variables** (`instance_variables`):
-- Persistent across states
-- Updated atomically when chain completes
-- Accessible in all transitions
-
-**Intermediate Variables** (`intermediate_variables`):
-- Temporary during transition chains
-- Reset after chain completion
-- Used for transactional execution
+### 6.4 Send Events
 
 ```python
-# In transition code
-# Access instance variables
-order_id = variables.get('order_id')
-customer_name = variables.get('customer_name')
-
-# Modify variables (will be persisted after chain completes)
-variables['order_id'] = 123
-variables['processed_count'] = variables.get('processed_count', 0) + 1
-
-# Access event data
-event = variables.get('event', {})
-event_name = event.get('name')
-event_data = event.get('data')
-```
-
-### Debugging
-
-**Step-by-Step Execution:**
-- Set `debug_mode` to `'step_by_step'` on FSM instance
-- Execution will pause at each transition
-- Use "Next Step" button to proceed
-
-**Breakpoints:**
-- Mark transitions as breakpoints in the definition
-- Execution pauses automatically at breakpoints
-
-**Logging:**
-```python
-# In transition code
-log("Processing order...")
-log(f"Order ID: {variables.get('order_id')}")
-
-# Logs appear in instance chatter
+instance.send_event({'name': 'event_name', 'key': 'value'})
 ```
 
 ---
 
-## Examples
+## 7. Advanced Features
 
-### Example 1: Document Approval Workflow
+### 7.1 Global State
 
-```python
-# FSM Definition Structure:
-# - State: "Draft" → Event: "submit" → Transition: "Validate" → State: "Pending Review"
-# - State: "Pending Review" → Event: "approve" → Transition: "Approve" → State: "Approved"
-# - State: "Pending Review" → Event: "reject" → Transition: "Reject" → State: "Rejected"
-# - Global State → Event: "cancel" → Transition: "Cancel" → State: "Cancelled"
+One state in the definition can be marked as **global** (`is_global: true` in the node). Its events are then available from any current state. If the same event exists in the current state and in the global state, the current state’s handler is used. Use global state for events like `timeout`, `cancel`, or `abort`.
 
-# Document Model
-class Document(models.Model):
-    _name = 'document'
-    
-    _depend_models = OrderedDict({
-        'fsm.instance': 'fsm_instance_id'
-    })
-    
-    name = fields.Char('Document Name')
-    fsm_instance_id = fields.Many2one('fsm.instance', 'Workflow')
-    state = fields.Char('State', compute='_compute_state')
-    
-    def _compute_state(self):
-        for rec in self:
-            if rec.fsm_instance_id and rec.fsm_instance_id.current_state_id:
-                # Get state label from definition
-                compiled = json.loads(rec.fsm_instance_id.definition_id.json_compiled_definition)
-                nodes = compiled.get('nodes', {})
-                current = nodes.get(rec.fsm_instance_id.current_state_id, {})
-                rec.state = current.get('label', 'Unknown')
-            else:
-                rec.state = 'Draft'
-    
-    def action_submit(self):
-        if not self.fsm_instance_id:
-            self._start_workflow()
-        self.fsm_instance_id.send_event({'name': 'submit'})
-    
-    def action_approve(self):
-        self.fsm_instance_id.send_event({'name': 'approve'})
-    
-    def action_reject(self):
-        self.fsm_instance_id.send_event({
-            'name': 'reject',
-            'reason': self.env.context.get('rejection_reason')
-        })
-    
-    def _start_workflow(self):
-        fsm_def = self.env['fsm.definition'].search([
-            ('name', '=', 'Document Approval'),
-            ('state', '=', 'production')
-        ], limit=1)
-        
-        self.fsm_instance_id = self.env['fsm.instance'].create({
-            'definition_id': fsm_def.id,
-            'instance_variables': {'document_id': self.id}
-        })
-        self.fsm_instance_id.start()
-```
+### 7.2 Timers
 
-### Example 2: Onboarding Workflow with Steps
+- **Start:** In transition code, call `model.start_timer(event_dict, delay=seconds)` or `model.start_timer(event_dict, at=datetime)`.
+- **Stop:** `model.stop_timer('event_name')` or `model.stop_all_timers()`.
+- Timers are processed every second by a task started via `post_init_hook`. When `trigger_at` is reached, the event is sent to the instance and the timer is removed.
 
-```python
-# Onboarding Model
-class Onboarding(models.Model):
-    _name = 'onboarding'
-    
-    _depend_models = OrderedDict({
-        'fsm.instance': 'fsm_instance_id'
-    })
-    
-    name = fields.Char('Onboarding Name')
-    partner_id = fields.Many2one('res.partner', 'Partner')
-    fsm_instance_id = fields.Many2one('fsm.instance', 'Workflow')
-    current_step = fields.Char('Current Step', compute='_compute_current_step')
-    
-    def _compute_current_step(self):
-        for rec in self:
-            if rec.fsm_instance_id:
-                # Extract step from instance variables
-                rec.current_step = rec.fsm_instance_id.instance_variables.get('current_step', 'Not Started')
-    
-    def start_onboarding(self):
-        fsm_def = self.env['fsm.definition'].search([
-            ('name', '=', 'User Onboarding'),
-            ('state', '=', 'production')
-        ], limit=1)
-        
-        self.fsm_instance_id = self.env['fsm.instance'].create({
-            'definition_id': fsm_def.id,
-            'instance_variables': {
-                'onboarding_id': self.id,
-                'partner_id': self.partner_id.id,
-                'current_step': 'Initial Setup'
-            }
-        })
-        self.fsm_instance_id.start()
-    
-    def complete_step(self, step_name):
-        self.fsm_instance_id.send_event({
-            'name': 'step_completed',
-            'step': step_name
-        })
-```
+### 7.3 Variable Lifecycle
 
-### Example 3: Subscription Management
+- **Instance variables:** Persisted when a transition chain reaches a state or end node. Available in the next transition as the initial `variables` (or in `instance_variables` on the instance).
+- **Intermediate variables:** Used only during the current chain; after the chain completes, they overwrite `instance_variables` for the new state.
 
-```python
-# Subscription Model
-class Subscription(models.Model):
-    _name = 'subscription'
-    
-    _depend_models = OrderedDict({
-        'fsm.instance': 'fsm_instance_id'
-    })
-    
-    name = fields.Char('Subscription')
-    partner_id = fields.Many2one('res.partner', 'Customer')
-    state = fields.Selection([
-        ('trial', 'Trial'),
-        ('active', 'Active'),
-        ('suspended', 'Suspended'),
-        ('expired', 'Expired')
-    ])
-    fsm_instance_id = fields.Many2one('fsm.instance', 'Subscription FSM')
-    
-    def start_trial(self):
-        """Start subscription trial"""
-        if not self.fsm_instance_id:
-            self._init_fsm()
-        self.fsm_instance_id.send_event({'name': 'start_trial'})
-    
-    def activate_subscription(self):
-        """Activate subscription after trial"""
-        self.fsm_instance_id.send_event({'name': 'activate'})
-    
-    def process_renewal(self):
-        """Process subscription renewal"""
-        self.fsm_instance_id.send_event({
-            'name': 'renew',
-            'renewal_period': 'monthly'
-        })
-    
-    def _init_fsm(self):
-        fsm_def = self.env['fsm.definition'].search([
-            ('name', '=', 'Subscription Management'),
-            ('state', '=', 'production')
-        ], limit=1)
-        
-        self.fsm_instance_id = self.env['fsm.instance'].create({
-            'definition_id': fsm_def.id,
-            'instance_variables': {
-                'subscription_id': self.id,
-                'partner_id': self.partner_id.id
-            }
-        })
-        self.fsm_instance_id.start()
-```
+### 7.4 Debugging
+
+- **Step-by-step:** Set the instance’s `debug_mode` to `step_by_step`; execution pauses after each transition. Use “Next Step” / “Continue” in the UI.
+- **Breakpoints:** Mark a transition as a breakpoint in the definition; execution pauses when that transition is about to run.
+- **Logs:** Use `log("message")` in transition code; messages appear in the instance’s chatter.
 
 ---
 
-## Best Practices
+## 8. Examples
 
-### 1. FSM Definition Design
+### 8.1 Document Approval
 
-- **Keep states focused**: Each state should represent a clear business condition
-- **Minimize state count**: Too many states make workflows hard to understand
-- **Use meaningful names**: State and event names should be self-explanatory
-- **Document transitions**: Add comments in transition code explaining logic
-- **Test thoroughly**: Use test instances before moving to production
+- States: Draft → (submit) → Pending Review → (approve → Approved | reject → Rejected). Global event: cancel → Cancelled.
+- Store `document_id` (or `res_model`/`res_id`) in variables when starting. In transitions, load the document with `env[res_model].browse(res_id)` and update its state or post messages.
 
-### 2. Integration Patterns
+### 8.2 Order Processing with Payment
 
-- **Polymorphic relationships**: Use for existing models that need FSM capabilities
-- **Direct inheritance**: Use for new models that are primarily state machines
-- **One FSM per business object**: Don't create multiple FSMs for the same entity
-- **Lifecycle management**: Create FSM instances when objects are created, clean up when deleted
+- When the order is confirmed, create an FSM instance and call `start()`; send `order_confirmed`. Store `order_id` (and optionally `partner_id`) in the first transition or when creating the instance (e.g. via a default or a start transition).
+- When payment is received (webhook or button), call `instance.send_event({'name': 'payment_received', 'amount': ..., 'payment_id': ...})`. Transition code can update the order and set outcome `success` or `failed`.
 
-### 3. Event Handling
+### 8.3 Timeout with Timer
 
-- **Use global events** for common handlers (timeout, cancel, abort)
-- **Keep event names consistent** across your application
-- **Include relevant data** in event payloads
-- **Handle missing handlers** gracefully (check logs)
-
-### 4. Variable Management
-
-- **Use instance_variables** for persistent data
-- **Use intermediate_variables** only for temporary calculations
-- **Document variable structure** in FSM definition
-- **Avoid large data** in variables (store IDs, not full records)
-
-### 5. Timer Usage
-
-- **Clean up timers**: Always stop timers when no longer needed
-- **Use specific event names**: Make timer events descriptive
-- **Consider performance**: Too many active timers can impact system
-- **Handle timer expiration**: Ensure handlers exist for timer events
-
-### 6. Error Handling
-
-- **Set outcomes properly**: Always set `outcome` in transition code
-- **Log errors**: Use `log()` function for debugging
-- **Handle exceptions**: Wrap risky operations in try-except
-- **Rollback on errors**: Instance state is preserved on errors
-
-### 7. Performance
-
-- **Minimize transition code**: Keep Python code in transitions concise
-- **Use async processing**: Events are already async, leverage it
-- **Batch operations**: Process multiple instances when possible
-- **Monitor job queue**: Watch `numa.asynch.job` for backlog
+- In a “Waiting” state, a transition can start a timer: `model.start_timer({'name': 'timeout'}, delay=600)` and set outcome `waiting`. When the timer fires, the instance receives the event `timeout`. Handle it in the same state (e.g. “go to expired”) or in the global state.
 
 ---
 
-## Troubleshooting
+## 9. Best Practices
 
-### Events Not Processing
+- **Design:** Keep states and outcomes clearly named; document transition code and variable usage.
+- **Outcome:** Always set exactly one outcome in every transition; ensure that outcome is connected in the graph.
+- **Variables:** Store IDs and small data in `variables`; avoid storing large objects. Use `res_model`/`res_id` when the same FSM can work with different models.
+- **Events:** Include relevant payload in the event dict; use it read-only in transition code.
+- **Timers:** Stop timers when they are no longer needed (e.g. when leaving the state that started them).
+- **Errors:** Use try/except and `log()` in transition code where useful; uncaught exceptions abort the chain and set the instance to `error`.
+- **Testing:** Use a Test definition and step-by-step debugging before promoting to Production.
 
-**Symptoms**: Events are sent but not processed.
+---
 
-**Solutions**:
-1. Check `numa.asynch.job` model for pending/running jobs
-2. Verify `numa_asynch_exec` module is installed and running
-3. Check logs for error messages
-4. Ensure FSM instance is in `running` state
+## 10. Troubleshooting
 
-### Timers Not Firing
-
-**Symptoms**: Timers created but events never trigger.
-
-**Solutions**:
-1. Verify `_process_timers()` task is running (check `numa.asynch.job`)
-2. Check timer `trigger_at` is in the past
-3. Ensure `post_init_hook` ran during module installation
-4. Check logs for timer processing errors
-
-### Global Events Not Working
-
-**Symptoms**: Global event handlers not found.
-
-**Solutions**:
-1. Verify state is marked as global (`is_global: true` in JSON)
-2. Check `global_state_id` exists in compiled definition
-3. Ensure event name matches exactly (case-sensitive)
-4. Check that current state doesn't have a handler (priority system)
-
-### Polymorphic Relationship Issues
-
-**Symptoms**: Cannot access related model through polymorphic relationship.
-
-**Solutions**:
-1. Verify `_depend_models` is correctly defined
-2. Ensure field name matches in `_depend_models` mapping
-3. Check that related model exists and is accessible
-4. Use `hasattr()` to check for polymorphic methods before calling
-
-### Transition Code Errors
-
-**Symptoms**: Transitions fail with Python errors.
-
-**Solutions**:
-1. Check transition code syntax
-2. Verify all variables are defined before use
-3. Use `log()` to debug variable values
-4. Check instance chatter for error messages
-5. Enable step-by-step debugging to isolate issues
+| Issue | Checks |
+|-------|--------|
+| Events not processed | Confirm instance is `running`; check `numa.asynch.job` for pending/failed jobs; ensure `numa_asynch_exec` is installed and workers are running. |
+| Wrong or no outcome | Ensure transition code sets `outcome` (or `set_outcome(...)`); ensure that outcome is connected to a state or end in the diagram. |
+| Timers not firing | Verify the timer processor task is running (e.g. `numa.asynch.job` for `fsm.timer._process_timers`); check `trigger_at` is in the past; confirm `post_init_hook` ran. |
+| Global event not found | Ensure one state has `is_global: true` and the event is defined there; event names are case-sensitive; current state handler takes priority. |
+| Transition code error | Check syntax and that only injected globals are used; use `log()` to inspect variables; run in step-by-step mode to isolate the failing transition. |
+| Variables not persisting | Variables are written to the instance only when the chain reaches a state or end node; if the chain raises an exception, updates are not saved. |
 
 ---
 
 ## Additional Resources
 
-- **Module Repository**: Check the module's source code for examples
-- **numa_poly Documentation**: Understand polymorphic inheritance patterns
-- **numa_asynch_exec Documentation**: Learn about asynchronous execution
-- **Odoo Development Documentation**: Python and ORM best practices
+- [README.md](README.md) — Overview and documentation index.
+- [docs/TRANSITION_CODE_REFERENCE.md](docs/TRANSITION_CODE_REFERENCE.md) — Quick reference for transition code globals and methods.
+- [numa_fsm_documentation.md](numa_fsm_documentation.md) — Legacy schema and graph-first notes.
+- **Dependencies:** `numa_poly`, `numa_asynch_exec`, Odoo `mail`, `website`.
 
----
-
-**Version**: 18.0  
-**Last Updated**: Current implementation status as of latest commits  
-**Module**: numa_fsm  
-**Dependencies**: numa_poly, numa_asynch_exec, mail, website
+**Module:** numa_fsm · **Version:** 18.0

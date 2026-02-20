@@ -1,88 +1,59 @@
-NUMA FSM — Graph-First Finite State Machines for Odoo
+# Numa FSM — Finite State Machine Engine for Odoo
 
-Overview
-`numa_fsm` is a Finite State Machine (FSM) engine for Odoo that combines an intuitive visual designer with the full power and flexibility of Python. Developers and functional users can design the topology of a workflow visually, while keeping all decision logic in concise Python snippets.
+**Odoo 18.0** | LGPL-3 | NUMA Extreme Systems
 
-This release introduces the Graph-First paradigm with an Outcome-based execution engine: the Python code determines what happened (the outcome), and the visual graph decides where to go next (the target state). This separation makes workflows easier to reason about, maintain, and evolve.
+---
 
-Visual Designer
-A new OWL field widget (`fsm_diagram`) provides a Canvas to build FSMs via Drag & Drop:
-- Add States (rectangles) and Decisions/Transitions (diamonds)
-- Connect State → Decision to model an event
-- Connect Decision → State to model an outcome mapping
-- Pan and Zoom to navigate complex graphs
-- Edit properties in a sidebar: state name/subtype, decision event name, Python code, and outcomes
+## 1. Overview
 
-The designer persists the visual layout (positions, zoom, connections) in the model field `json_ui_schema`. A Save action also compiles the visual graph into an executable logic schema (`json_logic_schema`) consumed by the backend engine.
+**Numa FSM** is a finite state machine (FSM) engine for Odoo that combines a visual, graph-first designer with Python transition code. Workflows are designed in a drag-and-drop diagram (states, transitions, events, outcomes); all decision logic lives in short Python snippets that run in a controlled environment.
 
-Logic & Outcomes (The Key Concept)
-Separation of concerns:
-- The Graph describes topology and routing between states.
-- Python code analyzes data and sets an outcome string.
-- The Graph maps the outcome to a destination state.
+**Core principle:** The graph defines *where* the workflow can go; the transition code defines *what* happened (the outcome). The engine then routes to the state mapped to that outcome.
 
-The Golden Rule:
-"Python code decides WHAT happened (Outcome), the Graph decides WHERE to go."
+### 1.1 Key features
 
-Example:
-```
-# OLD WAY (Deprecated)
-# instance.change_state('done')
+| Feature | Description |
+|--------|-------------|
+| **Visual designer** | OWL-based canvas: states, transitions, start/end nodes; connections define events and outcomes. |
+| **Outcome-based execution** | Transition code sets an `outcome` (or uses `set_outcome()`); the graph maps outcomes to target states. |
+| **Asynchronous events** | Events are processed via `numa_asynch_exec` (persisted, retriable, non-blocking). |
+| **Timers** | Schedule events to fire at a given time; timer processor runs every second. |
+| **Global state** | One optional global state can define events available in *any* current state. |
+| **Transactional execution** | A chain of transitions runs on a copy of variables; instance state is updated only when the chain reaches a state or end node. |
+| **Debugging** | Step-by-step mode, breakpoints on transitions, and chatter logs. |
+| **Polymorphic integration** | Built on `numa_poly`; any model can hold an FSM instance via a Many2one. |
 
-# NEW WAY
-# Logic analysis...
-if condition:
-    outcome = 'success'
-else:
-    outcome = 'retry'
-# The visual graph maps 'success' -> State B, and 'retry' -> State A
-```
+### 1.2 Dependencies
 
-At runtime, the FSM engine executes the Python snippet associated to the (state, event). The snippet must set an `outcome` variable (or call `set_outcome('name')`). The engine then looks up the `outcomes` mapping for that transition and changes the instance state automatically.
+- **Odoo modules:** `base`, `mail`, `numa_poly`, `numa_asynch_exec`, `website`  
+- **License:** LGPL-3  
 
-Field Reference
-- `json_ui_schema` (Text)
-  - Stores visual layout and topology for the editor (nodes, edges, transform).
-  - Example shape:
-    ```
-    {
-      "nodes": [
-        {"id": "state_init", "x": 40, "y": 200, "type": "state", "label": "init"},
-        {"id": "dec_start",  "x": 260, "y": 190, "type": "decision", "label": "start"},
-        {"id": "state_done", "x": 460, "y": 200, "type": "state", "label": "done"}
-      ],
-      "edges": [
-        {"id": "e1", "source": "state_init", "target": "dec_start", "label": ""},
-        {"id": "e2", "source": "dec_start",  "target": "state_done", "label": "success"}
-      ],
-      "transform": {"x": 0, "y": 0, "k": 1}
-    }
-    ```
+---
 
-- `json_logic_schema` (Text)
-  - Stores the executable transitions for the Outcome engine. The editor derives this from the graph.
-  - Structure:
-    ```
-    {
-      "states": { "init": {}, "done": {} },
-      "transitions": {
-        "<source_state>": {
-          "<event_name>": {
-            "code": "# python...\noutcome = 'success'",
-            "outcomes": {
-              "success": "<target_state_A>",
-              "failure": "<target_state_B>"
-            }
-          }
-        }
-      }
-    }
-    ```
+## 2. Documentation index
 
-Using the Engine
-1) In your `fsm.definition`, design the graph in the Designer tab and Save.
-2) At runtime, call `fsm.instance.consume_event({"name": "your_event"})`.
-3) The engine executes the transition code for the current state and event. Based on `outcome`, it routes to the mapped target state.
+| Document | Purpose |
+|----------|---------|
+| [README.md](README.md) | This file: overview and quick links. |
+| [USER_GUIDE.md](USER_GUIDE.md) | End-to-end user and developer guide: concepts, designer, **transition code** (objects, safety, examples), integration, timers, debugging. |
+| [docs/TRANSITION_CODE_REFERENCE.md](docs/TRANSITION_CODE_REFERENCE.md) | Quick reference: globals available in transition code, instance methods, and minimal examples. |
+| [numa_fsm_documentation.md](numa_fsm_documentation.md) | Legacy/graph-first paradigm and schema notes. |
 
-Backward Compatibility
-If `json_logic_schema` is empty, the engine falls back to the legacy compiled definition (`json_compiled_definition`), preserving existing workflows while you migrate to Graph-First.
+---
+
+## 3. Quick start
+
+1. **Create an FSM definition:** FSM → Definitions → New → Designer tab. Add nodes (State, Transition, End), connect them, and add Python code to each transition. Set **outcomes** on transitions and connect each outcome to a target state (or end).
+2. **Validate and promote:** Use “Validate” to check connectivity, then set the definition to Test or Production.
+3. **Create an instance:** From your model (or directly), create an `fsm.instance` with `definition_id` and call `start()`.
+4. **Send events:** Call `instance.send_event({'name': 'event_name', ...})`; events are processed asynchronously. In transition code, use the provided globals (`model`, `env`, `variables`, `log`, `set_outcome`, etc.) and set `outcome` (or `set_outcome('...')`) so the engine can route correctly.
+
+For transition code rules, available objects, and examples, see [USER_GUIDE.md § Transition code](USER_GUIDE.md#4-transition-code-reference) and [docs/TRANSITION_CODE_REFERENCE.md](docs/TRANSITION_CODE_REFERENCE.md).
+
+---
+
+## 4. License and author
+
+- **Author:** NUMA Extreme Systems  
+- **Website:** [https://www.numaes.com](https://www.numaes.com)  
+- **License:** LGPL-3  
