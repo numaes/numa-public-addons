@@ -28,10 +28,11 @@
 NUMA Background Job
 ===================
 
-This module adds the posibility to trigger background jobs, in order
-to process long processes without blocking the UI.
-
-
+Run long-running tasks in a background thread so the UI is not blocked.
+Create a job with model, res_id, and method; after commit, a worker thread
+calls the method and passes the job record for progress updates and completion.
+Jobs are visible in the backend; users can monitor progress and abort.
+See README.md and USER_GUIDE.md for usage and developer examples.
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
