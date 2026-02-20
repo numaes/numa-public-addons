@@ -1,6 +1,6 @@
 # User Guide: NUMA Real-Time Observability
 
-This guide provides comprehensive examples and best practices for using the Real-Time Observability mixin in both server-side (Python) and frontend (JavaScript) contexts.
+This guide provides usage examples and recommended practices for the Real-Time Observability mixin in server-side (Python) and frontend (JavaScript) contexts. For an overview, installation, and API summary, see [README.md](README.md). For implementation details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@ This guide provides comprehensive examples and best practices for using the Real
 
 ### Basic Example
 
-The simplest way to use the mixin is to apply it to your model and call `real_time_notify()`:
+Apply the mixin to your model and call `real_time_notify()` after the relevant business logic:
 
 ```python
 from odoo import models, fields, api
@@ -43,7 +43,7 @@ class ProjectTask(models.Model):
 
 ### Example: State Change Notifications
 
-Notify when a record's state changes:
+Publish notifications when a record’s state changes:
 
 ```python
 class SaleOrder(models.Model):
@@ -80,7 +80,7 @@ class SaleOrder(models.Model):
 
 ### Example: Conditional Notifications
 
-Send notifications only when certain conditions are met:
+Use the `condition` parameter to send notifications only when specified conditions are met:
 
 ```python
 class StockPicking(models.Model):
@@ -106,7 +106,7 @@ class StockPicking(models.Model):
 
 ### Example: Batch Operations
 
-Notify about batch operations:
+Publish notifications for batch operations; the mixin supports recordsets (one notification per record, or a single summary event from one record):
 
 ```python
 class AccountMove(models.Model):
@@ -145,9 +145,9 @@ class AccountMove(models.Model):
         return True
 ```
 
-### Example: Listening to Notifications (Python)
+### Example: Consuming Notifications (Python)
 
-While the mixin is primarily for sending notifications, you can also listen to them in Python:
+The addon only sends notifications; consumption on the backend depends on your bus listener. The following illustrates how to process messages once they are received:
 
 ```python
 from odoo import models
@@ -159,8 +159,7 @@ class NotificationListener(models.Model):
     def process_notification(self, channel, message):
         """
         Process a notification received from the bus.
-        
-        This would typically be called by a bus listener service.
+        Typically invoked by an external bus listener service.
         """
         if channel.startswith('observability/'):
             model_name = channel.replace('observability/', '')
@@ -191,7 +190,7 @@ class NotificationListener(models.Model):
 
 ### Basic Example: Subscribing to Notifications
 
-In your Odoo JavaScript module:
+In an Odoo JavaScript module, subscribe to the model’s channel and handle incoming messages:
 
 ```javascript
 import { bus } from "@web/core/bus/bus";
@@ -234,9 +233,9 @@ export class NotificationListener extends Component {
 }
 ```
 
-### Example: Using Bus Service
+### Example: Using the Bus Service
 
-If you're using Odoo's bus service:
+When using Odoo’s bus service for channel management:
 
 ```javascript
 import { busService } from "@web/core/bus_service";
@@ -280,7 +279,7 @@ export class MyComponent extends Component {
 
 ### Example: Real-Time Dashboard Updates
 
-Update a dashboard in real-time:
+Keep a dashboard in sync with backend events by subscribing to the relevant channel and updating local state:
 
 ```javascript
 import { Component, useState, onMounted, onWillUnmount } from "@odoo/owl";
@@ -349,7 +348,7 @@ export class SalesDashboard extends Component {
 
 ### Example: Real-Time Form Updates
 
-Update a form when related records change:
+Refresh a form or detail view when related records change by subscribing to the model channel and filtering by record ID:
 
 ```javascript
 import { Component, onMounted, onWillUnmount } from "@odoo/owl";
@@ -402,7 +401,7 @@ export class TaskForm extends Component {
 
 ### Pattern 1: State Machine Notifications
 
-Notify on every state transition:
+Publish a notification on every state transition:
 
 ```python
 class WorkflowModel(models.Model):
@@ -429,7 +428,7 @@ class WorkflowModel(models.Model):
 
 ### Pattern 2: User Activity Tracking
 
-Track user actions:
+Publish events when users perform actions (e.g. open, edit):
 
 ```python
 class Document(models.Model):
@@ -453,7 +452,7 @@ class Document(models.Model):
 
 ### Pattern 3: Threshold-Based Notifications
 
-Notify when thresholds are crossed:
+Publish notifications when business thresholds are crossed (e.g. low stock):
 
 ```python
 class Inventory(models.Model):
@@ -504,6 +503,8 @@ class SaleOrder(models.Model):
 
 ### Scenario 2: Conditional Notifications with Complex Logic
 
+Use a callable that combines several conditions:
+
 ```python
 class ProjectTask(models.Model):
     _name = 'project.task'
@@ -530,7 +531,7 @@ class ProjectTask(models.Model):
 
 ### Scenario 3: Frontend Multi-Channel Subscription
 
-Listen to multiple model channels:
+Subscribe to several model channels and route messages to the appropriate handler:
 
 ```javascript
 export class MultiChannelListener extends Component {
@@ -590,7 +591,7 @@ export class MultiChannelListener extends Component {
 
 ### Integration with Background Jobs
 
-Combine with background job notifications:
+Combine the mixin with background job systems by sending notifications when a job starts, progresses, or completes:
 
 ```python
 class LongRunningProcess(models.Model):
@@ -635,7 +636,7 @@ class LongRunningProcess(models.Model):
 
 ### Integration with FSM (Finite State Machine)
 
-Notify on state machine transitions:
+Publish notifications when finite state machine transitions occur:
 
 ```python
 class FSMInstance(models.Model):
@@ -658,33 +659,32 @@ class FSMInstance(models.Model):
 
 ## Best Practices Summary
 
-1. **Always include record ID**: Makes it easy for listeners to fetch full record data
-2. **Use consistent event names**: Follow a naming convention (e.g., `model_action`)
-3. **Keep payloads small**: Include only essential data, listeners can fetch more if needed
-4. **Handle errors gracefully**: The mixin handles sending errors, but ensure listeners handle receiving errors
-5. **Test with real commits**: Notifications only fire after successful commits
-6. **Document your events**: Keep a list of events your model sends and their payloads
-7. **Use conditions wisely**: Don't over-complicate conditions, keep them simple and readable
+1. **Include record ID in payloads** so that listeners can load full record data when needed.
+2. **Use consistent event names** (e.g. `model_action`) and document them.
+3. **Keep payloads small**; include only essential data and let listeners fetch more if required.
+4. **Handle errors in listeners**; the mixin isolates send failures, but subscribers should handle missing or malformed messages.
+5. **Test with real commits**; notifications are sent only after a successful commit.
+6. **Document events and payloads** for each model that uses the mixin.
+7. **Use the `condition` parameter** to avoid sending notifications that no subscriber needs; keep conditions simple and readable.
 
 ## Troubleshooting
 
 ### Notifications Not Appearing
 
-1. Check that the model has the mixin applied
-2. Verify the method is called after a commit
-3. Check Odoo logs for errors
-4. Verify the channel name matches `observability/<model_name>`
+1. Confirm that the model inherits from `real.time.observability.mixin`.
+2. Ensure the code path that calls `real_time_notify()` runs and that the transaction commits.
+3. Check Odoo server logs for validation or send errors.
+4. Verify the subscription channel is `observability/<model_name>`.
 
 ### Frontend Not Receiving Notifications
 
-1. Ensure bus service is properly initialized
-2. Verify channel subscription
-3. Check browser console for errors
-4. Ensure component is mounted when subscribing
+1. Ensure the bus service is initialized and the channel is added if required.
+2. Confirm the component subscribes to the correct channel before events are sent.
+3. Check the browser console for JavaScript errors.
+4. Ensure the subscription is active while the component is mounted.
 
-### Performance Issues
+### Performance
 
-1. Reduce notification frequency if sending too many
-2. Use conditions to filter unnecessary notifications
-3. Keep notification payloads small
-4. Consider batching notifications for bulk operations
+1. Reduce notification frequency or use the `condition` parameter to filter events.
+2. Keep `notification_data` small; avoid large nested structures.
+3. For bulk operations, consider sending a single summary notification instead of one per record where appropriate.

@@ -1,36 +1,50 @@
 # NUMA Real-Time Observability
 
-A powerful Odoo module that provides real-time observability capabilities through a simple mixin pattern. This module enables any Odoo model to send real-time notifications via the Odoo bus system, allowing both server-side and frontend applications to react to model changes and events.
+**Odoo 18.0** | LGPL-3 | NUMA Extreme Systems
 
-## Overview
+---
 
-The `numa_real_time_observability` module provides a mixin (`real.time.observability.mixin`) that can be applied to any Odoo model. When applied, the model gains access to a `real_time_notify()` method that sends notifications to the Odoo bus system with the topic `observability/<model_name>`.
+## 1. Overview
 
-### Key Features
+**NUMA Real-Time Observability** is an Odoo addon that provides a reusable mixin for publishing real-time events from any model via the Odoo bus. It enables server-side and client-side subscribers to react to model changes and business events without polling.
 
-- **Simple Integration**: Apply the mixin to any model with a single line
-- **Post-Commit Safety**: Notifications are only sent after successful database commits
-- **Flexible Data**: Send custom notification data with each event
-- **Model-Specific Channels**: Automatic topic generation per model (`observability/<model_name>`)
-- **Robust Error Handling**: Errors in notification sending don't break main transactions
-- **Frontend & Backend Support**: Listen to notifications from both JavaScript and Python
-- **Data Validation**: Automatic validation of JSON serializable data
-- **Conditional Notifications**: Optional condition-based notification filtering
+The addon introduces the abstract model `real.time.observability.mixin`. Any model that inherits from this mixin gains the method `real_time_notify()`, which schedules a bus notification to be sent **after a successful transaction commit**, ensuring that subscribers only receive events for persisted data.
 
-## Installation
+### 1.1 Key Features
 
-1. Copy the `numa_real_time_observability` module to your Odoo addons directory
-2. Update the app list in Odoo
-3. Install the module through the Apps menu
+| Feature | Description |
+|--------|-------------|
+| **Mixin-based integration** | Apply to any Odoo model with a single inheritance line. |
+| **Post-commit delivery** | Notifications are sent only after a successful database commit. |
+| **Model-scoped channels** | Each model uses a dedicated bus channel: `observability/<model_name>`. |
+| **Custom payloads** | Attach arbitrary, JSON-serializable data to each notification. |
+| **Conditional notifications** | Optional callable to send notifications only when conditions are met. |
+| **Error isolation** | Failures in notification delivery do not affect the main transaction. |
+| **Dual consumption** | Events can be consumed from Python (backend) and JavaScript (frontend). |
 
-### Dependencies
+### 1.2 Compatibility
 
-- `base` (Odoo core)
-- `bus` (Odoo bus system for real-time notifications)
+- **Odoo version:** 18.0  
+- **Dependencies:** `base`, `bus`  
+- **License:** LGPL-3  
 
-## Quick Start
+---
 
-### 1. Apply the Mixin to Your Model
+## 2. Installation
+
+1. Place the `numa_real_time_observability` module in your Odoo addons path.
+2. Update the application list (e.g. Apps → Update Apps List).
+3. Install **NUMA Real-Time Observability** from the Apps menu.
+
+No additional configuration is required. Security is defined in `security/security.xml` (no record rules are required for the abstract mixin).
+
+---
+
+## 3. Quick Start
+
+### 3.1 Enabling observability on a model
+
+Inherit from `real.time.observability.mixin` and call `real_time_notify()` after relevant operations:
 
 ```python
 from odoo import models, fields
@@ -38,159 +52,120 @@ from odoo import models, fields
 class SaleOrder(models.Model):
     _name = 'sale.order'
     _inherit = ['sale.order', 'real.time.observability.mixin']
-    
-    state = fields.Selection([
-        ('draft', 'Draft'),
-        ('sent', 'Sent'),
-        ('done', 'Done'),
-    ])
-    
+
     def action_confirm(self):
         result = super().action_confirm()
-        # Send notification after successful commit
         self.real_time_notify({
             'event': 'order_confirmed',
             'state': self.state,
-            'amount_total': self.amount_total,
+            'amount_total': float(self.amount_total),
         })
         return result
 ```
 
-### 2. Listen to Notifications (Backend - Python)
+### 3.2 Subscribing on the frontend (JavaScript)
 
-```python
-from odoo import models
-
-class NotificationHandler(models.Model):
-    _name = 'notification.handler'
-    
-    def setup_listener(self):
-        # In a cron job or background process
-        bus_model = self.env['bus.bus']
-        # Listen to all observability channels
-        # (Implementation depends on your bus listener setup)
-        pass
-```
-
-### 3. Listen to Notifications (Frontend - JavaScript)
+Subscribe to the model’s channel and handle incoming messages:
 
 ```javascript
-// In your Odoo JavaScript module
 import { bus } from "@web/core/bus/bus";
 
-// Subscribe to notifications
-bus.subscribe("observability/sale.order", (notification) => {
-    console.log("Sale order notification:", notification);
-    const { id, notification_data } = notification;
-    // Handle the notification
-    if (notification_data.event === 'order_confirmed') {
-        // Update UI, show notification, etc.
+bus.subscribe("observability/sale.order", (message) => {
+    const { id, notification_data } = message;
+    if (notification_data.event === "order_confirmed") {
+        // Update UI, refresh data, or show a notification
     }
 });
 ```
 
-## Architecture
+### 3.3 Subscribing on the backend (Python)
 
-### Notification Flow
+Consumption on the backend depends on your bus listener implementation. Messages are sent to the channel `observability/<model_name>` with payload type `notification` and a body containing `id` and `notification_data`.
 
-1. **Model Method Call**: Your model calls `real_time_notify(notification_data)`
-2. **Data Validation**: The mixin validates that `notification_data` is JSON serializable
-3. **Post-Commit Hook**: A post-commit hook is registered to send the notification
-4. **Transaction Commit**: The main transaction commits successfully
-5. **Notification Sent**: After commit, the notification is sent to the bus
-6. **Bus Delivery**: The bus delivers the notification to all subscribers
+---
 
-### Channel Naming
+## 4. API Reference
 
-Notifications are sent to channels following this pattern:
-```
-observability/<model_name>
-```
+### 4.1 Method: `real_time_notify(notification_data=False, condition=None)`
 
-For example:
-- `observability/sale.order` for sale orders
-- `observability/account.move` for invoices
-- `observability/res.partner` for partners
+Schedules a bus notification to be sent after the current transaction is committed successfully. Supports recordsets; one notification per record is scheduled (subject to optional `condition`).
 
-### Message Format
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `notification_data` | `dict` or `False` | No | Payload to attach to the notification. Must be JSON-serializable. Default: `{}`. |
+| `condition` | `callable(record) -> bool` | No | If provided, the notification is sent only for records for which `condition(record)` is truthy. |
 
-Each notification message contains:
+**Returns:** `None`
+
+**Behaviour:**
+
+- Records without an ID (e.g. new, unsaved) are skipped; a warning is logged.
+- If `notification_data` is not a dict, it is wrapped as `{'data': notification_data}`; it must still be JSON-serializable.
+- If serialization fails, an error is logged and no notification is scheduled.
+- Notifications are sent via a post-commit hook; delivery errors are logged and do not affect the main transaction.
+
+### 4.2 Channel and message format
+
+- **Channel:** `observability/<model_name>` (e.g. `observability/sale.order`).
+- **Message type:** `notification`.
+- **Message body:**
 
 ```json
 {
-    "id": 123,
-    "notification_data": {
-        "event": "order_confirmed",
-        "state": "done",
-        "amount_total": 1500.00
-    }
+    "id": <integer record id>,
+    "notification_data": { ... }
 }
 ```
 
-## Advanced Usage
+`notification_data` is the same dict passed to `real_time_notify()` (or its wrapped form).
 
-### Conditional Notifications
+---
 
-Send notifications only when certain conditions are met:
+## 5. Architecture Summary
 
-```python
-def action_confirm(self):
-    result = super().action_confirm()
-    
-    # Only notify if order amount is above threshold
-    self.real_time_notify(
-        notification_data={'event': 'order_confirmed'},
-        condition=lambda record: record.amount_total > 1000
-    )
-    return result
-```
+1. **Call:** The model calls `real_time_notify(notification_data, condition)`.
+2. **Validation:** The mixin ensures `notification_data` is JSON-serializable and prepares one message per record (respecting `condition`).
+3. **Scheduling:** For each qualifying record, a post-commit hook is registered on the current cursor.
+4. **Commit:** The main transaction commits.
+5. **Delivery:** After commit, the hook runs in a new cursor, re-checks that the record exists, and calls `bus.bus._sendone(channel, 'notification', message)`.
+6. **Consumption:** Subscribers (frontend or backend) receive the message on the corresponding `observability/<model_name>` channel.
 
-### Batch Operations
+For implementation details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-The mixin works with recordsets:
+---
 
-```python
-orders = self.env['sale.order'].browse([1, 2, 3])
-orders.real_time_notify({
-    'event': 'batch_processed',
-    'count': len(orders)
-})
-```
+## 6. Best Practices
 
-Each record in the recordset will send its own notification with the same `notification_data`.
+- **Payload size:** Keep `notification_data` small; subscribers can load full records if needed.
+- **Event naming:** Use clear, consistent event names (e.g. `order_confirmed`, `task_completed`).
+- **Context:** Include IDs and minimal context (e.g. state, type) so listeners can act without extra queries when possible.
+- **Conditions:** Use the `condition` parameter to avoid sending notifications that no subscriber needs.
+- **Testing:** Verify behaviour in tests that perform real commits; notifications are only sent after commit.
 
-## Best Practices
+---
 
-1. **Keep notification_data small**: Large payloads can impact performance
-2. **Use meaningful event names**: Make it easy to identify event types
-3. **Include relevant context**: Add IDs, states, or other context that listeners might need
-4. **Handle errors gracefully**: The mixin handles errors, but ensure your listeners do too
-5. **Test with real commits**: Notifications only fire after successful commits
+## 7. Troubleshooting
 
-## Troubleshooting
+| Issue | Checks |
+|-------|--------|
+| No notifications received | Confirm subscription to `observability/<model_name>`. Ensure the transaction commits and the bus service is running. Check Odoo logs for delivery errors. |
+| Serialization errors | Ensure all values in `notification_data` are JSON-serializable (e.g. use `float()` for `Decimal`, ISO strings for dates). |
+| Notifications for unsaved records | Notifications are skipped for records without an ID; call `real_time_notify()` after the record is committed (e.g. after `create`/`write` in a committed transaction). |
 
-### Notifications Not Received
+---
 
-1. **Check the channel name**: Ensure you're subscribing to `observability/<model_name>`
-2. **Verify commit**: Notifications only send after successful commits
-3. **Check logs**: Look for errors in the Odoo log file
-4. **Verify bus service**: Ensure the bus service is running
+## 8. Documentation Index
 
-### Data Serialization Errors
+| Document | Purpose |
+|----------|---------|
+| [README.md](README.md) | This file: overview, installation, API summary, and architecture summary. |
+| [USER_GUIDE.md](USER_GUIDE.md) | Detailed usage examples (server and client), patterns, and integration scenarios. |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Internal design, data flow, and implementation notes for developers. |
 
-If you see serialization errors:
-- Ensure all data in `notification_data` is JSON serializable
-- Avoid complex objects, use primitives (strings, numbers, lists, dicts)
-- Convert dates/datetimes to strings if needed
+---
 
-## License
+## 9. License and Author
 
-This module is licensed under LGPL-3.
-
-## Author
-
-NUMA Extreme Systems - http://www.numaes.com
-
-## Support
-
-For detailed usage examples and advanced scenarios, see [USER_GUIDE.md](USER_GUIDE.md).
+- **Copyright:** NUMA Extreme Systems  
+- **License:** LGPL-3  
+- **Website:** [http://www.numaes.com](http://www.numaes.com)

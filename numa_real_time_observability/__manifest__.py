@@ -44,7 +44,7 @@ Key Features:
 * Error handling - robust error handling that doesn't break transactions
 * Frontend and backend support - listen to notifications from both sides
 
-For detailed usage examples, see the USER_GUIDE.md file.
+For installation and API reference, see README.md. For usage examples and patterns, see USER_GUIDE.md. For implementation details, see ARCHITECTURE.md.
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
