@@ -6,7 +6,7 @@
             <field name="name">numa.synch.connection.tree</field>
             <field name="model">numa.synch.connection</field>
             <field name="arch" type="xml">
-                <tree string="Synchronization Connections" decoration-muted="not active">
+                <list string="Synchronization Connections" decoration-muted="not active">
                     <field name="name"/>
                     <field name="master_url"/>
                     <field name="slave_token"/>
@@ -14,7 +14,7 @@
                     <field name="sync_interval_number"/>
                     <field name="sync_interval_type"/>
                     <field name="active"/>
-                </tree>
+                </list>
             </field>
         </record>
 

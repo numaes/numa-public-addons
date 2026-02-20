@@ -1,5 +1,5 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_numa_synch_map_user,numa.synch.map - User,model_numa_synch_map,base.group_user,1,1,1,1
-access_numa_synch_rule_user,numa.synch.rule - User,model_numa_synch_rule,base.group_user,1,1,1,1
-access_numa_synch_map_system,numa.synch.map - System,model_numa_synch_map,base.group_system,1,1,1,1
-access_numa_synch_rule_system,numa.synch.rule - System,model_numa_synch_rule,base.group_system,1,1,1,1
+access_numa_synch_map_user,numa.synch.map - User,model_numa_synch_map,,1,1,1,1
+access_numa_synch_rule_user,numa.synch.rule - User,model_numa_synch_rule,,1,1,1,1
+access_numa_synch_map_system,numa.synch.map - System,model_numa_synch_map,,1,1,1,1
+access_numa_synch_rule_system,numa.synch.rule - System,model_numa_synch_rule,,1,1,1,1

@@ -6,13 +6,13 @@
             <field name="name">numa.synch.map.tree</field>
             <field name="model">numa.synch.map</field>
             <field name="arch" type="xml">
-                <tree string="Synchronization Identity Mapping" decoration-muted="not active">
+                <list string="Synchronization Identity Mapping" >
                     <field name="model_name"/>
                     <field name="local_id"/>
                     <field name="remote_id"/>
                     <field name="node_token"/>
                     <field name="last_sync_date"/>
-                </tree>
+                </list>
             </field>
         </record>
 

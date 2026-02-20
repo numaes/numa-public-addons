@@ -6,12 +6,12 @@
             <field name="name">numa.synch.rule.tree</field>
             <field name="model">numa.synch.rule</field>
             <field name="arch" type="xml">
-                <tree string="Synchronization Rules" decoration-muted="not active">
+                <list string="Synchronization Rules" decoration-muted="not active">
                     <field name="name"/>
                     <field name="model_name"/>
                     <field name="direction"/>
                     <field name="active"/>
-                </tree>
+                </list>
             </field>
         </record>
 
@@ -51,9 +51,12 @@
                         </group>
                         <group string="Binary Fields Synchronization">
                             <field name="sync_binary_fields"/>
-                            <field name="binary_max_size_mb" attrs="{'invisible': [('sync_binary_fields', '=', False)]}"/>
-                            <field name="binary_compress" attrs="{'invisible': [('sync_binary_fields', '=', False)]}"/>
-                            <div class="alert alert-warning" role="alert" attrs="{'invisible': [('sync_binary_fields', '=', False)]}">
+                            <field name="binary_max_size_mb"
+                                   invisible="not sync_binary_fields"/>
+                            <field name="binary_compress"
+                                   invisible="not sync_binary_fields"/>
+                            <div class="alert alert-warning" role="alert"
+                                 invisible="not sync_binary_fields">
                                 <p>
                                     <strong>Warning:</strong> Synchronizing binary fields can significantly increase:
                                 </p>
@@ -70,8 +73,10 @@
                         </group>
                         <group string="Computed Fields Synchronization">
                             <field name="sync_computed_fields"/>
-                            <field name="recalculate_computed" attrs="{'invisible': [('sync_computed_fields', '=', False)]}"/>
-                            <div class="alert alert-info" role="alert" attrs="{'invisible': [('sync_computed_fields', '=', False)]}">
+                            <field name="recalculate_computed"
+                                   invisible="not sync_computed_fields"/>
+                            <div class="alert alert-info" role="alert"
+                                 invisible="not sync_computed_fields">
                                 <p>
                                     <strong>Computed Fields:</strong>
                                 </p>
