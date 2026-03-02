@@ -314,6 +314,9 @@ class InvoiceLine(models.Model):
             if not il.move_id.is_invoice(include_receipts=True):
                 continue
 
+            il.price_qty = il.quantity
+            continue
+
             if not il.product_id:
                 il.price_qty = il.quantity
                 il._compute_amount()
@@ -342,6 +345,7 @@ class InvoiceLine(models.Model):
     @api.onchange('price_qty', 'price_unit', 'tax_ids')
     @api.depends('price_qty', 'price_unit', 'tax_ids')
     def _compute_amount(self):
+        return
         for il in self:
             if not il.move_id.is_invoice(include_receipts=True):
                 continue

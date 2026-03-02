@@ -57,7 +57,7 @@
                     <field name="unit_price_uom_id" invisible="1"/>
                 </xpath>
                 <xpath expr="//page[@name='other_info']/group[@id='other_tab_group']" position="after">
-                    <group string="Logistic Information" name="logistic_information" colspan="2">
+                    <group string="Logistic Information" name="logistic_information" colspan="2" invisible="move_type not in ['out_invoice', 'out_refund']">
                         <field name="invoice_weight"/>
                         <field name="invoice_volume"/>
                     </group>
