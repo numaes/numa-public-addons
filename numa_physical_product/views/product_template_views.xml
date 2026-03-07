@@ -17,30 +17,13 @@
                         <field name="volume" />
                         <field name="weight" />
                     </group>
-                    <group name="price_computation" string="Price Computation">
+                    <group name="computation">
+                        <separator string="Price Computation"/>
                         <field name="price_base" />
-                   </group>
-                    <group name="weight_computation" string="Weight Computation">
+                        <separator string="Weight Computation"/>
                         <field name="weight_kind" />
                         <field name="weight_factor" invisible="weight_kind == 'normal'"/>
-                    </group>
-                </xpath>
-            </field>
-        </record>
-
-        <!-- Products variant Form View -->
-        <record id="product_normal_form_view" model="ir.ui.view">
-            <field name="name">product.normal.form</field>
-            <field name="model">product.product</field>
-            <field name="inherit_id" ref="product.product_normal_form_view" />
-            <field name="arch" type="xml">
-                <xpath expr="//group[@name='inventory']/group[@name='weight_computation']" position="inside">
-                    <field name="variant_width" invisible="1"/>
-                    <field name="variant_length" invisible="1" />
-                    <field name="variant_height" invisible="1" />
-                    <field name="variant_surface" invisible="1" />
-                    <field name="variant_volume" invisible="1" />
-                    <field name="variant_weight" invisible="1" />
+                   </group>
                 </xpath>
             </field>
         </record>
