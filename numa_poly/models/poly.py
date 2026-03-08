@@ -1381,12 +1381,25 @@ class PolyBase(BaseModel):
                             if isinstance(spec, dict) and 'fields' in spec:
                                 sub_spec = spec['fields']
                                 if not val:
-                                    values[field_name] = []
+                                    values[field_name] = [] if ('fields' in spec or 'limit' in spec or 'order' in spec) else False
                                 else:
                                     # Recursive call for the relation
-                                    values[field_name] = val.web_read(sub_spec)
+                                    # If it's a many2one, web_read returns a list of one dict, 
+                                    # but we need the dict itself or False.
+                                    res = val.web_read(sub_spec)
+                                    if val._name == record._name or len(val) > 1:
+                                        # It's an x2many (or we're browsing ourselves)
+                                        values[field_name] = res
+                                    else:
+                                        # It's a many2one (length 1)
+                                        values[field_name] = res[0] if res else False
                             else:
-                                values[field_name] = val.ids if val._name == record._name else val.id
+                                if not val:
+                                    values[field_name] = False
+                                else:
+                                    # Standard Odoo behavior for many2one in read() is (id, name) or id
+                                    # but here we are in web_read context.
+                                    values[field_name] = val.id if len(val) <= 1 else val.ids
                         else:
                             values[field_name] = val
                     except Exception:
