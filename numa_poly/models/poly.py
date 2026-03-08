@@ -1435,19 +1435,6 @@ class PolyBase(BaseModel):
     def fields_get(self, allfields=None, attributes=None):
         """
         Get fields definition with inherited fields from dependent models.
-
-        This method extends the standard fields_get() to include fields from
-        all dependent models in the polymorphic hierarchy.
-
-        Args:
-            allfields: Optional list of field names to include. If None, all fields
-                are returned.
-            attributes: Optional list of attribute names to include in the result.
-                If None, all attributes are returned.
-
-        Returns:
-            dict: Dictionary mapping field names to field attribute dictionaries.
-                Includes both local fields and fields inherited from dependent models.
         """
         result = super().fields_get(allfields=allfields, attributes=attributes)
         if self._depend_models is not None and self._depend_models:
@@ -1468,7 +1455,7 @@ class PolyBase(BaseModel):
         Override to avoid ValueError on polymorphic models when a field is not
         found on the current model but might exist in the polymorphic hierarchy.
         """
-        if self._depend_models is None:
+        if self._depend_models is None or not self._depend_models:
             return super()._determine_fields_to_fetch(field_names, ignore_when_in_cache)
 
         # Filter out fields that are not in self._fields
@@ -1480,17 +1467,13 @@ class PolyBase(BaseModel):
         """
         Override web_read to handle polymorphic fields and ensure data consistency.
         """
-        if self._depend_models is None:
+        if self._depend_models is None or not self._depend_models:
             return super().web_read(specification)
 
         # 1. Filter standard fields to avoid ValueError/KeyError in super().web_read
         # We also need to check if the field exists in the pool but maybe not in _fields
         # (Odoo 18 sometimes has dynamic fields in config settings that are not in _fields list but are valid)
         standard_spec = {name: spec for name, spec in specification.items() if name in self._fields or name == 'id'}
-        
-        # If the model is not really polymorphic (just inheriting PolyBase), skip our complex logic
-        if not self._depend_models:
-            return super().web_read(specification)
         
         # Always request 'id' for polymorphic record identification
         if 'id' not in standard_spec:
