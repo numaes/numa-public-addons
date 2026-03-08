@@ -1337,11 +1337,26 @@ class PolyBase(BaseModel):
 
         # 1. We must filter the specification to only include fields present in self._fields.
         # This is strictly necessary to avoid ValueError inside self.read().
+        # We EXCEPT 'active' and other standard fields if they are missing but we want to try anyway.
         new_specification = {
             name: spec
             for name, spec in specification.items()
             if name in self._fields or name == 'id'
         }
+        
+        # If 'active' is missing from self._fields but present in specification, 
+        # it might be because of a pool loading order issue or specific context.
+        # However, for now let's see what's really missing.
+        missing_fields = [f for f in specification if f not in self._fields and f != 'id']
+        if missing_fields:
+            import logging
+            _poly_logger = logging.getLogger('numa_poly.web_read')
+            _poly_logger.warning(f"POLY WEB_READ for {self._name}, missing fields: {missing_fields}")
+            # If standard field 'active' is missing, let's keep it in new_specification anyway
+            # to let super().web_read() handle it if it actually exists (avoiding our hydration to False)
+            for f in ['active', 'is_closed', 'archived', 'state']:
+                if f in specification and f not in new_specification:
+                    new_specification[f] = specification[f]
         
         # 2. To avoid KeyError in super().web_read (Odoo 18 line 126), we must
         # realize that web_read uses the *specification* it received to iterate
@@ -1358,8 +1373,10 @@ class PolyBase(BaseModel):
         # Let's try to ensure super().web_read is as safe as possible.
         try:
             values_list = super().web_read(new_specification)
-        except (ValueError, KeyError):
+        except (ValueError, KeyError) as e:
             # Fallback to manual read if super() fails
+            _poly_logger = logging.getLogger('numa_poly.web_read')
+            _poly_logger.warning(f"POLY WEB_READ super() FAILED for {self._name}: {e}. Falling back to manual read.")
             fields_to_read = list(new_specification) or ['id']
             values_list = self.read(fields_to_read, load=None)
 
@@ -1387,6 +1404,7 @@ class PolyBase(BaseModel):
                         values[field_name] = []
                     else:
                         values[field_name] = False
+                    # _poly_logger.info(f"HYDRATING {field_name} to {values[field_name]} for record {values.get('id')}")
                     
         return values_list
 
