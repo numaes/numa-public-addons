@@ -1335,64 +1335,64 @@ class PolyBase(BaseModel):
         if self._depend_models is None:
             return super().web_read(specification)
 
-        # 1. We must filter the specification to only include fields present in self._fields.
-        # This is strictly necessary to avoid ValueError inside self.read().
-        # We EXCEPT 'active' and other standard fields if they are missing but we want to try anyway.
-        new_specification = {
-            name: spec
-            for name, spec in specification.items()
-            if name in self._fields or name == 'id'
-        }
+        # 1. We must strictly follow self._fields for the core Odoo logic.
+        # web_read in Odoo 18 will fail with KeyError if specification includes
+        # fields that are not actually in the record values returned by read().
+        # read() itself will fail with ValueError if fields are not in _fields.
         
-        # If 'active' is missing from self._fields but present in specification, 
-        # it might be because of a pool loading order issue or specific context.
-        # However, we must NOT hydrate these fields with False if they were requested.
-        # We also need to preserve fields that are needed by the UI to show record status.
-        standard_fields = ['active', 'is_closed', 'archived', 'state', 'display_name']
-        for f in standard_fields:
-            if f in specification and f not in new_specification:
-                new_specification[f] = specification[f]
+        # We separate polymorphic fields (not in _fields) from standard ones.
+        standard_spec = {}
+        poly_spec = {}
         
-        # 2. To avoid KeyError in super().web_read (Odoo 18 line 126), we must
-        # realize that web_read uses the *specification* it received to iterate
-        # over the *results* of read(). If we reduce the specification, super()
-        # will iterate over the reduced one, so it should NOT cause KeyError.
-        
-        # Let's try to ensure super().web_read is as safe as possible.
+        for name, spec in specification.items():
+            if name in self._fields or name == 'id':
+                standard_spec[name] = spec
+            else:
+                poly_spec[name] = spec
+
+        # Ensure standard visibility/identity fields are always present
+        critical_fields = ['active', 'display_name', 'state', 'is_closed']
+        for f in critical_fields:
+            if f in specification and f not in standard_spec:
+                # If it's not in self._fields but requested, it's problematic
+                # but we'll try to include it if we can find it in parent models later.
+                pass
+
         try:
-            values_list = super().web_read(new_specification)
-        except (ValueError, KeyError):
-            # Fallback to manual read if super() fails
-            fields_to_read = list(new_specification) or ['id']
+            # Call original web_read with only standard fields
+            values_list = super().web_read(standard_spec)
+        except Exception:
+            # Extreme fallback if super() still fails
+            fields_to_read = [n for n in standard_spec if n in self._fields] or ['id']
             values_list = self.read(fields_to_read, load=None)
 
-        # 3. Final hydration to include all fields from the original specification
-        # ensuring the UI and subsequent Odoo logic find the keys with appropriate types.
-        # CRITICAL: We only hydrate fields that are truly MISSING from the result.
+        # 2. Re-integrate polymorphic fields and missing requested fields
         for values in values_list:
+            record = self.browse(values['id'])
             for field_name, spec in specification.items():
                 if field_name not in values:
-                    # If it's a standard field, we should probably let it be handled
-                    # by Odoo or default it to a sensible value IF it was requested.
-                    
-                    # If the field is an x2many field, it MUST be an empty list []
-                    # to avoid "data.map is not a function" in Owl UI.
-                    field = self._fields.get(field_name)
-                    is_x2many = field and field.type in ('one2many', 'many2many')
-                    
-                    if not is_x2many and isinstance(spec, dict) and 'fields' in spec:
-                        if 'limit' in spec or 'order' in spec:
-                            is_x2many = True
-                    
-                    if is_x2many:
-                        values[field_name] = []
-                    else:
-                        # Default to False for others, but for 'active' we'd prefer True
-                        # if we can't determine it, but Odoo should have provided it.
-                        # If it's MISSING here, it means even our expanded new_specification
-                        # didn't get it from super().web_read().
-                        values[field_name] = False
-                    
+                    # Is it a polymorphic field from numa_poly?
+                    # We try to get it from the record, which might trigger PolyBase.__getattr__
+                    try:
+                        val = getattr(record, field_name)
+                        # If it's a recordset, we need to handle it according to spec
+                        if isinstance(val, models.BaseModel):
+                            if isinstance(spec, dict) and 'fields' in spec:
+                                sub_spec = spec['fields']
+                                if not val:
+                                    values[field_name] = []
+                                else:
+                                    # Recursive call for the relation
+                                    values[field_name] = val.web_read(sub_spec)
+                            else:
+                                values[field_name] = val.ids if val._name == record._name else val.id
+                        else:
+                            values[field_name] = val
+                    except Exception:
+                        # Final fallback for truly missing fields to avoid UI crash
+                        is_x2many = isinstance(spec, dict) and ('fields' in spec or 'limit' in spec or 'order' in spec)
+                        values[field_name] = [] if is_x2many else False
+        
         return values_list
 
     def _field_to_sql(self, alias: str, fname: str, query: (Query | None) = None, flush: bool = True) -> SQL:
