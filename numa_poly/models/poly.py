@@ -1436,8 +1436,11 @@ class PolyBase(BaseModel):
         """
         Get fields definition with inherited fields from dependent models.
         """
+        if self._depend_models is None:
+            return super().fields_get(allfields=allfields, attributes=attributes)
+
         result = super().fields_get(allfields=allfields, attributes=attributes)
-        if self._depend_models is not None and self._depend_models:
+        if self._depend_models:
             # Ensure all dependent models are in the bases_to_create dict
             depends_reverse = list(self._depend_models.keys())
             depends_reverse.reverse()
@@ -1455,11 +1458,14 @@ class PolyBase(BaseModel):
         Override to avoid ValueError on polymorphic models when a field is not
         found on the current model but might exist in the polymorphic hierarchy.
         """
-        if self._depend_models is None or not self._depend_models:
+        if self._depend_models is None:
             return super()._determine_fields_to_fetch(field_names, ignore_when_in_cache)
 
-        # Filter out fields that are not in self._fields
-        valid_field_names = [name for name in field_names if name in self._fields or name == 'id']
+        # Filter out fields that are not in self._fields or pool
+        valid_field_names = [
+            name for name in field_names 
+            if name in self._fields or name == 'id' or name in self.pool[self._name]._fields
+        ]
         return super()._determine_fields_to_fetch(valid_field_names, ignore_when_in_cache)
 
     @api.readonly
@@ -1467,13 +1473,15 @@ class PolyBase(BaseModel):
         """
         Override web_read to handle polymorphic fields and ensure data consistency.
         """
-        if self._depend_models is None or not self._depend_models:
+        if self._depend_models is None:
             return super().web_read(specification)
 
         # 1. Filter standard fields to avoid ValueError/KeyError in super().web_read
-        # We also need to check if the field exists in the pool but maybe not in _fields
-        # (Odoo 18 sometimes has dynamic fields in config settings that are not in _fields list but are valid)
-        standard_spec = {name: spec for name, spec in specification.items() if name in self._fields or name == 'id'}
+        # We check both self._fields AND the pool definition to be robust.
+        standard_spec = {
+            name: spec for name, spec in specification.items() 
+            if name in self._fields or name == 'id' or name in self.pool[self._name]._fields
+        }
         
         # Always request 'id' for polymorphic record identification
         if 'id' not in standard_spec:
