@@ -191,6 +191,7 @@ class PolyReference(fields.Many2one):
         Get the value of this field for the given records.
 
         This method handles both single record and multi-record cases.
+        For single records, it uses convert_to_record to safely handle orphan cases.
 
         Args:
             records: The records to get the value for
@@ -200,10 +201,15 @@ class PolyReference(fields.Many2one):
             For a single record: the related record
             For multiple records: a recordset of related records
         """
-        # base case: do the regular access
-        if records is None or len(records._ids) <= 1:
-            return super().__get__(records, owner)
-        # multirecord case: use mapped
+        # base case: single record
+        if records is not None and len(records._ids) <= 1:
+            return self.convert_to_record(None, records)
+        
+        # records is None (class level access) or multiple records
+        if records is None:
+            return self
+            
+        # multirecord case: use mapped IDs to build a related recordset
         return records.pool[self.comodel_name](records.env, tuple(records.ids), tuple(records.ids))
 
     @property
