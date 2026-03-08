@@ -1364,11 +1364,17 @@ class PolyBase(BaseModel):
             values_list = self.read(fields_to_read, load=None)
 
         # 3. Final hydration to include all fields from the original specification
-        # as False, ensuring the UI and subsequent Odoo logic find the keys.
+        # ensuring the UI and subsequent Odoo logic find the keys with appropriate types.
         for values in values_list:
-            for field_name in specification:
+            for field_name, spec in specification.items():
                 if field_name not in values:
-                    values[field_name] = False
+                    # If the field is an x2many field, it MUST be an empty list []
+                    # to avoid "data.map is not a function" in Owl UI.
+                    field = self._fields.get(field_name)
+                    if field and field.type in ('one2many', 'many2many'):
+                        values[field_name] = []
+                    else:
+                        values[field_name] = False
                     
         return values_list
 
