@@ -1332,15 +1332,15 @@ class PolyBase(BaseModel):
         """
         Override web_read to handle polymorphic fields and avoid ValueError or KeyError.
         """
+        import logging
+        _logger = logging.getLogger(__name__)
+
         if self._depend_models is None:
             return super().web_read(specification)
 
-        # 1. We must strictly follow self._fields for the core Odoo logic.
-        # web_read in Odoo 18 will fail with KeyError if specification includes
-        # fields that are not actually in the record values returned by read().
-        # read() itself will fail with ValueError if fields are not in _fields.
+        _logger.info("POLY WEB_READ model=%s ids=%s spec=%s", self._name, self.ids, specification)
         
-        # We separate polymorphic fields (not in _fields) from standard ones.
+        # 1. We must strictly follow self._fields for the core Odoo logic.
         standard_spec = {}
         poly_spec = {}
         
@@ -1350,19 +1350,24 @@ class PolyBase(BaseModel):
             else:
                 poly_spec[name] = spec
 
-        # CRITICAL: Always ensure 'id' is in standard_spec to avoid KeyError: 'id' below
+        # CRITICAL: Always ensure 'id' is in standard_spec
         if 'id' not in standard_spec:
             standard_spec['id'] = {}
+
+        _logger.info("POLY WEB_READ filtered_spec=%s", standard_spec)
 
         try:
             # Call original web_read with only standard fields
             values_list = super().web_read(standard_spec)
-        except Exception:
+            _logger.info("POLY WEB_READ super() success, results count=%s", len(values_list))
+        except Exception as e:
+            _logger.error("POLY WEB_READ super() failed: %s", e)
             # Extreme fallback if super() still fails
             fields_to_read = [n for n in standard_spec if n in self._fields] or ['id']
             if 'id' not in fields_to_read:
                 fields_to_read.append('id')
             values_list = self.read(fields_to_read, load=None)
+            _logger.info("POLY WEB_READ fallback read() success, results count=%s", len(values_list))
 
         # 2. Re-integrate polymorphic fields and missing requested fields
         for values in values_list:
@@ -1373,46 +1378,54 @@ class PolyBase(BaseModel):
                 record = self.browse(values['id'])
                 for field_name, spec in specification.items():
                     if field_name not in values:
-                        # Is it a polymorphic field from numa_poly?
-                        # We try to get it from the record, which might trigger PolyBase.__getattr__
+                        # If it's not in values, we must provide it.
+                        # It might be a polymorphic field, or just a missing field.
+                        
+                        # Determine if it's expected to be a list by the UI
+                        is_list_like = isinstance(spec, dict) and any(k in spec for k in ('fields', 'limit', 'offset', 'order'))
+                        
                         try:
+                            # Try to get the value via getattr (might trigger numa_poly injection/delegation)
                             val = getattr(record, field_name)
-                            # If it's a recordset, we need to handle it according to spec
+                            
                             if isinstance(val, models.BaseModel):
-                                # Correctly identify if it's an x2many based on specification structure
-                                is_x2many = isinstance(spec, dict) and ('limit' in spec or 'offset' in spec or 'order' in spec)
+                                # It's a recordset. 
+                                # Many2one: val.id (integer) or False
+                                # X2many: val.ids (list of integers) or []
                                 
-                                # web_read recursively calls itself for many2one fields with 'fields' in spec
+                                # If 'fields' is in spec, it's a sub-read (recursive)
                                 if isinstance(spec, dict) and 'fields' in spec:
                                     sub_spec = spec['fields']
                                     if not val:
-                                        values[field_name] = [] if is_x2many else False
+                                        values[field_name] = [] if is_list_like else False
                                     else:
-                                        # Recursive call for the relation
                                         res = val.web_read(sub_spec)
-                                        if is_x2many:
+                                        if is_list_like:
                                             values[field_name] = res
                                         else:
-                                            # It's a many2one
                                             values[field_name] = res[0] if res else False
                                 else:
+                                    # No 'fields' in spec, return IDs
                                     if not val:
-                                        values[field_name] = [] if is_x2many else False
+                                        values[field_name] = [] if is_list_like else False
                                     else:
-                                        # Standard Odoo behavior for relational fields in read() or web_read context.
-                                        # x2many should be a list of IDs. many2one should be the ID (integer).
-                                        values[field_name] = val.ids if is_x2many else val.id
+                                        values[field_name] = val.ids if is_list_like else val.id
                             else:
-                                values[field_name] = val
-                        except Exception:
-                            # Final fallback for truly missing fields to avoid UI crash.
-                            # We must be very careful to return a list if it's an x2many.
-                            # If the specification has 'fields', 'limit', 'offset', or 'order', 
-                            # it's almost certainly expected to be a list by Owl.
-                            is_list_like = isinstance(spec, dict) and any(k in spec for k in ('fields', 'limit', 'offset', 'order'))
+                                # Simple field
+                                if val is None:
+                                    values[field_name] = [] if is_list_like else False
+                                else:
+                                    values[field_name] = val
+                        except Exception as e:
+                            _logger.warning("POLY WEB_READ error getting field %s: %s", field_name, e)
                             values[field_name] = [] if is_list_like else False
-            except Exception:
-                # Catch-all for any other weird errors in this record processing to keep the list alive
+                
+                # Log a sample result for debugging
+                if values == values_list[0]:
+                    _logger.info("POLY WEB_READ sample result: %s", values)
+                    
+            except Exception as e:
+                _logger.error("POLY WEB_READ error processing record values: %s", e)
                 continue
         
         return values_list
