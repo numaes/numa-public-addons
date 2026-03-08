@@ -1538,7 +1538,7 @@ class PolyBase(BaseModel):
         """
         Get fields definition with inherited fields from dependent models.
         """
-        if self._depend_models is None:
+        if self._depend_models is None or not self._depend_models:
             return super().fields_get(allfields=allfields, attributes=attributes)
 
         result = super().fields_get(allfields=allfields, attributes=attributes)
@@ -1560,7 +1560,7 @@ class PolyBase(BaseModel):
         Override to avoid ValueError on polymorphic models when a field is not
         found on the current model but might exist in the polymorphic hierarchy.
         """
-        if self._depend_models is None:
+        if self._depend_models is None or not self._depend_models:
             return super()._determine_fields_to_fetch(field_names, ignore_when_in_cache)
 
         # Filter out fields that are not in self._fields or pool
@@ -1575,7 +1575,7 @@ class PolyBase(BaseModel):
         """
         Override web_read to handle polymorphic fields and ensure data consistency.
         """
-        if self._depend_models is None:
+        if self._depend_models is None or not self._depend_models:
             return super().web_read(specification)
 
         # 1. Filter standard fields to avoid ValueError/KeyError in super().web_read
