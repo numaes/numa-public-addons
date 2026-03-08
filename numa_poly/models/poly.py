@@ -560,8 +560,12 @@ class PolyBase(BaseModel):
         # Build dependent model attributes for all models that inherit from PolyBase.
         # This includes models with _depend_models defined (even if empty) and
         # any model that participates in the polymorphic hierarchy.
-        if self._depend_models is not None:
-            self._build_dependant_model_attributes()
+        
+        try:
+            if self._depend_models is not None:
+                self._build_dependant_model_attributes()
+        except Exception as e:
+            _logger.exception(f"[Poly.Setup] CRITICAL ERROR during injection for {self._name}: {e}")
 
     def _register_hook(self):
         """
@@ -616,23 +620,6 @@ class PolyBase(BaseModel):
     def _build_dependant_model_attributes(self):
         """
         Initialize and build the attributes of a polymorphic model.
-
-        This method is responsible for:
-        1. Creating the basic polymorphic fields (poly_base_id, concrete_model_id)
-        2. Setting up audit fields (create_uid, create_date, etc.)
-        3. Creating reference fields to all dependent models
-        4. Inheriting all fields from dependent models as related fields
-        5. Inheriting non-field attributes from dependent models
-
-        This is the core of the polymorphic inheritance mechanism, as it makes
-        all fields from dependent models available on the polymorphic model.
-
-        Returns:
-            None: This method modifies the model class in place.
-
-        Raises:
-            TypeError: If an unsupported field type is encountered when creating
-                related fields from dependent models.
         """
         def set(name, field, related_base=None):
             """
@@ -724,6 +711,9 @@ class PolyBase(BaseModel):
                 if mm == 'ir.poly_base':
                     return  # Skip ir.poly_base as its fields are already handled
 
+                if mm not in self.pool:
+                    return
+
                 base_model = self.pool[mm]
 
                 # Add fields from the model
@@ -776,7 +766,6 @@ class PolyBase(BaseModel):
             if field_name in self._fields:
                 continue
 
-            # If the model isn't directly in related_bases, create a new reference field
             if model not in related_bases:
                 model_field = f'related_{related_counter}'
                 related_counter += 1
@@ -1325,6 +1314,35 @@ class PolyBase(BaseModel):
                     if field_name not in result:
                         result[field_name] = field_attrs
         return result
+
+    def _determine_fields_to_fetch(self, field_names, ignore_when_in_cache=False):
+        """
+        Override to avoid ValueError on polymorphic models when a field is not
+        found on the current model but might exist in the polymorphic hierarchy.
+        """
+        if self._depend_models is None:
+            return super()._determine_fields_to_fetch(field_names, ignore_when_in_cache)
+
+        # Filter out fields that are not in self._fields
+        valid_field_names = [name for name in field_names if name in self._fields or name == 'id']
+        return super()._determine_fields_to_fetch(valid_field_names, ignore_when_in_cache)
+
+    @api.readonly
+    def web_read(self, specification):
+        """
+        Override web_read to handle polymorphic fields that might not be in self._fields.
+        If a field is requested but not in self._fields, we skip it for the main read
+        and let the UI handle it or provide a dummy value if necessary.
+        """
+        if self._depend_models is None:
+            return super().web_read(specification)
+
+        new_specification = {
+            name: spec
+            for name, spec in specification.items()
+            if name in self._fields or name == 'id'
+        }
+        return super().web_read(new_specification)
 
     def _field_to_sql(self, alias: str, fname: str, query: (Query | None) = None, flush: bool = True) -> SQL:
         """
