@@ -162,29 +162,40 @@ class PolyReference(fields.Many2one):
     def convert_to_record(self, value, record):
         """
         Convert a value to a record instance.
-
-        Args:
-            value: The value to convert
-            record: The record containing this field
-
-        Returns:
-            A record instance of the comodel with the same ID as the current record.
-            If the record does not exist in the comodel (orphan), returns an empty recordset.
+        If the record does not exist in the comodel (orphan), returns an empty recordset.
         """
-        if not record:
-            return record.pool[self.comodel_name](record.env, (), ())
+        if not record or not record.id:
+            try:
+                return record.env[self.comodel_name].browse()
+            except Exception:
+                # If comodel is not in environment yet
+                return None
 
-        # Optimization: for PolyReference fields, we expect the ID to match
-        # However, for orphan records, the comodel entry might not exist.
-        # We perform a direct check if the record exists in the comodel.
-        comodel = record.pool[self.comodel_name]
-        res = comodel(record.env, (record.id,), (record.id,))
+        # Check if the record exists in the polymorphic base table
+        # We use a direct SQL check to avoid recursion through Odoo's exists()
         try:
+            # For PolyReference to ir.poly_base, it's special
+            if self.comodel_name == 'ir.poly_base':
+                record.env.cr.execute(
+                    SQL("SELECT id FROM ir_poly_base WHERE id = %s", record.id)
+                )
+                if not record.env.cr.fetchone():
+                    return record.env['ir.poly_base'].browse()
+                return record.env['ir.poly_base'].browse(record.id)
+
+            # For other models, we check if they exist.
+            # PolyReferences usually point to models that are bases.
+            comodel = record.pool[self.comodel_name]
+            # Optimization: IDs match in polymorphic hierarchy
+            res = comodel(record.env, (record.id,), (record.id,))
             if not res.exists():
                 return comodel(record.env, (), ())
+            return res
         except Exception:
-            return comodel(record.env, (), ())
-        return res
+            try:
+                return record.env[self.comodel_name].browse()
+            except Exception:
+                return None
 
     def __get__(self, records, owner=None):
         """
@@ -221,7 +232,18 @@ class PolyReference(fields.Many2one):
 
         # base case: single record
         if len(records._ids) <= 1:
-            return self.convert_to_record(None, records)
+            # For orphans, records.id exists but it's not in ir.poly_base
+            # convert_to_record will try to browse it in ir.poly_base and return Empty
+            # IF it's an orphan.
+            try:
+                res = self.convert_to_record(None, records)
+                if not res:
+                    # If we get an empty recordset, it means it's an orphan or non-existent
+                    # We return an empty recordset of the comodel
+                    return records.pool[self.comodel_name](records.env, (), ())
+                return res
+            except Exception:
+                return records.pool[self.comodel_name](records.env, (), ())
             
         # multirecord case: use mapped IDs to build a related recordset
         return records.pool[self.comodel_name](records.env, tuple(records.ids), tuple(records.ids))
@@ -390,6 +412,42 @@ class PolyBase(BaseModel):
     def _check_poly_access(self, operation):
         """ Internal helper to call super().check_access() safely """
         return super(PolyBase, self).check_access(operation)
+
+    def __getattr__(self, name):
+        """
+        Fallback for polymorphic fields that might not have been correctly
+        injected or resolved as attributes due to late model setup or orphan records.
+        """
+        # CRITICAL: We avoid standard Odoo field attributes to prevent recursion
+        # during field setup. We only intercept pln_* or known polymorphic fields.
+        if name.startswith('pln_') or (name != '_fields' and name in getattr(self, '_fields', {})):
+            node_model = self.env.registry.get('numa.planning.node')
+            if node_model is not None and name in node_model._fields:
+                field = node_model._fields[name]
+                try:
+                    return field.__get__(self, type(self))
+                except MissingError:
+                    # Special handling for orphan records: if they don't exist in poly_base
+                    # we return False or [] depending on field type.
+                    if field.type in ('one2many', 'many2many'):
+                        return self.env[field.comodel_name].browse()
+                    return False
+                except Exception:
+                    pass
+
+            fields_dict = getattr(self, '_fields', {})
+            field = fields_dict.get(name)
+            if field:
+                try:
+                    return field.__get__(self, type(self))
+                except MissingError:
+                    if field.type in ('one2many', 'many2many'):
+                        return self.env[field.comodel_name].browse()
+                    return False
+                except Exception:
+                    pass
+        
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def as_concrete_model(self):
         """
@@ -596,33 +654,33 @@ class PolyBase(BaseModel):
         # any model that participates in the polymorphic hierarchy.
         
         try:
-            if self._depend_models is not None:
+            # Check if we have polymorphic configuration
+            depend_models = getattr(type(self), '_depend_models', None)
+            
+            if depend_models is not None:
                 # Odoo 18: ensure we are in the right model setup context
-                # and avoid double initialization if possible
                 self._build_dependant_model_attributes()
                 
-                # Force re-evaluation of _fields and other model attributes
-                # that might have been cached by Odoo 18
-                # We use a safer way to clean registry caches if they exist
+                model_class = type(self)
+                for field_name, field in self._fields.items():
+                    if field_name not in model_class.__dict__:
+                        # Critical for Odoo 18: We must inject descriptors but avoid
+                        # standard Odoo descriptors that trigger ensure_one() on class access.
+                        # Related fields are especially sensitive.
+                        if not field.related:
+                            setattr(model_class, field_name, field)
+                        
+                # Update _fields of the model in the pool
+                if self._name in self.pool.models:
+                    self.pool[self._name]._fields.update(self._fields)
+
+                # Clear computation caches
                 if hasattr(self.pool, 'field_computed'):
                     if self._name in self.pool.field_computed:
                         del self.pool.field_computed[self._name]
                 if hasattr(self.pool, 'field_inverses'):
                     if self._name in self.pool.field_inverses:
                         del self.pool.field_inverses[self._name]
-                
-                # Critical: Odoo 18 might have initialized __slots__ or other caches
-                # that exclude late-injected fields.
-                # We force the descriptors on the model class.
-                model_class = type(self)
-                for field_name, field in self._fields.items():
-                    if not hasattr(model_class, field_name):
-                        # Use the field descriptor if available, otherwise use field object
-                        setattr(model_class, field_name, field)
-                        
-                # Update _fields of the model in the pool to match the local _fields
-                if self._name in self.pool.models:
-                    self.pool[self._name]._fields.update(self._fields)
         except Exception as e:
             _logger.exception(f"[Poly.Setup] CRITICAL ERROR during injection for {self._name}: {e}")
 
