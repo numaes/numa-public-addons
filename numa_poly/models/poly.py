@@ -1484,7 +1484,13 @@ class PolyBase(BaseModel):
             return super().web_read(specification)
 
         # 1. Filter standard fields to avoid ValueError/KeyError in super().web_read
+        # We also need to check if the field exists in the pool but maybe not in _fields
+        # (Odoo 18 sometimes has dynamic fields in config settings that are not in _fields list but are valid)
         standard_spec = {name: spec for name, spec in specification.items() if name in self._fields or name == 'id'}
+        
+        # If the model is not really polymorphic (just inheriting PolyBase), skip our complex logic
+        if not self._depend_models:
+            return super().web_read(specification)
         
         # Always request 'id' for polymorphic record identification
         if 'id' not in standard_spec:
