@@ -705,16 +705,25 @@ class PolyBase(BaseModel):
                     # Intentamos leer via ORM pero forzando SQL para campos de sistema si es necesario
                     # En Odoo 18, read() suele bastar si el registro existe en la tabla del modelo
                     try:
-                        vals = old_record.read()[0]
+                        # Usamos _read_format para obtener IDs de Many2one en lugar de recordsets
+                        vals = old_record._read_format(self._fields.keys())[0]
                     except Exception:
                         # Fallback a SQL si el ORM falla por no estar en ir.poly_base
                         self.env.cr.execute(SQL("SELECT * FROM %s WHERE id = %s", SQL.identifier(self._table), old_id))
                         vals = self.env.cr.dictfetchone()
 
-                    # Limpiar vals para el create
+                    # Limpiar vals para el create: eliminar campos no almacenados o problemáticos
                     vals.pop('id', None)
                     # Forzar el nuevo ID
                     vals['id'] = new_id
+                    
+                    # Limpiar recordsets que puedan quedar en vals
+                    for k, v in list(vals.items()):
+                        if isinstance(v, models.BaseModel):
+                            vals[k] = v.id
+                        elif isinstance(v, tuple) and len(v) == 2 and isinstance(v[0], int):
+                            # Caso (id, name) que a veces devuelve read
+                            vals[k] = v[0]
                     
                     # Preservar campos de auditoría
                     self.env.cr.execute(SQL(
@@ -734,12 +743,28 @@ class PolyBase(BaseModel):
                             audit_tables.append(base_model._table)
                     
                     for table in set(audit_tables):
-                        self.env.cr.execute(SQL(
-                            "UPDATE %s SET create_uid=%s, create_date=%s, write_uid=%s, write_date=%s WHERE id=%s",
-                            SQL.identifier(table),
-                            audit['create_uid'], audit['create_date'], audit['write_uid'], audit['write_date'],
-                            new_id
-                        ))
+                        # Verificar si la tabla tiene las columnas de auditoría antes de intentar el UPDATE
+                        self.env.cr.execute("""
+                            SELECT column_name 
+                            FROM information_schema.columns 
+                            WHERE table_name = %s AND column_name IN ('create_uid', 'create_date', 'write_uid', 'write_date')
+                        """, [table])
+                        existing_cols = {row[0] for row in self.env.cr.fetchall()}
+                        
+                        if not existing_cols:
+                            continue
+                            
+                        set_clauses = []
+                        params = []
+                        for col in ['create_uid', 'create_date', 'write_uid', 'write_date']:
+                            if col in existing_cols and audit.get(col):
+                                set_clauses.append(f"{col}=%s")
+                                params.append(audit[col])
+                        
+                        if set_clauses:
+                            query = f"UPDATE {table} SET {', '.join(set_clauses)} WHERE id=%s"
+                            params.append(new_id)
+                            self.env.cr.execute(query, params)
 
                     # 3. Actualizar Referencias
                     self._update_foreign_keys(old_id, new_id)
