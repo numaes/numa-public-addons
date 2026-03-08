@@ -130,13 +130,23 @@ def _build_model(cls, pool, cr):
 - ⚠️ **Orden de dependencias**: El orden en `_depend_models` importa (último gana en colisiones)
 - ⚠️ **Registros Huérfanos**: Maneja registros legacy (pre-polimórficos) con degradación elegante de metadatos.
 
-### 9. Manejo de Registros Huérfanos (Legacy)
+### 9. Migración Automática de Modelos (Legacy a Poly)
 
-El sistema incluye mecanismos de resiliencia para registros que existen en el modelo concreto pero carecen de una base polimórfica en `ir.poly_base`:
+Numa Poly incluye un sistema robusto para migrar registros existentes cuando un modelo se convierte de "estándar" a "polimórfico":
 
-1.  **Lectura (`web_read` / `fetch`)**: Detecta la ausencia del registro en la jerarquía polimórfica y realiza un fallback a `super().read()` para recuperar campos estándar (`display_name`, `create_date`, `write_uid`, etc.).
-2.  **Escritura (`write`)**: Separa los campos pertenecientes a modelos base y solo intenta actualizarlos si el registro tiene una identidad polimórfica válida (`exists()`).
-3.  **Eliminación (`unlink`)**: Valida la existencia de los componentes en los modelos base antes de intentar el borrado en cascada para evitar errores de integridad.
+1.  **Detección (`_check_migration_needed`)**: Durante el inicio (`_auto_init`), el sistema verifica si existen registros en la tabla del modelo (o sus dependencias) que no tengan una entrada correspondiente en `ir.poly_base`.
+2.  **Orquestación (`_migrate_to_poly`)**: Si se detectan registros huérfanos, se inicia un proceso de migración atómico que:
+    - Genera nuevos IDs globales desde la secuencia de `ir.poly_base`.
+    - Duplica los registros en todas las tablas de la jerarquía polimórfica.
+    - Preserva los campos de auditoría (`create_date`, `create_uid`, etc.).
+3.  **Actualización de Referencias (`_update_foreign_keys`)**: Actualiza automáticamente todas las referencias al ID antiguo en la base de datos, incluyendo:
+    - Campos Many2one y Many2many estándar.
+    - Referencias dinámicas (ej. `res_id` en `ir.attachment`, `mail.message`, `mail.followers`).
+    - External IDs (`ir.model.data`).
+    - Modelos conocidos con IDs en campos lógicos (ej. `mail.alias`).
+4.  **Limpieza**: Elimina los registros antiguos una vez que la integridad de las referencias está asegurada.
+
+### 10. Manejo de Integridad y Resiliencia
 
 ### 3. PolyReference (Campo Especial)
 

@@ -152,6 +152,17 @@ class ProjectSite(models.Model):
     )
 ```
 
+### Step 5: Automatic Data Migration (Legacy to Poly)
+
+If you are converting an existing model with data into a polymorphic model (by adding `_depend_models`), Numa Poly handles the migration automatically:
+
+1.  **Automatic Detection**: During module upgrade, the system detects existing records that don't belong to the `ir.poly_base` hierarchy.
+2.  **ID Migration**: Each record receives a new, globally unique ID from the `ir.poly_base` sequence.
+3.  **Reference Update**: All foreign keys (Many2one, Many2many), dynamic references (Attachments, Messages), and External IDs (XML IDs) are automatically updated to point to the new ID.
+4.  **Audit Preservation**: Original `create_date`, `create_uid`, `write_date`, and `write_uid` are preserved.
+
+*Note: This process is transactional. If an error occurs during migration, the database will roll back to its previous state.*
+
 ---
 
 ## Frontend Configuration

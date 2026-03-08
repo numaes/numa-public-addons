@@ -97,7 +97,6 @@ class IrPolyBase(models.Model):
     def as_concrete_model(self):
         """
         Convert this base record to its concrete model representation.
-        If no concrete model is defined (legacy records), returns self.
 
         Returns:
             The same record but as an instance of its concrete model class.
@@ -162,7 +161,6 @@ class PolyReference(fields.Many2one):
     def convert_to_record(self, value, record):
         """
         Convert a value to a record instance.
-        If the record does not exist in the comodel (orphan), returns an empty recordset.
         """
         if not record or not record.id:
             try:
@@ -171,26 +169,10 @@ class PolyReference(fields.Many2one):
                 # If comodel is not in environment yet
                 return None
 
-        # Check if the record exists in the polymorphic base table
-        # We use a direct SQL check to avoid recursion through Odoo's exists()
+        # Standard polymorphic reference: IDs match in polymorphic hierarchy
         try:
-            # For PolyReference to ir.poly_base, it's special
-            if self.comodel_name == 'ir.poly_base':
-                record.env.cr.execute(
-                    SQL("SELECT id FROM ir_poly_base WHERE id = %s", record.id)
-                )
-                if not record.env.cr.fetchone():
-                    return record.env['ir.poly_base'].browse()
-                return record.env['ir.poly_base'].browse(record.id)
-
-            # For other models, we check if they exist.
-            # PolyReferences usually point to models that are bases.
             comodel = record.pool[self.comodel_name]
-            # Optimization: IDs match in polymorphic hierarchy
-            res = comodel(record.env, (record.id,), (record.id,))
-            if not res.exists():
-                return comodel(record.env, (), ())
-            return res
+            return comodel(record.env, (record.id,), (record.id,))
         except Exception:
             try:
                 return record.env[self.comodel_name].browse()
@@ -202,7 +184,6 @@ class PolyReference(fields.Many2one):
         Get the value of this field for the given records.
 
         This method handles both single record and multi-record cases.
-        For single records, it uses convert_to_record to safely handle orphan cases.
 
         Args:
             records: The records to get the value for
@@ -217,31 +198,13 @@ class PolyReference(fields.Many2one):
             return self
 
         # Odoo 18 specific: Check if the field is set in _fields of the model
-        # If it's not, it means the setup of the field was not completed for this model,
-        # which can happen during registry building or due to late injection.
         if self.name not in records._fields:
-            # Fallback to standard getattr behavior if we can't find ourselves in _fields
-            # However, for PolyReference, we want to try to provide the record if possible
-            try:
-                # If we're here, it means Odoo is calling the descriptor but it's not in _fields
-                # This is a weird state, usually during setup or if the pool is inconsistent.
-                # We return self to avoid AttributeError during registry setup
-                return self
-            except Exception:
-                return self
+            return self
 
-        # base case: single record
+        # Single record case
         if len(records._ids) <= 1:
-            # For orphans, records.id exists but it's not in ir.poly_base
-            # convert_to_record will try to browse it in ir.poly_base and return Empty
-            # IF it's an orphan.
             try:
-                res = self.convert_to_record(None, records)
-                if not res:
-                    # If we get an empty recordset, it means it's an orphan or non-existent
-                    # We return an empty recordset of the comodel
-                    return records.pool[self.comodel_name](records.env, (), ())
-                return res
+                return self.convert_to_record(None, records)
             except Exception:
                 return records.pool[self.comodel_name](records.env, (), ())
             
@@ -416,51 +379,16 @@ class PolyBase(BaseModel):
     def __getattr__(self, name):
         """
         Fallback for polymorphic fields that might not have been correctly
-        injected or resolved as attributes due to late model setup or orphan records.
+        injected or resolved as attributes due to late model setup.
         """
-        # If it's a standard log access column, we handle it early to avoid issues with orphans.
-        # These are normally related fields pointing to poly_base_id, which fails for orphans.
-        if name in LOG_ACCESS_COLUMNS:
-            try:
-                # We use direct SQL to ensure we get the value even if the ORM's 
-                # related field mechanism is failing for orphan records.
-                self.env.cr.execute(f'SELECT {name} FROM {self._table} WHERE id=%s', (self.id,))
-                res = self.env.cr.fetchone()
-                val = res[0] if res else False
-                
-                # We store it in cache to ensure that subsequent standard Odoo computations
-                # (like tracking durations) have access to a real value instead of False.
-                # In Odoo 18, we must be careful with how we set cache for related fields.
-                # We set it both on self AND on the recordset's class if needed.
-                field = self._fields.get(name)
-                if field:
-                    self.env.cache.set(self, field, val)
-                    # FORCE update of record's internal cache to bypass related field descriptor
-                    try:
-                        if hasattr(self, '_cache'):
-                            self._cache[field] = val
-                    except Exception:
-                        pass
-                return val
-            except Exception:
-                pass
-
         # CRITICAL: We avoid standard Odoo field attributes to prevent recursion
         # during field setup. We only intercept pln_* or known polymorphic fields.
-        # However, for orphan records, Odoo 18 returns False instead of calling __getattr__
-        # for related fields that fail. This is why we might need to be more proactive in read().
         if name.startswith('pln_') or (name != '_fields' and name in getattr(self, '_fields', {})):
             node_model = self.env.registry.get('numa.planning.node')
             if node_model is not None and name in node_model._fields:
                 field = node_model._fields[name]
                 try:
                     return field.__get__(self, type(self))
-                except (MissingError, AccessError):
-                    # Special handling for orphan records: if they don't exist in poly_base
-                    # we return False or [] depending on field type.
-                    if field.type in ('one2many', 'many2many'):
-                        return self.env[field.comodel_name].browse()
-                    return False
                 except Exception:
                     pass
 
@@ -468,12 +396,7 @@ class PolyBase(BaseModel):
             field = fields_dict.get(name)
             if field:
                 try:
-                    # Capture MissingError which happens for orphan records in Odoo 18
                     return field.__get__(self, type(self))
-                except (MissingError, AccessError):
-                    if field.type in ('one2many', 'many2many'):
-                        return self.env[field.comodel_name].browse()
-                    return False
                 except Exception:
                     pass
         
@@ -482,7 +405,6 @@ class PolyBase(BaseModel):
     def as_concrete_model(self):
         """
         Convert this base record to its concrete model representation.
-        If no concrete model is defined (legacy records), returns self.
 
         Returns:
             The same record but as an instance of its concrete model class.
@@ -498,7 +420,6 @@ class PolyBase(BaseModel):
     def _compute_concrete_model_id(self):
         """
         Compute the concrete_model_id field for polymorphic models.
-        Handles fallback to current model for legacy records (no ir.poly_base entry).
         
         Note: We use sudo() to read ir.poly_base because this computed field is part of
         the polymorphic infrastructure metadata and must be accessible to determine the
@@ -507,11 +428,7 @@ class PolyBase(BaseModel):
         for record in self:
             # Check existence in ir.poly_base using the shared ID
             poly_base = self.env['ir.poly_base'].sudo().browse(record.id)
-            if poly_base.exists():
-                record.concrete_model_id = poly_base.concrete_model_id
-            else:
-                # Legacy record: assume current model is the concrete one
-                record.concrete_model_id = self.env['ir.model']._get_id(record._name)
+            record.concrete_model_id = poly_base.concrete_model_id
 
     def compute_poly_base_id(self):
         """
@@ -714,6 +631,203 @@ class PolyBase(BaseModel):
         except Exception as e:
             _logger.exception(f"[Poly.Setup] CRITICAL ERROR during injection for {self._name}: {e}")
 
+    def _check_migration_needed(self):
+        """
+        Verifica si el modelo actual requiere migración de registros existentes
+        para integrarse en la jerarquía polimórfica de ir.poly_base.
+        """
+        if not getattr(self, '_depend_models', None):
+            return False
+
+        # Tablas a verificar: la propia y la de sus dependencias
+        tables = {self._table}
+        for base_name in self._depend_models:
+            base_model = self.env[base_name]
+            if base_model._table:
+                tables.add(base_model._table)
+
+        for table in tables:
+            query = SQL(
+                "SELECT id FROM %s WHERE id NOT IN (SELECT id FROM ir_poly_base)",
+                SQL.identifier(table)
+            )
+            self.env.cr.execute(query)
+            if self.env.cr.fetchone():
+                return True
+        return False
+
+    def _migrate_to_poly(self):
+        """
+        Realiza la migración de registros existentes a la jerarquía polimórfica.
+        """
+        if not self._check_migration_needed():
+            return
+
+        _logger.info("Migrating model %s to polymorphic hierarchy", self._name)
+        
+        # Identificar registros a migrar (aquellos que no están en ir.poly_base)
+        # Lo hacemos por tabla para asegurar que cubrimos todos los registros "viejos"
+        tables = {self._table}
+        for base_name in self._depend_models:
+            base_model = self.env[base_name]
+            if base_model._table:
+                tables.add(base_model._table)
+
+        all_old_ids = set()
+        for table in tables:
+            self.env.cr.execute(SQL(
+                "SELECT id FROM %s WHERE id NOT IN (SELECT id FROM ir_poly_base)",
+                SQL.identifier(table)
+            ))
+            all_old_ids.update(row[0] for row in self.env.cr.fetchall())
+
+        if not all_old_ids:
+            return
+
+        # Para cada ID viejo, realizar la migración
+        concrete_model_id = self.env['ir.model']._get_id(self._name)
+        
+        for old_id in sorted(all_old_ids):
+            try:
+                with self.env.cr.savepoint():
+                    # 1. Generar nuevo ID en ir.poly_base
+                    self.env.cr.execute(
+                        "INSERT INTO ir_poly_base (concrete_model_id) VALUES (%s) RETURNING id",
+                        [concrete_model_id]
+                    )
+                    new_id = self.env.cr.fetchone()[0]
+
+                    # 2. Duplicar datos
+                    # Extraemos valores originales incluyendo campos de auditoría
+                    # Leemos del modelo concreto ya que numa_poly gestiona la lectura recursiva
+                    old_record = self.browse(old_id)
+                    
+                    # Intentamos leer via ORM pero forzando SQL para campos de sistema si es necesario
+                    # En Odoo 18, read() suele bastar si el registro existe en la tabla del modelo
+                    try:
+                        vals = old_record.read()[0]
+                    except Exception:
+                        # Fallback a SQL si el ORM falla por no estar en ir.poly_base
+                        self.env.cr.execute(SQL("SELECT * FROM %s WHERE id = %s", SQL.identifier(self._table), old_id))
+                        vals = self.env.cr.dictfetchone()
+
+                    # Limpiar vals para el create
+                    vals.pop('id', None)
+                    # Forzar el nuevo ID
+                    vals['id'] = new_id
+                    
+                    # Preservar campos de auditoría
+                    self.env.cr.execute(SQL(
+                        "SELECT create_uid, create_date, write_uid, write_date FROM %s WHERE id = %s",
+                        SQL.identifier(self._table), old_id
+                    ))
+                    audit = self.env.cr.dictfetchone()
+
+                    # Crear el nuevo registro (esto disparará la creación en depend_models)
+                    new_record = self.create([vals])
+
+                    # Restaurar auditoría en todas las tablas involucradas
+                    audit_tables = [self._table, 'ir_poly_base']
+                    for base_name in self._depend_models:
+                        base_model = self.env[base_name]
+                        if base_model._table:
+                            audit_tables.append(base_model._table)
+                    
+                    for table in set(audit_tables):
+                        self.env.cr.execute(SQL(
+                            "UPDATE %s SET create_uid=%s, create_date=%s, write_uid=%s, write_date=%s WHERE id=%s",
+                            SQL.identifier(table),
+                            audit['create_uid'], audit['create_date'], audit['write_uid'], audit['write_date'],
+                            new_id
+                        ))
+
+                    # 3. Actualizar Referencias
+                    self._update_foreign_keys(old_id, new_id)
+
+                    # 4. Limpieza
+                    # Borrado físico de las tablas originales para el ID viejo
+                    for table in tables:
+                        self.env.cr.execute(SQL("DELETE FROM %s WHERE id = %s", SQL.identifier(table), old_id))
+                    
+                    _logger.info("Migrated %s ID %s -> %s", self._name, old_id, new_id)
+
+            except Exception as e:
+                _logger.error("Failed to migrate %s ID %s: %s", self._name, old_id, e)
+                # Continuamos con el siguiente registro
+
+    def _update_foreign_keys(self, old_id, new_id):
+        """
+        Actualiza todas las referencias al ID viejo con el nuevo ID.
+        """
+        # A. Many2one y Many2many estándar
+        self.env.cr.execute("""
+            SELECT f.model, f.name, f.ttype, m.table AS table_name
+            FROM ir_model_fields f
+            JOIN ir_model m ON f.model_id = m.id
+            WHERE f.relation = %s AND f.store = True
+        """, [self._name])
+        
+        for field_model, field_name, ttype, table_name in self.env.cr.fetchall():
+            if ttype == 'many2one':
+                self.env.cr.execute(SQL(
+                    "UPDATE %s SET %s = %s WHERE %s = %s",
+                    SQL.identifier(table_name), SQL.identifier(field_name), new_id,
+                    SQL.identifier(field_name), old_id
+                ))
+            elif ttype == 'many2many':
+                # Para M2M necesitamos encontrar la tabla intermedia
+                field = self.env[field_model]._fields.get(field_name)
+                if field and field.relation_table:
+                    # field.column1 es el ID del modelo origen, field.column2 es el ID de nuestro modelo (relation)
+                    # Pero a veces es al revés si es la relación inversa.
+                    # ir_model_fields no nos dice cuál es cuál fácilmente, 
+                    # pero el ORM sí lo sabe.
+                    m2m_table = field.relation
+                    col_id = field.column2 
+                    self.env.cr.execute(SQL(
+                        "UPDATE %s SET %s = %s WHERE %s = %s",
+                        SQL.identifier(m2m_table), SQL.identifier(col_id), new_id,
+                        SQL.identifier(col_id), old_id
+                    ))
+
+        # B. Referencias Dinámicas (res_model / res_id)
+        dynamic_refs = [
+            ('ir_attachment', 'res_model', 'res_id'),
+            ('mail_message', 'model', 'res_id'),
+            ('mail_followers', 'res_model', 'res_id'),
+            ('mail_activity', 'res_model', 'res_id'),
+            ('ir_model_data', 'model', 'res_id'),
+        ]
+        for table, model_col, id_col in dynamic_refs:
+            try:
+                self.env.cr.execute(SQL(
+                    "UPDATE %s SET %s = %s WHERE %s = %s AND %s = %s",
+                    SQL.identifier(table), SQL.identifier(id_col), new_id,
+                    SQL.identifier(model_col), self._name, SQL.identifier(id_col), old_id
+                ))
+            except Exception:
+                pass # La tabla podría no existir
+
+        # C. Casos Especiales (mail.alias)
+        if 'mail.alias' in self.env:
+            self.env.cr.execute("""
+                UPDATE mail_alias SET alias_parent_thread_id = %s 
+                WHERE alias_parent_model_id = (SELECT id FROM ir_model WHERE model = %s)
+                AND alias_parent_thread_id = %s
+            """, [new_id, self._name, old_id])
+
+    def _auto_init(self):
+        """
+        Extend _auto_init to ensure migration is performed when the table is created/updated.
+        """
+        res = super()._auto_init()
+        if getattr(self, '_depend_models', None) is not None:
+            # Check if migration is needed and perform it
+            if self._check_migration_needed():
+                _logger.info("Auto-migrating %s to polymorphic hierarchy in _auto_init", self._name)
+                self._migrate_to_poly()
+        return res
+
     def _register_hook(self):
         """
         Perform actions right after the registry is built.
@@ -725,26 +839,27 @@ class PolyBase(BaseModel):
         """
         super()._register_hook()
 
-        def get_max_id(base_name) -> int:
-            """
-            Get the maximum ID currently used in a model's table.
-            """
-            base_model = self.env[base_name]
-            if base_model._table:
-                # Direct SQL to get the actual MAX ID, regardless of sequence state
-                try:
-                    self.env.cr.execute(SQL(
-                        "SELECT MAX(id) FROM %s",
-                        SQL.identifier(base_model._table)
-                    ))
-                    res = self.env.cr.fetchone()
-                    return res[0] or 0
-                except Exception:
-                    return 0
-            return 0
-
-        # Only perform ID conflict resolution for polymorphic models
+        # Only perform actions for polymorphic models
         if getattr(self, '_depend_models', None) is not None:
+            # 1. Sincronizar secuencias
+            def get_max_id(base_name) -> int:
+                """
+                Get the maximum ID currently used in a model's table.
+                """
+                base_model = self.env[base_name]
+                if base_model._table:
+                    # Direct SQL to get the actual MAX ID, regardless of sequence state
+                    try:
+                        self.env.cr.execute(SQL(
+                            "SELECT MAX(id) FROM %s",
+                            SQL.identifier(base_model._table)
+                        ))
+                        res = self.env.cr.fetchone()
+                        return res[0] or 0
+                    except Exception:
+                        return 0
+                return 0
+
             # Ensure ir.poly_base sequence starts AFTER the max ID of any participant table
             max_id = get_max_id('ir.poly_base')
             
@@ -1274,91 +1389,19 @@ class PolyBase(BaseModel):
         if not self:
             return True
 
-        # For polymorphic models, identify which IDs exist in the base records
-        # before trying to unlink them, to avoid "Record does not exist" errors
-        # for orphan records.
+        # For polymorphic models, delete records in base models
         if getattr(self, '_depend_models', None) is not None:
             for base_model_name in self._depend_models:
-                base_model = self.env[base_model_name]
-                # Filter self.ids to only those that exist in the base model
-                existing_base_records = base_model.browse(self.ids).exists()
-                if existing_base_records:
-                    existing_base_records.unlink()
+                self.env[base_model_name].browse(self.ids).unlink()
 
         # Standard unlink for the current concrete model
         return super().unlink()
 
 
     def read(self, fields=None, load='_classic_read'):
-        """
-        Override read to ensure log access fields are correctly populated even 
-        for orphan records where the related field mechanism might fail.
-        """
-        if getattr(self, '_depend_models', None) is None:
-            return super().read(fields=fields, load=load)
-
-        # Essential check: if fields is None or includes log access columns,
-        # we ensure they are not returned as False for existing records.
-        result = super().read(fields=fields, load=load)
-        
-        # Check for False values in log access columns that should be populated
-        log_fields = [f for f in (fields or LOG_ACCESS_COLUMNS) if f in LOG_ACCESS_COLUMNS]
-        if not log_fields:
-            return result
-            
-        # We only fix records that have False in one of the requested log fields
-        # and we confirm they exist in the concrete table.
-        for vals in result:
-            needs_fix = any(vals.get(f) is False for f in log_fields)
-            if needs_fix:
-                # Direct SQL hydration for this record
-                for field_name in log_fields:
-                    if vals.get(field_name) is False:
-                        try:
-                            # Direct query to concrete table
-                            self.env.cr.execute(f'SELECT {field_name} FROM {self._table} WHERE id=%s', (vals['id'],))
-                            row = self.env.cr.fetchone()
-                            if row and row[0]:
-                                vals[field_name] = row[0]
-                                # Update cache to help future computations (e.g. duration_tracking)
-                                record = self.browse(vals['id'])
-                                field = self._fields.get(field_name)
-                                if field:
-                                    # Use self.env.cache.set to update the Odoo cache
-                                    self.env.cache.set(record, field, row[0])
-                                    # FORCE update of record's internal cache to bypass related field descriptor
-                                    try:
-                                        # In Odoo 18, we use _cache which is a dict-like object
-                                        if hasattr(record, '_cache'):
-                                            record._cache[field] = row[0]
-                                    except Exception:
-                                        pass
-                        except Exception:
-                            pass
-        return result
+        return super().read(fields=fields, load=load)
 
     def _compute_field_value(self, field):
-        """
-        Override _compute_field_value to capture TypeError during duration_tracking 
-        computation on orphan records.
-        """
-        if field.name == 'duration_tracking' and getattr(self, '_depend_models', None) is not None:
-            try:
-                return super()._compute_field_value(field)
-            except TypeError as e:
-                if 'unsupported operand type(s) for -' in str(e):
-                    # This happens on orphan records where create_date is False
-                    # We ensure create_date is loaded and try again
-                    for record in self:
-                        # Attempt to load create_date correctly
-                        record.read(['create_date'])
-                    # Try again after hydration
-                    try:
-                        return super()._compute_field_value(field)
-                    except Exception:
-                        self.duration_tracking = {}
-                        return
-                raise e
         return super()._compute_field_value(field)
 
     def write(self, vals):
@@ -1407,55 +1450,28 @@ class PolyBase(BaseModel):
                 ) from e
 
         # Poly logic: identify which fields belong to parent/base models
-        # This is crucial for records created before the module installation (orphans)
-        # to ensure polymorphic fields are updated in the appropriate model.
-        if self._depend_models is not None:
+        if getattr(self, '_depend_models', None) is not None:
             # Separate fields by base model
             fields_by_model = {}
             for base_model_name in self._depend_models:
                 base_model = self.env[base_model_name]
-                # We check field existence against BOTH local model pool AND base model fields.
-                # In Odoo 18, polymorphic fields (injected) might not be in self._fields
-                # at early initialization but should be in the global pool.
                 pool_fields = self.pool[self._name]._fields
-                base_fields = {f for f in processed_vals if f in base_model._fields and (f not in self._fields and f not in pool_fields)}
                 
-                # If we didn't find them as "not local", but they ARE in base_model, 
-                # we still might want to redirect them if they are definitely polymorphic.
-                # Standard Odoo fields (active, name, etc.) should stay local.
-                if not base_fields:
-                    base_fields = {f for f in processed_vals if f in base_model._fields and f.startswith('pln_')}
-
+                # Identify fields that belong to this base model
+                base_fields = {
+                    f for f in processed_vals 
+                    if f in base_model._fields and (
+                        f.startswith('pln_') or 
+                        (f not in self._fields and f not in pool_fields)
+                    )
+                }
+                
                 if base_fields:
                     fields_by_model[base_model_name] = {f: processed_vals.pop(f) for f in base_fields}
 
             # Update base models for existing records
-            for base_model_name, base_vals in fields_by_model.items():
-                for record in self:
-                    base_record = self.env[base_model_name].browse(record.id)
-                    if base_record.exists():
-                        base_record.write(base_vals)
-                    else:
-                        # Auto-create polymorphic base record for orphans
-                        # This allows legacy records to become polymorphic upon write
-                        
-                        # 1. Ensure ir.poly_base exists for this ID
-                        poly_base = self.env['ir.poly_base'].browse(record.id)
-                        if not poly_base.exists():
-                            _logger.info("Auto-creating ir.poly_base for orphan record %s:%s", self._name, record.id)
-                            self.env.cr.execute(SQL(
-                                "INSERT INTO ir_poly_base (id, concrete_model_id, create_uid, create_date, write_uid, write_date) "
-                                "VALUES (%s, %s, %s, %s, %s, %s)",
-                                record.id,
-                                self.env['ir.model']._get_id(self._name),
-                                self.env.uid, self.env.cr.now(), self.env.uid, self.env.cr.now()
-                            ))
-                        
-                        # 2. Create the base record (e.g. numa.planning.node)
-                        create_vals = base_vals.copy()
-                        create_vals['id'] = record.id
-                        _logger.info("Auto-creating base record %s for orphan %s:%s", base_model_name, self._name, record.id)
-                        self.env[base_model_name].create([create_vals])
+            for current_base_model_name, current_base_vals in fields_by_model.items():
+                self.env[current_base_model_name].browse(self.ids).write(current_base_vals)
 
         # Call super with the remaining (standard/local) values
         return super().write(processed_vals)
@@ -1665,127 +1681,48 @@ class PolyBase(BaseModel):
             if not isinstance(values, dict) or 'id' not in values:
                 continue
                 
-            try:
-                record = self.browse(values['id'])
-                # Check if the polymorphic record exists
-                # We use a direct SQL check or a try-getattr to avoid expensive overhead
-                # but since we already browse it, we can check if it has a poly_base_id
-                # or if it's an "orphan" (concrete record exists, but ir.poly_base does not)
-                is_orphan = False
-                try:
-                    # In Odoo 18, access to non-existent fields or records might throw MissingError
-                    # if they are not in cache and don't exist in DB.
-                    # We check specifically for the existence of the polymorphic base.
-                    if not record.exists():
-                        is_orphan = True
-                except (MissingError, AccessError):
-                    is_orphan = True
-
-                if is_orphan:
-                    _logger.warning("numa_poly web_read: record %s is an orphan (missing polymorphic base).", values['id'])
-                    # For orphan records (legacy), we provide metadata from the original record
-                    # and synthetic model_id if requested.
-                    
-                    # Fetch basic metadata from the original record (not through poly hierarchy)
-                    # We use super().read to avoid our own overridden logic for these specific fields
-                    metadata = {}
-                    try:
-                        # Essential log access and display fields
-                        meta_fields = ['create_date', 'create_uid', 'write_date', 'write_uid', 'display_name']
-                        # We try to read them even if not in specification if they are False in values
-                        # because some core Odoo computations (like tracking duration) depend on them.
-                        meta_to_read = [f for f in meta_fields if f in specification or f == 'display_name' or (f in values and values[f] is False)]
-                        
-                        if meta_to_read:
-                            # Using a new browse on super() to bypass our logic
-                            # We use sudo() to be sure we can read metadata
-                            raw_data = super(PolyBase, record.sudo()).read(meta_to_read, load=None)
-                            if raw_data:
-                                metadata = raw_data[0]
-                                
-                        # Direct SQL fallback for create_date if still False (Odoo 18 ORM quirk on orphans)
-                        if metadata.get('create_date') is False or values.get('create_date') is False:
-                            self.env.cr.execute(f'SELECT create_date FROM {self._table} WHERE id=%s', (record.id,))
-                            row = self.env.cr.fetchone()
-                            if row and row[0]:
-                                metadata['create_date'] = row[0]
-                                
-                    except Exception as e:
-                        _logger.debug("Error fetching orphan metadata: %s", e)
-                        pass
-
-                    for field_name, spec in specification.items():
-                        # If it's a metadata field we just read, use it
-                        if field_name in metadata and (field_name not in values or values[field_name] is False):
-                            values[field_name] = metadata[field_name]
-                            continue
-                            
-                        if field_name in values and values[field_name] is not False:
-                            continue
-                            
-                        # Special case: concrete_model_id / model_id
-                        if field_name in ('concrete_model_id', 'model_id'):
-                            model_id = self.env['ir.model']._get_id(self._name)
-                            if isinstance(spec, dict) and 'fields' in spec:
-                                # They want the dict (many2one sub-read)
-                                values[field_name] = {'id': model_id, 'display_name': self.env['ir.model'].browse(model_id).display_name}
-                            else:
-                                values[field_name] = model_id
-                            continue
-
-                        # Hydrate with safe defaults for other missing fields
-                        if field_name not in values:
-                            is_list_like = isinstance(spec, dict) and any(k in spec for k in ('limit', 'offset', 'order'))
-                            values[field_name] = [] if is_list_like else False
+            record = self.browse(values['id'])
+            for field_name, spec in specification.items():
+                if field_name in values:
                     continue
 
-                for field_name, spec in specification.items():
-                    if field_name in values:
-                        continue
-
-                    # Determine if it's expected to be a list by the UI (x2many)
-                    # UI specification for x2many fields usually contains 'fields', 'limit', 'offset' or 'order'
-                    # But it also contains 'fields' for many2one fields that want sub-data.
-                    # We distinguish them to avoid returning [dict] for many2one, which breaks Odoo's SQL queries.
-                    has_subfields = isinstance(spec, dict) and 'fields' in spec
-                    is_list_like = isinstance(spec, dict) and any(k in spec for k in ('limit', 'offset', 'order'))
-                    
-                    try:
-                        val = getattr(record, field_name)
-                        if isinstance(val, models.BaseModel):
-                            # It's a recordset (Relational field)
-                            # Identify type from field definition if possible
-                            field_def = record._fields.get(field_name)
-                            if field_def:
-                                is_x2many = field_def.type in ('one2many', 'many2many')
-                            else:
-                                is_x2many = is_list_like or len(val) > 1
-
-                            if has_subfields:
-                                # Sub-read (recursive)
-                                res = val.web_read(spec['fields'])
-                                if is_x2many:
-                                    values[field_name] = res
-                                else:
-                                    # Many2one returns a single dict (or False)
-                                    values[field_name] = res[0] if res else False
-                            else:
-                                # Return IDs (Normalization for Odoo 18 SQL queries)
-                                if is_x2many:
-                                    values[field_name] = val.ids
-                                else:
-                                    # Many2one MUST be an integer ID or False
-                                    values[field_name] = val.id or False
+                # Determine if it's expected to be a list by the UI (x2many)
+                has_subfields = isinstance(spec, dict) and 'fields' in spec
+                is_list_like = isinstance(spec, dict) and any(k in spec for k in ('limit', 'offset', 'order'))
+                
+                try:
+                    val = getattr(record, field_name)
+                    if isinstance(val, models.BaseModel):
+                        # It's a recordset (Relational field)
+                        field_def = record._fields.get(field_name)
+                        if field_def:
+                            is_x2many = field_def.type in ('one2many', 'many2many')
                         else:
-                            # Simple field
-                            values[field_name] = val if val is not None else False
-                            
-                    except Exception:
-                        # Final fallback ensuring type consistency
-                        is_x2many = isinstance(spec, dict) and any(k in spec for k in ('limit', 'offset', 'order'))
-                        values[field_name] = [] if is_x2many else False
-            except Exception:
-                continue
+                            is_x2many = is_list_like or len(val) > 1
+
+                        if has_subfields:
+                            # Sub-read (recursive)
+                            res = val.web_read(spec['fields'])
+                            if is_x2many:
+                                values[field_name] = res
+                            else:
+                                # Many2one returns a single dict (or False)
+                                values[field_name] = res[0] if res else False
+                        else:
+                            # Return IDs (Normalization for Odoo 18 SQL queries)
+                            if is_x2many:
+                                values[field_name] = val.ids
+                            else:
+                                # Many2one MUST be an integer ID or False
+                                values[field_name] = val.id or False
+                    else:
+                        # Simple field
+                        values[field_name] = val if val is not None else False
+                        
+                except Exception:
+                    # Final fallback ensuring type consistency
+                    is_x2many = isinstance(spec, dict) and any(k in spec for k in ('limit', 'offset', 'order'))
+                    values[field_name] = [] if is_x2many else False
         
         return values_list
 

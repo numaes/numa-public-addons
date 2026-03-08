@@ -38,9 +38,9 @@ Key Features
 ============
 
 * **Multiple Polymorphic Inheritance:** Inherit from multiple parents simultaneously using ``_depend_models``. No intermediate tables, no boilerplate.
-* **Shared ID Space:** One ID to rule them all. Absolute referential integrity across the entire stack.
+* **Backward Compatibility**: Adopt it today. It handles "legacy" records (pre-poly) gracefully and includes an **automatic migration engine** to integrate existing records into the polymorphic hierarchy during module upgrades.
+* **Shared ID Space**: One ID to rule them all. Absolute referential integrity across the entire stack.
 * **SQL-Level Performance:** By patching the core ORM, searches and filtering across complex hierarchies are processed at the database layer with near-zero overhead.
-* **Backward Compatibility:** Adopt it today. It handles "legacy" records (pre-poly) gracefully and is completely transparent to standard Odoo models.
 * **Architectural Foundation:** It is the power engine behind **numa_fsm**, proving its stability in managing complex State Machines and dynamic UI schemas.
 
 Usage
@@ -181,7 +181,7 @@ FAQ for the Skeptics
 Only if done blindly. **Numa Poly** is designed for Odoo 18's specific internals, with recursion guards and metadata synchronization. It's been battle-tested in large-scale implementations.
 
 **"What happens to my old data?"**
-Nothing. **Numa Poly** detects records without a ``poly_base`` entry and treats them as "Self-Concrete" models. Migration is incremental, not mandatory.
+It's safe and automatically upgraded. **Numa Poly** detects records without a ``poly_base`` entry and triggers a migration to integrate them into the polymorphic hierarchy, updating all existing references (FKs, XML IDs, Attachments) in the process.
 
 **"Does it affect performance?"**
 It improves it. By avoiding the JOIN-heavy patterns of standard delegation, you get a flatter, faster database structure.
