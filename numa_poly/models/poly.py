@@ -201,13 +201,27 @@ class PolyReference(fields.Many2one):
             For a single record: the related record
             For multiple records: a recordset of related records
         """
-        # base case: single record
-        if records is not None and len(records._ids) <= 1:
-            return self.convert_to_record(None, records)
-        
-        # records is None (class level access) or multiple records
+        # records is None (class level access)
         if records is None:
             return self
+
+        # Odoo 18 specific: Check if the field is set in _fields of the model
+        # If it's not, it means the setup of the field was not completed for this model,
+        # which can happen during registry building or due to late injection.
+        if self.name not in records._fields:
+            # Fallback to standard getattr behavior if we can't find ourselves in _fields
+            # However, for PolyReference, we want to try to provide the record if possible
+            try:
+                # If we're here, it means Odoo is calling the descriptor but it's not in _fields
+                # This is a weird state, usually during setup or if the pool is inconsistent.
+                # We return self to avoid AttributeError during registry setup
+                return self
+            except Exception:
+                return self
+
+        # base case: single record
+        if len(records._ids) <= 1:
+            return self.convert_to_record(None, records)
             
         # multirecord case: use mapped IDs to build a related recordset
         return records.pool[self.comodel_name](records.env, tuple(records.ids), tuple(records.ids))
@@ -583,7 +597,32 @@ class PolyBase(BaseModel):
         
         try:
             if self._depend_models is not None:
+                # Odoo 18: ensure we are in the right model setup context
+                # and avoid double initialization if possible
                 self._build_dependant_model_attributes()
+                
+                # Force re-evaluation of _fields and other model attributes
+                # that might have been cached by Odoo 18
+                # We use a safer way to clean registry caches if they exist
+                if hasattr(self.pool, 'field_computed'):
+                    if self._name in self.pool.field_computed:
+                        del self.pool.field_computed[self._name]
+                if hasattr(self.pool, 'field_inverses'):
+                    if self._name in self.pool.field_inverses:
+                        del self.pool.field_inverses[self._name]
+                
+                # Critical: Odoo 18 might have initialized __slots__ or other caches
+                # that exclude late-injected fields.
+                # We force the descriptors on the model class.
+                model_class = type(self)
+                for field_name, field in self._fields.items():
+                    if not hasattr(model_class, field_name):
+                        # Use the field descriptor if available, otherwise use field object
+                        setattr(model_class, field_name, field)
+                        
+                # Update _fields of the model in the pool to match the local _fields
+                if self._name in self.pool.models:
+                    self.pool[self._name]._fields.update(self._fields)
         except Exception as e:
             _logger.exception(f"[Poly.Setup] CRITICAL ERROR during injection for {self._name}: {e}")
 
