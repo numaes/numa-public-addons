@@ -1116,15 +1116,22 @@ class PolyBase(BaseModel):
         Returns:
             Result of the standard unlink operation
         """
-        result = super().unlink()
+        if not self:
+            return True
 
-        # For polymorphic models, also delete records in dependent models
+        # For polymorphic models, identify which IDs exist in the base records
+        # before trying to unlink them, to avoid "Record does not exist" errors
+        # for orphan records.
         if self._depend_models is not None:
-            for base in self._depend_models:
-                base_model = self.env[base]
-                base_model.browse(self.ids).unlink()
+            for base_model_name in self._depend_models:
+                base_model = self.env[base_model_name]
+                # Filter self.ids to only those that exist in the base model
+                existing_base_records = base_model.browse(self.ids).exists()
+                if existing_base_records:
+                    existing_base_records.unlink()
 
-        return result
+        # Standard unlink for the current concrete model
+        return super().unlink()
 
 
     def write(self, vals):
@@ -1134,6 +1141,9 @@ class PolyBase(BaseModel):
         Similar to create, this allows updating subclass-specific fields
         through the payload mechanism.
         """
+        if not self:
+            return True
+
         # Make a copy to avoid mutating the original
         processed_vals = vals.copy()
         
@@ -1168,8 +1178,29 @@ class PolyBase(BaseModel):
                 raise UserError(
                     _("Error processing polymorphic payload: %s") % str(e)
                 ) from e
-        
-        # Call super with processed values
+
+        # Poly logic: identify which fields belong to parent/base models
+        # This is crucial for records created before the module installation (orphans)
+        # to ensure polymorphic fields are updated in the appropriate model.
+        if self._depend_models is not None:
+            # Separate fields by base model
+            fields_by_model = {}
+            for base_model_name in self._depend_models:
+                base_model = self.env[base_model_name]
+                base_fields = {f for f in processed_vals if f in base_model._fields}
+                if base_fields:
+                    fields_by_model[base_model_name] = {f: processed_vals.pop(f) for f in base_fields}
+
+            # Update base models for existing records
+            for base_model_name, base_vals in fields_by_model.items():
+                base_records = self.env[base_model_name].browse(self.ids).exists()
+                if base_records:
+                    # Only update records that actually exist in the base
+                    # If some records in self are orphans, they simply don't have
+                    # base records to update for those polymorphic fields.
+                    base_records.write(base_vals)
+
+        # Call super with the remaining (standard/local) values
         return super().write(processed_vals)
 
     def _write_multi(self, vals_list):
@@ -1351,13 +1382,72 @@ class PolyBase(BaseModel):
                 fields_to_read.append('id')
             values_list = self.read(fields_to_read, load=None)
 
-        # 2. Hydrate missing or polymorphic fields
         for values in values_list:
             if not isinstance(values, dict) or 'id' not in values:
                 continue
                 
             try:
                 record = self.browse(values['id'])
+                # Check if the polymorphic record exists
+                # We use a direct SQL check or a try-getattr to avoid expensive overhead
+                # but since we already browse it, we can check if it has a poly_base_id
+                # or if it's an "orphan" (concrete record exists, but ir.poly_base does not)
+                is_orphan = False
+                try:
+                    # In Odoo 18, access to non-existent fields or records might throw MissingError
+                    # if they are not in cache and don't exist in DB.
+                    # We check specifically for the existence of the polymorphic base.
+                    if not record.exists():
+                        is_orphan = True
+                except (MissingError, AccessError):
+                    is_orphan = True
+
+                if is_orphan:
+                    _logger.warning("numa_poly web_read: record %s is an orphan (missing polymorphic base).", values['id'])
+                    # For orphan records (legacy), we provide metadata from the original record
+                    # and synthetic model_id if requested.
+                    
+                    # Fetch basic metadata from the original record (not through poly hierarchy)
+                    # We use super().read to avoid our own overridden logic for these specific fields
+                    metadata = {}
+                    try:
+                        # We only try to read these if they were requested or if we need them as fallback
+                        meta_fields = ['create_date', 'create_uid', 'write_date', 'write_uid', 'display_name']
+                        # Filter to only requested ones or essential ones
+                        meta_to_read = [f for f in meta_fields if f in specification or f == 'display_name']
+                        if meta_to_read:
+                            # Using a new browse on super() to bypass our logic
+                            raw_data = super(PolyBase, record).read(meta_to_read, load=None)
+                            if raw_data:
+                                metadata = raw_data[0]
+                    except Exception:
+                        pass
+
+                    for field_name, spec in specification.items():
+                        if field_name in values and values[field_name] is not False:
+                            continue
+                            
+                        # If it's a metadata field we just read, use it
+                        if field_name in metadata:
+                            values[field_name] = metadata[field_name]
+                            continue
+                            
+                        # Special case: concrete_model_id / model_id
+                        if field_name in ('concrete_model_id', 'model_id'):
+                            model_id = self.env['ir.model']._get_id(self._name)
+                            if isinstance(spec, dict) and 'fields' in spec:
+                                # They want the dict (many2one sub-read)
+                                values[field_name] = {'id': model_id, 'display_name': self.env['ir.model'].browse(model_id).display_name}
+                            else:
+                                values[field_name] = model_id
+                            continue
+
+                        # Hydrate with safe defaults for other missing fields
+                        if field_name not in values:
+                            is_list_like = isinstance(spec, dict) and any(k in spec for k in ('limit', 'offset', 'order'))
+                            values[field_name] = [] if is_list_like else False
+                    continue
+
                 for field_name, spec in specification.items():
                     if field_name in values:
                         continue

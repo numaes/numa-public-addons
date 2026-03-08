@@ -128,6 +128,15 @@ def _build_model(cls, pool, cr):
 - ✅ **Completo**: Cubre todos los aspectos necesarios
 - ⚠️ **Rendimiento**: Proceso costoso en tiempo de arranque
 - ⚠️ **Orden de dependencias**: El orden en `_depend_models` importa (último gana en colisiones)
+- ⚠️ **Registros Huérfanos**: Maneja registros legacy (pre-polimórficos) con degradación elegante de metadatos.
+
+### 9. Manejo de Registros Huérfanos (Legacy)
+
+El sistema incluye mecanismos de resiliencia para registros que existen en el modelo concreto pero carecen de una base polimórfica en `ir.poly_base`:
+
+1.  **Lectura (`web_read` / `fetch`)**: Detecta la ausencia del registro en la jerarquía polimórfica y realiza un fallback a `super().read()` para recuperar campos estándar (`display_name`, `create_date`, `write_uid`, etc.).
+2.  **Escritura (`write`)**: Separa los campos pertenecientes a modelos base y solo intenta actualizarlos si el registro tiene una identidad polimórfica válida (`exists()`).
+3.  **Eliminación (`unlink`)**: Valida la existencia de los componentes en los modelos base antes de intentar el borrado en cascada para evitar errores de integridad.
 
 ### 3. PolyReference (Campo Especial)
 

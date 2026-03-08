@@ -462,6 +462,20 @@ Test the following scenarios:
 
 ---
 
+## ⚠️ PRODUCTION WARNING - EXPERIMENTAL STATUS
+
+**Numa Poly** is currently in **EXPERIMENTAL** status. While it provides powerful architectural capabilities, its use in production environments is **STRONGLY DISCOURAGED** for mission-critical systems at this stage.
+
+### Known Constraints and Risks:
+1.  **Monkey Patching:** It modifies Odoo's core `BaseModel`. While guarded, it may conflict with other deeply-integrating modules or break during Odoo core updates.
+2.  **Performance Overheads:** Polymorphic operations (CRUD) involve multiple database tables, which can increase the total number of queries compared to standard Odoo models.
+3.  **Data Consistency:** Although the system handles "legacy" (orphan) records gracefully, the best practice is to have a clean polymorphic state. Mixing legacy data and polymorphic data in the same model may lead to complex debugging scenarios.
+4.  **Security Granularity:** Security rules (ACLs) must be carefully managed across the entire polymorphic hierarchy.
+
+**Conclusion:** Use Numa Poly for prototyping, non-critical modules, or when the architectural benefits clearly outweigh the maintenance risks. Always perform exhaustive testing in a staging environment before any production deployment.
+
+---
+
 ## Migration from Odoo 17
 
 If you're migrating from Odoo 17 or earlier versions:

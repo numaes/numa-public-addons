@@ -51,9 +51,11 @@ La herencia se configura mediante el atributo `_depend_models`, que mapea nombre
 
 6. **Posibles Problemas con Reglas de Acceso**: La documentación menciona que las reglas de acceso podrían necesitar ser aplicadas base por base, lo que podría complicar la seguridad.
 
-7. **Estado Experimental**: El módulo se describe como una prueba de concepto, con advertencias sobre su uso en producción.
+7. **Estado Experimental**: El módulo se describe como una prueba de concepto, con advertencias sobre su uso en producción. El uso en entornos de producción críticos está **totalmente desalentado**.
 
 8. **Sobrecarga de Almacenamiento**: Requiere tablas adicionales y registros duplicados para mantener la coherencia, lo que aumenta el uso de almacenamiento.
+
+9. **Manejo de Registros Legacy**: Si se instala en un sistema con datos pre-existentes, los registros antiguos (huérfanos) carecerán de base polimórfica. Aunque el sistema implementa mecanismos de tolerancia a fallos, esto puede generar inconsistencias visuales o funcionales si no se gestiona adecuadamente.
 
 ## Implicaciones de Rendimiento
 
