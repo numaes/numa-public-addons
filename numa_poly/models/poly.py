@@ -371,7 +371,7 @@ class PolyBase(BaseModel):
     _checked_id = False
 
     def check_access(self, operation: str) -> None:
-        if self._depend_models is None:
+        if getattr(self, '_depend_models', None) is None:
             return super().check_access(operation)
         
         if self.env.su:
@@ -395,7 +395,7 @@ class PolyBase(BaseModel):
             base_model.check_access(operation)
 
     def has_access(self, operation: str) -> bool:
-        if self._depend_models is None:
+        if getattr(self, '_depend_models', None) is None:
             return super().has_access(operation)
         
         if self.env.su:
@@ -1269,7 +1269,7 @@ class PolyBase(BaseModel):
         # For polymorphic models, identify which IDs exist in the base records
         # before trying to unlink them, to avoid "Record does not exist" errors
         # for orphan records.
-        if self._depend_models is not None:
+        if getattr(self, '_depend_models', None) is not None:
             for base_model_name in self._depend_models:
                 base_model = self.env[base_model_name]
                 # Filter self.ids to only those that exist in the base model
@@ -1286,7 +1286,7 @@ class PolyBase(BaseModel):
         Override read to ensure log access fields are correctly populated even 
         for orphan records where the related field mechanism might fail.
         """
-        if self._depend_models is None:
+        if getattr(self, '_depend_models', None) is None:
             return super().read(fields=fields, load=load)
 
         # Essential check: if fields is None or includes log access columns,
@@ -1334,7 +1334,7 @@ class PolyBase(BaseModel):
         Override _compute_field_value to capture TypeError during duration_tracking 
         computation on orphan records.
         """
-        if field.name == 'duration_tracking' and self._depend_models is not None:
+        if field.name == 'duration_tracking' and getattr(self, '_depend_models', None) is not None:
             try:
                 return super()._compute_field_value(field)
             except TypeError as e:
@@ -1528,7 +1528,7 @@ class PolyBase(BaseModel):
 
 
         # Update audit fields for polymorphic models
-        if self._log_access and self._depend_models is not None and self._name != 'ir.poly_base':
+        if self._log_access and getattr(self, '_depend_models', None) and self._name != 'ir.poly_base':
             poly_base_model = self.env['ir.poly_base']
             log_vals = {'write_uid': self.env.uid, 'write_date': self.env.cr.now()}
             poly_base_model.browse(self.ids).write(log_vals)
@@ -1538,7 +1538,7 @@ class PolyBase(BaseModel):
         """
         Get fields definition with inherited fields from dependent models.
         """
-        if not hasattr(self, '_depend_models') or self._depend_models is None or not self._depend_models:
+        if getattr(self, '_depend_models', None) is None:
             return super().fields_get(allfields=allfields, attributes=attributes)
 
         result = super().fields_get(allfields=allfields, attributes=attributes)
@@ -1560,7 +1560,7 @@ class PolyBase(BaseModel):
         Override to avoid ValueError on polymorphic models when a field is not
         found on the current model but might exist in the polymorphic hierarchy.
         """
-        if not hasattr(self, '_depend_models') or self._depend_models is None or not self._depend_models:
+        if getattr(self, '_depend_models', None) is None:
             return super()._determine_fields_to_fetch(field_names, ignore_when_in_cache)
 
         # Filter out fields that are not in self._fields or pool
@@ -1575,7 +1575,7 @@ class PolyBase(BaseModel):
         """
         Override web_read to handle polymorphic fields and ensure data consistency.
         """
-        if not hasattr(self, '_depend_models') or self._depend_models is None or not self._depend_models:
+        if getattr(self, '_depend_models', None) is None:
             return super().web_read(specification)
 
         # 1. Filter standard fields to avoid ValueError/KeyError in super().web_read
