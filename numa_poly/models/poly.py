@@ -1332,7 +1332,8 @@ class PolyBase(BaseModel):
         """
         Override web_read to handle polymorphic fields that might not be in self._fields.
         If a field is requested but not in self._fields, we skip it for the main read
-        and let the UI handle it or provide a dummy value if necessary.
+        to avoid ValueError, and then we ensure the returned values list contains
+        all requested fields (even if False) to avoid KeyError in Odoo's web_read caller.
         """
         if self._depend_models is None:
             return super().web_read(specification)
@@ -1342,7 +1343,16 @@ class PolyBase(BaseModel):
             for name, spec in specification.items()
             if name in self._fields or name == 'id'
         }
-        return super().web_read(new_specification)
+        values_list = super().web_read(new_specification)
+
+        if len(new_specification) < len(specification):
+            # Fill in missing fields with False to avoid KeyError in Odoo's web_read processing
+            for values in values_list:
+                for field_name in specification:
+                    if field_name not in values:
+                        values[field_name] = False
+
+        return values_list
 
     def _field_to_sql(self, alias: str, fname: str, query: (Query | None) = None, flush: bool = True) -> SQL:
         """
