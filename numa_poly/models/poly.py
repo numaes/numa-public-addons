@@ -168,9 +168,23 @@ class PolyReference(fields.Many2one):
             record: The record containing this field
 
         Returns:
-            A record instance of the comodel with the same ID as the current record
+            A record instance of the comodel with the same ID as the current record.
+            If the record does not exist in the comodel (orphan), returns an empty recordset.
         """
-        return record.pool[self.comodel_name](record.env, (record.id,), (record.id,))
+        if not record:
+            return record.pool[self.comodel_name](record.env, (), ())
+
+        # Optimization: for PolyReference fields, we expect the ID to match
+        # However, for orphan records, the comodel entry might not exist.
+        # We perform a direct check if the record exists in the comodel.
+        comodel = record.pool[self.comodel_name]
+        res = comodel(record.env, (record.id,), (record.id,))
+        try:
+            if not res.exists():
+                return comodel(record.env, (), ())
+        except Exception:
+            return comodel(record.env, (), ())
+        return res
 
     def __get__(self, records, owner=None):
         """
