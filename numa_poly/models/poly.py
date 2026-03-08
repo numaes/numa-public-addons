@@ -1369,44 +1369,51 @@ class PolyBase(BaseModel):
             if not isinstance(values, dict) or 'id' not in values:
                 continue
                 
-            record = self.browse(values['id'])
-            for field_name, spec in specification.items():
-                if field_name not in values:
-                    # Is it a polymorphic field from numa_poly?
-                    # We try to get it from the record, which might trigger PolyBase.__getattr__
-                    try:
-                        val = getattr(record, field_name)
-                        # If it's a recordset, we need to handle it according to spec
-                        if isinstance(val, models.BaseModel):
-                            # Correctly identify if it's an x2many based on specification structure
-                            is_x2many = isinstance(spec, dict) and ('limit' in spec or 'offset' in spec or 'order' in spec)
-                            
-                            # web_read recursively calls itself for many2one fields with 'fields' in spec
-                            if isinstance(spec, dict) and 'fields' in spec:
-                                sub_spec = spec['fields']
-                                if not val:
-                                    values[field_name] = [] if is_x2many else False
-                                else:
-                                    # Recursive call for the relation
-                                    res = val.web_read(sub_spec)
-                                    if is_x2many:
-                                        values[field_name] = res
+            try:
+                record = self.browse(values['id'])
+                for field_name, spec in specification.items():
+                    if field_name not in values:
+                        # Is it a polymorphic field from numa_poly?
+                        # We try to get it from the record, which might trigger PolyBase.__getattr__
+                        try:
+                            val = getattr(record, field_name)
+                            # If it's a recordset, we need to handle it according to spec
+                            if isinstance(val, models.BaseModel):
+                                # Correctly identify if it's an x2many based on specification structure
+                                is_x2many = isinstance(spec, dict) and ('limit' in spec or 'offset' in spec or 'order' in spec)
+                                
+                                # web_read recursively calls itself for many2one fields with 'fields' in spec
+                                if isinstance(spec, dict) and 'fields' in spec:
+                                    sub_spec = spec['fields']
+                                    if not val:
+                                        values[field_name] = [] if is_x2many else False
                                     else:
-                                        # It's a many2one
-                                        values[field_name] = res[0] if res else False
-                            else:
-                                if not val:
-                                    values[field_name] = [] if is_x2many else False
+                                        # Recursive call for the relation
+                                        res = val.web_read(sub_spec)
+                                        if is_x2many:
+                                            values[field_name] = res
+                                        else:
+                                            # It's a many2one
+                                            values[field_name] = res[0] if res else False
                                 else:
-                                    # Standard Odoo behavior for relational fields in read() or web_read context.
-                                    # x2many should be a list of IDs. many2one should be the ID (integer).
-                                    values[field_name] = val.ids if is_x2many else val.id
-                        else:
-                            values[field_name] = val
-                    except Exception:
-                        # Final fallback for truly missing fields to avoid UI crash
-                        is_x2many = isinstance(spec, dict) and ('fields' in spec or 'limit' in spec or 'order' in spec)
-                        values[field_name] = [] if is_x2many else False
+                                    if not val:
+                                        values[field_name] = [] if is_x2many else False
+                                    else:
+                                        # Standard Odoo behavior for relational fields in read() or web_read context.
+                                        # x2many should be a list of IDs. many2one should be the ID (integer).
+                                        values[field_name] = val.ids if is_x2many else val.id
+                            else:
+                                values[field_name] = val
+                        except Exception:
+                            # Final fallback for truly missing fields to avoid UI crash.
+                            # We must be very careful to return a list if it's an x2many.
+                            # If the specification has 'fields', 'limit', 'offset', or 'order', 
+                            # it's almost certainly expected to be a list by Owl.
+                            is_list_like = isinstance(spec, dict) and any(k in spec for k in ('fields', 'limit', 'offset', 'order'))
+                            values[field_name] = [] if is_list_like else False
+            except Exception:
+                # Catch-all for any other weird errors in this record processing to keep the list alive
+                continue
         
         return values_list
 
