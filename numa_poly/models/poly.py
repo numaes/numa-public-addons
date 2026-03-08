@@ -19,7 +19,7 @@ import json
 
 # Odoo imports
 import odoo
-from odoo import api, models, fields, _
+from odoo import api, models, fields, _, Command
 from odoo import SUPERUSER_ID
 from odoo.models import BaseModel, LOG_ACCESS_COLUMNS, INSERT_BATCH_SIZE, UPDATE_BATCH_SIZE, GC_UNLINK_LIMIT
 from odoo.exceptions import AccessError, MissingError, ValidationError, UserError
@@ -719,27 +719,42 @@ class PolyBase(BaseModel):
                     
                     # Limpiar recordsets que puedan quedar en vals
                     for k, v in list(vals.items()):
-                        if isinstance(v, models.BaseModel):
-                            vals[k] = v.id if not v._context.get('prefetch_fields') else v.ids[0] if v.ids else False
-                        elif isinstance(v, tuple) and len(v) == 2 and isinstance(v[0], int):
-                            # Caso (id, name) que a veces devuelve read
-                            vals[k] = v[0]
-                        elif isinstance(v, list) and v and isinstance(v[0], models.BaseModel):
-                            # Caso lista de recordsets
-                            vals[k] = [r.id for r in v]
-                        elif hasattr(v, 'ids') and not isinstance(v, (list, tuple, dict)):
-                            # Caso recordset genérico
-                            vals[k] = v.ids[0] if v.ids else False
-                        
-                        # Doble verificación para Many2one (en Odoo 18 pueden venir como recordsets incluso con read)
+                        # Obtenemos el campo para saber su tipo
                         field = self._fields.get(k)
-                        if field and field.type == 'many2one' and not isinstance(vals[k], (int, bool)):
-                            if hasattr(vals[k], 'id'):
-                                vals[k] = vals[k].id
-                            elif isinstance(vals[k], (list, tuple)) and vals[k]:
-                                vals[k] = vals[k][0]
+                        if not field:
+                            continue
+                            
+                        # Si el valor ya es un ID (int) o False, no necesitamos hacer nada especial
+                        # excepto para M2M que podrían ser listas de IDs.
+                        if field.type == 'many2one':
+                            if isinstance(v, models.BaseModel):
+                                vals[k] = v.id if v else False
+                            elif isinstance(v, (list, tuple)) and v:
+                                # read_format a veces devuelve (id, name) o [id, name]
+                                vals[k] = v[0] if isinstance(v[0], int) else False
+                            elif not isinstance(v, (int, bool)):
+                                # Cualquier otro caso extraño (como recordsets de Odoo 18 persistentes)
+                                if hasattr(v, 'id'):
+                                    vals[k] = v.id
+                                else:
+                                    vals[k] = False
+                                    
+                        elif field.type in ('many2many', 'one2many'):
+                            # Para relaciones X2many, read_format devuelve una lista de IDs
+                            if isinstance(v, models.BaseModel):
+                                vals[k] = [Command.set(v.ids)]
+                            elif isinstance(v, list):
+                                # Si ya es una lista de IDs, la convertimos a comando ORM para seguridad
+                                if v and isinstance(v[0], (int, str)):
+                                    vals[k] = [Command.set(v)]
+                                else:
+                                    vals[k] = False
                             else:
                                 vals[k] = False
+                        
+                        # Limpiar campos técnicos de Odoo que no deben pasarse al create
+                        if k in ('__last_update', 'display_name', 'create_uid', 'create_date', 'write_uid', 'write_date'):
+                            vals.pop(k)
                     
                     # Preservar campos de auditoría
                     self.env.cr.execute(SQL(
@@ -826,18 +841,17 @@ class PolyBase(BaseModel):
             elif ttype == 'many2many':
                 # Para M2M necesitamos encontrar la tabla intermedia
                 field = self.env[field_model]._fields.get(field_name)
-                if field and field.relation_table:
-                    # field.column1 es el ID del modelo origen, field.column2 es el ID de nuestro modelo (relation)
-                    # Pero a veces es al revés si es la relación inversa.
-                    # ir_model_fields no nos dice cuál es cuál fácilmente, 
-                    # pero el ORM sí lo sabe.
-                    m2m_table = field.relation
-                    col_id = field.column2 
-                    self.env.cr.execute(SQL(
-                        "UPDATE %s SET %s = %s WHERE %s = %s",
-                        SQL.identifier(m2m_table), SQL.identifier(col_id), new_id,
-                        SQL.identifier(col_id), old_id
-                    ))
+                # En Odoo 18, field.relation es el nombre de la tabla intermedia si no se especifica.
+                # Pero la forma más segura de obtener table, col1, col2 es a través de los atributos del objeto field
+                if field:
+                    m2m_table = getattr(field, 'relation', None)
+                    col_id = getattr(field, 'column2', None) # column2 suele ser la del modelo relacionado (nosotros)
+                    if m2m_table and col_id:
+                        self.env.cr.execute(SQL(
+                            "UPDATE %s SET %s = %s WHERE %s = %s",
+                            SQL.identifier(m2m_table), SQL.identifier(col_id), new_id,
+                            SQL.identifier(col_id), old_id
+                        ))
 
         # B. Referencias Dinámicas (res_model / res_id)
         dynamic_refs = [
