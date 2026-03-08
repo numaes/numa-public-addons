@@ -694,11 +694,11 @@ class PolyBase(BaseModel):
                 model_class = type(self)
                 for field_name, field in self._fields.items():
                     if field_name not in model_class.__dict__:
-                        # Critical for Odoo 18: We must inject descriptors but avoid
-                        # standard Odoo descriptors that trigger ensure_one() on class access.
-                        # Related fields are especially sensitive.
-                        if not field.related:
-                            setattr(model_class, field_name, field)
+                        # In Odoo 18, we must inject descriptors for polymorphic fields.
+                        # We identify them because they were added to self._fields during 
+                        # build_dependant_model_attributes.
+                        # We include related fields here because polymorphic fields ARE related.
+                        setattr(model_class, field_name, field)
                         
                 # Update _fields of the model in the pool
                 if self._name in self.pool.models:
@@ -720,47 +720,55 @@ class PolyBase(BaseModel):
 
         This method extends the standard Odoo registry hook to ensure that
         polymorphic models don't have ID conflicts. It checks the current
-        sequence values for all dependent models and adjusts the ir.poly_base
+        max ID values for all dependent models and adjusts the ir.poly_base
         sequence if necessary to avoid ID clashes.
         """
         super()._register_hook()
 
-        def get_next_id(base_name) -> int:
+        def get_max_id(base_name) -> int:
             """
-            Get the next ID that would be assigned for a model.
-
-            Args:
-                base_name: The name of the model
-
-            Returns:
-                The next ID value that would be assigned
+            Get the maximum ID currently used in a model's table.
             """
             base_model = self.env[base_name]
             if base_model._table:
-                seq_name = f"{base_model._table}_id_seq"
-                self.env.cr.execute(SQL(
-                    "SELECT last_value FROM %s",
-                    SQL.identifier(seq_name)
-                ))
-                next_id = self.env.cr.fetchone()[0]
-                return next_id
-            else:
-                return 1
+                # Direct SQL to get the actual MAX ID, regardless of sequence state
+                try:
+                    self.env.cr.execute(SQL(
+                        "SELECT MAX(id) FROM %s",
+                        SQL.identifier(base_model._table)
+                    ))
+                    res = self.env.cr.fetchone()
+                    return res[0] or 0
+                except Exception:
+                    return 0
+            return 0
 
         # Only perform ID conflict resolution for polymorphic models
-        if self._depend_models is not None:
-            # Ensure no polymorphic models have existing records
-            # with IDs clashing with newly created polymorphic records
-            poly_base_id = get_next_id('ir.poly_base')
+        if getattr(self, '_depend_models', None) is not None:
+            # Ensure ir.poly_base sequence starts AFTER the max ID of any participant table
+            max_id = get_max_id('ir.poly_base')
+            
+            # Check self (the concrete model)
+            max_id = max(max_id, get_max_id(self._name))
+            
+            # Check all dependent/base models
             for base_name in self._depend_models.keys():
-                current_id = get_next_id(base_name)
-                if current_id and current_id > (poly_base_id or 0):
-                    poly_base_id = current_id
-                    # Use SQL.identifier for the sequence name string
+                max_id = max(max_id, get_max_id(base_name))
+            
+            if max_id > 0:
+                # Update ir.poly_base sequence to avoid clashing with existing records
+                self.env.cr.execute(SQL(
+                    "SELECT last_value FROM %s",
+                    SQL.identifier("ir_poly_base_id_seq")
+                ))
+                current_seq = self.env.cr.fetchone()[0]
+                
+                if max_id >= current_seq:
+                    _logger.info("Synchronizing ir.poly_base sequence to %s (max detected ID: %s)", max_id + 1, max_id)
                     self.env.cr.execute(SQL(
                         "ALTER SEQUENCE IF EXISTS %s RESTART WITH %s",
                         SQL.identifier("ir_poly_base_id_seq"),
-                        current_id + 1
+                        max_id + 1
                     ))
 
     @classmethod
@@ -1406,18 +1414,48 @@ class PolyBase(BaseModel):
             fields_by_model = {}
             for base_model_name in self._depend_models:
                 base_model = self.env[base_model_name]
-                base_fields = {f for f in processed_vals if f in base_model._fields}
+                # We check field existence against BOTH local model pool AND base model fields.
+                # In Odoo 18, polymorphic fields (injected) might not be in self._fields
+                # at early initialization but should be in the global pool.
+                pool_fields = self.pool[self._name]._fields
+                base_fields = {f for f in processed_vals if f in base_model._fields and (f not in self._fields and f not in pool_fields)}
+                
+                # If we didn't find them as "not local", but they ARE in base_model, 
+                # we still might want to redirect them if they are definitely polymorphic.
+                # Standard Odoo fields (active, name, etc.) should stay local.
+                if not base_fields:
+                    base_fields = {f for f in processed_vals if f in base_model._fields and f.startswith('pln_')}
+
                 if base_fields:
                     fields_by_model[base_model_name] = {f: processed_vals.pop(f) for f in base_fields}
 
             # Update base models for existing records
             for base_model_name, base_vals in fields_by_model.items():
-                base_records = self.env[base_model_name].browse(self.ids).exists()
-                if base_records:
-                    # Only update records that actually exist in the base
-                    # If some records in self are orphans, they simply don't have
-                    # base records to update for those polymorphic fields.
-                    base_records.write(base_vals)
+                for record in self:
+                    base_record = self.env[base_model_name].browse(record.id)
+                    if base_record.exists():
+                        base_record.write(base_vals)
+                    else:
+                        # Auto-create polymorphic base record for orphans
+                        # This allows legacy records to become polymorphic upon write
+                        
+                        # 1. Ensure ir.poly_base exists for this ID
+                        poly_base = self.env['ir.poly_base'].browse(record.id)
+                        if not poly_base.exists():
+                            _logger.info("Auto-creating ir.poly_base for orphan record %s:%s", self._name, record.id)
+                            self.env.cr.execute(SQL(
+                                "INSERT INTO ir_poly_base (id, concrete_model_id, create_uid, create_date, write_uid, write_date) "
+                                "VALUES (%s, %s, %s, %s, %s, %s)",
+                                record.id,
+                                self.env['ir.model']._get_id(self._name),
+                                self.env.uid, self.env.cr.now(), self.env.uid, self.env.cr.now()
+                            ))
+                        
+                        # 2. Create the base record (e.g. numa.planning.node)
+                        create_vals = base_vals.copy()
+                        create_vals['id'] = record.id
+                        _logger.info("Auto-creating base record %s for orphan %s:%s", base_model_name, self._name, record.id)
+                        self.env[base_model_name].create([create_vals])
 
         # Call super with the remaining (standard/local) values
         return super().write(processed_vals)
@@ -1569,6 +1607,31 @@ class PolyBase(BaseModel):
             if name in self._fields or name == 'id' or name in self.pool[self._name]._fields
         ]
         return super()._determine_fields_to_fetch(valid_field_names, ignore_when_in_cache)
+
+    def onchange(self, values, field_names, fields_spec):
+        """
+        Override onchange to handle polymorphic fields gracefully.
+        In Odoo 18, web client might send polymorphic field names that are 
+        not yet in the model's _fields for virtual records.
+        """
+        if getattr(self, '_depend_models', None) is None:
+            return super().onchange(values, field_names, fields_spec)
+
+        # Filter field_names to avoid KeyError in super().onchange
+        # We ensure they are in self._fields or global pool
+        pool_fields = self.pool[self._name]._fields
+        valid_field_names = [
+            name for name in field_names 
+            if name in self._fields or name in pool_fields
+        ]
+        
+        # Also check fields_spec
+        valid_fields_spec = {
+            name: spec for name, spec in fields_spec.items()
+            if name in self._fields or name in pool_fields
+        }
+
+        return super().onchange(values, valid_field_names, valid_fields_spec)
 
     @api.readonly
     def web_read(self, specification):
