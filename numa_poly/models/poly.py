@@ -418,15 +418,44 @@ class PolyBase(BaseModel):
         Fallback for polymorphic fields that might not have been correctly
         injected or resolved as attributes due to late model setup or orphan records.
         """
+        # If it's a standard log access column, we handle it early to avoid issues with orphans.
+        # These are normally related fields pointing to poly_base_id, which fails for orphans.
+        if name in LOG_ACCESS_COLUMNS:
+            try:
+                # We use direct SQL to ensure we get the value even if the ORM's 
+                # related field mechanism is failing for orphan records.
+                self.env.cr.execute(f'SELECT {name} FROM {self._table} WHERE id=%s', (self.id,))
+                res = self.env.cr.fetchone()
+                val = res[0] if res else False
+                
+                # We store it in cache to ensure that subsequent standard Odoo computations
+                # (like tracking durations) have access to a real value instead of False.
+                # In Odoo 18, we must be careful with how we set cache for related fields.
+                # We set it both on self AND on the recordset's class if needed.
+                field = self._fields.get(name)
+                if field:
+                    self.env.cache.set(self, field, val)
+                    # FORCE update of record's internal cache to bypass related field descriptor
+                    try:
+                        if hasattr(self, '_cache'):
+                            self._cache[field] = val
+                    except Exception:
+                        pass
+                return val
+            except Exception:
+                pass
+
         # CRITICAL: We avoid standard Odoo field attributes to prevent recursion
         # during field setup. We only intercept pln_* or known polymorphic fields.
+        # However, for orphan records, Odoo 18 returns False instead of calling __getattr__
+        # for related fields that fail. This is why we might need to be more proactive in read().
         if name.startswith('pln_') or (name != '_fields' and name in getattr(self, '_fields', {})):
             node_model = self.env.registry.get('numa.planning.node')
             if node_model is not None and name in node_model._fields:
                 field = node_model._fields[name]
                 try:
                     return field.__get__(self, type(self))
-                except MissingError:
+                except (MissingError, AccessError):
                     # Special handling for orphan records: if they don't exist in poly_base
                     # we return False or [] depending on field type.
                     if field.type in ('one2many', 'many2many'):
@@ -439,8 +468,9 @@ class PolyBase(BaseModel):
             field = fields_dict.get(name)
             if field:
                 try:
+                    # Capture MissingError which happens for orphan records in Odoo 18
                     return field.__get__(self, type(self))
-                except MissingError:
+                except (MissingError, AccessError):
                     if field.type in ('one2many', 'many2many'):
                         return self.env[field.comodel_name].browse()
                     return False
@@ -1251,6 +1281,78 @@ class PolyBase(BaseModel):
         return super().unlink()
 
 
+    def read(self, fields=None, load='_classic_read'):
+        """
+        Override read to ensure log access fields are correctly populated even 
+        for orphan records where the related field mechanism might fail.
+        """
+        if self._depend_models is None:
+            return super().read(fields=fields, load=load)
+
+        # Essential check: if fields is None or includes log access columns,
+        # we ensure they are not returned as False for existing records.
+        result = super().read(fields=fields, load=load)
+        
+        # Check for False values in log access columns that should be populated
+        log_fields = [f for f in (fields or LOG_ACCESS_COLUMNS) if f in LOG_ACCESS_COLUMNS]
+        if not log_fields:
+            return result
+            
+        # We only fix records that have False in one of the requested log fields
+        # and we confirm they exist in the concrete table.
+        for vals in result:
+            needs_fix = any(vals.get(f) is False for f in log_fields)
+            if needs_fix:
+                # Direct SQL hydration for this record
+                for field_name in log_fields:
+                    if vals.get(field_name) is False:
+                        try:
+                            # Direct query to concrete table
+                            self.env.cr.execute(f'SELECT {field_name} FROM {self._table} WHERE id=%s', (vals['id'],))
+                            row = self.env.cr.fetchone()
+                            if row and row[0]:
+                                vals[field_name] = row[0]
+                                # Update cache to help future computations (e.g. duration_tracking)
+                                record = self.browse(vals['id'])
+                                field = self._fields.get(field_name)
+                                if field:
+                                    # Use self.env.cache.set to update the Odoo cache
+                                    self.env.cache.set(record, field, row[0])
+                                    # FORCE update of record's internal cache to bypass related field descriptor
+                                    try:
+                                        # In Odoo 18, we use _cache which is a dict-like object
+                                        if hasattr(record, '_cache'):
+                                            record._cache[field] = row[0]
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+        return result
+
+    def _compute_field_value(self, field):
+        """
+        Override _compute_field_value to capture TypeError during duration_tracking 
+        computation on orphan records.
+        """
+        if field.name == 'duration_tracking' and self._depend_models is not None:
+            try:
+                return super()._compute_field_value(field)
+            except TypeError as e:
+                if 'unsupported operand type(s) for -' in str(e):
+                    # This happens on orphan records where create_date is False
+                    # We ensure create_date is loaded and try again
+                    for record in self:
+                        # Attempt to load create_date correctly
+                        record.read(['create_date'])
+                    # Try again after hydration
+                    try:
+                        return super()._compute_field_value(field)
+                    except Exception:
+                        self.duration_tracking = {}
+                        return
+                raise e
+        return super()._compute_field_value(field)
+
     def write(self, vals):
         """
         Override write to intercept and merge poly_payload data.
@@ -1525,25 +1627,37 @@ class PolyBase(BaseModel):
                     # We use super().read to avoid our own overridden logic for these specific fields
                     metadata = {}
                     try:
-                        # We only try to read these if they were requested or if we need them as fallback
+                        # Essential log access and display fields
                         meta_fields = ['create_date', 'create_uid', 'write_date', 'write_uid', 'display_name']
-                        # Filter to only requested ones or essential ones
-                        meta_to_read = [f for f in meta_fields if f in specification or f == 'display_name']
+                        # We try to read them even if not in specification if they are False in values
+                        # because some core Odoo computations (like tracking duration) depend on them.
+                        meta_to_read = [f for f in meta_fields if f in specification or f == 'display_name' or (f in values and values[f] is False)]
+                        
                         if meta_to_read:
                             # Using a new browse on super() to bypass our logic
-                            raw_data = super(PolyBase, record).read(meta_to_read, load=None)
+                            # We use sudo() to be sure we can read metadata
+                            raw_data = super(PolyBase, record.sudo()).read(meta_to_read, load=None)
                             if raw_data:
                                 metadata = raw_data[0]
-                    except Exception:
+                                
+                        # Direct SQL fallback for create_date if still False (Odoo 18 ORM quirk on orphans)
+                        if metadata.get('create_date') is False or values.get('create_date') is False:
+                            self.env.cr.execute(f'SELECT create_date FROM {self._table} WHERE id=%s', (record.id,))
+                            row = self.env.cr.fetchone()
+                            if row and row[0]:
+                                metadata['create_date'] = row[0]
+                                
+                    except Exception as e:
+                        _logger.debug("Error fetching orphan metadata: %s", e)
                         pass
 
                     for field_name, spec in specification.items():
-                        if field_name in values and values[field_name] is not False:
+                        # If it's a metadata field we just read, use it
+                        if field_name in metadata and (field_name not in values or values[field_name] is False):
+                            values[field_name] = metadata[field_name]
                             continue
                             
-                        # If it's a metadata field we just read, use it
-                        if field_name in metadata:
-                            values[field_name] = metadata[field_name]
+                        if field_name in values and values[field_name] is not False:
                             continue
                             
                         # Special case: concrete_model_id / model_id
