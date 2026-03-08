@@ -1344,17 +1344,18 @@ class PolyBase(BaseModel):
             if name in self._fields or name == 'id'
         }
         
+        import logging
+        _poly_logger = logging.getLogger('numa_poly.web_read')
         # If 'active' is missing from self._fields but present in specification, 
         # it might be because of a pool loading order issue or specific context.
-        # However, for now let's see what's really missing.
         missing_fields = [f for f in specification if f not in self._fields and f != 'id']
         if missing_fields:
-            import logging
-            _poly_logger = logging.getLogger('numa_poly.web_read')
-            _poly_logger.warning(f"POLY WEB_READ for {self._name}, missing fields: {missing_fields}")
+            # Check if this is a polymorphic record that we should handle
+            is_poly = self._depend_models is not None
+            # _poly_logger.warning(f"POLY WEB_READ for {self._name} (is_poly={is_poly}), missing fields: {missing_fields}")
             # If standard field 'active' is missing, let's keep it in new_specification anyway
             # to let super().web_read() handle it if it actually exists (avoiding our hydration to False)
-            for f in ['active', 'is_closed', 'archived', 'state']:
+            for f in ['active', 'is_closed', 'archived', 'state', 'display_name']:
                 if f in specification and f not in new_specification:
                     new_specification[f] = specification[f]
         
@@ -1362,20 +1363,14 @@ class PolyBase(BaseModel):
         # realize that web_read uses the *specification* it received to iterate
         # over the *results* of read(). If we reduce the specification, super()
         # will iterate over the reduced one, so it should NOT cause KeyError.
-        # However, if Odoo's internal state (e.g. self._fields) contradicts
-        # the specification, or if there's a recursive call, it might fail.
-        
-        # The most resilient approach is to call super() with the filtered spec,
-        # but the traceback suggests that even that call might be problematic
-        # if Odoo expects 'recurrence_id' to be there because it's defined
-        # somewhere in the hierarchy but not injected in this specific pool.
         
         # Let's try to ensure super().web_read is as safe as possible.
         try:
+            # _poly_logger.info(f"POLY WEB_READ calling super() for {self._name} with {list(new_specification)}")
             values_list = super().web_read(new_specification)
+            # _poly_logger.info(f"POLY WEB_READ super() returned {len(values_list)} records. Keys in first record: {list(values_list[0].keys()) if values_list else 'N/A'}")
         except (ValueError, KeyError) as e:
             # Fallback to manual read if super() fails
-            _poly_logger = logging.getLogger('numa_poly.web_read')
             _poly_logger.warning(f"POLY WEB_READ super() FAILED for {self._name}: {e}. Falling back to manual read.")
             fields_to_read = list(new_specification) or ['id']
             values_list = self.read(fields_to_read, load=None)
@@ -1404,7 +1399,7 @@ class PolyBase(BaseModel):
                         values[field_name] = []
                     else:
                         values[field_name] = False
-                    # _poly_logger.info(f"HYDRATING {field_name} to {values[field_name]} for record {values.get('id')}")
+                    # _poly_logger.info(f"HYDRATING {field_name} to {values[field_name]} for record {values.get('id')} in {self._name}")
                     
         return values_list
 
