@@ -1350,13 +1350,9 @@ class PolyBase(BaseModel):
             else:
                 poly_spec[name] = spec
 
-        # Ensure standard visibility/identity fields are always present
-        critical_fields = ['active', 'display_name', 'state', 'is_closed']
-        for f in critical_fields:
-            if f in specification and f not in standard_spec:
-                # If it's not in self._fields but requested, it's problematic
-                # but we'll try to include it if we can find it in parent models later.
-                pass
+        # CRITICAL: Always ensure 'id' is in standard_spec to avoid KeyError: 'id' below
+        if 'id' not in standard_spec:
+            standard_spec['id'] = {}
 
         try:
             # Call original web_read with only standard fields
@@ -1364,10 +1360,15 @@ class PolyBase(BaseModel):
         except Exception:
             # Extreme fallback if super() still fails
             fields_to_read = [n for n in standard_spec if n in self._fields] or ['id']
+            if 'id' not in fields_to_read:
+                fields_to_read.append('id')
             values_list = self.read(fields_to_read, load=None)
 
         # 2. Re-integrate polymorphic fields and missing requested fields
         for values in values_list:
+            if not isinstance(values, dict) or 'id' not in values:
+                continue
+                
             record = self.browse(values['id'])
             for field_name, spec in specification.items():
                 if field_name not in values:
