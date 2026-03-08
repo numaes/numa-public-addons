@@ -720,10 +720,26 @@ class PolyBase(BaseModel):
                     # Limpiar recordsets que puedan quedar en vals
                     for k, v in list(vals.items()):
                         if isinstance(v, models.BaseModel):
-                            vals[k] = v.id
+                            vals[k] = v.id if not v._context.get('prefetch_fields') else v.ids[0] if v.ids else False
                         elif isinstance(v, tuple) and len(v) == 2 and isinstance(v[0], int):
                             # Caso (id, name) que a veces devuelve read
                             vals[k] = v[0]
+                        elif isinstance(v, list) and v and isinstance(v[0], models.BaseModel):
+                            # Caso lista de recordsets
+                            vals[k] = [r.id for r in v]
+                        elif hasattr(v, 'ids') and not isinstance(v, (list, tuple, dict)):
+                            # Caso recordset genérico
+                            vals[k] = v.ids[0] if v.ids else False
+                        
+                        # Doble verificación para Many2one (en Odoo 18 pueden venir como recordsets incluso con read)
+                        field = self._fields.get(k)
+                        if field and field.type == 'many2one' and not isinstance(vals[k], (int, bool)):
+                            if hasattr(vals[k], 'id'):
+                                vals[k] = vals[k].id
+                            elif isinstance(vals[k], (list, tuple)) and vals[k]:
+                                vals[k] = vals[k][0]
+                            else:
+                                vals[k] = False
                     
                     # Preservar campos de auditoría
                     self.env.cr.execute(SQL(
@@ -785,14 +801,22 @@ class PolyBase(BaseModel):
         Actualiza todas las referencias al ID viejo con el nuevo ID.
         """
         # A. Many2one y Many2many estándar
+        # Buscamos campos almacenados que apunten a este modelo
+        # En Odoo 18, ir_model tiene el nombre de la tabla en la columna 'name' o derivado, 
+        # pero la forma más segura y portable es usar self.env[model]._table
         self.env.cr.execute("""
-            SELECT f.model, f.name, f.ttype, m.table AS table_name
+            SELECT f.model, f.name, f.ttype
             FROM ir_model_fields f
-            JOIN ir_model m ON f.model_id = m.id
             WHERE f.relation = %s AND f.store = True
         """, [self._name])
         
-        for field_model, field_name, ttype, table_name in self.env.cr.fetchall():
+        for field_model, field_name, ttype in self.env.cr.fetchall():
+            try:
+                model_obj = self.env[field_model]
+                table_name = model_obj._table
+            except Exception:
+                continue
+
             if ttype == 'many2one':
                 self.env.cr.execute(SQL(
                     "UPDATE %s SET %s = %s WHERE %s = %s",
