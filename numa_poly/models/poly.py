@@ -1370,8 +1370,20 @@ class PolyBase(BaseModel):
                 if field_name not in values:
                     # If the field is an x2many field, it MUST be an empty list []
                     # to avoid "data.map is not a function" in Owl UI.
+                    # We check if it is explicitly in _fields, or if its specification
+                    # suggests a sub-read (which is characteristic of relational fields).
                     field = self._fields.get(field_name)
-                    if field and field.type in ('one2many', 'many2many'):
+                    is_x2many = field and field.type in ('one2many', 'many2many')
+                    
+                    # Fallback: if field is not in _fields but the spec has a 'fields' key,
+                    # it is very likely a relational field (x2many or m2o).
+                    # Odoo's _createStaticListDatapoint specifically fails on x2many.
+                    if not is_x2many and isinstance(spec, dict) and 'fields' in spec:
+                        # If it has a limit or order in spec, it is definitely an x2many.
+                        if 'limit' in spec or 'order' in spec:
+                            is_x2many = True
+                    
+                    if is_x2many:
                         values[field_name] = []
                     else:
                         values[field_name] = False
