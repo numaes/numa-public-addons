@@ -1344,20 +1344,14 @@ class PolyBase(BaseModel):
             if name in self._fields or name == 'id'
         }
         
-        import logging
-        _poly_logger = logging.getLogger('numa_poly.web_read')
         # If 'active' is missing from self._fields but present in specification, 
         # it might be because of a pool loading order issue or specific context.
-        missing_fields = [f for f in specification if f not in self._fields and f != 'id']
-        if missing_fields:
-            # Check if this is a polymorphic record that we should handle
-            is_poly = self._depend_models is not None
-            # _poly_logger.warning(f"POLY WEB_READ for {self._name} (is_poly={is_poly}), missing fields: {missing_fields}")
-            # If standard field 'active' is missing, let's keep it in new_specification anyway
-            # to let super().web_read() handle it if it actually exists (avoiding our hydration to False)
-            for f in ['active', 'is_closed', 'archived', 'state', 'display_name']:
-                if f in specification and f not in new_specification:
-                    new_specification[f] = specification[f]
+        # However, we must NOT hydrate these fields with False if they were requested.
+        # We also need to preserve fields that are needed by the UI to show record status.
+        standard_fields = ['active', 'is_closed', 'archived', 'state', 'display_name']
+        for f in standard_fields:
+            if f in specification and f not in new_specification:
+                new_specification[f] = specification[f]
         
         # 2. To avoid KeyError in super().web_read (Odoo 18 line 126), we must
         # realize that web_read uses the *specification* it received to iterate
@@ -1366,40 +1360,38 @@ class PolyBase(BaseModel):
         
         # Let's try to ensure super().web_read is as safe as possible.
         try:
-            # _poly_logger.info(f"POLY WEB_READ calling super() for {self._name} with {list(new_specification)}")
             values_list = super().web_read(new_specification)
-            # _poly_logger.info(f"POLY WEB_READ super() returned {len(values_list)} records. Keys in first record: {list(values_list[0].keys()) if values_list else 'N/A'}")
-        except (ValueError, KeyError) as e:
+        except (ValueError, KeyError):
             # Fallback to manual read if super() fails
-            _poly_logger.warning(f"POLY WEB_READ super() FAILED for {self._name}: {e}. Falling back to manual read.")
             fields_to_read = list(new_specification) or ['id']
             values_list = self.read(fields_to_read, load=None)
 
         # 3. Final hydration to include all fields from the original specification
         # ensuring the UI and subsequent Odoo logic find the keys with appropriate types.
+        # CRITICAL: We only hydrate fields that are truly MISSING from the result.
         for values in values_list:
             for field_name, spec in specification.items():
                 if field_name not in values:
+                    # If it's a standard field, we should probably let it be handled
+                    # by Odoo or default it to a sensible value IF it was requested.
+                    
                     # If the field is an x2many field, it MUST be an empty list []
                     # to avoid "data.map is not a function" in Owl UI.
-                    # We check if it is explicitly in _fields, or if its specification
-                    # suggests a sub-read (which is characteristic of relational fields).
                     field = self._fields.get(field_name)
                     is_x2many = field and field.type in ('one2many', 'many2many')
                     
-                    # Fallback: if field is not in _fields but the spec has a 'fields' key,
-                    # it is very likely a relational field (x2many or m2o).
-                    # Odoo's _createStaticListDatapoint specifically fails on x2many.
                     if not is_x2many and isinstance(spec, dict) and 'fields' in spec:
-                        # If it has a limit or order in spec, it is definitely an x2many.
                         if 'limit' in spec or 'order' in spec:
                             is_x2many = True
                     
                     if is_x2many:
                         values[field_name] = []
                     else:
+                        # Default to False for others, but for 'active' we'd prefer True
+                        # if we can't determine it, but Odoo should have provided it.
+                        # If it's MISSING here, it means even our expanded new_specification
+                        # didn't get it from super().web_read().
                         values[field_name] = False
-                    # _poly_logger.info(f"HYDRATING {field_name} to {values[field_name]} for record {values.get('id')} in {self._name}")
                     
         return values_list
 
