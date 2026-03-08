@@ -1363,29 +1363,46 @@ class PolyBase(BaseModel):
                         continue
 
                     # Determine if it's expected to be a list by the UI (x2many)
-                    is_list_like = isinstance(spec, dict) and any(k in spec for k in ('fields', 'limit', 'offset', 'order'))
+                    # UI specification for x2many fields usually contains 'fields', 'limit', 'offset' or 'order'
+                    # But it also contains 'fields' for many2one fields that want sub-data.
+                    # We distinguish them to avoid returning [dict] for many2one, which breaks Odoo's SQL queries.
+                    has_subfields = isinstance(spec, dict) and 'fields' in spec
+                    is_list_like = isinstance(spec, dict) and any(k in spec for k in ('limit', 'offset', 'order'))
                     
                     try:
                         val = getattr(record, field_name)
                         if isinstance(val, models.BaseModel):
                             # It's a recordset (Relational field)
-                            if isinstance(spec, dict) and 'fields' in spec:
+                            # Identify type from field definition if possible
+                            field_def = record._fields.get(field_name)
+                            if field_def:
+                                is_x2many = field_def.type in ('one2many', 'many2many')
+                            else:
+                                is_x2many = is_list_like or len(val) > 1
+
+                            if has_subfields:
                                 # Sub-read (recursive)
                                 res = val.web_read(spec['fields'])
-                                if is_list_like:
+                                if is_x2many:
                                     values[field_name] = res
                                 else:
                                     # Many2one returns a single dict (or False)
                                     values[field_name] = res[0] if res else False
                             else:
-                                # Return IDs
-                                values[field_name] = val.ids if is_list_like else (val.id or False)
+                                # Return IDs (Normalization for Odoo 18 SQL queries)
+                                if is_x2many:
+                                    values[field_name] = val.ids
+                                else:
+                                    # Many2one MUST be an integer ID or False
+                                    values[field_name] = val.id or False
                         else:
                             # Simple field
                             values[field_name] = val if val is not None else False
                             
                     except Exception:
-                        values[field_name] = [] if is_list_like else False
+                        # Final fallback ensuring type consistency
+                        is_x2many = isinstance(spec, dict) and any(k in spec for k in ('limit', 'offset', 'order'))
+                        values[field_name] = [] if is_x2many else False
             except Exception:
                 continue
         
