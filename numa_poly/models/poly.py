@@ -728,7 +728,7 @@ class PolyBase(BaseModel):
                         # esté completamente "unido" al nuevo ID.
                         # Solución: Lo ponemos a False y lo restauraremos vía SQL.
                         is_self_base_ref = False
-                        if field.type == 'many2one' and field.relation in self._depend_models:
+                        if field.type == 'many2one' and getattr(field, 'comodel_name', None) in self._depend_models:
                             is_self_base_ref = True
                         
                         if field.type == 'many2one':
@@ -757,6 +757,9 @@ class PolyBase(BaseModel):
                                         return False
                                 
                                 vals[k] = extract_id(v)
+                                # Final logging for debugging pln_root_id issues
+                                if k == 'pln_root_id':
+                                    _logger.info("FINAL vals['pln_root_id']: value=%s type=%s", vals[k], type(vals[k]))
                         
                         # Limpiar campos técnicos de Odoo
                         if k in ('__last_update', 'display_name', 'create_uid', 'create_date', 'write_uid', 'write_date'):
@@ -779,13 +782,13 @@ class PolyBase(BaseModel):
                     # Añadimos pln_root_id y cualquier M2O que apunte a las bases
                     extra_cols = []
                     for k, field in self._fields.items():
-                        if field.store and field.type == 'many2one' and field.relation in self._depend_models:
+                        if field.store and field.type == 'many2one' and getattr(field, 'comodel_name', None) in self._depend_models:
                             extra_cols.append(k)
                     
                     audit_cols = ['create_uid', 'create_date', 'write_uid', 'write_date'] + extra_cols
                     self.env.cr.execute(SQL(
                         "SELECT %s FROM %s WHERE id = %s",
-                        SQL.comma([SQL.identifier(c) for k, c in enumerate(audit_cols)]),
+                        SQL(', ').join(SQL.identifier(c) for c in audit_cols),
                         SQL.identifier(self._table), old_id
                     ))
                     audit = self.env.cr.dictfetchone()
