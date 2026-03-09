@@ -698,80 +698,54 @@ class PolyBase(BaseModel):
                     new_id = self.env.cr.fetchone()[0]
 
                     # 2. Duplicar datos
-                    # Extraemos valores originales incluyendo campos de auditoría
-                    # Leemos del modelo concreto ya que numa_poly gestiona la lectura recursiva
-                    old_record = self.browse(old_id)
-                    
-                    # Intentamos leer via ORM pero forzando SQL para campos de sistema si es necesario
-                    # En Odoo 18, read() suele bastar si el registro existe en la tabla del modelo
-                    try:
-                        # Usamos _read_format para obtener IDs de Many2one en lugar de recordsets
-                        # Obtenemos solo los campos que están en la base de datos para evitar problemas con computados
-                        stored_fields = [f for f, field in self._fields.items() if field.store]
-                        vals = old_record._read_format(stored_fields)[0]
-                    except Exception:
-                        # Fallback a SQL si el ORM falla por no estar en ir.poly_base
-                        self.env.cr.execute(SQL("SELECT * FROM %s WHERE id = %s", SQL.identifier(self._table), old_id))
-                        vals = self.env.cr.dictfetchone()
+                    # Usamos SQL para extraer los valores crudos de los campos almacenados
+                    # Esto garantiza que no haya recordsets ni basura del ORM
+                    self.env.cr.execute(SQL("SELECT * FROM %s WHERE id = %s", SQL.identifier(self._table), old_id))
+                    vals = self.env.cr.dictfetchone()
+                    if not vals:
+                        raise ValueError(f"Could not find original record {old_id} in {self._table}")
 
+                    # Extraer campos X2M via ORM por separado, ya que no están en la tabla principal
+                    old_record = self.browse(old_id)
+                    x2m_fields = [f for f, field in self._fields.items() if field.store and field.type in ('many2many', 'one2many')]
+                    
                     # Limpiar vals para el create: eliminar campos no almacenados o problemáticos
                     vals.pop('id', None)
                     # Forzar el nuevo ID
                     vals['id'] = new_id
                     
-                    # Limpiar recordsets que puedan quedar en vals
+                    # Limpiar recordsets que puedan quedar en vals y procesar X2M
                     for k, v in list(vals.items()):
-                        # Obtenemos el campo para saber su tipo
                         field = self._fields.get(k)
-                        if not field:
+                        if not field or not field.store:
                             vals.pop(k, None)
                             continue
                         
-                        # Odoo 18: read_format may return recordsets directly or (id, name) tuples
                         if field.type == 'many2one':
-                            # Deep cleaning for Many2one
-                            if isinstance(v, (list, tuple)) and v:
-                                v = v[0]
-                            
-                            # If it's still a recordset or has an id attribute
-                            if hasattr(v, 'id') and not isinstance(v, type):
-                                v = v.id if v else False
-                            
-                            # Final safety check: ensure it's an int or False
-                            if v is not False and v is not None:
-                                try:
-                                    v = int(v)
-                                except (ValueError, TypeError):
-                                    v = False
-                            else:
-                                v = False
-                            
-                            vals[k] = v
-                        
-                        elif field.type in ('many2many', 'one2many'):
-                            if isinstance(v, models.BaseModel):
-                                vals[k] = [Command.set(v.ids)]
-                            elif isinstance(v, list):
-                                # Si ya es una lista de IDs, la convertimos a comando ORM para seguridad
-                                if v and isinstance(v[0], (int, str, tuple, list)):
-                                    # Limpiar IDs si vienen como tuplas (id, name)
-                                    clean_ids = []
-                                    for item in v:
-                                        if isinstance(item, (tuple, list)) and item:
-                                            clean_ids.append(item[0])
-                                        else:
-                                            clean_ids.append(item)
-                                    vals[k] = [Command.set(clean_ids)]
-                                else:
-                                    vals[k] = False
-                            else:
+                            # En SQL los M2O ya son IDs enteros o None
+                            if v is None:
                                 vals[k] = False
+                            else:
+                                vals[k] = int(v)
                         
-                        # Limpiar campos técnicos de Odoo que no deben pasarse al create
+                        # Limpiar campos técnicos de Odoo
                         if k in ('__last_update', 'display_name', 'create_uid', 'create_date', 'write_uid', 'write_date'):
                             vals.pop(k, None)
+
+                    # Añadir X2M procesados via ORM
+                    for k in x2m_fields:
+                        try:
+                            # Evitamos campos problemáticos de project.task que causan NOT NULL violations
+                            if self._name == 'project.task' and k in ('user_ids', 'personal_stage_type_ids'):
+                                continue
+                                
+                            rel_records = old_record[k]
+                            if rel_records:
+                                vals[k] = [Command.set(rel_records.ids)]
+                        except Exception:
+                            continue
                     
-                    # Preservar campos de auditoría
+                    # Preservar campos de auditoría (leídos antes del create)
                     self.env.cr.execute(SQL(
                         "SELECT create_uid, create_date, write_uid, write_date FROM %s WHERE id = %s",
                         SQL.identifier(self._table), old_id
@@ -779,17 +753,16 @@ class PolyBase(BaseModel):
                     audit = self.env.cr.dictfetchone()
 
                     # Crear el nuevo registro (esto disparará la creación en depend_models)
-                    # Usamos flush() para asegurar que todo esté en la BD antes de crear
                     self.env.flush_all()
                     
-                    # LOG DE SEGURIDAD: Si falla, veremos qué campos quedaron
                     try:
-                        # Odoo 18: bypass security and recomputes for migration speed and reliability
+                        # Odoo 18: bypass security and recomputes
                         new_record = self.with_context(
                             tracking_disable=True,
                             mail_create_nolog=True,
                             mail_create_nosubscribe=True,
-                            prefetch_fields=False
+                            prefetch_fields=False,
+                            no_upsert=True,  # Evitar lógicas de auto-merge si existen
                         ).create([vals])
                     except Exception as create_err:
                         _logger.error("Create failed for %s ID %s. Vals: %s", self._name, old_id, vals)
@@ -827,6 +800,7 @@ class PolyBase(BaseModel):
                             self.env.cr.execute(query, params)
 
                     # 3. Actualizar Referencias
+                    # IMPORTANTE: Se hace antes de borrar el ID viejo para satisfacer FKs si fuera necesario
                     self._update_foreign_keys(old_id, new_id)
 
                     # 4. Limpieza
@@ -939,13 +913,54 @@ class PolyBase(BaseModel):
             except Exception as e:
                 _logger.warning("Minor issue during dynamic ref update for %s (ID %s -> %s): %s", table, old_id, new_id, e)
 
-        # C. Casos Especiales (mail.alias)
+        # C. Casos Especiales
+        # C1. mail.alias
         if 'mail.alias' in self.env:
-            self.env.cr.execute("""
-                UPDATE mail_alias SET alias_parent_thread_id = %s 
-                WHERE alias_parent_model_id = (SELECT id FROM ir_model WHERE model = %s)
-                AND alias_parent_thread_id = %s
-            """, [new_id, self._name, old_id])
+            try:
+                with self.env.cr.savepoint():
+                    self.env.cr.execute("""
+                        UPDATE mail_alias SET alias_parent_thread_id = %s 
+                        WHERE alias_parent_model_id = (SELECT id FROM ir_model WHERE model = %s)
+                        AND alias_parent_thread_id = %s
+                    """, [new_id, self._name, old_id])
+            except Exception:
+                pass
+
+        # C2. project_task_user_rel (Odoo 18 special relation table)
+        if self._name == 'project.task':
+            try:
+                with self.env.cr.savepoint():
+                    # Manejar duplicados antes de actualizar
+                    self.env.cr.execute("""
+                        DELETE FROM project_task_user_rel t1
+                        WHERE task_id = %s
+                        AND EXISTS (
+                            SELECT 1 FROM project_task_user_rel t2
+                            WHERE t2.task_id = %s 
+                            AND t2.user_id IS NOT DISTINCT FROM t1.user_id
+                            AND t2.stage_id IS NOT DISTINCT FROM t1.stage_id
+                        )
+                    """, [old_id, new_id])
+                    
+                    self.env.cr.execute("""
+                        UPDATE project_task_user_rel SET task_id = %s WHERE task_id = %s
+                    """, [new_id, old_id])
+            except Exception as e:
+                _logger.warning("Issue updating project_task_user_rel for ID %s -> %s: %s", old_id, new_id, e)
+
+        # C3. numa_planning_link (Foreign Key constraints)
+        self.env.cr.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'numa_planning_link'")
+        if self.env.cr.fetchone()[0] > 0:
+            for col in ['source_node_id', 'target_node_id']:
+                try:
+                    with self.env.cr.savepoint():
+                        # Eliminar duplicados si los hay (depende de restricciones únicas de numa_planning_link)
+                        self.env.cr.execute(SQL(
+                            "UPDATE numa_planning_link SET %s = %s WHERE %s = %s",
+                            SQL.identifier(col), new_id, SQL.identifier(col), old_id
+                        ))
+                except Exception:
+                    pass
 
     def _auto_init(self):
         """
