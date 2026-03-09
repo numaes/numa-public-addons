@@ -152,7 +152,8 @@ Numa Poly incluye un sistema robusto para migrar registros existentes cuando un 
 - **Limpieza de Tipos**: Se realiza una limpieza profunda de valores (recordsets, listas de IDs) antes de la creación del nuevo registro.
 - **Resolución de Conflictos**: Maneja violaciones de restricciones únicas (ej. `mail_followers`, Many2many) eliminando registros redundantes antes de actualizar los IDs.
 - **Transaccionalidad**: Usa `savepoints` de base de datos en actualizaciones críticas para garantizar que fallos menores (como tablas de terceros o restricciones complejas en Odoo 18) no aborten la migración completa.
-- **Compatibilidad Odoo 18**: Manejo específico para `project.task` evitando violaciones de `NOT NULL` en tablas de relación compartidas y extracción agresiva vía SQL para garantizar datos crudos sin recordsets.
+- **Compatibilidad Odoo 18**: Manejo específico para `project.task` evitando violaciones de `NOT NULL` en tablas de relación compartidas y extracción agresiva vía SQL para garantizar datos crudos sin recordsets. Se corrigieron errores de acceso a atributos relacionales diferenciando correctamente entre `comodel_name` (Many2one) y `relation` (Many2many).
+- **Extracción de IDs**: Implementada una lógica recursiva para asegurar que los campos Many2one siempre se reduzcan a IDs enteros, eliminando interferencias de recordsets o tuplas devueltas por el ORM de Odoo 18.
 - **Integridad Referencial**: Los objetos relacionados se actualizan para apuntar al nuevo ID antes de eliminar físicamente el registro antiguo, satisfaciendo las restricciones de clave foránea (FK).
 
 ### 3. PolyReference (Campo Especial)
