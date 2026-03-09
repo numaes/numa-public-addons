@@ -726,23 +726,30 @@ class PolyBase(BaseModel):
                         
                         # LOG PARA DEPURACIÓN
                         if k == 'pln_root_id':
-                            _logger.info("CLEANING pln_root_id: value=%s type=%s", v, type(v))
+                            _logger.info("CLEANING pln_root_id [before]: value=%s type=%s", v, type(v))
                         
                         # Si el valor es una tupla/lista y el campo es Many2one, read_format 
                         # devolvió (id, name). Extraemos el ID ahora para evitar confusiones.
                         if field.type == 'many2one' and isinstance(v, (list, tuple)) and v:
                             v = v[0]
+                            # Si v[0] sigue siendo un recordset (Odoo 18), extraemos el ID
+                            if hasattr(v, 'id') and not isinstance(v, type):
+                                v = v.id
                             vals[k] = v
 
                         # Si el valor ya es un ID (int) o False, no necesitamos hacer nada especial
                         # excepto para M2M que podrían ser listas de IDs.
                         if field.type == 'many2one':
-                            if isinstance(v, models.BaseModel):
-                                vals[k] = v.id if v else False
+                            if hasattr(v, 'id') and not isinstance(v, type):
+                                # Handle recordsets directly
+                                try:
+                                    vals[k] = v.id if v else False
+                                except Exception:
+                                    vals[k] = False
                             elif isinstance(v, (list, tuple)) and v:
                                 # read_format returns (id, name) or [id, name]
                                 val_id = v[0]
-                                if isinstance(val_id, models.BaseModel):
+                                if hasattr(val_id, 'id') and not isinstance(val_id, type):
                                     vals[k] = val_id.id
                                 elif isinstance(val_id, (int, float)):
                                     vals[k] = int(val_id)
@@ -754,12 +761,6 @@ class PolyBase(BaseModel):
                                 vals[k] = int(v)
                             elif isinstance(v, str) and v.isdigit():
                                 vals[k] = int(v)
-                            elif hasattr(v, 'id') and not isinstance(v, type):
-                                # Handle any remaining recordset-like objects
-                                try:
-                                    vals[k] = v.id if v else False
-                                except Exception:
-                                    vals[k] = False
                             else:
                                 vals[k] = False
                             
@@ -769,7 +770,10 @@ class PolyBase(BaseModel):
                                     vals[k] = int(vals[k])
                                 except (ValueError, TypeError):
                                     vals[k] = False
-                                    
+                            
+                            if k == 'pln_root_id':
+                                _logger.info("CLEANING pln_root_id [after]: value=%s type=%s", vals[k], type(vals[k]))
+                        
                         elif field.type in ('many2many', 'one2many'):
                             # Para relaciones X2many, read_format devuelve una lista de IDs
                             if isinstance(v, models.BaseModel):
