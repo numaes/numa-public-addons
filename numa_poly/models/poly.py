@@ -731,12 +731,26 @@ class PolyBase(BaseModel):
                                 vals[k] = v.id if v else False
                             elif isinstance(v, (list, tuple)) and v:
                                 # read_format a veces devuelve (id, name) o [id, name]
-                                vals[k] = v[0] if isinstance(v[0], int) else False
+                                # Si el ID es un recordset (Odoo 18), extraemos el ID entero
+                                val_id = v[0]
+                                if isinstance(val_id, models.BaseModel):
+                                    vals[k] = val_id.id
+                                elif isinstance(val_id, int):
+                                    vals[k] = val_id
+                                else:
+                                    vals[k] = False
                             elif not isinstance(v, (int, bool)):
                                 # Cualquier otro caso extraño (como recordsets de Odoo 18 persistentes)
                                 if hasattr(v, 'id'):
                                     vals[k] = v.id
                                 else:
+                                    vals[k] = False
+                            
+                            # Forzar conversión final a int o False
+                            if vals[k] and not isinstance(vals[k], int):
+                                try:
+                                    vals[k] = int(vals[k])
+                                except (ValueError, TypeError):
                                     vals[k] = False
                                     
                         elif field.type in ('many2many', 'one2many'):
@@ -833,6 +847,14 @@ class PolyBase(BaseModel):
                 continue
 
             if ttype == 'many2one':
+                # Verificar si es una vista antes de intentar el UPDATE
+                self.env.cr.execute("""
+                    SELECT count(*) FROM information_schema.views 
+                    WHERE table_name = %s AND table_schema = 'public'
+                """, [table_name])
+                if self.env.cr.fetchone()[0] > 0:
+                    continue
+
                 self.env.cr.execute(SQL(
                     "UPDATE %s SET %s = %s WHERE %s = %s",
                     SQL.identifier(table_name), SQL.identifier(field_name), new_id,
