@@ -706,7 +706,9 @@ class PolyBase(BaseModel):
                     # En Odoo 18, read() suele bastar si el registro existe en la tabla del modelo
                     try:
                         # Usamos _read_format para obtener IDs de Many2one en lugar de recordsets
-                        vals = old_record._read_format(self._fields.keys())[0]
+                        # Obtenemos solo los campos que están en la base de datos para evitar problemas con computados
+                        stored_fields = [f for f, field in self._fields.items() if field.store]
+                        vals = old_record._read_format(stored_fields)[0]
                     except Exception:
                         # Fallback a SQL si el ORM falla por no estar en ir.poly_base
                         self.env.cr.execute(SQL("SELECT * FROM %s WHERE id = %s", SQL.identifier(self._table), old_id))
@@ -722,38 +724,44 @@ class PolyBase(BaseModel):
                         # Obtenemos el campo para saber su tipo
                         field = self._fields.get(k)
                         if not field:
+                            vals.pop(k, None)
                             continue
                         
                         # Odoo 18: read_format may return recordsets directly or (id, name) tuples
                         if field.type == 'many2one':
-                            if k == 'pln_root_id':
-                                _logger.info("CLEANING pln_root_id [before]: value=%s type=%s", v, type(v))
-
+                            # Deep cleaning for Many2one
                             if isinstance(v, (list, tuple)) and v:
                                 v = v[0]
                             
+                            # If it's still a recordset or has an id attribute
                             if hasattr(v, 'id') and not isinstance(v, type):
                                 v = v.id if v else False
                             
                             # Final safety check: ensure it's an int or False
-                            if v is not False and not isinstance(v, int):
+                            if v is not False and v is not None:
                                 try:
                                     v = int(v)
                                 except (ValueError, TypeError):
                                     v = False
+                            else:
+                                v = False
                             
                             vals[k] = v
-
-                            if k == 'pln_root_id':
-                                _logger.info("CLEANING pln_root_id [after]: value=%s type=%s", vals[k], type(vals[k]))
                         
                         elif field.type in ('many2many', 'one2many'):
                             if isinstance(v, models.BaseModel):
                                 vals[k] = [Command.set(v.ids)]
                             elif isinstance(v, list):
                                 # Si ya es una lista de IDs, la convertimos a comando ORM para seguridad
-                                if v and isinstance(v[0], (int, str)):
-                                    vals[k] = [Command.set(v)]
+                                if v and isinstance(v[0], (int, str, tuple, list)):
+                                    # Limpiar IDs si vienen como tuplas (id, name)
+                                    clean_ids = []
+                                    for item in v:
+                                        if isinstance(item, (tuple, list)) and item:
+                                            clean_ids.append(item[0])
+                                        else:
+                                            clean_ids.append(item)
+                                    vals[k] = [Command.set(clean_ids)]
                                 else:
                                     vals[k] = False
                             else:
@@ -761,7 +769,7 @@ class PolyBase(BaseModel):
                         
                         # Limpiar campos técnicos de Odoo que no deben pasarse al create
                         if k in ('__last_update', 'display_name', 'create_uid', 'create_date', 'write_uid', 'write_date'):
-                            vals.pop(k)
+                            vals.pop(k, None)
                     
                     # Preservar campos de auditoría
                     self.env.cr.execute(SQL(
@@ -774,17 +782,18 @@ class PolyBase(BaseModel):
                     # Usamos flush() para asegurar que todo esté en la BD antes de crear
                     self.env.flush_all()
                     
-                    # LOG DEPURACIÓN FINAL
-                    if 'pln_root_id' in vals:
-                        _logger.info("FINAL vals['pln_root_id']: value=%s type=%s", vals['pln_root_id'], type(vals['pln_root_id']))
-                    
-                    # Odoo 18: bypass security and recomputes for migration speed and reliability
-                    new_record = self.with_context(
-                        tracking_disable=True,
-                        mail_create_nolog=True,
-                        mail_create_nosubscribe=True,
-                        prefetch_fields=False
-                    ).create([vals])
+                    # LOG DE SEGURIDAD: Si falla, veremos qué campos quedaron
+                    try:
+                        # Odoo 18: bypass security and recomputes for migration speed and reliability
+                        new_record = self.with_context(
+                            tracking_disable=True,
+                            mail_create_nolog=True,
+                            mail_create_nosubscribe=True,
+                            prefetch_fields=False
+                        ).create([vals])
+                    except Exception as create_err:
+                        _logger.error("Create failed for %s ID %s. Vals: %s", self._name, old_id, vals)
+                        raise create_err
 
                     # Restaurar auditoría en todas las tablas involucradas
                     audit_tables = [self._table, 'ir_poly_base']
