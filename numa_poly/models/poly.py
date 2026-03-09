@@ -721,9 +721,19 @@ class PolyBase(BaseModel):
                             vals.pop(k, None)
                             continue
                         
+                        # CASO ESPECIAL: project.task.pln_root_id y similares
+                        # Si un campo Many2one apunta a una de las bases de este modelo,
+                        # el ORM de Odoo 18 puede fallar durante el create() porque 
+                        # intenta validar la integridad antes de que el registro base
+                        # esté completamente "unido" al nuevo ID.
+                        # Solución: Lo ponemos a False y lo restauraremos vía SQL.
+                        is_self_base_ref = False
+                        if field.type == 'many2one' and field.relation in self._depend_models:
+                            is_self_base_ref = True
+                        
                         if field.type == 'many2one':
                             # En SQL los M2O ya son IDs enteros o None
-                            if v is None:
+                            if v is None or is_self_base_ref:
                                 vals[k] = False
                             else:
                                 vals[k] = int(v)
@@ -745,9 +755,17 @@ class PolyBase(BaseModel):
                         except Exception:
                             continue
                     
-                    # Preservar campos de auditoría (leídos antes del create)
+                    # Preservar campos de auditoría y referencias circulares (leídos antes del create)
+                    # Añadimos pln_root_id y cualquier M2O que apunte a las bases
+                    extra_cols = []
+                    for k, field in self._fields.items():
+                        if field.store and field.type == 'many2one' and field.relation in self._depend_models:
+                            extra_cols.append(k)
+                    
+                    audit_cols = ['create_uid', 'create_date', 'write_uid', 'write_date'] + extra_cols
                     self.env.cr.execute(SQL(
-                        "SELECT create_uid, create_date, write_uid, write_date FROM %s WHERE id = %s",
+                        "SELECT %s FROM %s WHERE id = %s",
+                        SQL.comma([SQL.identifier(c) for k, c in enumerate(audit_cols)]),
                         SQL.identifier(self._table), old_id
                     ))
                     audit = self.env.cr.dictfetchone()
@@ -789,7 +807,8 @@ class PolyBase(BaseModel):
                             
                         set_clauses = []
                         params = []
-                        for col in ['create_uid', 'create_date', 'write_uid', 'write_date']:
+                        # Columnas a restaurar: auditoría y referencias circulares
+                        for col in audit_cols:
                             if col in existing_cols and audit.get(col):
                                 set_clauses.append(f"{col}=%s")
                                 params.append(audit[col])
@@ -954,13 +973,33 @@ class PolyBase(BaseModel):
             for col in ['source_node_id', 'target_node_id']:
                 try:
                     with self.env.cr.savepoint():
-                        # Eliminar duplicados si los hay (depende de restricciones únicas de numa_planning_link)
+                        # Para numa_planning_link, existe una FK a numa_planning_node.
+                        # El ID viejo YA NO existe en numa_planning_node en este punto
+                        # porque _migrate_to_poly se asegura de que el nuevo_id ya esté creado.
+                        # PERO, si el source_node_id apunta a un ID que aún no ha sido migrado,
+                        # fallará si intentamos migrar el link antes que el nodo.
+                        # Como _migrate_to_poly procesa los IDs en orden, y los links suelen ser
+                        # entre registros del mismo modelo o relacionados, intentamos actualizar.
+                        
+                        # Eliminar duplicados si los hay
+                        other_col = 'target_node_id' if col == 'source_node_id' else 'source_node_id'
+                        self.env.cr.execute(SQL("""
+                            DELETE FROM numa_planning_link t1
+                            WHERE %s = %s
+                            AND EXISTS (
+                                SELECT 1 FROM numa_planning_link t2
+                                WHERE t2.%s = %s
+                                AND t2.%s = t1.%s
+                            )
+                        """, SQL.identifier(col), old_id, SQL.identifier(col), new_id, 
+                             SQL.identifier(other_col), SQL.identifier(other_col)))
+
                         self.env.cr.execute(SQL(
                             "UPDATE numa_planning_link SET %s = %s WHERE %s = %s",
                             SQL.identifier(col), new_id, SQL.identifier(col), old_id
                         ))
-                except Exception:
-                    pass
+                except Exception as e:
+                    _logger.debug("Could not update numa_planning_link.%s for ID %s -> %s (probably order of migration): %s", col, old_id, new_id, e)
 
     def _auto_init(self):
         """
