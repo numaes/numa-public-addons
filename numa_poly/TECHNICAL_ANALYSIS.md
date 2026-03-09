@@ -148,6 +148,11 @@ Numa Poly incluye un sistema robusto para migrar registros existentes cuando un 
 
 ### 10. Manejo de Integridad y Resiliencia
 
+- **Detección de Vistas**: El motor evita actualizar tablas que son vistas de base de datos (`information_schema.views`).
+- **Limpieza de Tipos**: Se realiza una limpieza profunda de valores (recordsets, listas de IDs) antes de la creación del nuevo registro.
+- **Resolución de Conflictos**: Maneja violaciones de restricciones únicas (ej. `mail_followers`, Many2many) eliminando registros redundantes antes de actualizar los IDs.
+- **Transaccionalidad**: Usa `savepoints` de base de datos en actualizaciones críticas para garantizar que fallos menores no aborten la migración completa.
+
 ### 3. PolyReference (Campo Especial)
 
 **Ubicación**: `models/poly.py:130-257`

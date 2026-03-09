@@ -737,8 +737,12 @@ class PolyBase(BaseModel):
                                     vals[k] = val_id.id
                                 elif isinstance(val_id, int):
                                     vals[k] = val_id
+                                elif isinstance(val_id, str) and val_id.isdigit():
+                                    vals[k] = int(val_id)
                                 else:
                                     vals[k] = False
+                            elif isinstance(v, str) and v.isdigit():
+                                vals[k] = int(v)
                             elif not isinstance(v, (int, bool)):
                                 # Cualquier otro caso extraño (como recordsets de Odoo 18 persistentes)
                                 if hasattr(v, 'id'):
@@ -846,34 +850,50 @@ class PolyBase(BaseModel):
             except Exception:
                 continue
 
-            if ttype == 'many2one':
-                # Verificar si es una vista antes de intentar el UPDATE
-                self.env.cr.execute("""
-                    SELECT count(*) FROM information_schema.views 
-                    WHERE table_name = %s AND table_schema = 'public'
-                """, [table_name])
-                if self.env.cr.fetchone()[0] > 0:
-                    continue
+            try:
+                # Usamos un savepoint para cada actualización para evitar abortar la transacción entera
+                with self.env.cr.savepoint():
+                    if ttype == 'many2one':
+                        # Verificar si es una vista antes de intentar el UPDATE
+                        self.env.cr.execute("""
+                            SELECT count(*) FROM information_schema.views 
+                            WHERE table_name = %s AND table_schema = 'public'
+                        """, [table_name])
+                        if self.env.cr.fetchone()[0] > 0:
+                            continue
 
-                self.env.cr.execute(SQL(
-                    "UPDATE %s SET %s = %s WHERE %s = %s",
-                    SQL.identifier(table_name), SQL.identifier(field_name), new_id,
-                    SQL.identifier(field_name), old_id
-                ))
-            elif ttype == 'many2many':
-                # Para M2M necesitamos encontrar la tabla intermedia
-                field = self.env[field_model]._fields.get(field_name)
-                # En Odoo 18, field.relation es el nombre de la tabla intermedia si no se especifica.
-                # Pero la forma más segura de obtener table, col1, col2 es a través de los atributos del objeto field
-                if field:
-                    m2m_table = getattr(field, 'relation', None)
-                    col_id = getattr(field, 'column2', None) # column2 suele ser la del modelo relacionado (nosotros)
-                    if m2m_table and col_id:
                         self.env.cr.execute(SQL(
                             "UPDATE %s SET %s = %s WHERE %s = %s",
-                            SQL.identifier(m2m_table), SQL.identifier(col_id), new_id,
-                            SQL.identifier(col_id), old_id
+                            SQL.identifier(table_name), SQL.identifier(field_name), new_id,
+                            SQL.identifier(field_name), old_id
                         ))
+                    elif ttype == 'many2many':
+                        # Para M2M necesitamos encontrar la tabla intermedia
+                        field = self.env[field_model]._fields.get(field_name)
+                        if field:
+                            m2m_table = getattr(field, 'relation', None)
+                            col_id = getattr(field, 'column2', None)
+                            if m2m_table and col_id:
+                                # Manejo de duplicados en M2M
+                                col_id_other = getattr(field, 'column1', None)
+                                if col_id_other:
+                                    self.env.cr.execute(SQL("""
+                                        DELETE FROM %s 
+                                        WHERE %s = %s
+                                        AND %s IN (
+                                            SELECT %s FROM %s WHERE %s = %s
+                                        )
+                                    """, SQL.identifier(m2m_table), SQL.identifier(col_id), old_id,
+                                         SQL.identifier(col_id_other), SQL.identifier(col_id_other),
+                                         SQL.identifier(m2m_table), SQL.identifier(col_id), new_id))
+
+                                self.env.cr.execute(SQL(
+                                    "UPDATE %s SET %s = %s WHERE %s = %s",
+                                    SQL.identifier(m2m_table), SQL.identifier(col_id), new_id,
+                                    SQL.identifier(col_id), old_id
+                                ))
+            except Exception as e:
+                _logger.warning("Minor issue during FK update for %s.%s (ID %s -> %s): %s", field_model, field_name, old_id, new_id, e)
 
         # B. Referencias Dinámicas (res_model / res_id)
         dynamic_refs = [
@@ -885,13 +905,28 @@ class PolyBase(BaseModel):
         ]
         for table, model_col, id_col in dynamic_refs:
             try:
-                self.env.cr.execute(SQL(
-                    "UPDATE %s SET %s = %s WHERE %s = %s AND %s = %s",
-                    SQL.identifier(table), SQL.identifier(id_col), new_id,
-                    SQL.identifier(model_col), self._name, SQL.identifier(id_col), old_id
-                ))
-            except Exception:
-                pass # La tabla podría no existir
+                # Usamos un savepoint para cada actualización dinámica para evitar abortar la transacción entera
+                # en caso de violación de restricción única (ej. mail_followers)
+                with self.env.cr.savepoint():
+                    if table == 'mail_followers':
+                        # Para mail_followers, si ya existe el seguidor para el nuevo ID, 
+                        # simplemente borramos el del viejo ID en lugar de actualizar.
+                        self.env.cr.execute(SQL("""
+                            DELETE FROM mail_followers 
+                            WHERE res_model = %s AND res_id = %s
+                            AND partner_id IN (
+                                SELECT partner_id FROM mail_followers 
+                                WHERE res_model = %s AND res_id = %s
+                            )
+                        """, self._name, old_id, self._name, new_id))
+
+                    self.env.cr.execute(SQL(
+                        "UPDATE %s SET %s = %s WHERE %s = %s AND %s = %s",
+                        SQL.identifier(table), SQL.identifier(id_col), new_id,
+                        SQL.identifier(model_col), self._name, SQL.identifier(id_col), old_id
+                    ))
+            except Exception as e:
+                _logger.warning("Minor issue during dynamic ref update for %s (ID %s -> %s): %s", table, old_id, new_id, e)
 
         # C. Casos Especiales (mail.alias)
         if 'mail.alias' in self.env:
