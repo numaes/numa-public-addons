@@ -723,35 +723,48 @@ class PolyBase(BaseModel):
                         field = self._fields.get(k)
                         if not field:
                             continue
-                            
+                        
+                        # LOG PARA DEPURACIÓN
+                        if k == 'pln_root_id':
+                            _logger.info("CLEANING pln_root_id: value=%s type=%s", v, type(v))
+                        
+                        # Si el valor es una tupla/lista y el campo es Many2one, read_format 
+                        # devolvió (id, name). Extraemos el ID ahora para evitar confusiones.
+                        if field.type == 'many2one' and isinstance(v, (list, tuple)) and v:
+                            v = v[0]
+                            vals[k] = v
+
                         # Si el valor ya es un ID (int) o False, no necesitamos hacer nada especial
                         # excepto para M2M que podrían ser listas de IDs.
                         if field.type == 'many2one':
                             if isinstance(v, models.BaseModel):
                                 vals[k] = v.id if v else False
                             elif isinstance(v, (list, tuple)) and v:
-                                # read_format a veces devuelve (id, name) o [id, name]
-                                # Si el ID es un recordset (Odoo 18), extraemos el ID entero
+                                # read_format returns (id, name) or [id, name]
                                 val_id = v[0]
                                 if isinstance(val_id, models.BaseModel):
                                     vals[k] = val_id.id
-                                elif isinstance(val_id, int):
-                                    vals[k] = val_id
+                                elif isinstance(val_id, (int, float)):
+                                    vals[k] = int(val_id)
                                 elif isinstance(val_id, str) and val_id.isdigit():
                                     vals[k] = int(val_id)
                                 else:
                                     vals[k] = False
+                            elif isinstance(v, (int, float)):
+                                vals[k] = int(v)
                             elif isinstance(v, str) and v.isdigit():
                                 vals[k] = int(v)
-                            elif not isinstance(v, (int, bool)):
-                                # Cualquier otro caso extraño (como recordsets de Odoo 18 persistentes)
-                                if hasattr(v, 'id'):
-                                    vals[k] = v.id
-                                else:
+                            elif hasattr(v, 'id') and not isinstance(v, type):
+                                # Handle any remaining recordset-like objects
+                                try:
+                                    vals[k] = v.id if v else False
+                                except Exception:
                                     vals[k] = False
+                            else:
+                                vals[k] = False
                             
-                            # Forzar conversión final a int o False
-                            if vals[k] and not isinstance(vals[k], int):
+                            # Final safety check: ensure it's an int or False
+                            if vals[k] is not False and not isinstance(vals[k], int):
                                 try:
                                     vals[k] = int(vals[k])
                                 except (ValueError, TypeError):
