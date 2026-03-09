@@ -724,40 +724,30 @@ class PolyBase(BaseModel):
                         if not field:
                             continue
                         
-                        # LOG PARA DEPURACIÓN
-                        if k == 'pln_root_id':
-                            _logger.info("CLEANING pln_root_id [before]: value=%s type=%s", v, type(v))
-                        
                         # Odoo 18: read_format may return recordsets directly or (id, name) tuples
                         if field.type == 'many2one':
+                            if k == 'pln_root_id':
+                                _logger.info("CLEANING pln_root_id [before]: value=%s type=%s", v, type(v))
+
                             if isinstance(v, (list, tuple)) and v:
                                 v = v[0]
                             
                             if hasattr(v, 'id') and not isinstance(v, type):
                                 v = v.id if v else False
                             
+                            # Final safety check: ensure it's an int or False
+                            if v is not False and not isinstance(v, int):
+                                try:
+                                    v = int(v)
+                                except (ValueError, TypeError):
+                                    v = False
+                            
                             vals[k] = v
 
-                        # Final ID extraction for Many2one
-                        if field.type == 'many2one':
-                            if isinstance(vals[k], (list, tuple)) and vals[k]:
-                                vals[k] = vals[k][0]
-                            
-                            if hasattr(vals[k], 'id') and not isinstance(vals[k], type):
-                                vals[k] = vals[k].id if vals[k] else False
-                            
-                            # Final safety check: ensure it's an int or False
-                            if vals[k] is not False and not isinstance(vals[k], int):
-                                try:
-                                    vals[k] = int(vals[k])
-                                except (ValueError, TypeError):
-                                    vals[k] = False
-                            
                             if k == 'pln_root_id':
                                 _logger.info("CLEANING pln_root_id [after]: value=%s type=%s", vals[k], type(vals[k]))
                         
                         elif field.type in ('many2many', 'one2many'):
-                            # Para relaciones X2many, read_format devuelve una lista de IDs
                             if isinstance(v, models.BaseModel):
                                 vals[k] = [Command.set(v.ids)]
                             elif isinstance(v, list):
@@ -781,7 +771,20 @@ class PolyBase(BaseModel):
                     audit = self.env.cr.dictfetchone()
 
                     # Crear el nuevo registro (esto disparará la creación en depend_models)
-                    new_record = self.create([vals])
+                    # Usamos flush() para asegurar que todo esté en la BD antes de crear
+                    self.env.flush_all()
+                    
+                    # LOG DEPURACIÓN FINAL
+                    if 'pln_root_id' in vals:
+                        _logger.info("FINAL vals['pln_root_id']: value=%s type=%s", vals['pln_root_id'], type(vals['pln_root_id']))
+                    
+                    # Odoo 18: bypass security and recomputes for migration speed and reliability
+                    new_record = self.with_context(
+                        tracking_disable=True,
+                        mail_create_nolog=True,
+                        mail_create_nosubscribe=True,
+                        prefetch_fields=False
+                    ).create([vals])
 
                     # Restaurar auditoría en todas las tablas involucradas
                     audit_tables = [self._table, 'ir_poly_base']
