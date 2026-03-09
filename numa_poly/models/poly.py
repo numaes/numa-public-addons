@@ -787,8 +787,10 @@ class PolyBase(BaseModel):
                     # Preservar campos de auditoría y referencias circulares (leídos antes del create)
                     # Añadimos pln_root_id y cualquier M2O que apunte a las bases
                     extra_cols = []
+                    if 'pln_root_id' in self._fields:
+                        extra_cols.append('pln_root_id')
                     for k, field in self._fields.items():
-                        if field.store and field.type == 'many2one' and getattr(field, 'comodel_name', None) in self._depend_models:
+                        if k != 'pln_root_id' and field.store and field.type == 'many2one' and getattr(field, 'comodel_name', None) in self._depend_models:
                             extra_cols.append(k)
                     
                     audit_cols = ['create_uid', 'create_date', 'write_uid', 'write_date'] + extra_cols
@@ -871,9 +873,12 @@ class PolyBase(BaseModel):
         # Post-migration: re-trigger syncs that were skipped during migration
         # We search all records of this model that now exist in ir_poly_base
         _logger.info("Performing post-migration sync for %s", self._name)
-        newly_migrated_records = self.search([])
+        newly_migrated_records = self.with_context(active_test=False).search([])
         for record in newly_migrated_records:
             try:
+                # Ensure record exists and is accessible
+                if not record.exists():
+                    continue
                 if hasattr(record, '_pln_sync_dependencies_to_links'):
                     record._pln_sync_dependencies_to_links()
                 if hasattr(record, '_pln_set_root_from_project'):
@@ -897,6 +902,10 @@ class PolyBase(BaseModel):
         """, [self._name])
         
         for field_model, field_name, ttype in self.env.cr.fetchall():
+            # Skip update if we are already updating this field in a specialized way
+            if self._name == 'project.task' and field_model == 'project.task' and field_name == 'pln_root_id':
+                continue
+            
             try:
                 model_obj = self.env[field_model]
                 table_name = model_obj._table
@@ -958,6 +967,27 @@ class PolyBase(BaseModel):
                         ))
             except Exception as e:
                 _logger.warning("Minor issue during FK update for %s.%s (ID %s -> %s): %s", field_model, field_name, old_id, new_id, e)
+
+        # A2. Specialized Many2one update for pln_root_id (across all tables)
+        # Any model pointing to a polymorphic base must be updated
+        try:
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT f.model, f.name FROM ir_model_fields f 
+                    WHERE f.name = 'pln_root_id' AND f.store = True
+                """)
+                for root_model, root_field in self.env.cr.fetchall():
+                    try:
+                        root_table = self.env[root_model]._table
+                        self.env.cr.execute(SQL(
+                            "UPDATE %s SET %s = %s WHERE %s = %s",
+                            SQL.identifier(root_table), SQL.identifier(root_field), new_id,
+                            SQL.identifier(root_field), old_id
+                        ))
+                    except:
+                        continue
+        except Exception:
+            pass
 
         # B. Referencias Dinámicas (res_model / res_id)
         dynamic_refs = [
