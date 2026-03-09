@@ -812,6 +812,7 @@ class PolyBase(BaseModel):
                             mail_create_nosubscribe=True,
                             prefetch_fields=False,
                             no_upsert=True,  # Evitar lógicas de auto-merge si existen
+                            is_migration=True,  # Marcar explícitamente como migración
                         ).create([vals])
                         # IMPORTANTE: Forzar flush para que los registros base existan en BD
                         # y no fallen las FKs en _update_foreign_keys
@@ -866,6 +867,19 @@ class PolyBase(BaseModel):
             except Exception as e:
                 _logger.error("Failed to migrate %s ID %s: %s", self._name, old_id, e)
                 # Continuamos con el siguiente registro
+        
+        # Post-migration: re-trigger syncs that were skipped during migration
+        # We search all records of this model that now exist in ir_poly_base
+        _logger.info("Performing post-migration sync for %s", self._name)
+        newly_migrated_records = self.search([])
+        for record in newly_migrated_records:
+            try:
+                if hasattr(record, '_pln_sync_dependencies_to_links'):
+                    record._pln_sync_dependencies_to_links()
+                if hasattr(record, '_pln_set_root_from_project'):
+                    record._pln_set_root_from_project()
+            except Exception as e:
+                _logger.warning("Post-migration sync failed for %s ID %s: %s", self._name, record.id, e)
 
     def _update_foreign_keys(self, old_id, new_id):
         """
