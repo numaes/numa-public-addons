@@ -902,14 +902,22 @@ class PolyBase(BaseModel):
                     try:
                         root_table = self.env[root_model]._table
                         # We use the ir_poly_base table as the mapping source
+                        # We also set to NULL if the old_id is not found in ir_poly_base to satisfy FKs
                         self.env.cr.execute(SQL("""
                             UPDATE %s AS t
-                            SET %s = m.id
-                            FROM ir_poly_base m
-                            WHERE t.%s = m.old_id
-                            AND m.concrete_model_id = (SELECT id FROM ir_model WHERE model = %s)
+                            SET %s = CASE 
+                                WHEN m.id IS NOT NULL THEN m.id 
+                                ELSE NULL 
+                            END
+                            FROM (
+                                SELECT DISTINCT %s AS old_id FROM %s
+                            ) AS old_ids
+                            LEFT JOIN ir_poly_base m ON old_ids.old_id = m.old_id 
+                                AND m.concrete_model_id = (SELECT id FROM ir_model WHERE model = %s)
+                            WHERE t.%s = old_ids.old_id
                         """, SQL.identifier(root_table), SQL.identifier(root_field), 
-                             SQL.identifier(root_field), self._name))
+                             SQL.identifier(root_field), SQL.identifier(root_table), self._name,
+                             SQL.identifier(root_field)))
                     except:
                         continue
             except Exception as e:
@@ -925,6 +933,10 @@ class PolyBase(BaseModel):
                     record._pln_sync_dependencies_to_links()
                 if hasattr(record, '_pln_set_root_from_project'):
                     record._pln_set_root_from_project()
+                # If pln_root_id is still pointing to an old ID (failed to bulk update)
+                # or if it was nullified, we re-calculate it.
+                if hasattr(record, 'pln_root_id') and not record.pln_root_id:
+                     record._pln_set_root_from_project()
             except Exception as e:
                 _logger.warning("Post-migration sync failed for %s ID %s: %s", self._name, record.id, e)
 
