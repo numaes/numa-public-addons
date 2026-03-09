@@ -728,41 +728,23 @@ class PolyBase(BaseModel):
                         if k == 'pln_root_id':
                             _logger.info("CLEANING pln_root_id [before]: value=%s type=%s", v, type(v))
                         
-                        # Si el valor es una tupla/lista y el campo es Many2one, read_format 
-                        # devolvió (id, name). Extraemos el ID ahora para evitar confusiones.
-                        if field.type == 'many2one' and isinstance(v, (list, tuple)) and v:
-                            v = v[0]
-                            # Si v[0] sigue siendo un recordset (Odoo 18), extraemos el ID
+                        # Odoo 18: read_format may return recordsets directly or (id, name) tuples
+                        if field.type == 'many2one':
+                            if isinstance(v, (list, tuple)) and v:
+                                v = v[0]
+                            
                             if hasattr(v, 'id') and not isinstance(v, type):
-                                v = v.id
+                                v = v.id if v else False
+                            
                             vals[k] = v
 
-                        # Si el valor ya es un ID (int) o False, no necesitamos hacer nada especial
-                        # excepto para M2M que podrían ser listas de IDs.
+                        # Final ID extraction for Many2one
                         if field.type == 'many2one':
-                            if hasattr(v, 'id') and not isinstance(v, type):
-                                # Handle recordsets directly
-                                try:
-                                    vals[k] = v.id if v else False
-                                except Exception:
-                                    vals[k] = False
-                            elif isinstance(v, (list, tuple)) and v:
-                                # read_format returns (id, name) or [id, name]
-                                val_id = v[0]
-                                if hasattr(val_id, 'id') and not isinstance(val_id, type):
-                                    vals[k] = val_id.id
-                                elif isinstance(val_id, (int, float)):
-                                    vals[k] = int(val_id)
-                                elif isinstance(val_id, str) and val_id.isdigit():
-                                    vals[k] = int(val_id)
-                                else:
-                                    vals[k] = False
-                            elif isinstance(v, (int, float)):
-                                vals[k] = int(v)
-                            elif isinstance(v, str) and v.isdigit():
-                                vals[k] = int(v)
-                            else:
-                                vals[k] = False
+                            if isinstance(vals[k], (list, tuple)) and vals[k]:
+                                vals[k] = vals[k][0]
+                            
+                            if hasattr(vals[k], 'id') and not isinstance(vals[k], type):
+                                vals[k] = vals[k].id if vals[k] else False
                             
                             # Final safety check: ensure it's an int or False
                             if vals[k] is not False and not isinstance(vals[k], int):
