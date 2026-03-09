@@ -733,10 +733,22 @@ class PolyBase(BaseModel):
                         
                         if field.type == 'many2one':
                             # En SQL los M2O ya son IDs enteros o None
-                            if v is None or is_self_base_ref:
+                            if v is None:
+                                vals[k] = False
+                            elif is_self_base_ref:
+                                # Saltamos validación del ORM para campos que apuntan a bases
                                 vals[k] = False
                             else:
-                                vals[k] = int(v)
+                                try:
+                                    # Aseguramos que sea un ID entero, manejando posibles recordsets remanentes
+                                    if hasattr(v, 'id'):
+                                        vals[k] = v.id
+                                    elif isinstance(v, (list, tuple)) and len(v) > 0:
+                                        vals[k] = v[0]
+                                    else:
+                                        vals[k] = int(v)
+                                except (ValueError, TypeError):
+                                    vals[k] = False
                         
                         # Limpiar campos técnicos de Odoo
                         if k in ('__last_update', 'display_name', 'create_uid', 'create_date', 'write_uid', 'write_date'):
@@ -851,6 +863,11 @@ class PolyBase(BaseModel):
             try:
                 model_obj = self.env[field_model]
                 table_name = model_obj._table
+                
+                # Check field object directly to be sure
+                field = model_obj._fields.get(field_name)
+                if not field:
+                    continue
             except Exception:
                 continue
 
@@ -873,29 +890,27 @@ class PolyBase(BaseModel):
                         ))
                     elif ttype == 'many2many':
                         # Para M2M necesitamos encontrar la tabla intermedia
-                        field = self.env[field_model]._fields.get(field_name)
-                        if field:
-                            m2m_table = getattr(field, 'relation', None)
-                            col_id = getattr(field, 'column2', None)
-                            if m2m_table and col_id:
-                                # Manejo de duplicados en M2M
-                                col_id_other = getattr(field, 'column1', None)
-                                if col_id_other:
-                                    self.env.cr.execute(SQL("""
-                                        DELETE FROM %s 
-                                        WHERE %s = %s
-                                        AND %s IN (
-                                            SELECT %s FROM %s WHERE %s = %s
-                                        )
-                                    """, SQL.identifier(m2m_table), SQL.identifier(col_id), old_id,
-                                         SQL.identifier(col_id_other), SQL.identifier(col_id_other),
-                                         SQL.identifier(m2m_table), SQL.identifier(col_id), new_id))
+                        m2m_table = getattr(field, 'relation', None)
+                        col_id = getattr(field, 'column2', None)
+                        if m2m_table and col_id:
+                            # Manejo de duplicados en M2M
+                            col_id_other = getattr(field, 'column1', None)
+                            if col_id_other:
+                                self.env.cr.execute(SQL("""
+                                    DELETE FROM %s 
+                                    WHERE %s = %s
+                                    AND %s IN (
+                                        SELECT %s FROM %s WHERE %s = %s
+                                    )
+                                """, SQL.identifier(m2m_table), SQL.identifier(col_id), old_id,
+                                     SQL.identifier(col_id_other), SQL.identifier(col_id_other),
+                                     SQL.identifier(m2m_table), SQL.identifier(col_id), new_id))
 
-                                self.env.cr.execute(SQL(
-                                    "UPDATE %s SET %s = %s WHERE %s = %s",
-                                    SQL.identifier(m2m_table), SQL.identifier(col_id), new_id,
-                                    SQL.identifier(col_id), old_id
-                                ))
+                            self.env.cr.execute(SQL(
+                                "UPDATE %s SET %s = %s WHERE %s = %s",
+                                SQL.identifier(m2m_table), SQL.identifier(col_id), new_id,
+                                SQL.identifier(col_id), old_id
+                            ))
             except Exception as e:
                 _logger.warning("Minor issue during FK update for %s.%s (ID %s -> %s): %s", field_model, field_name, old_id, new_id, e)
 
@@ -949,6 +964,7 @@ class PolyBase(BaseModel):
         if self._name == 'project.task':
             try:
                 with self.env.cr.savepoint():
+                    # En Odoo 18, project_task_user_rel tiene columnas: id, task_id, user_id, stage_id, ...
                     # Manejar duplicados antes de actualizar
                     self.env.cr.execute("""
                         DELETE FROM project_task_user_rel t1
@@ -957,7 +973,6 @@ class PolyBase(BaseModel):
                             SELECT 1 FROM project_task_user_rel t2
                             WHERE t2.task_id = %s 
                             AND t2.user_id IS NOT DISTINCT FROM t1.user_id
-                            AND t2.stage_id IS NOT DISTINCT FROM t1.stage_id
                         )
                     """, [old_id, new_id])
                     
