@@ -721,17 +721,12 @@ class PolyBase(BaseModel):
                             vals.pop(k, None)
                             continue
                         
-                        # CASO ESPECIAL: project.task.pln_root_id y similares
-                        # Si un campo Many2one apunta a una de las bases de este modelo,
-                        # el ORM de Odoo 18 puede fallar durante el create() porque 
-                        # intenta validar la integridad antes de que el registro base
-                        # esté completamente "unido" al nuevo ID.
-                        # Solución: Lo ponemos a False y lo restauraremos vía SQL.
-                        is_self_base_ref = False
-                        if field.type == 'many2one' and getattr(field, 'comodel_name', None) in self._depend_models:
-                            is_self_base_ref = True
-                        
                         if field.type == 'many2one':
+                            # Extraction logic for Many2one
+                            is_self_base_ref = False
+                            if getattr(field, 'comodel_name', None) in self._depend_models:
+                                is_self_base_ref = True
+                            
                             # En SQL los M2O ya son IDs enteros o None
                             # Pero Odoo 18 puede devolver recordsets o tuplas incluso en SQL crudo si hay interceptores
                             if v is None:
@@ -786,12 +781,14 @@ class PolyBase(BaseModel):
                             extra_cols.append(k)
                     
                     audit_cols = ['create_uid', 'create_date', 'write_uid', 'write_date'] + extra_cols
+                    # Use safer SQL construction for Odoo 18
+                    col_identifiers = [SQL.identifier(c) for c in audit_cols]
                     self.env.cr.execute(SQL(
                         "SELECT %s FROM %s WHERE id = %s",
-                        SQL(', ').join(SQL.identifier(c) for c in audit_cols),
+                        SQL(', ').join(col_identifiers),
                         SQL.identifier(self._table), old_id
                     ))
-                    audit = self.env.cr.dictfetchone()
+                    audit = self.env.cr.dictfetchone() or {}
 
                     # Crear el nuevo registro (esto disparará la creación en depend_models)
                     self.env.flush_all()
@@ -817,12 +814,12 @@ class PolyBase(BaseModel):
                             audit_tables.append(base_model._table)
                     
                     for table in set(audit_tables):
-                        # Verificar si la tabla tiene las columnas de auditoría antes de intentar el UPDATE
+                        # Columnas a restaurar: auditoría y referencias circulares
                         self.env.cr.execute("""
                             SELECT column_name 
                             FROM information_schema.columns 
-                            WHERE table_name = %s AND column_name IN ('create_uid', 'create_date', 'write_uid', 'write_date')
-                        """, [table])
+                            WHERE table_name = %s AND column_name IN %s
+                        """, [table, tuple(audit_cols)])
                         existing_cols = {row[0] for row in self.env.cr.fetchall()}
                         
                         if not existing_cols:
@@ -864,6 +861,7 @@ class PolyBase(BaseModel):
         # Buscamos campos almacenados que apunten a este modelo
         # En Odoo 18, ir_model tiene el nombre de la tabla en la columna 'name' o derivado, 
         # pero la forma más segura y portable es usar self.env[model]._table
+        # Odoo 18: Many2one references are stored in 'relation' column of ir_model_fields for all types
         self.env.cr.execute("""
             SELECT f.model, f.name, f.ttype
             FROM ir_model_fields f
@@ -889,19 +887,17 @@ class PolyBase(BaseModel):
                         # Para M2M necesitamos encontrar la tabla intermedia, para M2O la tabla del modelo
                         # Odoo 18: Many2one tiene comodel_name, Many2many tiene relation
                         if ttype == 'many2many':
+                            # Many2many specific: uses 'relation' for table name and 'column2' for the target ID
                             rel_table = getattr(field, 'relation', None)
+                            col_id = getattr(field, 'column2', None)
                         else:
+                            # Many2one specific: uses 'comodel_name' but we update the current model's table
                             rel_table = getattr(field, 'comodel_name', None)
+                            col_id = field_name
                             
-                        if not rel_table:
-                            # Fallback to model table name for Many2one if comodel_name is not set
-                            rel_table = table_name if ttype == 'many2one' else None
-                        
-                        col_id = getattr(field, 'column2', None) if ttype == 'many2many' else field_name
-                        
                         if not rel_table or not col_id:
                             continue
-
+                        
                         # Para Many2one, si rel_table es el comodel, queremos actualizar la tabla donde ESTÁ el campo
                         target_update_table = rel_table if ttype == 'many2many' else table_name
 
