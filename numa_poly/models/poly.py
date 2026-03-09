@@ -741,12 +741,20 @@ class PolyBase(BaseModel):
                             else:
                                 try:
                                     # Aseguramos que sea un ID entero, manejando posibles recordsets remanentes
-                                    if hasattr(v, 'id'):
+                                    if hasattr(v, 'id') and not isinstance(v, (list, tuple)):
                                         vals[k] = v.id
                                     elif isinstance(v, (list, tuple)) and len(v) > 0:
-                                        vals[k] = v[0]
-                                    else:
+                                        # Si es una lista/tupla, el primer elemento suele ser el ID
+                                        # Pero en Odoo 18 puede ser una lista de recordsets si se usó _read_format
+                                        first = v[0]
+                                        if hasattr(first, 'id'):
+                                            vals[k] = first.id
+                                        else:
+                                            vals[k] = int(first)
+                                    elif v:
                                         vals[k] = int(v)
+                                    else:
+                                        vals[k] = False
                                 except (ValueError, TypeError):
                                     vals[k] = False
                         
@@ -874,25 +882,30 @@ class PolyBase(BaseModel):
             try:
                 # Usamos un savepoint para cada actualización para evitar abortar la transacción entera
                 with self.env.cr.savepoint():
-                    if ttype == 'many2one':
+                    if ttype in ('many2one', 'many2many'):
+                        # Para M2M necesitamos encontrar la tabla intermedia, para M2O la tabla del modelo
+                        rel_table = getattr(field, 'relation', None) if ttype == 'many2many' else getattr(field, 'comodel_name', None)
+                        if not rel_table:
+                            # Fallback to model table name for Many2one if comodel_name is not set
+                            rel_table = table_name if ttype == 'many2one' else None
+                        
+                        col_id = getattr(field, 'column2', None) if ttype == 'many2many' else field_name
+                        
+                        if not rel_table or not col_id:
+                            continue
+
+                        # Para Many2one, si rel_table es el comodel, queremos actualizar la tabla donde ESTÁ el campo
+                        target_update_table = rel_table if ttype == 'many2many' else table_name
+
                         # Verificar si es una vista antes de intentar el UPDATE
                         self.env.cr.execute("""
                             SELECT count(*) FROM information_schema.views 
                             WHERE table_name = %s AND table_schema = 'public'
-                        """, [table_name])
+                        """, [target_update_table])
                         if self.env.cr.fetchone()[0] > 0:
                             continue
 
-                        self.env.cr.execute(SQL(
-                            "UPDATE %s SET %s = %s WHERE %s = %s",
-                            SQL.identifier(table_name), SQL.identifier(field_name), new_id,
-                            SQL.identifier(field_name), old_id
-                        ))
-                    elif ttype == 'many2many':
-                        # Para M2M necesitamos encontrar la tabla intermedia
-                        m2m_table = getattr(field, 'relation', None)
-                        col_id = getattr(field, 'column2', None)
-                        if m2m_table and col_id:
+                        if ttype == 'many2many':
                             # Manejo de duplicados en M2M
                             col_id_other = getattr(field, 'column1', None)
                             if col_id_other:
@@ -902,15 +915,15 @@ class PolyBase(BaseModel):
                                     AND %s IN (
                                         SELECT %s FROM %s WHERE %s = %s
                                     )
-                                """, SQL.identifier(m2m_table), SQL.identifier(col_id), old_id,
+                                """, SQL.identifier(rel_table), SQL.identifier(col_id), old_id,
                                      SQL.identifier(col_id_other), SQL.identifier(col_id_other),
-                                     SQL.identifier(m2m_table), SQL.identifier(col_id), new_id))
+                                     SQL.identifier(rel_table), SQL.identifier(col_id), new_id))
 
-                            self.env.cr.execute(SQL(
-                                "UPDATE %s SET %s = %s WHERE %s = %s",
-                                SQL.identifier(m2m_table), SQL.identifier(col_id), new_id,
-                                SQL.identifier(col_id), old_id
-                            ))
+                        self.env.cr.execute(SQL(
+                            "UPDATE %s SET %s = %s WHERE %s = %s",
+                            SQL.identifier(target_update_table), SQL.identifier(col_id), new_id,
+                            SQL.identifier(col_id), old_id
+                        ))
             except Exception as e:
                 _logger.warning("Minor issue during FK update for %s.%s (ID %s -> %s): %s", field_model, field_name, old_id, new_id, e)
 
