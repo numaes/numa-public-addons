@@ -739,9 +739,14 @@ class PolyBase(BaseModel):
                                 def extract_id(val):
                                     if not val:
                                         return False
-                                    # Si es un recordset (tiene .id y no es lista/tupla)
-                                    if hasattr(val, 'id') and not isinstance(val, (list, tuple)):
-                                        return val.id
+                                    # Si es un recordset (tiene .ids y no es lista/tupla)
+                                    if hasattr(val, '_name') and hasattr(val, 'ids'):
+                                        try:
+                                            # We use val[:1].id to get the first ID if it's a recordset
+                                            return val[:1].id if val else False
+                                        except:
+                                            # Fallback if it's some other Odoo proxy
+                                            return val.id if hasattr(val, 'id') else False
                                     # Si es una tupla (id, name) o lista de recordsets
                                     if isinstance(val, (list, tuple)) and len(val) > 0:
                                         return extract_id(val[0])
@@ -753,8 +758,14 @@ class PolyBase(BaseModel):
                                 
                                 vals[k] = extract_id(v)
                                 # Final logging for debugging pln_root_id issues
-                                if k == 'pln_root_id':
-                                    _logger.info("FINAL vals['pln_root_id']: value=%s type=%s", vals[k], type(vals[k]))
+                                if k == 'pln_root_id' and vals[k] is not False:
+                                    # We ensure it's an int, not a recordset
+                                    if not isinstance(vals[k], (int, bool)):
+                                        try:
+                                            vals[k] = int(vals[k])
+                                        except:
+                                            vals[k] = False
+                                    _logger.info("FINAL vals['pln_root_id'] fixed: value=%s type=%s", vals[k], type(vals[k]))
                         
                         # Limpiar campos técnicos de Odoo
                         if k in ('__last_update', 'display_name', 'create_uid', 'create_date', 'write_uid', 'write_date'):
@@ -802,6 +813,9 @@ class PolyBase(BaseModel):
                             prefetch_fields=False,
                             no_upsert=True,  # Evitar lógicas de auto-merge si existen
                         ).create([vals])
+                        # IMPORTANTE: Forzar flush para que los registros base existan en BD
+                        # y no fallen las FKs en _update_foreign_keys
+                        self.env.flush_all()
                     except Exception as create_err:
                         _logger.error("Create failed for %s ID %s. Vals: %s", self._name, old_id, vals)
                         raise create_err
