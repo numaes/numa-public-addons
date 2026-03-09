@@ -53,6 +53,7 @@ class IrPolyBase(models.Model):
 
     concrete_model_id = fields.Many2one('ir.model', 'Concrete Model',
                                         ondelete='cascade', required=True)
+    old_id = fields.Integer('Old ID', index=True, help='Original ID before migration to poly')
 
     # Technical field for DTO payload transport
     poly_payload = fields.Text(
@@ -692,8 +693,8 @@ class PolyBase(BaseModel):
                 with self.env.cr.savepoint():
                     # 1. Generar nuevo ID en ir.poly_base
                     self.env.cr.execute(
-                        "INSERT INTO ir_poly_base (concrete_model_id) VALUES (%s) RETURNING id",
-                        [concrete_model_id]
+                        "INSERT INTO ir_poly_base (concrete_model_id, old_id) VALUES (%s, %s) RETURNING id",
+                        [concrete_model_id, old_id]
                     )
                     new_id = self.env.cr.fetchone()[0]
 
@@ -704,6 +705,10 @@ class PolyBase(BaseModel):
                     vals = self.env.cr.dictfetchone()
                     if not vals:
                         raise ValueError(f"Could not find original record {old_id} in {self._table}")
+
+                    # Extraer el root original para restaurarlo después si es necesario
+                    # Lo guardamos porque al crear el nuevo registro puede perderse si no se pasa en vals
+                    old_root_id = vals.get('pln_root_id')
 
                     # Extraer campos X2M via ORM por separado, ya que no están en la tabla principal
                     old_record = self.browse(old_id)
@@ -846,6 +851,14 @@ class PolyBase(BaseModel):
                         params = []
                         # Columnas a restaurar: auditoría y referencias circulares
                         for col in audit_cols:
+                            # If it's pln_root_id, we restore the original old ID for now
+                            # it will be updated to the new ID later in _update_foreign_keys bulk
+                            if col == 'pln_root_id' and old_root_id:
+                                if col in existing_cols:
+                                    set_clauses.append(f"{col}=%s")
+                                    params.append(old_root_id)
+                                continue
+
                             if col in existing_cols and audit.get(col):
                                 set_clauses.append(f"{col}=%s")
                                 params.append(audit[col])
@@ -873,6 +886,35 @@ class PolyBase(BaseModel):
         # Post-migration: re-trigger syncs that were skipped during migration
         # We search all records of this model that now exist in ir_poly_base
         _logger.info("Performing post-migration sync for %s", self._name)
+
+        # Before syncing, we perform a repository-wide update for pln_root_id
+        # since all records are now migrated and have their new IDs in ir_poly_base
+        if 'pln_root_id' in self._fields:
+            try:
+                _logger.info("Bulk updating pln_root_id for %s", self._name)
+                # This query updates ALL pln_root_id that still point to old IDs
+                # across all tables that have this field.
+                self.env.cr.execute("""
+                    SELECT f.model, f.name FROM ir_model_fields f 
+                    WHERE f.name = 'pln_root_id' AND f.store = True
+                """)
+                for root_model, root_field in self.env.cr.fetchall():
+                    try:
+                        root_table = self.env[root_model]._table
+                        # We use the ir_poly_base table as the mapping source
+                        self.env.cr.execute(SQL("""
+                            UPDATE %s AS t
+                            SET %s = m.id
+                            FROM ir_poly_base m
+                            WHERE t.%s = m.old_id
+                            AND m.concrete_model_id = (SELECT id FROM ir_model WHERE model = %s)
+                        """, SQL.identifier(root_table), SQL.identifier(root_field), 
+                             SQL.identifier(root_field), self._name))
+                    except:
+                        continue
+            except Exception as e:
+                _logger.error("Failed to bulk update pln_root_id: %s", e)
+
         newly_migrated_records = self.with_context(active_test=False).search([])
         for record in newly_migrated_records:
             try:
@@ -960,6 +1002,17 @@ class PolyBase(BaseModel):
                                      SQL.identifier(col_id_other), SQL.identifier(col_id_other),
                                      SQL.identifier(rel_table), SQL.identifier(col_id), new_id))
 
+                        # Special handling for project_task_user_rel (Personal Task Stage)
+                        # Odoo 18: task_id, user_id unique constraint
+                        if target_update_table == 'project_task_user_rel' and col_id == 'task_id':
+                            self.env.cr.execute(SQL("""
+                                DELETE FROM project_task_user_rel 
+                                WHERE task_id = %s
+                                AND user_id IN (
+                                    SELECT user_id FROM project_task_user_rel WHERE task_id = %s
+                                )
+                            """, new_id, old_id))
+
                         self.env.cr.execute(SQL(
                             "UPDATE %s SET %s = %s WHERE %s = %s",
                             SQL.identifier(target_update_table), SQL.identifier(col_id), new_id,
@@ -970,24 +1023,27 @@ class PolyBase(BaseModel):
 
         # A2. Specialized Many2one update for pln_root_id (across all tables)
         # Any model pointing to a polymorphic base must be updated
-        try:
-            with self.env.cr.savepoint():
-                self.env.cr.execute("""
-                    SELECT f.model, f.name FROM ir_model_fields f 
-                    WHERE f.name = 'pln_root_id' AND f.store = True
-                """)
-                for root_model, root_field in self.env.cr.fetchall():
-                    try:
-                        root_table = self.env[root_model]._table
-                        self.env.cr.execute(SQL(
-                            "UPDATE %s SET %s = %s WHERE %s = %s",
-                            SQL.identifier(root_table), SQL.identifier(root_field), new_id,
-                            SQL.identifier(root_field), old_id
-                        ))
-                    except:
-                        continue
-        except Exception:
-            pass
+        # We only update if the old_id is not already a polymorphic ID (new_id)
+        # to avoid double-updating or cycle issues during the transition
+        if old_id != new_id:
+            try:
+                with self.env.cr.savepoint():
+                    self.env.cr.execute("""
+                        SELECT f.model, f.name FROM ir_model_fields f 
+                        WHERE f.name = 'pln_root_id' AND f.store = True
+                    """)
+                    for root_model, root_field in self.env.cr.fetchall():
+                        try:
+                            root_table = self.env[root_model]._table
+                            self.env.cr.execute(SQL(
+                                "UPDATE %s SET %s = %s WHERE %s = %s",
+                                SQL.identifier(root_table), SQL.identifier(root_field), new_id,
+                                SQL.identifier(root_field), old_id
+                            ))
+                        except:
+                            continue
+            except Exception:
+                pass
 
         # B. Referencias Dinámicas (res_model / res_id)
         dynamic_refs = [
