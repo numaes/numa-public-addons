@@ -640,17 +640,24 @@ class PolyBase(BaseModel):
         if not getattr(self, '_depend_models', None):
             return False
 
-        # Tablas a verificar: la propia y la de sus dependencias
-        tables = {self._table}
+        concrete_model_id = self.env['ir.model']._get_id(self._name)
+        table_to_model_id = {self._table: concrete_model_id}
+
         for base_name in self._depend_models:
             base_model = self.env[base_name]
-            if base_model._table:
-                tables.add(base_model._table)
 
-        for table in tables:
+        if base_model._table:
+            table_to_model_id[base_model._table] = self.env['ir.model']._get_id(base_name)
+            if base_model._table:
+                table_to_model_id[base_model._table] = self.env['ir.model']._get_id(base_name)
+
+        for table, model_id in table_to_model_id.items():
             query = SQL(
-                "SELECT id FROM %s WHERE id NOT IN (SELECT id FROM ir_poly_base)",
-                SQL.identifier(table)
+                "SELECT id FROM %s WHERE id NOT IN ("
+                "    SELECT old_id FROM ir_poly_base WHERE concrete_model_id = %s"
+                ")",
+                SQL.identifier(table),
+                model_id,
             )
             self.env.cr.execute(query)
             if self.env.cr.fetchone():
@@ -661,24 +668,29 @@ class PolyBase(BaseModel):
         """
         Realiza la migración de registros existentes a la jerarquía polimórfica.
         """
+        self = self.with_context(is_migration=True)
         if not self._check_migration_needed():
             return
 
         _logger.info("Migrating model %s to polymorphic hierarchy", self._name)
-        
-        # Identificar registros a migrar (aquellos que no están en ir.poly_base)
-        # Lo hacemos por tabla para asegurar que cubrimos todos los registros "viejos"
-        tables = {self._table}
+
+        concrete_model_id = self.env['ir.model']._get_id(self._name)
+
+        table_to_model_id = {self._table: concrete_model_id}
+
         for base_name in self._depend_models:
             base_model = self.env[base_name]
             if base_model._table:
-                tables.add(base_model._table)
+                table_to_model_id[base_model._table] = self.env['ir.model']._get_id(base_name)
 
         all_old_ids = set()
-        for table in tables:
+        for table, model_id in table_to_model_id.items():
             self.env.cr.execute(SQL(
-                "SELECT id FROM %s WHERE id NOT IN (SELECT id FROM ir_poly_base)",
-                SQL.identifier(table)
+                "SELECT id FROM %s WHERE id NOT IN ("
+                "    SELECT old_id FROM ir_poly_base WHERE concrete_model_id = %s"
+                ")",
+                SQL.identifier(table),
+                model_id,
             ))
             all_old_ids.update(row[0] for row in self.env.cr.fetchall())
 
@@ -874,7 +886,7 @@ class PolyBase(BaseModel):
 
                     # 4. Limpieza
                     # Borrado físico de las tablas originales para el ID viejo
-                    for table in tables:
+                    for table in set(audit_tables):
                         self.env.cr.execute(SQL("DELETE FROM %s WHERE id = %s", SQL.identifier(table), old_id))
                     
                     _logger.info("Migrated %s ID %s -> %s", self._name, old_id, new_id)
@@ -929,6 +941,12 @@ class PolyBase(BaseModel):
                 # Ensure record exists and is accessible
                 if not record.exists():
                     continue
+                
+                # During migration, avoid syncs that might fail due to incomplete mapping
+                # We skip them here and rely on the bulk update or manual re-sync later.
+                if self.env.context.get('is_migration'):
+                    continue
+
                 if hasattr(record, '_pln_sync_dependencies_to_links'):
                     record._pln_sync_dependencies_to_links()
                 if hasattr(record, '_pln_set_root_from_project'):
