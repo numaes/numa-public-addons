@@ -641,28 +641,19 @@ class PolyBase(BaseModel):
             return False
 
         concrete_model_id = self.env['ir.model']._get_id(self._name)
-        table_to_model_id = {self._table: concrete_model_id}
-
-        for base_name in self._depend_models:
-            base_model = self.env[base_name]
-
-        if base_model._table:
-            table_to_model_id[base_model._table] = self.env['ir.model']._get_id(base_name)
-            if base_model._table:
-                table_to_model_id[base_model._table] = self.env['ir.model']._get_id(base_name)
-
-        for table, model_id in table_to_model_id.items():
-            query = SQL(
-                "SELECT id FROM %s WHERE id NOT IN ("
-                "    SELECT old_id FROM ir_poly_base WHERE concrete_model_id = %s"
-                ")",
-                SQL.identifier(table),
-                model_id,
-            )
-            self.env.cr.execute(query)
-            if self.env.cr.fetchone():
-                return True
-        return False
+        
+        # We only check the main table of the model being migrated.
+        # If a record in self._table is NOT in ir_poly_base with its model_id,
+        # then migration is needed for this model.
+        query = SQL(
+            "SELECT id FROM %s WHERE id NOT IN ("
+            "    SELECT old_id FROM ir_poly_base WHERE concrete_model_id = %s"
+            ") LIMIT 1",
+            SQL.identifier(self._table),
+            concrete_model_id,
+        )
+        self.env.cr.execute(query)
+        return bool(self.env.cr.fetchone())
 
     def _migrate_to_poly(self):
         """
@@ -676,23 +667,15 @@ class PolyBase(BaseModel):
 
         concrete_model_id = self.env['ir.model']._get_id(self._name)
 
-        table_to_model_id = {self._table: concrete_model_id}
-
-        for base_name in self._depend_models:
-            base_model = self.env[base_name]
-            if base_model._table:
-                table_to_model_id[base_model._table] = self.env['ir.model']._get_id(base_name)
-
-        all_old_ids = set()
-        for table, model_id in table_to_model_id.items():
-            self.env.cr.execute(SQL(
-                "SELECT id FROM %s WHERE id NOT IN ("
-                "    SELECT old_id FROM ir_poly_base WHERE concrete_model_id = %s"
-                ")",
-                SQL.identifier(table),
-                model_id,
-            ))
-            all_old_ids.update(row[0] for row in self.env.cr.fetchall())
+        # Only migrate records from the CURRENT model's table that are not yet in ir_poly_base
+        self.env.cr.execute(SQL(
+            "SELECT id FROM %s WHERE id NOT IN ("
+            "    SELECT old_id FROM ir_poly_base WHERE concrete_model_id = %s"
+            ")",
+            SQL.identifier(self._table),
+            concrete_model_id,
+        ))
+        all_old_ids = {row[0] for row in self.env.cr.fetchall()}
 
         if not all_old_ids:
             return
@@ -1661,9 +1644,29 @@ class PolyBase(BaseModel):
                     existing_base = base_model.search([('id', '=', new_id)], limit=1)
                     if not existing_base:
                         _logger.debug(f'Creating {base} with {base_data} for id {new_id}')
+                        
+                        # Handle potential field collisions in base models
+                        if 'state' in base_data:
+                            field = base_model._fields.get('state')
+                            if field and field.type == 'selection':
+                                selection_values = [v[0] for v in field._description_selection(self.env)]
+                                if base_data['state'] not in selection_values:
+                                    _logger.warning("Collision detected for 'state' field in base model %s. Value '%s' is invalid. Resetting to default.", 
+                                                    base, base_data['state'])
+                                    base_data.pop('state')
+
                         base_model.create([base_data])
                     else:
                         _logger.debug(f'Updating {base} with {base_data} for id {new_id}')
+                        
+                        # Handle potential field collisions in base models during update
+                        if 'state' in base_data:
+                            field = base_model._fields.get('state')
+                            if field and field.type == 'selection':
+                                selection_values = [v[0] for v in field._description_selection(self.env)]
+                                if base_data['state'] not in selection_values:
+                                    base_data.pop('state')
+
                         existing_base.write(base_data)
 
                 # Finally, create the record in this model
@@ -1676,6 +1679,19 @@ class PolyBase(BaseModel):
                             base_data[field_name] = data[field_name]
 
                 base_data['id'] = new_id
+                
+                # Handle potential field collisions (e.g., 'state' in digital.event vs fsm.instance)
+                # If we are in Level 3, and Level 1/2 also have 'state', we must ensure 
+                # we don't pass an invalid value for this specific model's 'state' field.
+                if 'state' in base_data:
+                    field = self._fields.get('state')
+                    if field and field.type == 'selection':
+                        selection_values = [v[0] for v in field._description_selection(self.env)]
+                        if base_data['state'] not in selection_values:
+                            _logger.warning("Collision detected for 'state' field in %s. Value '%s' is invalid. Resetting to default.", 
+                                            self._name, base_data['state'])
+                            base_data.pop('state')
+
                 _logger.debug(f'Creating {self._name} with {base_data} for id {new_id}')
                 new_record = super().create([base_data])
                 new_records |= new_record
