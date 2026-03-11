@@ -385,6 +385,7 @@ class PolyBase(BaseModel):
         # CRITICAL: We avoid standard Odoo field attributes to prevent recursion
         # during field setup. We only intercept pln_* or known polymorphic fields.
         if name.startswith('pln_') or (name != '_fields' and name in getattr(self, '_fields', {})):
+            # Check for numa.planning.node specifically
             node_model = self.env.registry.get('numa.planning.node')
             if node_model is not None and name in node_model._fields:
                 field = node_model._fields[name]
@@ -399,6 +400,19 @@ class PolyBase(BaseModel):
                     if field.type == 'many2many':
                         return self.env[field.comodel_name]
                     if field.type == 'many2one':
+                        return self.env[field.comodel_name]
+                    return False
+                except Exception:
+                    pass
+
+            # Check for numa.planning.allocation (another potential polymorphic base)
+            allocation_model = self.env.registry.get('numa.planning.allocation')
+            if allocation_model is not None and name in allocation_model._fields:
+                field = allocation_model._fields[name]
+                try:
+                    return field.__get__(self, type(self))
+                except (MissingError, AccessError):
+                    if field.type == 'one2many' or field.type == 'many2many' or field.type == 'many2one':
                         return self.env[field.comodel_name]
                     return False
                 except Exception:
@@ -1881,7 +1895,24 @@ class PolyBase(BaseModel):
 
             # Update base models for existing records
             for current_base_model_name, current_base_vals in fields_by_model.items():
-                self.env[current_base_model_name].browse(self.ids).write(current_base_vals)
+                if current_base_model_name == 'ir.poly_base':
+                    self.env[current_base_model_name].browse(self.ids).write(current_base_vals)
+                else:
+                    # For other base models (like numa.planning.node), 
+                    # we must ensure the record exists in ir.poly_base (the shared ID foundation)
+                    # before writing, otherwise it might fail due to MissingError or 
+                    # write to a non-existent ID in that model.
+                    for record in self:
+                        base_rec = self.env[current_base_model_name].browse(record.id)
+                        if not base_rec.exists():
+                            # If it doesn't exist in the base model (e.g. numa.planning.node),
+                            # it means the ir_poly_base entry is missing for this record.
+                            # We force its creation.
+                            self.env['ir.poly_base'].sudo().create({
+                                'id': record.id,
+                                'concrete_model_id': self.env['ir.model']._get_id(self._name),
+                            })
+                        base_rec.write(current_base_vals)
 
         # Call super with the remaining (standard/local) values
         return super().write(processed_vals)
