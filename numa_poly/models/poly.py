@@ -390,6 +390,17 @@ class PolyBase(BaseModel):
                 field = node_model._fields[name]
                 try:
                     return field.__get__(self, type(self))
+                except (MissingError, AccessError):
+                    # Odoo 18: If the record is missing from ir_poly_base (missing polymorphic link)
+                    # or the user lacks access to the polymorphic base,
+                    # return a sensible default for the field type to avoid AttributeError.
+                    if field.type == 'one2many':
+                        return self.env[field.comodel_name]
+                    if field.type == 'many2many':
+                        return self.env[field.comodel_name]
+                    if field.type == 'many2one':
+                        return self.env[field.comodel_name]
+                    return False
                 except Exception:
                     pass
 
