@@ -697,12 +697,22 @@ class PolyBase(BaseModel):
         for old_id in sorted(all_old_ids):
             try:
                 with self.env.cr.savepoint():
-                    # 1. Generar nuevo ID en ir.poly_base
-                    self.env.cr.execute(
-                        "INSERT INTO ir_poly_base (concrete_model_id, old_id) VALUES (%s, %s) RETURNING id",
-                        [concrete_model_id, old_id]
-                    )
-                    new_id = self.env.cr.fetchone()[0]
+                    # 1. Asegurar registro en ir.poly_base
+                    # Intentamos buscar si ya existe (por si acaso hubo un fallo previo parcial)
+                    # o lo creamos usando el ORM para disparar hooks necesarios.
+                    PolyBase = self.env['ir.poly_base'].sudo()
+                    poly_base_rec = PolyBase.search([
+                        ('concrete_model_id', '=', concrete_model_id),
+                        ('old_id', '=', old_id)
+                    ], limit=1)
+                    
+                    if not poly_base_rec:
+                        poly_base_rec = PolyBase.create({
+                            'concrete_model_id': concrete_model_id,
+                            'old_id': old_id,
+                        })
+                    
+                    new_id = poly_base_rec.id
 
                     # 2. Duplicar datos
                     # Usamos SQL para extraer los valores crudos de los campos almacenados
@@ -830,6 +840,18 @@ class PolyBase(BaseModel):
                         # IMPORTANTE: Forzar flush para que los registros base existan en BD
                         # y no fallen las FKs en _update_foreign_keys
                         self.env.flush_all()
+                        
+                        # Doble verificación: asegurar que ir_poly_base tenga el registro 
+                        # (debería haber sido creado por el create() arriba si no lo estuviera,
+                        # o el create() debería haber usado el ID que le pasamos).
+                        # Como ya lo creamos al inicio de la iteración con new_poly,
+                        # solo nos aseguramos de que siga ahí.
+                        if not self.env['ir.poly_base'].sudo().browse(new_id).exists():
+                            self.env['ir.poly_base'].sudo().create({
+                                'id': new_id,
+                                'concrete_model_id': concrete_model_id,
+                                'old_id': old_id,
+                            })
                     except Exception as create_err:
                         _logger.error("Create failed for %s ID %s. Vals: %s", self._name, old_id, vals)
                         raise create_err
