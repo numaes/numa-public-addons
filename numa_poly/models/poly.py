@@ -367,7 +367,7 @@ class PolyBase(BaseModel):
             # though usually _depend_models should cover what we need for poly
             # but the task says "polimórficas o no"
             for inherit in (model._inherit if isinstance(model._inherit, (list, tuple)) else [model._inherit] if model._inherit else []):
-                if inherit in self.env:
+                if inherit in self.env and inherit != 'base':
                     collect(inherit)
 
         collect(self._name)
@@ -381,9 +381,15 @@ class PolyBase(BaseModel):
         max_id = 0
         
         for model_name in all_bases:
+            if model_name == 'base':
+                continue
             model = self.env.get(model_name)
             if model is not None and getattr(model, "_table", None) and getattr(model, "_storage", True):
                 try:
+                    # Double-check table existence in Odoo's registry/DB before querying
+                    if not self.env.cr.has_table(model._table):
+                        continue
+                        
                     self.env.cr.execute(SQL(
                         "SELECT MAX(id) FROM %s",
                         SQL.identifier(model._table)
@@ -1309,8 +1315,13 @@ class PolyBase(BaseModel):
                 return 0
 
             # Ensure ir.poly_base sequence starts AFTER the max ID of any participant table
-            max_id = self._get_max_poly_id()
-            
+            try:
+                max_id = self._get_max_poly_id()
+            except Exception:
+                # Si falla algo en la transacción, no podemos continuar con el reajuste
+                # de la secuencia aquí.
+                return
+
             if max_id > 0:
                 # Update ir.poly_base sequence to avoid clashing with existing records
                 self.env.cr.execute(SQL(
