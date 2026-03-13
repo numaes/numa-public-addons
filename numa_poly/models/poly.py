@@ -108,7 +108,9 @@ class IrPolyBase(models.Model):
         concrete_model_name = self.concrete_model_id.model
         # Use explicitly browse on the target model to ensure we get a "pure" recordset
         # of that model, which helps with super() calls in Odoo 18.
-        return self.env[concrete_model_name].browse(self.id).exists() or self
+        # We use exists() to avoid MissingError if the concrete record is missing.
+        concrete_record = self.env[concrete_model_name].browse(self.id).exists()
+        return concrete_record if concrete_record else self
 
 
 def poly_many2one_convert_to_read(self, value, record, use_display_name=True):
@@ -508,7 +510,9 @@ class PolyBase(BaseModel):
         concrete_model_name = self.concrete_model_id.model
         # Use explicitly browse on the target model to ensure we get a "pure" recordset
         # of that model, which helps with super() calls in Odoo 18.
-        return self.env[concrete_model_name].browse(self.id).exists() or self
+        # We use exists() to avoid MissingError if the concrete record is missing.
+        concrete_record = self.env[concrete_model_name].browse(self.id).exists()
+        return concrete_record if concrete_record else self
 
     def _compute_concrete_model_id(self):
         """
@@ -520,8 +524,13 @@ class PolyBase(BaseModel):
         """
         for record in self:
             # Check existence in ir.poly_base using the shared ID
-            poly_base = self.env['ir.poly_base'].sudo().browse(record.id)
-            record.concrete_model_id = poly_base.concrete_model_id
+            # We use sudo() to ensure visibility of the base record
+            # and exists() to avoid MissingError if it's not found (e.g. during migration)
+            poly_base = self.env['ir.poly_base'].sudo().browse(record.id).exists()
+            if poly_base:
+                record.concrete_model_id = poly_base.concrete_model_id
+            else:
+                record.concrete_model_id = False
 
     def compute_poly_base_id(self):
         """
