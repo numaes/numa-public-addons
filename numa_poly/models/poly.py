@@ -600,14 +600,21 @@ class PolyBase(BaseModel):
         # First build the model using the standard Odoo mechanism
         model_class_without_depends = super(PolyBase, cls)._build_model(pool, cr)
 
-        # Only apply polymorphic inheritance if _depend_models is defined
-        if hasattr(cls, '_depend_models') and cls._depend_models is not None:
+        # Apply polymorphic inheritance if _depend_models is defined or if it's a PolyModel/PolyTransientModel
+        # We also check for __depends_base_classes to support inheritance through modules that don't redefine _depend_models
+        is_polymorphic = (
+            (hasattr(cls, '_depend_models') and cls._depend_models is not None) or
+            any(base.__name__ in ('PolyModel', 'PolyTransientModel') for base in cls.mro())
+        )
+
+        if is_polymorphic:
             # Validate dependency cycles before building
             cls._validate_dependency_cycles(pool)
 
             # All models except 'ir.poly_base' implicitly depend on 'ir.poly_base'
             name = cls._name
-            parents = list(cls._depend_models.keys())
+            depend_models = getattr(cls, '_depend_models', {}) or {}
+            parents = list(depend_models.keys())
             if name != 'ir.poly_base':
                 parents.append('ir.poly_base')
 
@@ -635,7 +642,7 @@ class PolyBase(BaseModel):
                     parent_class._depends_children.add(name)
 
             # Store the base classes for later use
-            model_class_without_depends.__depends_base_classes = tuple(bases)
+            model_class_without_depends.__depends_base_classes = tuple(reversed(list(bases)))
 
             # Add the model to the registry
             pool[name] = model_class_without_depends
@@ -698,10 +705,8 @@ class PolyBase(BaseModel):
         # any model that participates in the polymorphic hierarchy.
         
         try:
-            # Check if we have polymorphic configuration
-            depend_models = getattr(type(self), '_depend_models', None)
-            
-            if depend_models is not None:
+            # Check if we have polymorphic configuration using the calculated hierarchy
+            if hasattr(type(self), '__depends_base_classes'):
                 # Odoo 18: ensure we are in the right model setup context
                 self._build_dependant_model_attributes()
                 
@@ -733,7 +738,7 @@ class PolyBase(BaseModel):
         Verifica si el modelo actual requiere migración de registros existentes
         para integrarse en la jerarquía polimórfica de ir.poly_base.
         """
-        if not getattr(self, '_depend_models', None):
+        if not hasattr(type(self), '__depends_base_classes'):
             return False
 
         concrete_model_id = self.env['ir.model']._get_id(self._name)
@@ -1431,7 +1436,11 @@ class PolyBase(BaseModel):
 
         # Collect all fields from dependent models
         related_fields = {}
-        for model_name in reversed(self._depend_models.keys()):
+        
+        all_bases = getattr(type(self), '__depends_base_classes', ())
+        dependent_model_names = [cls._name for cls in all_bases if cls._name not in (self._name, 'ir.poly_base')]
+
+        for model_name in dependent_model_names:
             def add_subfields(mm):
                 """
                 Recursively add fields from a dependent model and its dependencies.
@@ -1472,7 +1481,8 @@ class PolyBase(BaseModel):
                         setattr(self, attribute_name, attribute)
 
                 # Recursively add fields from the model's dependencies
-                for sub_base in base_model._depend_models.keys():
+                parent_depend_models = getattr(base_model, '_depend_models', {}) or {}
+                for sub_base in parent_depend_models.keys():
                     add_subfields(sub_base)
 
             # Start the recursive field addition
@@ -1480,11 +1490,17 @@ class PolyBase(BaseModel):
 
         # Create reference fields to all dependent models
         related_bases = {}
-        for base_model, base_field in reversed(self._depend_models.items()):
-            related_bases[base_model] = base_field
-            set(base_field,
-                PolyReference(comodel_name=base_model,
-                              string=f'Base for {base_model}',
+        
+        # We also need to map model names to field names for related bases.
+        # We can extract this from the explicit _depend_models if present, 
+        # or generate them for others in __depends_base_classes.
+        explicit_depend_models = getattr(type(self), '_depend_models', {}) or {}
+        
+        for base_model_name, base_field_name in explicit_depend_models.items():
+            related_bases[base_model_name] = base_field_name
+            set(base_field_name,
+                PolyReference(comodel_name=base_model_name,
+                              string=f'Base for {base_model_name}',
                               automatic=True, readonly=True)
                 )
 
@@ -1562,8 +1578,8 @@ class PolyBase(BaseModel):
         # Add _depends methods
         #  (not fields, only if not already overloaded, in inverted _depends order, recursively)
 
-        for base in reversed(list(self._depend_models.keys())):
-            attributes = vars(self.pool[base])
+        for base_model_name in reversed(dependent_model_names):
+            attributes = vars(self.pool[base_model_name])
             for attribute_name, attribute_value in attributes.items():
                 if not isinstance(attribute_value, fields.Field) and \
                    attribute_name not in vars(self):
@@ -2100,7 +2116,7 @@ class PolyBase(BaseModel):
 
 
         # Update audit fields for polymorphic models
-        if self._log_access and getattr(self, '_depend_models', None) and self._name != 'ir.poly_base':
+        if self._log_access and hasattr(type(self), '__depends_base_classes') and self._name != 'ir.poly_base':
             poly_base_model = self.env['ir.poly_base']
             log_vals = {'write_uid': self.env.uid, 'write_date': self.env.cr.now()}
             poly_base_model.browse(self.ids).write(log_vals)
@@ -2110,13 +2126,17 @@ class PolyBase(BaseModel):
         """
         Get fields definition with inherited fields from dependent models.
         """
-        if getattr(self, '_depend_models', None) is None:
+        if not hasattr(type(self), '__depends_base_classes'):
             return super().fields_get(allfields=allfields, attributes=attributes)
 
         result = super().fields_get(allfields=allfields, attributes=attributes)
-        if self._depend_models:
+        
+        all_bases = getattr(type(self), '__depends_base_classes', ())
+        dependent_model_names = [cls._name for cls in all_bases if cls._name not in (self._name, 'ir.poly_base')]
+        
+        if dependent_model_names:
             # Ensure all dependent models are in the bases_to_create dict
-            depends_reverse = list(self._depend_models.keys())
+            depends_reverse = list(dependent_model_names)
             depends_reverse.reverse()
             for base in depends_reverse:
                 base_model = self.env[base]
@@ -2132,7 +2152,7 @@ class PolyBase(BaseModel):
         Override to avoid ValueError on polymorphic models when a field is not
         found on the current model but might exist in the polymorphic hierarchy.
         """
-        if getattr(self, '_depend_models', None) is None:
+        if not hasattr(type(self), '__depends_base_classes'):
             return super()._determine_fields_to_fetch(field_names, ignore_when_in_cache)
 
         # Filter out fields that are not in self._fields or pool
@@ -2148,7 +2168,7 @@ class PolyBase(BaseModel):
         In Odoo 18, web client might send polymorphic field names that are 
         not yet in the model's _fields for virtual records.
         """
-        if getattr(self, '_depend_models', None) is None:
+        if not hasattr(type(self), '__depends_base_classes'):
             return super().onchange(values, field_names, fields_spec)
 
         # Filter field_names to avoid KeyError in super().onchange
@@ -2172,7 +2192,7 @@ class PolyBase(BaseModel):
         """
         Override web_read to handle polymorphic fields and ensure data consistency.
         """
-        if getattr(self, '_depend_models', None) is None:
+        if not hasattr(type(self), '__depends_base_classes'):
             return super().web_read(specification)
 
         # 1. Filter standard fields to avoid ValueError/KeyError in super().web_read
@@ -2302,7 +2322,7 @@ class IrModel(models.Model):
         # but might have been missed by standard reflection.
         for name, model in self.env.registry.items():
             if name not in all_model_names:
-                if hasattr(model, '_depend_models') and model._depend_models is not None:
+                if hasattr(model, '__depends_base_classes'):
                     # Check if the model belongs to the module being initialized
                     module = self._context.get('module')
                     if module and (model._module == module or getattr(model, '_original_module', None) == module):
