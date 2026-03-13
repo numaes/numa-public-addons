@@ -1772,7 +1772,7 @@ class PolyBase(BaseModel):
                             if field and field.type == 'selection':
                                 selection_values = [v[0] for v in field._description_selection(self.env)]
                                 if base_data['state'] not in selection_values:
-                                    _logger.warning("Collision detected for 'state' field in base model %s. Value '%s' is invalid. Resetting to default.", 
+                                    _logger.debug("Collision detected for 'state' field in base model %s. Value '%s' is invalid. Resetting to default.", 
                                                     base, base_data['state'])
                                     base_data.pop('state')
 
@@ -1809,7 +1809,7 @@ class PolyBase(BaseModel):
                     if field and field.type == 'selection':
                         selection_values = [v[0] for v in field._description_selection(self.env)]
                         if base_data['state'] not in selection_values:
-                            _logger.warning("Collision detected for 'state' field in %s. Value '%s' is invalid. Resetting to default.", 
+                            _logger.debug("Collision detected for 'state' field in %s. Value '%s' is invalid. Resetting to default.", 
                                             self._name, base_data['state'])
                             base_data.pop('state')
 
