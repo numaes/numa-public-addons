@@ -2305,10 +2305,28 @@ class IrModel(models.Model):
                 if hasattr(model, '_depend_models') and model._depend_models is not None:
                     # Check if the model belongs to the module being initialized
                     module = self._context.get('module')
-                    if module and model._module == module:
+                    if module and (model._module == module or getattr(model, '_original_module', None) == module):
                         all_model_names.append(name)
         
         return super()._reflect_models(all_model_names)
+
+
+class IrModelFields(models.Model):
+    _inherit = 'ir.model.fields'
+
+    def _reflect_fields(self, model_names):
+        """
+        Override _reflect_fields to ensure that all models have been reflected
+        in ir.model before reflecting their fields.
+        """
+        # Ensure all models in model_names exist in ir.model
+        IrModel = self.env['ir.model']
+        for model_name in model_names:
+            if not IrModel._get_id(model_name):
+                # If the model is not reflected yet, force its reflection
+                IrModel._reflect_models([model_name])
+        
+        return super()._reflect_fields(model_names)
 
 
 class PolyModel(PolyBase):
