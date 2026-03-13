@@ -382,7 +382,7 @@ class PolyBase(BaseModel):
         
         for model_name in all_bases:
             model = self.env.get(model_name)
-            if model is not None and model._table and model._storage:
+            if model is not None and getattr(model, "_table", None) and getattr(model, "_storage", True):
                 try:
                     self.env.cr.execute(SQL(
                         "SELECT MAX(id) FROM %s",
