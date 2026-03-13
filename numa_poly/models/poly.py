@@ -613,6 +613,7 @@ class PolyBase(BaseModel):
 
             # All models except 'ir.poly_base' implicitly depend on 'ir.poly_base'
             name = cls._name
+            _logger.info("Applying polymorphic MRO for %s", name)
             depend_models = getattr(cls, '_depend_models', {}) or {}
             parents = list(depend_models.keys())
             if name != 'ir.poly_base':
@@ -661,11 +662,6 @@ class PolyBase(BaseModel):
                 if any(issubclass(eb, base_class) for eb in current_bases):
                     continue
                 
-                # Check if this base class is NOT a superclass of any current base 
-                # (which would be very weird but good to check)
-                if any(issubclass(base_class, eb) for eb in current_bases):
-                    continue
-                
                 if base_class not in new_bases:
                     new_bases.append(base_class)
             
@@ -674,10 +670,28 @@ class PolyBase(BaseModel):
             # This helps Python find the polymorphic methods and fields before the standard ones.
             # Prepending is generally safer for MRO when the classes don't share other bases 
             # than 'object' (or 'Model', but we just checked for sub-relationships).
-            model_class_without_depends.__bases__ = tuple(new_bases + current_bases)
+            # Force MRO update by setting __bases__
+            # IMPORTANT: We use a loop to handle potential multiple calls to _build_model 
+            # (which Odoo sometimes does during module loading).
+            final_bases = []
+            for nb in new_bases:
+                if nb not in final_bases:
+                    final_bases.append(nb)
+            for cb in current_bases:
+                if cb not in final_bases:
+                    final_bases.append(cb)
+            
+            # Update the class directly. Since Odoo reuses some classes, this persists better.
+            model_class_without_depends.__bases__ = tuple(final_bases)
 
             # Add the model to the registry
             pool[name] = model_class_without_depends
+
+            # Also ensure that if Odoo has already created instances or subclasses, 
+            # they are updated if possible (though Odoo usually builds from scratch).
+            
+            # Log MRO for debugging
+            _logger.info("New MRO for %s: %s", name, [c.__name__ for c in model_class_without_depends.mro()])
 
         return model_class_without_depends
 
@@ -746,12 +760,13 @@ class PolyBase(BaseModel):
                 for field_name, field in self._fields.items():
                     # Protection: only inject if it's not already in __dict__
                     # This avoids overwriting methods (now available via MRO) with field descriptors
+                    # Odoo 18: Injected fields from bases should NOT shadow actual methods.
                     if field_name not in model_class.__dict__:
                         # In Odoo 18, we must inject descriptors for polymorphic fields.
-                        # We identify them because they were added to self._fields during 
-                        # build_dependant_model_attributes.
-                        # We include related fields here because polymorphic fields ARE related.
                         setattr(model_class, field_name, field)
+                    elif field_name in self._fields and hasattr(model_class.__dict__[field_name], 'fget'):
+                        # If it's already a property/descriptor but not our field, we might need to be careful
+                        pass
                         
                 # Update _fields of the model in the pool
                 if self._name in self.pool.models:
