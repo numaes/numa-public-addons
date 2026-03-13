@@ -647,19 +647,34 @@ class PolyBase(BaseModel):
             # Inyectar en el MRO de Python:
             # Evitamos duplicados y el propio modelo.
             # Las bases deben ser las clases de los modelos en pool[parent_name]
-            new_bases = list(model_class_without_depends.__bases__)
-            for base_class in bases:
-                # We skip the model itself if it is already in bases (which it is)
+            current_bases = list(model_class_without_depends.__bases__)
+            new_bases = []
+            
+            # First, we identify which of the 'bases' (the polymorphic ones we calculated) 
+            # are not already ancestors of our current bases (from Odoo inheritance).
+            for base_class in reversed(list(bases)):
+                # Skip the model itself
                 if base_class == model_class_without_depends:
                     continue
                 
-                # Check if this base class is already in the MRO of one of the current bases
-                # to avoid redundant and potentially conflicting MRO additions.
-                is_already_base = any(issubclass(existing_base, base_class) for existing_base in new_bases)
-                if not is_already_base:
+                # Check if this base class is already an ancestor of any current base
+                if any(issubclass(eb, base_class) for eb in current_bases):
+                    continue
+                
+                # Check if this base class is NOT a superclass of any current base 
+                # (which would be very weird but good to check)
+                if any(issubclass(base_class, eb) for eb in current_bases):
+                    continue
+                
+                if base_class not in new_bases:
                     new_bases.append(base_class)
-
-            model_class_without_depends.__bases__ = tuple(new_bases)
+            
+            # We prepend the new polymorphic bases to the Odoo bases.
+            # This ensures they come BEFORE models.Model (which is always at the end of current_bases).
+            # This helps Python find the polymorphic methods and fields before the standard ones.
+            # Prepending is generally safer for MRO when the classes don't share other bases 
+            # than 'object' (or 'Model', but we just checked for sub-relationships).
+            model_class_without_depends.__bases__ = tuple(new_bases + current_bases)
 
             # Add the model to the registry
             pool[name] = model_class_without_depends
