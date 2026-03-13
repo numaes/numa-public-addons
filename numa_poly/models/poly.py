@@ -2285,6 +2285,32 @@ class PolyBase(BaseModel):
         return super()._field_to_sql(alias, fname, query, flush)
 
 
+class IrModel(models.Model):
+    _inherit = 'ir.model'
+
+    def _reflect_models(self, model_names):
+        """
+        Override _reflect_models to ensure polymorphic models are included.
+        
+        In Odoo 18, only models with _module defined in the current context's 
+        module are automatically reflected. Since polymorphic models might 
+        have different inheritance patterns, we ensure they are reflected.
+        """
+        all_model_names = list(model_names)
+        
+        # Add all polymorphic models that are currently in the registry
+        # but might have been missed by standard reflection.
+        for name, model in self.env.registry.items():
+            if name not in all_model_names:
+                if hasattr(model, '_depend_models') and model._depend_models is not None:
+                    # Check if the model belongs to the module being initialized
+                    module = self._context.get('module')
+                    if module and model._module == module:
+                        all_model_names.append(name)
+        
+        return super()._reflect_models(all_model_names)
+
+
 class PolyModel(PolyBase):
     """
     Main super-class for regular database-persisted polymorphic models in Odoo.
