@@ -2321,10 +2321,16 @@ class IrModelFields(models.Model):
         """
         # Ensure all models in model_names exist in ir.model
         IrModel = self.env['ir.model']
+        missing_models = []
         for model_name in model_names:
             if not IrModel._get_id(model_name):
-                # If the model is not reflected yet, force its reflection
-                IrModel._reflect_models([model_name])
+                missing_models.append(model_name)
+        
+        if missing_models:
+            # If some models are not reflected yet, force their reflection
+            IrModel._reflect_models(missing_models)
+            # Invalidate cache for _get_id as it is ormcache'd
+            IrModel.clear_caches()
         
         return super()._reflect_fields(model_names)
 
