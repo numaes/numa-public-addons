@@ -649,8 +649,16 @@ class PolyBase(BaseModel):
             # Las bases deben ser las clases de los modelos en pool[parent_name]
             new_bases = list(model_class_without_depends.__bases__)
             for base_class in bases:
-                if base_class not in new_bases and base_class != model_class_without_depends:
+                # We skip the model itself if it is already in bases (which it is)
+                if base_class == model_class_without_depends:
+                    continue
+                
+                # Check if this base class is already in the MRO of one of the current bases
+                # to avoid redundant and potentially conflicting MRO additions.
+                is_already_base = any(issubclass(existing_base, base_class) for existing_base in new_bases)
+                if not is_already_base:
                     new_bases.append(base_class)
+
             model_class_without_depends.__bases__ = tuple(new_bases)
 
             # Add the model to the registry
