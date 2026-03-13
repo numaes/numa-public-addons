@@ -644,6 +644,15 @@ class PolyBase(BaseModel):
             # Store the base classes for later use
             model_class_without_depends.__depends_base_classes = tuple(reversed(list(bases)))
 
+            # Inyectar en el MRO de Python:
+            # Evitamos duplicados y el propio modelo.
+            # Las bases deben ser las clases de los modelos en pool[parent_name]
+            new_bases = list(model_class_without_depends.__bases__)
+            for base_class in bases:
+                if base_class not in new_bases and base_class != model_class_without_depends:
+                    new_bases.append(base_class)
+            model_class_without_depends.__bases__ = tuple(new_bases)
+
             # Add the model to the registry
             pool[name] = model_class_without_depends
 
@@ -712,6 +721,8 @@ class PolyBase(BaseModel):
                 
                 model_class = type(self)
                 for field_name, field in self._fields.items():
+                    # Protection: only inject if it's not already in __dict__
+                    # This avoids overwriting methods (now available via MRO) with field descriptors
                     if field_name not in model_class.__dict__:
                         # In Odoo 18, we must inject descriptors for polymorphic fields.
                         # We identify them because they were added to self._fields during 
