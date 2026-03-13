@@ -334,6 +334,67 @@ class PolyBase(BaseModel):
     # Flag to track if ID has been checked
     _checked_id = False
 
+    def _get_all_poly_bases(self):
+        """
+        Returns a set of all base models (polymorphic or not) in the hierarchy.
+        This exploration is recursive.
+        """
+        bases = set()
+        visited = set()
+
+        def collect(model_name):
+            if model_name in visited:
+                return
+            visited.add(model_name)
+            
+            # ir.poly_base is always a base
+            bases.add('ir.poly_base')
+            
+            model = self.env.get(model_name)
+            if model is None:
+                return
+
+            # Add current model if it's not the starting one (or always add it)
+            bases.add(model_name)
+            
+            # Recursively explore _depend_models
+            depend_models = getattr(model, '_depend_models', None)
+            if depend_models:
+                for base_name in depend_models.keys():
+                    collect(base_name)
+            
+            # Also explore standard Odoo inheritance (_inherit)
+            # though usually _depend_models should cover what we need for poly
+            # but the task says "polimórficas o no"
+            for inherit in (model._inherit if isinstance(model._inherit, (list, tuple)) else [model._inherit] if model._inherit else []):
+                if inherit in self.env:
+                    collect(inherit)
+
+        collect(self._name)
+        return bases
+
+    def _get_max_poly_id(self):
+        """
+        Calculates the maximum ID among all participating tables in the polymorphic hierarchy.
+        """
+        all_bases = self._get_all_poly_bases()
+        max_id = 0
+        
+        for model_name in all_bases:
+            model = self.env.get(model_name)
+            if model is not None and model._table and model._storage:
+                try:
+                    self.env.cr.execute(SQL(
+                        "SELECT MAX(id) FROM %s",
+                        SQL.identifier(model._table)
+                    ))
+                    res = self.env.cr.fetchone()
+                    if res and res[0]:
+                        max_id = max(max_id, res[0])
+                except Exception:
+                    continue
+        return max_id
+
     def check_access(self, operation: str) -> None:
         if getattr(self, '_depend_models', None) is None:
             return super().check_access(operation)
@@ -550,11 +611,6 @@ class PolyBase(BaseModel):
                     for base in parent_class.__depends_base_classes:
                         bases.add(base)
                 else:
-                    # Check that the parent is polymorphic (except for ir.poly_base)
-                    if parent_class._name != 'ir.poly_base' and parent_class._depend_models is None:
-                        raise TypeError("Model %r depends from non-polymorphic model %r. Only polymorphic is allowed" %
-                                        (name, parent))
-
                     # Add the parent class to the bases
                     bases.add(parent_class)
 
@@ -1212,6 +1268,7 @@ class PolyBase(BaseModel):
         Extend _auto_init to ensure migration is performed when the table is created/updated.
         """
         res = super()._auto_init()
+        # Only migrate if _depend_models is defined (is a polymorphic model)
         if getattr(self, '_depend_models', None) is not None:
             # Check if migration is needed and perform it
             if self._check_migration_needed():
@@ -1252,14 +1309,7 @@ class PolyBase(BaseModel):
                 return 0
 
             # Ensure ir.poly_base sequence starts AFTER the max ID of any participant table
-            max_id = get_max_id('ir.poly_base')
-            
-            # Check self (the concrete model)
-            max_id = max(max_id, get_max_id(self._name))
-            
-            # Check all dependent/base models
-            for base_name in self._depend_models.keys():
-                max_id = max(max_id, get_max_id(base_name))
+            max_id = self._get_max_poly_id()
             
             if max_id > 0:
                 # Update ir.poly_base sequence to avoid clashing with existing records
@@ -1662,10 +1712,14 @@ class PolyBase(BaseModel):
                     new_id = data['id']
                 else:
                     # Create a new ir.poly_base record to get a new ID
-                    new_poly = self.env['ir.poly_base'].create(dict(
+                    # Ensure ID doesn't clash with existing ones in the hierarchy
+                    # Using SUDO to ensure we have access and can set the ID
+                    max_id = self._get_max_poly_id()
+                    new_poly = self.env['ir.poly_base'].sudo().create(dict(
+                        id=max_id + 1,
                         concrete_model_id=self.env['ir.model']._get_id(self._name)
                     ))
-                    _logger.debug(f'Creating poly base for {self._name}, id = {new_poly.id}')
+                    _logger.debug(f'Creating poly base for {self._name}, id = {new_poly.id} (max_id was {max_id})')
                     new_id = new_poly.id
 
                 # Create or update records in all dependent models
