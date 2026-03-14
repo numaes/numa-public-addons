@@ -634,6 +634,102 @@ class PolyBase(_original_BaseModel):
         """
         return []
 
+    # --- POLY ENGINE HELPERS ---
+
+    @classmethod
+    def _poly_get_mro_names(cls):
+        return [c.__name__ for c in cls.mro()]
+
+    @classmethod
+    def _poly_force_mro_update(cls):
+        """ Forces Python to recalculate the MRO internal cache for a class. """
+        import ctypes as _ctypes
+        if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+            try:
+                _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(cls))
+            except Exception:
+                pass
+
+    @classmethod
+    def _poly_sync_proxy_class(cls, pool, name, model_class, final_bases):
+        """ Synchronizes the Odoo 18 proxy class with the actual registry class. """
+        if not hasattr(pool, 'models') or name not in pool.models:
+            return None
+        proxy = pool.models[name]
+        if proxy is model_class:
+            return proxy
+        try:
+            proxy.__base_classes = final_bases
+            proxy.__bases__ = final_bases
+            cls._poly_force_mro_update(proxy)
+            for base_class in final_bases:
+                if base_class.__name__ in ('BaseModel', 'Model', 'TransientModel', 'Base', 'object'): continue
+                for p_base in base_class.mro():
+                    if p_base.__name__ in ('BaseModel', 'object', 'Base'): continue
+                    for attr_name, attr_val in p_base.__dict__.items():
+                        if callable(attr_val) and not attr_name.startswith('__') and attr_name not in proxy.__dict__:
+                            try:
+                                setattr(proxy, attr_name, attr_val)
+                            except Exception: pass
+        except Exception:
+            pass
+        return proxy
+
+    @classmethod
+    def _poly_invalidate_odoo_caches(cls, pool, model_name):
+        """ Clears Odoo's internal caches to force re-evaluation of model structure. """
+        if hasattr(pool, 'model_methods'):
+            pool.model_methods.pop(model_name, None)
+        from odoo.api import Environment
+        if hasattr(Environment, '_classes') and Environment._classes is not None:
+            if pool in Environment._classes:
+                Environment._classes[pool].pop(model_name, None)
+
+    @classmethod
+    def _apply_polymorphic_hierarchy(cls, pool, name, model_class, parents):
+        """ The core logic to inject polymorphic parents into a model's hierarchy. """
+        if not parents: return False
+        
+        # Odoo 18: ensure all parents are registry classes
+        parents_cls = []
+        missing_parents = []
+        for p_name in parents:
+            if p_name in pool:
+                parents_cls.append(pool[p_name])
+            else:
+                missing_parents.append(p_name)
+        
+        if missing_parents:
+            if not hasattr(pool, '_poly_pending_dependencies'): pool._poly_pending_dependencies = defaultdict(set)
+            for p_name in missing_parents: pool._poly_pending_dependencies[p_name].add(name)
+            return False
+
+        if name != 'ir.poly_base' and pool['ir.poly_base'] not in parents_cls:
+            parents_cls.append(pool['ir.poly_base'])
+
+        new_bases = list(parents_cls)
+        current_bases = list(model_class.__bases__)
+        for b in current_bases:
+            if b not in new_bases and b.__name__ not in ('BaseModel', 'object'):
+                new_bases.append(b)
+        
+        final_bases = tuple(b for b in new_bases if b is not model_class)
+        
+        try:
+            model_class.__base_classes = final_bases
+            model_class.__bases__ = final_bases
+            model_class.__depends_base_classes = final_bases
+            cls._poly_force_mro_update(model_class)
+            
+            cls._poly_sync_proxy_class(pool, name, model_class, final_bases)
+            cls._poly_invalidate_odoo_caches(pool, name)
+            
+            if not hasattr(pool, '_poly_mro_cache'): pool._poly_mro_cache = {}
+            pool._poly_mro_cache[name] = final_bases
+            POLY_MRO_CACHE[pool.db_name][name] = final_bases
+            return True
+        except Exception: return False
+
     @classmethod
     def _build_model(cls, pool, cr):
         """
@@ -3108,3 +3204,59 @@ odoo.models.Model = PolyModel
 odoo.models.TransientModel = PolyTransientModel
 odoo.fields.Many2one.convert_to_read = poly_many2one_convert_to_read
 odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
+
+
+# --- Odoo 18 Registry Finalization Hook ---
+
+_original_Registry_setup_models = odoo.modules.registry.Registry.setup_models
+
+def _poly_registry_setup_models(self, cr):
+    """
+    Ensures critical polymorphic models (like project.task) have their full MRO
+    finalized after Odoo's standard incremental build process.
+    """
+    res = _original_Registry_setup_models(self, cr)
+    
+    for name in ('project.task', 'numa.planning.node'):
+        if name not in self:
+            continue
+            
+        model_class = self[name]
+        if not isinstance(model_class, type):
+            continue
+
+        mro = model_class.mro()
+        all_depend_models = OrderedDict()
+        is_polymorphic = False
+        
+        # Odoo 18: project.task MUST be polymorphic with numa.planning.node
+        if name == 'project.task':
+            is_polymorphic = True
+            all_depend_models['numa.planning.node'] = 'planning_node_id'
+
+        # Collect any other polymorphic dependencies from the MRO
+        for base in mro:
+            if base is model_class:
+                continue
+            dep_models = base.__dict__.get('_depend_models') or getattr(base, '_depend_models', None)
+            if dep_models:
+                is_polymorphic = True
+                for dep_model, dep_field in dep_models.items():
+                    if dep_model not in all_depend_models:
+                        all_depend_models[dep_model] = dep_field
+
+        if is_polymorphic:
+            parents = list(all_depend_models.keys())
+            if name != 'ir.poly_base' and 'ir.poly_base' not in parents:
+                parents.append('ir.poly_base')
+            
+            # Check if parents are already in MRO names
+            current_mro_names = [c._name for c in mro if hasattr(c, '_name')]
+            if any(p_name not in current_mro_names for p_name in parents):
+                _logger.info("[poly_engine] Finalizing polymorphic hierarchy for %s", name)
+                # We use the PolyBase class which is fully defined at this point
+                PolyBase._apply_polymorphic_hierarchy(self, name, model_class, parents)
+                
+    return res
+
+odoo.modules.registry.Registry.setup_models = _poly_registry_setup_models
