@@ -739,8 +739,6 @@ class PolyBase(_original_BaseModel):
         ensuring that it inherits from all dependent models specified in _depend_models.
         """
         name = cls._name
-        _logger.debug("Building model %s (polymorphic)", name)
-
         # First build the model using the standard Odoo mechanism.
         if name is None:
             _logger.warning("Building model with name=None for class %s. MRO: %s", cls.__name__, cls.mro())
@@ -876,7 +874,6 @@ class PolyBase(_original_BaseModel):
 
             # Clear registry-level caches to ensure we don't pick up stale method resolutions.
             if hasattr(pool, 'model_methods'):
-                _logger.debug("Clearing model_methods for %s", name)
                 pool.model_methods.pop(name, None)
 
             # All models except 'ir.poly_base' implicitly depend on 'ir.poly_base'
@@ -886,13 +883,11 @@ class PolyBase(_original_BaseModel):
 
             # Calculate polymorphic bases.
             original_bases = list(model_class.__bases__)
-            _logger.debug("Original bases for %s: %s", name, [b.__name__ for b in original_bases])
             
             new_bases = []
             missing_parents = False
             for parent in parents:
                 if parent not in pool:
-                    _logger.warning("Parent model %s for %s not in pool yet. Registering for retroactive update.", parent, name)
                     if not hasattr(pool, '_poly_pending_dependencies'):
                         pool._poly_pending_dependencies = defaultdict(set)
                     pool._poly_pending_dependencies[parent].add(name)
@@ -913,7 +908,6 @@ class PolyBase(_original_BaseModel):
                     new_bases.append(b)
 
             final_bases = tuple(b for b in new_bases if b is not model_class)
-            _logger.debug("Applying final bases for %s: %s", name, [b.__name__ for b in final_bases])
             
             # Store the polymorphic bases for setup phases
             model_class.__depends_base_classes = final_bases
@@ -926,14 +920,12 @@ class PolyBase(_original_BaseModel):
             model_class.__base_classes = final_bases
 
             # Inject into Python's MRO:
-            _logger.debug("Injecting bases into model class %s: %s", name, [b.__name__ for b in final_bases])
             model_class.__bases__ = final_bases
 
             # Force Python to refresh the class MRO cache
             import ctypes as _ctypes
             if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
                 _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
-            _logger.debug("Python MRO for %s after injection: %s", name, [c.__name__ for c in model_class.mro()])
 
             # --- Odoo 18 PROXY INJECTION ---
             if hasattr(pool, 'models') and name in pool.models:
@@ -970,8 +962,6 @@ class PolyBase(_original_BaseModel):
                 except (ImportError, AttributeError):
                     if '_model_classes__' in model_class.__dict__:
                         delattr(model_class, '_model_classes__')
-
-            _logger.debug("Final Polymorphic MRO for %s: %s", name, [c.__name__ for c in model_class.mro()])
 
         return model_class
 
@@ -1021,13 +1011,11 @@ class PolyBase(_original_BaseModel):
         """ Prepare the setup of the model. """
         model_class = type(self)
         name = self._name
-        _logger.debug("Preparing setup for %s", name)
         
         # --- REFRESH CHECK ---
         # If this model was built before its polymorphic parents were available, 
         # we try to refresh its bases now.
         if hasattr(self.pool, '_poly_refresh_needed') and name in self.pool._poly_refresh_needed:
-            _logger.debug("Refreshing polymorphic bases for %s in _prepare_setup", name)
             # We re-collect dependencies from MRO
             all_depend_models = OrderedDict()
             for base in model_class.mro():
@@ -1091,13 +1079,11 @@ class PolyBase(_original_BaseModel):
             cached_bases = self.pool._poly_mro_cache.get(self._name)
 
         if cached_bases:
-            _logger.debug("Found cached bases for %s: %s", self._name, [b.__name__ for b in cached_bases])
             model_class.__depends_base_classes = cached_bases
             # Force Odoo 18 to use our polymorphic bases as the original ones
             model_class.__base_classes = cached_bases
             
             if model_class.__bases__ != cached_bases:
-                 _logger.debug("Re-applying cached bases to model class %s in _prepare_setup", self._name)
                  try:
                      model_class.__bases__ = cached_bases
                      # Refresh MRO cache
@@ -1117,7 +1103,6 @@ class PolyBase(_original_BaseModel):
             if hasattr(self.pool, 'models') and self._name in self.pool.models:
                   proxy_class = self.pool.models[self._name]
                   if proxy_class is not model_class and proxy_class.__bases__ != cached_bases:
-                       _logger.debug("Re-applying cached bases to proxy class %s in _prepare_setup", self._name)
                        proxy_class.__base_classes = cached_bases
                        try:
                            proxy_class.__bases__ = cached_bases
@@ -1150,7 +1135,6 @@ class PolyBase(_original_BaseModel):
         """ Determine the inherited and custom fields of the model. """
         model_class = type(self)
         name = self._name
-        _logger.debug("Setting up base for %s", name)
         
         # --- REFRESH CHECK ---
         # If this model was built before its polymorphic parents were available, 
@@ -1209,7 +1193,6 @@ class PolyBase(_original_BaseModel):
             cached_bases = self.pool._poly_mro_cache.get(name)
 
         if cached_bases:
-             _logger.debug("Re-applying cached bases to %s during _setup_base", self._name)
              model_class.__base_classes = cached_bases
              model_class.__bases__ = cached_bases
              model_class.__depends_base_classes = cached_bases
@@ -1222,7 +1205,6 @@ class PolyBase(_original_BaseModel):
              if hasattr(self.pool, 'models') and self._name in self.pool.models:
                   proxy = self.pool.models[self._name]
                   if proxy is not model_class:
-                       _logger.debug("Syncing proxy for %s in _setup_base before super", self._name)
                        proxy.__base_classes = cached_bases
                        proxy.__bases__ = cached_bases
                        if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
@@ -1588,7 +1570,7 @@ class PolyBase(_original_BaseModel):
                                         return False
                                 
                                 vals[k] = extract_id(v)
-                                # Final logging for debugging pln_root_id issues
+                                # Final cleanup for pln_root_id issues
                                 if k == 'pln_root_id' and vals[k] is not False:
                                     # We ensure it's an int, not a recordset
                                     if not isinstance(vals[k], (int, bool)):
@@ -1596,7 +1578,6 @@ class PolyBase(_original_BaseModel):
                                             vals[k] = int(vals[k])
                                         except:
                                             vals[k] = False
-                                    _logger.info("FINAL vals['pln_root_id'] fixed: value=%s type=%s", vals[k], type(vals[k]))
                         
                         # Limpiar campos técnicos de Odoo
                         if k in ('__last_update', 'display_name', 'create_uid', 'create_date', 'write_uid', 'write_date'):
@@ -1729,7 +1710,6 @@ class PolyBase(_original_BaseModel):
         # since all records are now migrated and have their new IDs in ir_poly_base
         if 'pln_root_id' in self._fields:
             try:
-                _logger.info("Bulk updating pln_root_id for %s", self._name)
                 # This query updates ALL pln_root_id that still point to old IDs
                 # across all tables that have this field.
                 self.env.cr.execute("""
@@ -3253,7 +3233,6 @@ def _poly_registry_setup_models(self, cr):
             # Check if parents are already in MRO names
             current_mro_names = [c._name for c in mro if hasattr(c, '_name')]
             if any(p_name not in current_mro_names for p_name in parents):
-                _logger.info("[poly_engine] Finalizing polymorphic hierarchy for %s", name)
                 # We use the PolyBase class which is fully defined at this point
                 PolyBase._apply_polymorphic_hierarchy(self, name, model_class, parents)
                 

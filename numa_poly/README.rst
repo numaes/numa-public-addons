@@ -163,7 +163,7 @@ Creation Performance
 
 *All within a single database transaction.*
 
-Garantía de Estabilidad: Why Monkey Patching?
+Stability Guarantee: Why Monkey Patching?
 =============================================
 
 We chose to monkey patch ``BaseModel`` not out of convenience, but out of a **pragmatic design philosophy**. By injecting polymorphic logic directly into the ORM core:

@@ -1,35 +1,35 @@
-# Análisis Técnico Detallado - Numa Poly
+# Detailed Technical Analysis - Numa Poly
 
-## Índice
+## Table of Contents
 
-1. [Arquitectura General](#arquitectura-general)
-2. [Componentes Principales](#componentes-principales)
-3. [Flujos de Datos](#flujos-de-datos)
-4. [Patrones de Diseño](#patrones-de-diseño)
-5. [Monkey Patching y Extensión del ORM](#monkey-patching-y-extensión-del-orm)
-6. [Gestión de IDs Compartidos](#gestión-de-ids-compartidos)
-7. [Sistema de Campos Relacionados](#sistema-de-campos-relacionados)
+1. [General Architecture](#general-architecture)
+2. [Core Components](#core-components)
+3. [Data Flows](#data-flows)
+4. [Design Patterns](#design-patterns)
+5. [Monkey Patching and ORM Extension](#monkey-patching-and-orm-extension)
+6. [Shared ID Management](#shared-id-management)
+7. [Related Fields System](#related-fields-system)
 8. [Frontend Integration](#frontend-integration)
-9. [Análisis de Rendimiento](#análisis-de-rendimiento)
-10. [Seguridad y Permisos](#seguridad-y-permisos)
-11. [Puntos Críticos y Riesgos](#puntos-críticos-y-riesgos)
-12. [Mejoras Potenciales](#mejoras-potenciales)
-13. [Compatibilidad con Odoo 18](#compatibilidad-con-odoo-18)
+9. [Performance Analysis](#performance-analysis)
+10. [Security and Permissions](#security-and-permissions)
+11. [Critical Points and Risks](#critical-points-and-risks)
+12. [Potential Improvements](#potential-improvements)
+13. [Odoo 18 Compatibility](#odoo-18-compatibility)
 
 ---
 
-## Arquitectura General
+## General Architecture
 
-### Visión General
+### Overview
 
-Numa Poly implementa un sistema de herencia polimórfica que permite que un registro único exista simultáneamente en múltiples modelos, compartiendo el mismo ID. Esto se logra mediante:
+Numa Poly implements a polymorphic inheritance system that allows a single record to exist simultaneously in multiple models, sharing the same ID. This is achieved through:
 
-1. **Modelo Central (`ir.poly_base`)**: Registro maestro que almacena metadatos
-2. **Modelos Dependientes**: Modelos que comparten el mismo ID mediante `_depend_models`
-3. **Campos Relacionados**: Campos `related` que conectan modelos dependientes
-4. **PolyReference**: Tipo de campo especial para referencias polimórficas
+1. **Central Model (`ir.poly_base`)**: Master record that stores metadata.
+2. **Dependent Models**: Models that share the same ID via `_depend_models`.
+3. **Related Fields**: `related` fields that connect dependent models.
+4. **PolyReference**: A special field type for polymorphic references.
 
-### Diagrama de Arquitectura
+### Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -37,7 +37,7 @@ Numa Poly implementa un sistema de herencia polimórfica que permite que un regi
 │  (ID: 100, concrete_model_id, create_uid, create_date)    │
 └─────────────────────────────────────────────────────────────┘
                             │
-                            │ Mismo ID (100)
+                            │ Same ID (100)
                             │
         ┌───────────────────┼───────────────────┐
         │                   │                   │
@@ -51,194 +51,194 @@ Numa Poly implementa un sistema de herencia polimórfica que permite que un regi
 
 ---
 
-## Componentes Principales
+## Core Components
 
-### 1. IrPolyBase (Modelo Central)
+### 1. IrPolyBase (Central Model)
 
-**Ubicación**: `models/poly.py:42-109`
+**Location**: `models/poly.py:42-109`
 
-**Responsabilidades**:
-- Almacenar metadatos del registro polimórfico
-- Mantener referencia al modelo concreto (`concrete_model_id`)
-- Proporcionar campo técnico `poly_payload` para DTO injection
+**Responsibilities**:
+- Store metadata of the polymorphic record.
+- Maintain a reference to the concrete model (`concrete_model_id`).
+- Provide the technical field `poly_payload` for DTO injection.
 
-**Campos Clave**:
+**Key Fields**:
 ```python
 concrete_model_id = fields.Many2one('ir.model', required=True)
 poly_payload = fields.Text(store=False, compute='_compute_payload_dummy', inverse='_inverse_payload_dummy')
 ```
 
-**Análisis**:
-- ✅ **Bien diseñado**: Modelo centralizado para metadatos
-- ⚠️ **Riesgo**: `poly_payload` usa compute/inverse dummy para permitir escritura sin almacenamiento
-- ⚠️ **Consideración**: `concrete_model_id` es Many2one, no Char (correcto para integridad referencial)
+**Analysis**:
+- ✅ **Well-designed**: Centralized model for metadata.
+- ⚠️ **Risk**: `poly_payload` uses compute/inverse dummy to allow writing without storage.
+- ⚠️ **Consideration**: `concrete_model_id` is a Many2one, not a Char (correct for referential integrity).
 
-### 2. PolyBase (Clase Base Polimórfica)
+### 2. PolyBase (Polymorphic Base Class)
 
-**Ubicación**: `models/poly.py:261-1318`
+**Location**: `models/poly.py:261-1318`
 
-**Responsabilidades**:
-- Extender `BaseModel` de Odoo para soportar polimorfismo
-- Construir atributos de modelos dependientes
-- Gestionar creación/escritura/eliminación polimórfica
-- Validar ciclos de dependencia
+**Responsibilities**:
+- Extend Odoo's `BaseModel` to support polymorphism.
+- Construct attributes of dependent models.
+- Manage polymorphic create/write/unlink operations.
+- Validate dependency cycles.
 
-**Métodos Críticos**:
+**Critical Methods**:
 
-#### `_build_model()` (línea 393-465)
+#### `_build_model()` (lines 393-465)
 ```python
 @classmethod
 def _build_model(cls, pool, cr):
-    # Construye el modelo estándar primero
+    # Construct the standard model first
     model_class_without_depends = super()._build_model(pool, cr)
     
-    # Valida ciclos de dependencia
+    # Validate dependency cycles
     cls._validate_dependency_cycles(pool)
     
-    # Construye jerarquía de herencia
+    # Construct inheritance hierarchy
     # ...
 ```
 
-**Análisis**:
-- ✅ **Validación de ciclos**: Detecta dependencias circulares (línea 468-507)
-- ✅ **Herencia múltiple**: Permite dependencias de múltiples modelos
-- ⚠️ **Complejidad**: Alto nivel de complejidad en construcción de clases
+**Analysis**:
+- ✅ **Cycle Validation**: Detects circular dependencies (lines 468-507).
+- ✅ **Multiple Inheritance**: Allows dependencies from multiple models.
+- ⚠️ **Complexity**: High level of complexity in class construction.
 
-#### `_build_dependant_model_attributes()` (línea 567-803)
+#### `_build_dependant_model_attributes()` (lines 567-803)
 
-**Responsabilidades**:
-1. Crear campos técnicos (`poly_base_id`, `concrete_model_id`, `poly_payload`)
-2. Crear campos de referencia (`PolyReference`) a modelos base
-3. Crear campos `related` para todos los campos de modelos dependientes
-4. Copiar métodos y atributos no-field de modelos base
+**Responsibilities**:
+1. Create technical fields (`poly_base_id`, `concrete_model_id`, `poly_payload`).
+2. Create reference fields (`PolyReference`) to base models.
+3. Create `related` fields for all fields of dependent models.
+4. Copy non-field methods and attributes from base models.
 
-**Flujo**:
+**Workflow**:
 ```
-1. Crear poly_base_id (PolyReference a ir.poly_base)
-2. Crear concrete_model_id (Many2one a ir.model, computed)
-3. Crear poly_payload (Text, store=False)
-4. Crear campos de auditoría (create_uid, create_date, etc.)
-5. Recorrer _depend_models en orden inverso:
-   - Crear PolyReference para cada base
-   - Recopilar todos los campos de cada base
-   - Crear campos related para cada campo encontrado
-6. Copiar métodos y atributos no-field
+1. Create poly_base_id (PolyReference to ir.poly_base)
+2. Create concrete_model_id (Many2one to ir.model, computed)
+3. Create poly_payload (Text, store=False)
+4. Create audit fields (create_uid, create_date, etc.)
+5. Iterate through _depend_models in reverse order:
+   - Create PolyReference for each base
+   - Collect all fields from each base
+   - Create related fields for each field found
+6. Copy methods and non-field attributes
 ```
 
-**Análisis**:
-- ✅ **Completo**: Cubre todos los aspectos necesarios
-- ⚠️ **Rendimiento**: Proceso costoso en tiempo de arranque
-- ⚠️ **Orden de dependencias**: El orden en `_depend_models` importa (último gana en colisiones)
-- ⚠️ **Registros Huérfanos**: Maneja registros legacy (pre-polimórficos) con degradación elegante de metadatos.
+**Analysis**:
+- ✅ **Comprehensive**: Covers all necessary aspects.
+- ⚠️ **Performance**: Costly process during startup.
+- ⚠️ **Dependency Order**: Order in `_depend_models` matters (last one wins on collisions).
+- ⚠️ **Orphan Records**: Handles legacy records (pre-polymorphic) with graceful metadata degradation.
 
-### 9. Migración Automática de Modelos (Legacy a Poly)
+### 9. Automatic Model Migration (Legacy to Poly)
 
-Numa Poly incluye un sistema robusto para migrar registros existentes cuando un modelo se convierte de "estándar" a "polimórfico":
+Numa Poly includes a robust system to migrate existing records when a model converts from "standard" to "polymorphic":
 
-1.  **Detección (`_check_migration_needed`)**: Durante el inicio (`_auto_init`), el sistema verifica si existen registros en la tabla del modelo (o sus dependencias) que no tengan una entrada correspondiente en `ir.poly_base`.
-2.  **Orquestación (`_migrate_to_poly`)**: Si se detectan registros huérfanos, se inicia un proceso de migración atómico que:
-    - Genera nuevos IDs globales desde la secuencia de `ir.poly_base`.
-    - Duplica los registros en todas las tablas de la jerarquía polimórfica.
-    - Preserva los campos de auditoría (`create_date`, `create_uid`, etc.).
-3.  **Actualización de Referencias (`_update_foreign_keys`)**: Actualiza automáticamente todas las referencias al ID antiguo en la base de datos, incluyendo:
-    - Campos Many2one y Many2many estándar.
-    - Referencias dinámicas (ej. `res_id` en `ir.attachment`, `mail.message`, `mail.followers`).
+1.  **Detection (`_check_migration_needed`)**: During startup (`_auto_init`), the system checks if there are records in the model's table (or its dependencies) that lack a corresponding entry in `ir.poly_base`.
+2.  **Orchestration (`_migrate_to_poly`)**: If orphan records are detected, an atomic migration process starts that:
+    - Generates new global IDs from the `ir.poly_base` sequence.
+    - Duplicates records across all tables in the polymorphic hierarchy.
+    - Preserves audit fields (`create_date`, `create_uid`, etc.).
+3.  **Reference Update (`_update_foreign_keys`)**: Automatically updates all references to the old ID in the database, including:
+    - Standard Many2one and Many2many fields.
+    - Dynamic references (e.g., `res_id` in `ir.attachment`, `mail.message`, `mail.followers`).
     - External IDs (`ir.model.data`).
-    - Modelos conocidos con IDs en campos lógicos (ej. `mail.alias`).
-4.  **Limpieza**: Elimina los registros antiguos una vez que la integridad de las referencias está asegurada.
+    - Known models with IDs in logical fields (e.g., `mail.alias`).
+4.  **Cleanup**: Deletes old records once reference integrity is ensured.
 
-### 10. Manejo de Integridad y Resiliencia
+### 10. Integrity and Resilience Management
 
-- **Detección de Vistas**: El motor evita actualizar tablas que son vistas de base de datos (`information_schema.views`).
-- **Limpieza de Tipos**: Se realiza una limpieza profunda de valores (recordsets, listas de IDs) antes de la creación del nuevo registro.
-- **Resolución de Conflictos**: Maneja violaciones de restricciones únicas (ej. `mail_followers`, Many2many) eliminando registros redundantes antes de actualizar los IDs.
-- **Transaccionalidad**: Usa `savepoints` de base de datos en actualizaciones críticas para garantizar que fallos menores (como tablas de terceros o restricciones complejas en Odoo 18) no aborten la migración completa.
-- **Compatibilidad Odoo 18**: Manejo específico para `project.task` evitando violaciones de `NOT NULL` en tablas de relación compartidas y extracción agresiva vía SQL para garantizar datos crudos sin recordsets. Se corrigieron errores de acceso a atributos relacionales diferenciando correctamente entre `comodel_name` (Many2one) y `relation` (Many2many).
-- **Extracción de IDs**: Implementada una lógica recursiva para asegurar que los campos Many2one siempre se reduzcan a IDs enteros, eliminando interferencias de recordsets o tuplas devueltas por el ORM de Odoo 18.
-- **Integridad Referencial**: Los objetos relacionados se actualizan para apuntar al nuevo ID antes de eliminar físicamente el registro antiguo, satisfaciendo las restricciones de clave foránea (FK).
+- **View Detection**: The engine avoids updating tables that are database views (`information_schema.views`).
+- **Type Sanitization**: Deep cleaning of values (recordsets, ID lists) is performed before new record creation.
+- **Conflict Resolution**: Handles unique constraint violations (e.g., `mail_followers`, Many2many) by removing redundant records before updating IDs.
+- **Transactionality**: Uses database `savepoints` in critical updates to ensure that minor failures (such as third-party tables or complex constraints in Odoo 18) do not abort the entire migration.
+- **Odoo 18 Compatibility**: Specific handling for `project.task` by injecting its polymorphic hierarchy (`numa.planning.node`) after registry initialization to prevent loss of inherited methods. It also includes shared Many2many collision handling and deep type cleaning to prevent recordset interference in direct SQL operations.
+- **ID Extraction**: Recursive logic implemented to ensure Many2one fields always reduce to integer IDs, eliminating interference from recordsets or tuples returned by the Odoo 18 ORM.
+- **Referential Integrity**: Related objects are updated to point to the new ID before physically deleting the old record, satisfying foreign key (FK) constraints.
 
-### 3. PolyReference (Campo Especial)
+### 3. PolyReference (Special Field)
 
-**Ubicación**: `models/poly.py:130-257`
+**Location**: `models/poly.py:130-257`
 
-**Características**:
-- `store=False`: No se almacena en BD
-- `readonly=True`: No se puede escribir directamente
-- `auto_join=True`: Permite joins automáticos
-- Usa el ID del registro actual como referencia
+**Characteristics**:
+- `store=False`: Not stored in the DB.
+- `readonly=True`: Cannot be written to directly.
+- `auto_join=True`: Allows automatic joins.
+- Uses the current record's ID as a reference.
 
-**Implementación Clave**:
+**Key Implementation**:
 ```python
 def convert_to_record(self, value, record):
-    # Retorna un recordset con el mismo ID que el registro actual
+    # Returns a recordset with the same ID as the current record
     return record.pool[self.comodel_name](record.env, (record.id,), (record.id,))
 ```
 
-**Análisis**:
-- ✅ **Elegante**: Solución ingeniosa para referencias sin FK
-- ⚠️ **Rendimiento**: Requiere lógica especial en queries
-- ⚠️ **Búsqueda**: `_search_related()` es compleja (línea 203-257)
+**Analysis**:
+- ✅ **Elegant**: Ingenious solution for references without FKs.
+- ⚠️ **Performance**: Requires special logic in queries.
+- ⚠️ **Searching**: `_search_related()` is complex (lines 203-257).
 
-### 4. Sistema de Creación Polimórfica
+### 4. Polymorphic Creation System
 
-**Ubicación**: `models/poly.py:806-1018`
+**Location**: `models/poly.py:806-1018`
 
-**Flujo de Creación**:
+**Creation Workflow**:
 
 ```
-1. Validar permisos en modelos dependientes
-2. Procesar poly_payload (deserializar JSON y mergear)
-3. Si hay concrete_model_id, delegar a modelo concreto
-4. Obtener ID (explícito o crear nuevo en ir.poly_base)
-5. Para cada modelo dependiente:
-   - Extraer campos relevantes
-   - Crear/actualizar registro con mismo ID
-6. Crear registro en modelo actual
-7. Retornar recordset
+1. Validate permissions in dependent models
+2. Process poly_payload (deserialize JSON and merge)
+3. If concrete_model_id exists, delegate to concrete model
+4. Obtain ID (explicit or create new in ir.poly_base)
+5. For each dependent model:
+   - Extract relevant fields
+   - Create/update record with same ID
+6. Create record in current model
+7. Return recordset
 ```
 
-**Código Crítico** (línea 969-1002):
+**Critical Code** (lines 969-1002):
 ```python
-# Crear nuevo ID vía ir.poly_base
+# Create new ID via ir.poly_base
 new_poly = self.env['ir.poly_base'].create(dict(
     concrete_model_id=self.env['ir.model']._get_id(self._name)
 ))
 new_id = new_poly.id
 
-# Crear en todos los modelos dependientes con mismo ID
+# Create in all dependent models with the same ID
 for base, field_set in bases_to_create.items():
     base_data['id'] = new_id
     base_model.create([base_data])
 ```
 
-**Análisis**:
-- ✅ **Atómico**: Todo en una transacción
-- ✅ **Consistencia**: Mismo ID garantizado
-- ⚠️ **Rendimiento**: Múltiples creates (N+1 problem potencial)
-- ⚠️ **Validación**: No valida que concrete_model_id sea subclase válida
+**Analysis**:
+- ✅ **Atomic**: All within one transaction.
+- ✅ **Consistency**: Same ID guaranteed.
+- ⚠️ **Performance**: Multiple creates (potential N+1 problem).
+- ⚠️ **Validation**: Does not validate if `concrete_model_id` is a valid subclass.
 
-### 5. Sistema de Escritura
+### 5. Writing System
 
-**Ubicación**: `models/poly.py:1096-1239`
+**Location**: `models/poly.py:1096-1239`
 
-**Características**:
-- Procesa `poly_payload` antes de escribir
-- Actualiza campos de auditoría en `ir.poly_base`
-- Usa `_write_multi()` para optimización batch
+**Characteristics**:
+- Processes `poly_payload` before writing.
+- Updates audit fields in `ir.poly_base`.
+- Uses `_write_multi()` for batch optimization.
 
-**Análisis**:
-- ✅ **Eficiente**: Usa batch updates cuando es posible
-- ⚠️ **Auditoría**: Actualiza `ir.poly_base` manualmente (línea 1243-1246)
-- ✅ **Payload**: Manejo robusto de errores JSON
+**Analysis**:
+- ✅ **Efficient**: Uses batch updates when possible.
+- ⚠️ **Auditing**: Manually updates `ir.poly_base` (lines 1243-1246).
+- ✅ **Payload**: Robust JSON error handling.
 
 ---
 
-## Flujos de Datos
+## Data Flows
 
-### Flujo 1: Creación de Registro Polimórfico
+### Flow 1: Polymorphic Record Creation
 
 ```
-Usuario/API
+User/API
     │
     ▼
 Model.create({'name': 'John', 'work_email': 'john@example.com'})
@@ -246,26 +246,26 @@ Model.create({'name': 'John', 'work_email': 'john@example.com'})
     ▼
 PolyBase.create()
     │
-    ├─► Validar permisos en dependientes
-    ├─► Procesar poly_payload (si existe)
-    ├─► Crear ir.poly_base → obtener ID
+    ├─► Validate permissions in dependents
+    ├─► Process poly_payload (if exists)
+    ├─► Create ir.poly_base → obtain ID
     │
-    ├─► Para cada _depend_models:
-    │   └─► base_model.create({'id': new_id, ...campos...})
+    ├─► For each _depend_models:
+    │   └─► base_model.create({'id': new_id, ...fields...})
     │
-    └─► self.create({'id': new_id, ...campos locales...})
-    │
-    ▼
-Retornar recordset con ID compartido
-```
-
-### Flujo 2: Lectura de Campo Relacionado
-
-```
-record.name  # Campo de res.partner
+    └─► self.create({'id': new_id, ...local fields...})
     │
     ▼
-Campo related: 'partner_id.name'
+Return recordset with shared ID
+```
+
+### Flow 2: Related Field Reading
+
+```
+record.name  # Field from res.partner
+    │
+    ▼
+Related field: 'partner_id.name'
     │
     ▼
 partner_id (PolyReference)
@@ -274,13 +274,13 @@ partner_id (PolyReference)
 convert_to_record() → res.partner.browse(record.id)
     │
     ▼
-Acceso a campo 'name' en res.partner
+Access to 'name' field in res.partner
     │
     ▼
-Retornar valor
+Return value
 ```
 
-### Flujo 3: Búsqueda con PolyReference
+### Flow 3: Searching with PolyReference
 
 ```
 search([('partner_id.name', '=', 'John')])
@@ -289,28 +289,28 @@ search([('partner_id.name', '=', 'John')])
 PolyExpression.parse()
     │
     ▼
-Detectar PolyReference en 'partner_id'
+Detect PolyReference in 'partner_id'
     │
     ▼
-_search_related() → construir domain en res.partner
+_search_related() → construct domain in res.partner
     │
     ▼
-Buscar en res.partner → obtener IDs
+Search in res.partner → obtain IDs
     │
     ▼
-Convertir a domain: [('id', 'in', [100, 101, ...])]
+Convert to domain: [('id', 'in', [100, 101, ...])]
     │
     ▼
-Ejecutar query final
+Execute final query
 ```
 
 ---
 
-## Patrones de Diseño
+## Design Patterns
 
-### 1. Monkey Patching Estratégico
+### 1. Strategic Monkey Patching
 
-**Ubicación**: `models/poly.py:1445-1450`
+**Location**: `models/poly.py:1445-1450`
 
 ```python
 odoo.models.BaseModel = PolyBase
@@ -320,193 +320,193 @@ odoo.models.TransientModel = PolyTransientModel
 odoo.fields.Many2one.convert_to_read = poly_many2one_convert_to_read
 ```
 
-**Análisis**:
-- ✅ **Transparente**: No requiere cambios en código existente
-- ⚠️ **Riesgo**: Depende de estructura interna de Odoo
-- ⚠️ **Mantenibilidad**: Puede romperse con actualizaciones de Odoo
-- ✅ **Guarded**: Solo afecta modelos con `_depend_models`
+**Analysis**:
+- ✅ **Transparent**: Requires no changes to existing code.
+- ⚠️ **Risk**: Depends on Odoo's internal structure.
+- ⚠️ **Maintainability**: Can break with Odoo updates.
+- ✅ **Guarded**: Only affects models with `_depend_models`.
 
-### 2. Factory Pattern para Construcción de Modelos
+### 2. Factory Pattern for Model Construction
 
-El método `_build_model()` actúa como factory que construye clases de modelo con herencia polimórfica.
+The `_build_model()` method acts as a factory that constructs model classes with polymorphic inheritance.
 
-### 3. Strategy Pattern en PolyReference
+### 3. Strategy Pattern in PolyReference
 
-`_search_related()` implementa diferentes estrategias según el tipo de campo y operador.
+`_search_related()` implements different strategies depending on the field type and operator.
 
-### 4. Decorator Pattern en Campos Related
+### 4. Decorator Pattern in Related Fields
 
-Los campos de modelos dependientes se "decoran" como `related` para acceder a datos en otros modelos.
+Fields from dependent models are "decorated" as `related` to access data in other models.
 
 ---
 
-## Monkey Patching y Extensión del ORM
+## Monkey Patching and ORM Extension
 
-### Ventajas
+### Advantages
 
-1. **Transparencia**: El código existente funciona sin modificaciones
-2. **Compatibilidad**: Studio, Import/Export, API funcionan out-of-the-box
-3. **No invasivo**: Solo afecta modelos que declaran `_depend_models`
+1. **Transparency**: Existing code works without modifications.
+2. **Compatibility**: Studio, Import/Export, and API work out-of-the-box.
+3. **Non-invasive**: Only affects models that declare `_depend_models`.
 
-### Desventajas
+### Disadvantages
 
-1. **Fragilidad**: Depende de implementación interna de Odoo
-2. **Debugging**: Más difícil rastrear problemas
-3. **Actualizaciones**: Puede requerir ajustes en nuevas versiones
+1. **Fragility**: Depends on Odoo's internal implementation.
+2. **Debugging**: More difficult to trace issues.
+3. **Updates**: May require adjustments in new versions.
 
-### Protecciones Implementadas
+### Implemented Protections
 
 ```python
-# Solo aplica si _depend_models está definido
+# Only applies if _depend_models is defined
 if hasattr(cls, '_depend_models') and cls._depend_models is not None:
-    # ... lógica polimórfica
+    # ... polymorphic logic
 else:
-    # Comportamiento estándar de Odoo
+    # Standard Odoo behavior
     return super().create(data_list)
 ```
 
 ---
 
-## Gestión de IDs Compartidos
+## Shared ID Management
 
-### Mecanismo
+### Mechanism
 
-1. **Creación**: `ir.poly_base.create()` genera nuevo ID
-2. **Propagación**: Todos los modelos dependientes usan `id` explícito
-3. **Consistencia**: Garantizada por transacciones de BD
+1. **Creation**: `ir.poly_base.create()` generates a new ID.
+2. **Propagation**: All dependent models use an explicit `id`.
+3. **Consistency**: Guaranteed by DB transactions.
 
-### Código Crítico
+### Critical Code
 
 ```python
-# Línea 969-974
+# Lines 969-974
 new_poly = self.env['ir.poly_base'].create(dict(
     concrete_model_id=self.env['ir.model']._get_id(self._name)
 ))
 new_id = new_poly.id
 
-# Línea 993
-base_data['id'] = new_id  # Mismo ID para todos
+# Line 993
+base_data['id'] = new_id  # Same ID for everyone
 ```
 
-### Riesgos
+### Risks
 
-1. **Conflicto de IDs**: Si existe registro con mismo ID en modelo dependiente
-   - **Mitigación**: Validación en línea 953-961
-2. **Secuencias**: Secuencias de modelos dependientes pueden desincronizarse
-   - **Mitigación**: `_register_hook()` ajusta secuencias (línea 522-564)
+1. **ID Conflict**: If a record with the same ID exists in a dependent model.
+   - **Mitigation**: Validation in lines 953-961.
+2. **Sequences**: Sequences of dependent models can become desynchronized.
+   - **Mitigation**: `_register_hook()` adjusts sequences (lines 522-564).
 
-### Análisis de Secuencias
+### Sequence Analysis
 
 ```python
-# Línea 545-563
+# Lines 545-563
 def get_next_id(base_name) -> int:
-    # Obtiene próximo ID de secuencia
+    # Gets the next ID from the sequence
     self.env.cr.execute(f'''
         SELECT pg_sequence_last_value('{base_model._table}_id_seq')
     ''')
     
-# Ajusta ir.poly_base si es necesario
+# Adjusts ir.poly_base if necessary
 if current_id > poly_base_id:
     self.env.cr.execute(f'''
         ALTER SEQUENCE IF EXISTS ir_poly_base_id_seq RESTART WITH {current_id + 1};
     ''')
 ```
 
-**Análisis**:
-- ✅ **Preventivo**: Evita conflictos de IDs
-- ⚠️ **Riesgo**: Ejecuta SQL directo (bypass ORM)
-- ⚠️ **Timing**: Solo en `_register_hook()` (al arranque)
+**Analysis**:
+- ✅ **Preventive**: Avoids ID conflicts.
+- ⚠️ **Risk**: Executes direct SQL (bypasses ORM).
+- ⚠️ **Timing**: Only in `_register_hook()` (during startup).
 
 ---
 
-## Sistema de Campos Relacionados
+## Related Fields System
 
-### Construcción Automática
+### Automatic Construction
 
-**Proceso** (línea 721-791):
+**Process** (lines 721-791):
 
-1. Recopilar campos de modelos dependientes
-2. Crear campo `related` para cada uno
-3. Mapear tipos de campo correctamente
-4. Manejar relaciones (Many2one, One2many, Many2many)
+1. Collect fields from dependent models.
+2. Create a `related` field for each one.
+3. Map field types correctly.
+4. Handle relations (Many2one, One2many, Many2many).
 
-### Ejemplo
+### Example
 
 ```python
-# Modelo base
+# Base model
 class Equipment(models.Model):
     _name = 'project.equipment'
     _depend_models = {}
     name = fields.Char('Name')
 
-# Modelo concreto
+# Concrete model
 class Crane(models.Model):
     _name = 'project.crane'
     _depend_models = {'project.equipment': 'equipment_id'}
     capacity = fields.Float('Capacity')
 
-# Resultado: Crane tiene automáticamente:
+# Result: Crane automatically has:
 # - equipment_id (PolyReference)
 # - name (related='equipment_id.name')
 ```
 
-### Limitaciones
+### Limitations
 
-1. **Orden de dependencias**: Último modelo gana en colisiones de nombres
-2. **Campos computed**: No se copian automáticamente
-3. **Campos related**: Se filtran para evitar duplicación (línea 684-685)
+1. **Dependency Order**: The last model wins in name collisions.
+2. **Computed Fields**: Not copied automatically.
+3. **Related Fields**: Filtered to avoid duplication (lines 684-685).
 
 ---
 
 ## Frontend Integration
 
-### Componentes OWL
+### OWL Components
 
 #### PolyListRenderer
-**Ubicación**: `static/src/views/poly_list/poly_list_renderer.js`
+**Location**: `static/src/views/poly_list/poly_list_renderer.js`
 
-**Funcionalidades**:
-1. Bypass inline editing → abre dialogs
-2. Navegación polimórfica basada en `concrete_model_id`
-3. Creación polimórfica con selección de subclase
-4. Inyección de payload DTO
+**Functionalities**:
+1. Bypass inline editing → opens dialogs.
+2. Polymorphic navigation based on `concrete_model_id`.
+3. Polymorphic creation with subclass selection.
+4. DTO payload injection.
 
-**Flujo de Creación**:
+**Creation Workflow**:
 ```
 onAdd()
     │
     ├─► RPC: get_poly_subclasses_info()
     │
-    ├─► Si >1 subclase: mostrar dialog de selección
+    ├─► If >1 subclass: show selection dialog
     │
-    ├─► RPC: default_get() del modelo seleccionado
+    ├─► RPC: default_get() for the selected model
     │
-    ├─► Crear payload JSON con defaults + concrete_model_id
+    ├─► Create JSON payload with defaults + concrete_model_id
     │
-    ├─► Crear registro virtual en lista con poly_payload
+    ├─► Create virtual record in list with poly_payload
     │
-    └─► Abrir form del modelo concreto
+    └─► Open form of the concrete model
 ```
 
-**Análisis**:
-- ✅ **UX**: Flujo intuitivo para creación polimórfica
-- ⚠️ **RPC**: Múltiples llamadas RPC (podría optimizarse)
-- ⚠️ **Payload**: Depende de que backend procese correctamente
+**Analysis**:
+- ✅ **UX**: Intuitive workflow for polymorphic creation.
+- ⚠️ **RPC**: Multiple RPC calls (could be optimized).
+- ⚠️ **Payload**: Depends on the backend processing it correctly.
 
 #### PolyX2ManyField
-**Ubicación**: `static/src/views/fields/poly_field.js`
+**Location**: `static/src/views/fields/poly_field.js`
 
-**Análisis**:
-- ✅ **Simple**: Extiende X2ManyField mínimamente
-- ✅ **Registro**: Correctamente registrado como widget
+**Analysis**:
+- ✅ **Simple**: MInimally extends X2ManyField.
+- ✅ **Registry**: Correctly registered as a widget.
 
-### Manejo de concrete_model_id
+### Handling concrete_model_id
 
-**Problema**: `concrete_model_id` es Many2one, pero frontend necesita nombre del modelo.
+**Problem**: `concrete_model_id` is a Many2one, but the frontend needs the model name.
 
-**Solución Actual** (línea 75-120 de poly_list_renderer.js):
+**Current Solution** (lines 75-120 of `poly_list_renderer.js`):
 ```javascript
-// Extraer nombre del modelo vía RPC
+// Extract model name via RPC
 const modelData = await this.rpc("/web/dataset/call_kw", {
     model: "ir.model",
     method: "read",
@@ -514,30 +514,30 @@ const modelData = await this.rpc("/web/dataset/call_kw", {
 });
 ```
 
-**Análisis**:
-- ⚠️ **Ineficiente**: RPC adicional por cada apertura
-- 💡 **Mejora**: Podría cachear o usar campo computed en frontend
+**Analysis**:
+- ⚠️ **Inefficient**: Additional RPC per opening.
+- 💡 **Improvement**: Could cache or use a computed field in the frontend.
 
 ---
 
-## Análisis de Rendimiento
+## Performance Analysis
 
-### Puntos de Optimización
+### Optimization Points
 
-#### 1. Creación en Batch
+#### 1. Batch Creation
 
-**Problema Actual** (línea 964-1002):
+**Current Problem** (lines 964-1002):
 ```python
-for data in data_list:  # Loop por cada registro
-    for base, field_set in bases_to_create.items():  # Loop por cada base
-        base_model.create([base_data])  # Create individual
+for data in data_list:  # Loop through each record
+    for base, field_set in bases_to_create.items():  # Loop through each base
+        base_model.create([base_data])  # Individual create
 ```
 
-**Impacto**: O(n × m) creates donde n=registros, m=bases
+**Impact**: O(n × m) creates where n=records, m=bases.
 
-**Mejora Potencial**:
+**Potential Improvement**:
 ```python
-# Agrupar creates por modelo base
+# Group creates by base model
 for base, field_set in bases_to_create.items():
     base_data_list = []
     for data in data_list:
@@ -547,42 +547,42 @@ for base, field_set in bases_to_create.items():
     base_model.create(base_data_list)  # Batch create
 ```
 
-#### 2. Búsqueda con PolyReference
+#### 2. Searching with PolyReference
 
-**Problema**: `_search_related()` puede generar subqueries complejas
+**Problem**: `_search_related()` can generate complex subqueries.
 
-**Análisis** (línea 203-257):
-- Construye domains recursivamente
-- Puede generar múltiples niveles de subqueries
-- **Impacto**: Queries más lentas en jerarquías profundas
+**Analysis** (lines 203-257):
+- Constructs domains recursively.
+- Can generate multiple levels of subqueries.
+- **Impact**: Slower queries in deep hierarchies.
 
-#### 3. Carga de Campos Related
+#### 3. Related Field Loading
 
-**Problema**: Acceso a campos related requiere múltiples queries
+**Problem**: Accessing related fields requires multiple queries.
 
-**Ejemplo**:
+**Example**:
 ```python
 records = self.env['crane'].search([])
 for record in records:
-    print(record.name)  # Query a project.equipment por cada acceso
+    print(record.name)  # Query project.equipment for each access
 ```
 
-**Mitigación**: Usar `read()` con prefetch o `with_context(prefetch_fields=True)`
+**Mitigation**: Use `read()` with prefetch or `with_context(prefetch_fields=True)`.
 
-### Métricas Estimadas
+### Estimated Metrics
 
-- **Creación simple**: ~3-5 queries (ir.poly_base + N bases + modelo actual)
-- **Creación con payload**: +1 query para procesar JSON
-- **Lectura de campo related**: +1 query por campo (sin prefetch)
-- **Búsqueda con PolyReference**: +1-3 queries según profundidad
+- **Simple creation**: ~3-5 queries (ir.poly_base + N bases + current model).
+- **Creation with payload**: +1 query to process JSON.
+- **Related field read**: +1 query per field (without prefetch).
+- **Search with PolyReference**: +1-3 queries depending on depth.
 
 ---
 
-## Seguridad y Permisos
+## Security and Permissions
 
-### Validación de Permisos
+### Permission Validation
 
-**Ubicación**: `models/poly.py:851-861`
+**Location**: `models/poly.py:851-861`
 
 ```python
 for base_name in self._depend_models.keys():
@@ -591,118 +591,118 @@ for base_name in self._depend_models.keys():
         raise AccessError(...)
 ```
 
-**Análisis**:
-- ✅ **Validación**: Verifica permisos en todos los modelos base
-- ⚠️ **Granularidad**: No valida permisos por campo
-- ⚠️ **Write**: No valida permisos en `write()` (solo en `create()`)
+**Analysis**:
+- ✅ **Validation**: Verifies permissions on all base models.
+- ⚠️ **Granularity**: Does not validate permissions per field.
+- ⚠️ **Write**: Does not validate permissions in `write()` (only in `create()`).
 
-### Uso de sudo()
+### Usage of sudo()
 
-**Ubicaciones**:
-1. `_compute_concrete_model_id()` (línea 345): Para leer `ir.poly_base`
-2. `as_concrete_model()` (línea 328): Para leer `ir.poly_base`
+**Locations**:
+1. `_compute_concrete_model_id()` (line 345): To read `ir.poly_base`.
+2. `as_concrete_model()` (line 328): To read `ir.poly_base`.
 
-**Justificación**: Metadatos de infraestructura deben ser accesibles
+**Justification**: Infrastructure metadata must be accessible.
 
-**Riesgo**: Potencial bypass de reglas de acceso si se usa incorrectamente
+**Risk**: Potential bypass of access rules if used incorrectly.
 
 ### Payload Injection
 
-**Riesgo**: `poly_payload` permite inyectar datos JSON arbitrarios
+**Risk**: `poly_payload` allows injecting arbitrary JSON data.
 
-**Mitigaciones**:
-1. Validación JSON (línea 891-898)
-2. Solo mergea dicts (línea 882-885)
-3. Logging de errores (línea 892-905)
+**Mitigations**:
+1. JSON validation (lines 891-898).
+2. Only merges dicts (lines 882-885).
+3. Error logging (lines 892-905).
 
-**Recomendación**: Validar estructura del payload según modelo concreto
+**Recommendation**: Validate the payload structure according to the concrete model.
 
 ---
 
-## Puntos Críticos y Riesgos
+## Critical Points and Risks
 
-### 1. Orden de Dependencias
+### 1. Dependency Order
 
-**Problema**: El orden en `_depend_models` determina qué campo gana en colisiones
+**Problem**: The order in `_depend_models` determines which field wins in collisions.
 
 ```python
 _depend_models = {
-    'res.partner': 'partner_id',    # Si ambos tienen 'name'
-    'hr.employee': 'employee_id',   # 'name' viene de hr.employee
+    'res.partner': 'partner_id',    # If both have 'name'
+    'hr.employee': 'employee_id',   # 'name' comes from hr.employee
 }
 ```
 
-**Riesgo**: Comportamiento no intuitivo, difícil de debuggear
+**Risk**: Non-intuitive behavior, difficult to debug.
 
-**Mitigación**: Documentar claramente, usar nombres únicos en mixins
+**Mitigation**: Document clearly, use unique names in mixins.
 
-### 2. Validación de concrete_model_id
+### 2. concrete_model_id Validation
 
-**Problema** (línea 912-926):
+**Problem** (lines 912-926):
 ```python
 if concrete_model_id:
     concrete_model = self.env['ir.model'].browse(concrete_model_id).exists()
     if concrete_model and concrete_model._name != self._name:
-        # Delega creación sin validar que sea subclase válida
+        # Delegates creation without validating if it is a valid subclass
         new_records = concrete_model.create(new_vals_list)
 ```
 
-**Riesgo**: Permite crear cualquier modelo, no solo subclases
+**Risk**: Allows creating any model, not just subclasses.
 
-**Mejora Potencial**:
+**Potential Improvement**:
 ```python
-# Validar que concrete_model sea subclase
+# Validate that concrete_model is a subclass
 valid_subclasses = self.get_poly_subclasses_info()
 valid_models = [s['model'] for s in valid_subclasses]
 if concrete_model._name not in valid_models:
     raise ValidationError("Invalid concrete model")
 ```
 
-### 3. Transacciones y Rollback
+### 3. Transactions and Rollback
 
-**Análisis**: Si falla creación en modelo dependiente, ¿se hace rollback de todo?
+**Analysis**: If creation fails in a dependent model, is everything rolled back?
 
-**Código Actual**: Todo en misma transacción (garantizado por Odoo)
+**Current Code**: Everything in the same transaction (guaranteed by Odoo).
 
-**Riesgo**: Si hay error después de crear algunos bases, puede quedar inconsistente
+**Risk**: If an error occurs after creating some bases, it may become inconsistent.
 
-**Mitigación**: Transacciones de BD garantizan atomicidad
+**Mitigation**: DB transactions guarantee atomicity.
 
-### 4. Performance en Jerarquías Profundas
+### 4. Performance in Deep Hierarchies
 
-**Problema**: Modelos con múltiples niveles de dependencia
+**Problem**: Models with multiple levels of dependency.
 
 ```
 A → B → C → D
 ```
 
-Cada nivel añade complejidad en:
-- Construcción de campos related
-- Búsquedas con PolyReference
-- Creación de registros
+Each level adds complexity in:
+- Construction of related fields.
+- Searching with PolyReference.
+- Record creation.
 
-**Impacto**: O(n) donde n = profundidad de jerarquía
+**Impact**: O(n) where n = hierarchy depth.
 
-### 5. Compatibilidad con Odoo Updates
+### 5. Compatibility with Odoo Updates
 
-**Riesgo**: Monkey patching puede romperse con actualizaciones
+**Risk**: Monkey patching can break with updates.
 
-**Áreas Sensibles**:
-- `_build_model()`: Estructura interna de Odoo
-- `_write_multi()`: Implementación de escritura batch
-- `_field_to_sql()`: Generación de SQL
+**Sensitive Areas**:
+- `_build_model()`: Odoo internal structure.
+- `_write_multi()`: Batch write implementation.
+- `_field_to_sql()`: SQL generation.
 
-**Mitigación**: Tests exhaustivos, revisión en cada versión de Odoo
+**Mitigation**: Exhaustive tests, review in each Odoo version.
 
 ---
 
-## Mejoras Potenciales
+## Potential Improvements
 
-### 1. Optimización de Creación en Batch
+### 1. Batch Creation Optimization
 
-**Implementar**:
+**Implement**:
 ```python
-# Agrupar creates por modelo base
+# Group creates by base model
 bases_data = defaultdict(list)
 for data in data_list:
     for base, field_set in bases_to_create.items():
@@ -710,29 +710,29 @@ for data in data_list:
         base_data['id'] = get_id_for_record(data)
         bases_data[base].append(base_data)
 
-# Crear en batch
+# Create in batch
 for base, data_list in bases_data.items():
     base_model.create(data_list)
 ```
 
-**Beneficio**: Reduce N×M creates a M creates
+**Benefit**: Reduces N×M creates to M creates.
 
-### 2. Cache de Subclases
+### 2. Subclass Cache
 
-**Implementar**:
+**Implement**:
 ```python
 @api.model
 @tools.ormcache('self._name')
 def get_poly_subclasses_info(self):
-    # Cache resultado por modelo
+    # Cache result per model
     ...
 ```
 
-**Beneficio**: Reduce RPC calls desde frontend
+**Benefit**: Reduces RPC calls from the frontend.
 
-### 3. Validación de concrete_model_id
+### 3. concrete_model_id Validation
 
-**Implementar validación**:
+**Implement validation**:
 ```python
 def _validate_concrete_model(self, concrete_model_id):
     if not concrete_model_id:
@@ -744,105 +744,111 @@ def _validate_concrete_model(self, concrete_model_id):
         raise ValidationError("Invalid concrete model")
 ```
 
-### 4. Prefetch de Campos Related
+### 4. Related Field Prefetch
 
-**Mejorar**:
+**Improve**:
 ```python
-# En _build_dependant_model_attributes, marcar campos related como prefetch
+# In _build_dependant_model_attributes, mark related fields as prefetch
 new_field = field_subclass(
     related=f'{related_bases[model]}.{field_name}',
-    prefetch=True,  # Añadir esto
+    prefetch=True,  # Add this
     ...
 )
 ```
 
-### 5. Logging Mejorado
+### 5. Improved Logging
 
-**Añadir**:
-- Métricas de performance
-- Trazabilidad de operaciones polimórficas
-- Debug mode para desarrollo
+**Add**:
+- Performance metrics.
+- Traceability of polymorphic operations.
+- Debug mode for development.
 
-### 6. Tests de Integración
+### 6. Integration Tests
 
-**Añadir**:
-- Tests de creación batch
-- Tests de jerarquías profundas
-- Tests de rendimiento
-- Tests de seguridad
-
----
-
-## Compatibilidad con Odoo 18
-
-La versión 18 de Odoo introdujo cambios significativos en la construcción del registro (pool) y la gestión de clases, lo que requirió adaptaciones críticas en el motor polimórfico.
-
-### 1. Resolución Retroactiva de Dependencias
-
-Odoo 18 construye el pool de forma incremental. Un modelo puede ser "extendido" por múltiples módulos en diferentes etapas.
-
-*   **Problema**: Si el modelo `A` depende polimórficamente del modelo `B` (vía `_depend_models`), pero el modelo `B` aún no ha sido registrado en el pool cuando se construye `A`, la herencia Python (MRO) de `A` quedará incompleta.
-*   **Solución**: Se implementó un sistema de **Resolución Retroactiva**.
-    *   Los modelos con dependencias faltantes se registran en `pool._poly_pending_dependencies`.
-    *   Cuando cualquier modelo se construye, se verifica si hay "hijos esperando".
-    *   Si un padre se vuelve disponible, se marca al hijo con `pool._poly_refresh_needed`.
-    *   En los hooks de configuración (`_prepare_setup`, `_setup_base`), el hijo detecta la bandera, re-calcula su jerarquía completa e inyecta los padres ahora disponibles.
-
-### 2. Sincronización de Proxy Classes
-
-Odoo 18 hace un uso intensivo de **Proxy Classes** (clases dinámicas que envuelven las implementaciones reales).
-
-*   **Desincronización**: Modificar los `__bases__` de la clase de implementación no siempre actualiza automáticamente la clase Proxy que el entorno (`self.env`) devuelve a los usuarios.
-*   **Mecanismo de Sincronización**:
-    *   `numa_poly` sincroniza explícitamente `__bases__` y `__base_classes` entre la clase real y su Proxy.
-    *   Uso de `ctypes.pythonapi.PyType_Modified` para forzar a Python a invalidar sus caches internos de resolución de métodos tanto en la clase base como en el Proxy.
-    *   Limpieza de `pool.model_methods` y `Environment._classes` para asegurar que el framework descubra los nuevos métodos inyectados.
-
-### 3. Colisiones en Many2many Polimórficos
-
-En Odoo estándar, dos modelos no pueden compartir la misma tabla y columnas de relación `Many2many`.
-
-*   **Conflicto Natural**: En un sistema polimórfico, es **correcto** que un modelo y su contraparte compartan la misma tabla de relación (ya que son, conceptualmente, el mismo registro).
-*   **Intervención del Check**: Se parcheó `odoo.fields.Many2many.setup_nonrelated` para interceptar el `TypeError` de colisión.
-    *   Si los modelos en conflicto son parientes polimórficos (uno está en el MRO del otro), el error se ignora silenciosamente.
-    *   Se restaura manualmente la lógica de vinculación de campos inversos que Odoo omite al detectar el conflicto.
+**Add**:
+- Batch creation tests.
+- Deep hierarchy tests.
+- Performance tests.
+- Security tests.
 
 ---
 
-## Conclusiones
+## Odoo 18 Compatibility
 
-### Fortalezas
+Odoo version 18 introduced significant changes to registry construction (pool) and class management, requiring critical adaptations in the polymorphic engine.
 
-1. ✅ **Arquitectura sólida**: Diseño bien pensado para polimorfismo
-2. ✅ **Transparencia**: Funciona con código existente sin modificaciones
-3. ✅ **Completo**: Cubre creación, lectura, escritura, eliminación
-4. ✅ **Extensible**: Fácil añadir nuevos modelos polimórficos
+### 1. Retroactive Dependency Resolution and Registry (Registry Hook)
 
-### Debilidades
+Odoo 18 builds the pool incrementally and has changed how it manages model inheritance. A model can be "extended" by multiple modules at different stages, which sometimes causes the Python MRO (Method Resolution Order) to freeze before all polymorphic classes have been injected.
 
-1. ⚠️ **Rendimiento**: Múltiples queries en operaciones comunes
-2. ⚠️ **Complejidad**: Alto nivel de complejidad en construcción
-3. ⚠️ **Fragilidad**: Dependencia de estructura interna de Odoo
-4. ⚠️ **Validación**: Falta validación en algunos puntos críticos
+*   **Problem**: During registry loading, critical models like `project.task` may lose their inheritance from `numa.planning.node` or `ir.poly_base` if the Odoo framework finalizes the hierarchy prematurely.
+*   **Solution (Final)**: A monkey-patch has been implemented in `Registry.setup_models`.
+    *   This hook executes after Odoo's standard configuration process.
+    *   It inspects specific models (`project.task`, `numa.planning.node`) and verifies if their MRO contains all declared dependencies in `_depend_models`.
+    *   If a dependency is missing, it uses `_apply_polymorphic_hierarchy` to forcibly inject the missing parents into the Python class hierarchy at runtime.
+    *   This ensures that methods like `pln_get_allocations_view` (inherited from polymorphic models) are always available in the final model.
 
-### Recomendaciones
+### 2. Proxy Classes Synchronization and Python Cache
 
-1. **Corto Plazo**:
-   - Implementar validación de `concrete_model_id`
-   - Optimizar creación en batch
-   - Añadir más logging
+Odoo 18 makes heavy use of **Proxy Classes** (dynamic classes that wrap actual implementations).
 
-2. **Medio Plazo**:
-   - Cache de subclases
-   - Prefetch de campos related
-   - Tests de rendimiento
+*   **Desynchronization**: Modifying the `__bases__` of the implementation class does not always automatically update the Proxy class that the environment (`self.env`) returns to users.
+*   **Synchronization Mechanism (`_poly_sync_proxy_class`)**:
+    *   `numa_poly` explicitly synchronizes `__bases__` and `__base_classes` between the real class and its Proxy.
+    *   Uses `ctypes.pythonapi.PyType_Modified` (via `_poly_force_mro_update`) to force Python to invalidate its internal method resolution caches in both the base class and the Proxy.
+    *   Explicitly invalidates the Odoo cache (`pool.model_methods` and `Environment._classes`) to ensure the framework discovers the newly injected methods.
 
-3. **Largo Plazo**:
-   - Considerar alternativas a monkey patching
-   - Documentar mejor orden de dependencias
-   - Crear herramientas de debugging
+### 3. Polymorphic Many2many Collisions
+
+In standard Odoo, two models cannot share the same relationship table and columns for a `Many2many` relation.
+
+*   **Natural Conflict**: In a polymorphic system, it is **correct** for a model and its counterpart to share the same relationship table (since they are, conceptually, the same record).
+*   **Check Intervention**: `odoo.fields.Many2many.setup_nonrelated` was patched to intercept the collision `TypeError`.
+    *   If the conflicting models are polymorphic relatives (one is in the other's MRO), the error is silently ignored.
+    *   The inverse field binding logic that Odoo skips upon detecting the conflict is manually restored.
+
+### 4. Registry Hierarchy Guarantee
+
+To ensure that key models like `project.task` never lose their polymorphic capabilities (such as access to `numa.planning.node` methods), the system performs a final check upon completing registry loading (`Registry.setup_models`).
+
+If it detects that a model should be polymorphic but its Python MRO does not reflect the full hierarchy, it dynamically injects the missing bases and synchronizes its proxy classes. This solves incremental loading issues in Odoo 18 where module extensions can alter the expected construction order.
 
 ---
 
-*Análisis realizado: 2024*
-*Versión del módulo: 18.0.1.0.0*
+## Conclusions
+
+### Strengths
+
+1. ✅ **Solid Architecture**: Well-thought-out design for polymorphism.
+2. ✅ **Transparency**: Works with existing code without modifications.
+3. ✅ **Comprehensive**: Covers creation, reading, writing, and deletion.
+4. ✅ **Extensible**: Easy to add new polymorphic models.
+
+### Weaknesses
+
+1. ⚠️ **Performance**: Multiple queries in common operations.
+2. ⚠️ **Complexity**: High level of complexity in construction.
+3. ⚠️ **Fragility**: Dependency on Odoo internal structure.
+4. ⚠️ **Validation**: Lack of validation at some critical points.
+
+### Recommendations
+
+1. **Short Term**:
+   - Implement `concrete_model_id` validation.
+   - Optimize batch creation.
+   - Add more logging.
+
+2. **Medium Term**:
+   - Subclass cache.
+   - Related field prefetch.
+   - Performance tests.
+
+3. **Long Term**:
+   - Consider alternatives to monkey patching.
+   - Better documentation of dependency order.
+   - Create debugging tools.
+
+---
+
+*Analysis performed: 2024*
+*Module version: 18.0.1.0.0*
