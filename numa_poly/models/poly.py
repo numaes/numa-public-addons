@@ -39,17 +39,16 @@ if typing.TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
-_logger.info("Initializing numa_poly: monkey-patching odoo.models")
-odoo.models.BaseModel = PolyBase
-odoo.models.AbstractModel = PolyBase
-odoo.models.Model = PolyModel
-odoo.models.TransientModel = PolyTransientModel
-odoo.fields.Many2one.convert_to_read = poly_many2one_convert_to_read
-
 
 # Global cache for polymorphic MRO to ensure they survive Odoo's registry setup phases.
 # Keys are db_name, then model_name. Values are tuples of base classes.
 POLY_MRO_CACHE = defaultdict(dict)
+
+# Save the original Odoo classes to avoid cyclic inheritance
+_original_BaseModel = odoo.models.BaseModel
+_original_AbstractModel = odoo.models.AbstractModel
+_original_Model = odoo.models.Model
+_original_TransientModel = odoo.models.TransientModel
 
 class IrPolyBase(models.Model):
     """
@@ -294,7 +293,7 @@ class PolyReference(fields.Many2one):
 
 
 
-class PolyBase(BaseModel):
+class PolyBase(_original_BaseModel):
     """
     Base class for all polymorphic models in Odoo.
 
@@ -596,7 +595,11 @@ class PolyBase(BaseModel):
         _logger.debug("Building model %s (polymorphic)", name)
 
         # First build the model using the standard Odoo mechanism.
-        model_class = super(PolyBase, cls)._build_model(pool, cr)
+        if name is None:
+            _logger.warning("Building model with name=None for class %s. MRO: %s", cls.__name__, cls.mro())
+            # Skip building if name is None to avoid TypeError in type.__new__
+            return None
+        model_class = _original_BaseModel._build_model.__func__(cls, pool, cr)
 
         # Collect all classes that contribute to this model's definition.
         all_depend_models = OrderedDict()
@@ -786,11 +789,14 @@ class PolyBase(BaseModel):
             
             if model_class.__bases__ != cached_bases:
                  _logger.info("Re-applying cached bases to model class %s in _prepare_setup", self._name)
-                 model_class.__bases__ = cached_bases
-                 # Refresh MRO cache
-                 import ctypes as _ctypes
-                 if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                     _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+                 try:
+                     model_class.__bases__ = cached_bases
+                     # Refresh MRO cache
+                     import ctypes as _ctypes
+                     if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                         _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+                 except TypeError as e:
+                     _logger.error("Failed to apply cached bases to model class %s: %s", self._name, e)
 
             # Odoo 18: Registry proxy classes must also be updated
             if hasattr(self.pool, 'models') and self._name in self.pool.models:
@@ -798,19 +804,26 @@ class PolyBase(BaseModel):
                   if proxy_class is not model_class and proxy_class.__bases__ != cached_bases:
                        _logger.info("Re-applying cached bases to proxy class %s in _prepare_setup", self._name)
                        proxy_class.__base_classes = cached_bases
-                       proxy_class.__bases__ = cached_bases
-                       import ctypes as _ctypes
-                       if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                            _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
+                       try:
+                           proxy_class.__bases__ = cached_bases
+                           import ctypes as _ctypes
+                           if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                                _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
+                       except TypeError as e:
+                           _logger.error("Failed to apply cached bases to proxy class %s: %s", self._name, e)
 
-        super()._prepare_setup()
+        # Use unbound method to avoid MRO lookup issues
+        _original_BaseModel._prepare_setup(self)
         
         # Ensure bases remain synchronized after super
         if cached_bases and model_class.__bases__ != cached_bases:
              _logger.warning("Bases for %s changed after super()._prepare_setup(). Re-applying...", self._name)
-             model_class.__bases__ = cached_bases
-             if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                 _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+             try:
+                 model_class.__bases__ = cached_bases
+                 if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                     _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+             except TypeError as e:
+                 _logger.error("Failed to re-apply cached bases to model class %s: %s", self._name, e)
 
     def _setup_base(self):
         """ Determine the inherited and custom fields of the model. """
@@ -836,7 +849,7 @@ class PolyBase(BaseModel):
                        proxy.__base_classes = cached_bases
                        proxy.__bases__ = cached_bases
 
-        super()._setup_base()
+        _original_BaseModel._setup_base(self)
         
         # Odoo 18: ensure polymorphic attributes are built after base setup
         if hasattr(model_class, '__depends_base_classes'):
@@ -2633,7 +2646,7 @@ class PolyModel(PolyBase):
         class User(PolyModel):
             _name = 'my.user'
             _depend_models = {
-                'res.partner': 'partner_id'
+                'partner_id': 'res.partner'
             }
 
     The system will instantiate the class once per database (on which the
@@ -2648,6 +2661,7 @@ class PolyModel(PolyBase):
     _auto = True                # automatically create database backend
     _register = False           # not visible in ORM registry, meant to be python-inherited only
     _abstract = False           # not abstract
+    _transient = False          # not transient
 
 
 class PolyTransientModel(PolyModel):
@@ -2744,6 +2758,9 @@ class PolyTransientModel(PolyModel):
             self.env.ref('base.autovacuum_job')._trigger()
 
 
+_logger.info("Initializing numa_poly: monkey-patching odoo.models")
+
+# Monkey-patch Odoo models
 odoo.models.BaseModel = PolyBase
 odoo.models.AbstractModel = PolyBase
 odoo.models.Model = PolyModel
