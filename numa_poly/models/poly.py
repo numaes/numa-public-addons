@@ -39,6 +39,13 @@ if typing.TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+_logger.info("Initializing numa_poly: monkey-patching odoo.models")
+odoo.models.BaseModel = PolyBase
+odoo.models.AbstractModel = PolyBase
+odoo.models.Model = PolyModel
+odoo.models.TransientModel = PolyTransientModel
+odoo.fields.Many2one.convert_to_read = poly_many2one_convert_to_read
+
 
 # Global cache for polymorphic MRO to ensure they survive Odoo's registry setup phases.
 # Keys are db_name, then model_name. Values are tuples of base classes.
@@ -580,46 +587,39 @@ class PolyBase(BaseModel):
     @classmethod
     def _build_model(cls, pool, cr):
         """
-        Instantiate a given model in the registry.
-
-        This method extends the standard Odoo model building process to implement
-        polymorphic inheritance. It creates or extends a "registry" class for the
-        given model that inherits from all the dependent models specified in
-        _depend_models.
+        Build a model using the polymorphic inheritance system.
+        
+        This method is responsible for constructing the Python class for the model,
+        ensuring that it inherits from all dependent models specified in _depend_models.
         """
+        name = cls._name
+        _logger.debug("Building model %s (polymorphic)", name)
+
         # First build the model using the standard Odoo mechanism.
-        # This gives us a registry class with standard Odoo inheritance.
         model_class = super(PolyBase, cls)._build_model(pool, cr)
 
-        name = cls._name
-        
         # Collect all classes that contribute to this model's definition.
-        # This includes classes from all modules that define or extend the model.
-        # Odoo's _build_model already combines them, but we need to find if any
-        # of them define _depend_models.
-        
         all_depend_models = OrderedDict()
         is_polymorphic = False
         
         # We iterate over the MRO of the model_class to find all _depend_models.
-        # We skip the registry class itself during discovery to avoid self-reference issues.
         for base in model_class.mro():
             if base is model_class:
                 continue
             if '_depend_models' in base.__dict__ and base._depend_models:
                 is_polymorphic = True
-                # Merge dependencies, later modules (appearing earlier in MRO) override previous ones.
-                # However, for bases we want them in order.
                 for dep_model, dep_field in base._depend_models.items():
                     if dep_model not in all_depend_models:
                         all_depend_models[dep_model] = dep_field
 
         if is_polymorphic:
+            _logger.info("Model %s detected as polymorphic. Dependencies: %s", name, list(all_depend_models.keys()))
             # Validate dependency cycles before building
             cls._validate_dependency_cycles(pool)
 
             # Clear registry-level caches to ensure we don't pick up stale method resolutions.
             if hasattr(pool, 'model_methods'):
+                _logger.debug("Clearing model_methods for %s", name)
                 pool.model_methods.pop(name, None)
 
             # All models except 'ir.poly_base' implicitly depend on 'ir.poly_base'
@@ -628,17 +628,13 @@ class PolyBase(BaseModel):
                 parents.append('ir.poly_base')
 
             # Calculate polymorphic bases.
-            # We want the polymorphic parents to come BEFORE the standard Odoo bases in the MRO.
-            # This allows polymorphic methods to override standard Odoo methods if necessary.
-            
-            # Start with the original bases (usually (cls, base) or similar)
             original_bases = list(model_class.__bases__)
+            _logger.debug("Original bases for %s: %s", name, [b.__name__ for b in original_bases])
             
             new_bases = []
             for parent in parents:
                 if parent not in pool:
-                    # During early loading, some parents might not be in pool yet.
-                    # Odoo's registry loading should handle the order, but we must be careful.
+                    _logger.warning("Parent model %s for %s not in pool yet", parent, name)
                     continue
                 
                 parent_class = pool[parent]
@@ -650,15 +646,17 @@ class PolyBase(BaseModel):
                     parent_class._depends_children = OrderedSet()
                 parent_class._depends_children.add(name)
 
-            # Add original bases at the end
             for b in original_bases:
                 if b not in new_bases:
                     new_bases.append(b)
 
             final_bases = tuple(b for b in new_bases if b is not model_class)
+            _logger.info("Applying final bases for %s: %s", name, [b.__name__ for b in final_bases])
             
             # Store the polymorphic bases for setup phases
             model_class.__depends_base_classes = final_bases
+            if not hasattr(pool, '_poly_mro_cache'):
+                 pool._poly_mro_cache = {}
             pool._poly_mro_cache[name] = final_bases
             POLY_MRO_CACHE[pool.db_name][name] = final_bases
             
@@ -672,16 +670,24 @@ class PolyBase(BaseModel):
             import ctypes as _ctypes
             if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
                 _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+            _logger.debug("Python MRO for %s after injection: %s", name, [c.__name__ for c in model_class.mro()])
 
             # --- Odoo 18 PROXY INJECTION ---
-            # Odoo 18 Registry uses a proxy class. If we already have one, we MUST update its bases too.
             if hasattr(pool, 'models') and name in pool.models:
                  proxy_class = pool.models[name]
                  if proxy_class is not model_class:
+                     _logger.info("Syncing proxy class for %s. Proxy MRO before: %s", name, [c.__name__ for c in proxy_class.mro()])
                      proxy_class.__base_classes = final_bases
                      proxy_class.__bases__ = final_bases
                      if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
                          _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
+                     _logger.info("Proxy MRO for %s after injection: %s", name, [c.__name__ for c in proxy_class.mro()])
+                     
+                     # Check for specific method if requested
+                     if name == 'project.task' and hasattr(proxy_class, 'pln_get_allocations_view'):
+                         _logger.info("SUCCESS: pln_get_allocations_view found on project.task proxy!")
+                     elif name == 'project.task':
+                         _logger.error("FAILURE: pln_get_allocations_view NOT found on project.task proxy even after injection!")
 
             # Clear various caches that might be stale due to MRO change
             if hasattr(pool, '_classes') and name in pool._classes:
@@ -707,7 +713,15 @@ class PolyBase(BaseModel):
                     if '_model_classes__' in model_class.__dict__:
                         delattr(model_class, '_model_classes__')
 
-            _logger.info("Polymorphic MRO for %s: %s", name, [c.__name__ for c in model_class.mro()])
+            _logger.info("Final Polymorphic MRO for %s: %s", name, [c.__name__ for c in model_class.mro()])
+            
+            if name == 'numa.planning.node':
+                 if hasattr(model_class, 'pln_get_allocations_view'):
+                      _logger.info("pln_get_allocations_view FOUND on numa.planning.node registry class")
+                 else:
+                      _logger.error("pln_get_allocations_view MISSING on numa.planning.node registry class!")
+                      # Log all methods on NumaPlanningNode registry class for debugging
+                      _logger.debug("Methods on numa.planning.node: %s", [m for m in dir(model_class) if not m.startswith('__')])
 
         return model_class
 
@@ -756,6 +770,8 @@ class PolyBase(BaseModel):
     def _prepare_setup(self):
         """ Prepare the setup of the model. """
         model_class = type(self)
+        _logger.debug("Preparing setup for %s", self._name)
+        
         db_name = self.pool.db_name
         cached_bases = POLY_MRO_CACHE.get(db_name, {}).get(self._name)
 
@@ -763,20 +779,35 @@ class PolyBase(BaseModel):
             cached_bases = self.pool._poly_mro_cache.get(self._name)
 
         if cached_bases:
+            _logger.debug("Found cached bases for %s: %s", self._name, [b.__name__ for b in cached_bases])
             model_class.__depends_base_classes = cached_bases
             # Force Odoo 18 to use our polymorphic bases as the original ones
             model_class.__base_classes = cached_bases
-            model_class.__bases__ = cached_bases
             
-            # Refresh MRO cache
-            import ctypes as _ctypes
-            if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+            if model_class.__bases__ != cached_bases:
+                 _logger.info("Re-applying cached bases to model class %s in _prepare_setup", self._name)
+                 model_class.__bases__ = cached_bases
+                 # Refresh MRO cache
+                 import ctypes as _ctypes
+                 if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                     _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+
+            # Odoo 18: Registry proxy classes must also be updated
+            if hasattr(self.pool, 'models') and self._name in self.pool.models:
+                  proxy_class = self.pool.models[self._name]
+                  if proxy_class is not model_class and proxy_class.__bases__ != cached_bases:
+                       _logger.info("Re-applying cached bases to proxy class %s in _prepare_setup", self._name)
+                       proxy_class.__base_classes = cached_bases
+                       proxy_class.__bases__ = cached_bases
+                       import ctypes as _ctypes
+                       if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                            _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
 
         super()._prepare_setup()
         
         # Ensure bases remain synchronized after super
         if cached_bases and model_class.__bases__ != cached_bases:
+             _logger.warning("Bases for %s changed after super()._prepare_setup(). Re-applying...", self._name)
              model_class.__bases__ = cached_bases
              if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
                  _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
@@ -784,11 +815,16 @@ class PolyBase(BaseModel):
     def _setup_base(self):
         """ Determine the inherited and custom fields of the model. """
         model_class = type(self)
+        _logger.debug("Setting up base for %s", self._name)
         
         # Odoo 18: ensure polymorphic MRO is preserved before field collection.
         # This is needed because standard _setup_base might have reset __bases__.
         cached_bases = POLY_MRO_CACHE.get(self.pool.db_name, {}).get(self._name)
+        if not cached_bases and hasattr(self.pool, '_poly_mro_cache'):
+            cached_bases = self.pool._poly_mro_cache.get(self._name)
+
         if cached_bases:
+             _logger.debug("Re-applying cached bases to %s during _setup_base", self._name)
              model_class.__base_classes = cached_bases
              model_class.__bases__ = cached_bases
              
@@ -796,6 +832,7 @@ class PolyBase(BaseModel):
              if hasattr(self.pool, 'models') and self._name in self.pool.models:
                   proxy = self.pool.models[self._name]
                   if proxy is not model_class:
+                       _logger.debug("Syncing proxy for %s in _setup_base before super", self._name)
                        proxy.__base_classes = cached_bases
                        proxy.__bases__ = cached_bases
 
@@ -807,12 +844,14 @@ class PolyBase(BaseModel):
              
              # Clear registry caches to force method re-discovery
              if hasattr(self.pool, 'model_methods'):
+                  _logger.debug("Clearing model_methods for %s in _setup_base after setup", self._name)
                   self.pool.model_methods.pop(self._name, None)
              
              # Force synchronization with pool.models if it's a proxy
              if hasattr(self.pool, 'models') and self._name in self.pool.models:
                   proxy_class = self.pool.models[self._name]
                   if proxy_class is not model_class:
+                       _logger.debug("Final sync of proxy class for %s in _setup_base after super", self._name)
                        # Sync MRO and attributes
                        proxy_class.__base_classes = model_class.__base_classes
                        proxy_class.__bases__ = model_class.__bases__
@@ -828,6 +867,33 @@ class PolyBase(BaseModel):
                        for field_name, field in model_class._fields.items():
                             if field_name not in proxy_class._fields:
                                  proxy_class._fields[field_name] = field
+                       
+                       # FORCE SYNC METHODS for project.task if they are missing from proxy
+                       if self._name == 'project.task':
+                            critical_methods = [
+                                'pln_get_allocations_view', 'pln_action_auto_schedule',
+                                'pln_action_confirm_schedule', 'pln_action_start_work',
+                                'action_freeze_baseline', 'action_simulate'
+                            ]
+                            for method_name in critical_methods:
+                                 if not hasattr(proxy_class, method_name):
+                                      _logger.warning("Method %s missing from project.task proxy, attempting manual copy from registry class", method_name)
+                                      method = getattr(model_class, method_name, None)
+                                      if method:
+                                           setattr(proxy_class, method_name, method)
+                                           _logger.info("Manually copied %s to project.task proxy", method_name)
+                       
+                       if self._name == 'project.task':
+                            if hasattr(proxy_class, 'pln_get_allocations_view'):
+                                 _logger.info("AFTER _setup_base: pln_get_allocations_view FOUND on project.task proxy.")
+                            else:
+                                 # Last ditch effort: search in MRO manually
+                                 for base in proxy_class.mro():
+                                      if 'pln_get_allocations_view' in base.__dict__:
+                                           _logger.info("FOUND pln_get_allocations_view in base %s of proxy MRO", base.__name__)
+                                           break
+                                 else:
+                                      _logger.error("AFTER _setup_base: pln_get_allocations_view STILL MISSING on project.task proxy!")
 
     def _setup_poly_fields(self):
         """ Inject polymorphic field definitions from parent models. """
