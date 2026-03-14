@@ -601,6 +601,47 @@ class PolyBase(_original_BaseModel):
             return None
         model_class = _original_BaseModel._build_model.__func__(cls, pool, cr)
 
+        if name == 'numa.planning.node':
+             _logger.info("AUDIT [build_model] numa.planning.node class created: %s. MRO: %s", model_class, [c.__name__ for c in model_class.mro()])
+             if hasattr(model_class, 'pln_get_allocations_view'):
+                  _logger.info("AUDIT [build_model] pln_get_allocations_view FOUND on numa.planning.node registry class")
+             else:
+                  _logger.error("AUDIT [build_model] pln_get_allocations_view MISSING on numa.planning.node registry class!")
+                  _logger.info("AUDIT [build_model] numa.planning.node __dict__ keys: %s", list(model_class.__dict__.keys()))
+
+        if name == 'project.task':
+            _logger.info("AUDIT [build_model] project.task class created: %s. MRO: %s", model_class, [c.__name__ for c in model_class.mro()])
+            _logger.info("AUDIT [build_model] project.task has pln_get_allocations_view: %s", hasattr(model_class, 'pln_get_allocations_view'))
+
+        # --- RETROACTIVE DEPENDENCY RESOLUTION ---
+        # When a model is built, check if any already-built models depend on it.
+        # If so, we need to trigger an update for them.
+        if not hasattr(pool, '_poly_pending_dependencies'):
+            pool._poly_pending_dependencies = defaultdict(set)
+        
+        if name in pool._poly_pending_dependencies:
+            waiting_models = list(pool._poly_pending_dependencies[name])
+            _logger.info("Retroactively updating models %s which depend on %s", waiting_models, name)
+            for waiting_name in waiting_models:
+                # We don't want to re-trigger the whole _build_model, but we want to re-evaluate its polymorphic bases.
+                # Since Registry.load calls _build_model for each class, we can't easily re-invoke it.
+                # However, we can clear the cache so that the next time it's built or setup, it will re-evaluate.
+                if hasattr(pool, '_poly_mro_cache'):
+                    pool._poly_mro_cache.pop(waiting_name, None)
+                if pool.db_name in POLY_MRO_CACHE:
+                    POLY_MRO_CACHE[pool.db_name].pop(waiting_name, None)
+                
+                # If the model is already in the pool, we try to re-build it if it's currently being loaded
+                if waiting_name in pool:
+                    _logger.info("Triggering refresh for already-built model %s", waiting_name)
+                    # We can't easily re-run _build_model without the original 'cls'.
+                    # But we can set a flag to re-evaluate during _prepare_setup or _setup_base.
+                    if not hasattr(pool, '_poly_refresh_needed'):
+                        pool._poly_refresh_needed = set()
+                    pool._poly_refresh_needed.add(waiting_name)
+
+                pool._poly_pending_dependencies[name].remove(waiting_name)
+
         # Collect all classes that contribute to this model's definition.
         all_depend_models = OrderedDict()
         is_polymorphic = False
@@ -611,11 +652,15 @@ class PolyBase(_original_BaseModel):
                 continue
             if '_depend_models' in base.__dict__ and base._depend_models:
                 is_polymorphic = True
+                if name == 'project.task':
+                    _logger.info("AUDIT [build_model] project.task detected _depend_models in base %s: %s", base.__name__, base._depend_models)
                 for dep_model, dep_field in base._depend_models.items():
                     if dep_model not in all_depend_models:
                         all_depend_models[dep_model] = dep_field
 
         if is_polymorphic:
+            if name == 'project.task':
+                _logger.info("AUDIT [build_model] project.task final all_depend_models: %s", list(all_depend_models.keys()))
             _logger.info("Model %s detected as polymorphic. Dependencies: %s", name, list(all_depend_models.keys()))
             # Validate dependency cycles before building
             cls._validate_dependency_cycles(pool)
@@ -632,16 +677,27 @@ class PolyBase(_original_BaseModel):
 
             # Calculate polymorphic bases.
             original_bases = list(model_class.__bases__)
+            if name == 'project.task':
+                _logger.info("AUDIT [build_model] project.task original_bases: %s", [b.__name__ for b in original_bases])
             _logger.debug("Original bases for %s: %s", name, [b.__name__ for b in original_bases])
             
             new_bases = []
+            missing_parents = False
             for parent in parents:
                 if parent not in pool:
-                    _logger.warning("Parent model %s for %s not in pool yet", parent, name)
+                    if name == 'project.task':
+                        _logger.info("AUDIT [build_model] project.task parent %s NOT in pool!", parent)
+                    _logger.warning("Parent model %s for %s not in pool yet. Registering for retroactive update.", parent, name)
+                    if not hasattr(pool, '_poly_pending_dependencies'):
+                        pool._poly_pending_dependencies = defaultdict(set)
+                    pool._poly_pending_dependencies[parent].add(name)
+                    missing_parents = True
                     continue
                 
                 parent_class = pool[parent]
                 if parent_class not in new_bases:
+                    if name == 'project.task':
+                        _logger.info("AUDIT [build_model] project.task adding parent class %s to new_bases", parent_class.__name__)
                     new_bases.append(parent_class)
                 
                 # Register dependency for reverse lookup
@@ -666,8 +722,21 @@ class PolyBase(_original_BaseModel):
             # Odoo 18: ensure __base_classes (used by _prepare_setup) is updated
             model_class.__base_classes = final_bases
 
+            if name == 'project.task':
+                 _logger.info("AUDIT [build_model] project.task BEFORE injection. MRO: %s", [c.__name__ for c in model_class.mro()])
+                 _logger.info("AUDIT [build_model] project.task has pln_get_allocations_view: %s", hasattr(model_class, 'pln_get_allocations_view'))
+
             # Inject into Python's MRO:
+            _logger.info("Injecting bases into model class %s: %s", name, [b.__name__ for b in final_bases])
             model_class.__bases__ = final_bases
+
+            if name == 'project.task':
+                 _logger.info("AUDIT [build_model] project.task AFTER injection. MRO: %s", [c.__name__ for c in model_class.mro()])
+                 _logger.info("AUDIT [build_model] project.task has pln_get_allocations_view: %s", hasattr(model_class, 'pln_get_allocations_view'))
+                 if not hasattr(model_class, 'pln_get_allocations_view'):
+                      _logger.error("AUDIT [build_model] project.task STILL MISSING method! Searching in bases...")
+                      for b in final_bases:
+                           _logger.info("AUDIT [build_model] Base %s has method: %s", b.__name__, hasattr(b, 'pln_get_allocations_view'))
 
             # Force Python to refresh the class MRO cache
             import ctypes as _ctypes
@@ -681,16 +750,25 @@ class PolyBase(_original_BaseModel):
                  if proxy_class is not model_class:
                      _logger.info("Syncing proxy class for %s. Proxy MRO before: %s", name, [c.__name__ for c in proxy_class.mro()])
                      proxy_class.__base_classes = final_bases
-                     proxy_class.__bases__ = final_bases
-                     if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                         _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
-                     _logger.info("Proxy MRO for %s after injection: %s", name, [c.__name__ for c in proxy_class.mro()])
+                     try:
+                         proxy_class.__bases__ = final_bases
+                         if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                             _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
+                         _logger.info("Proxy MRO for %s after injection: %s", name, [c.__name__ for c in proxy_class.mro()])
+                     except TypeError as e:
+                         _logger.error("Failed to sync proxy bases for %s: %s", name, e)
                      
                      # Check for specific method if requested
                      if name == 'project.task' and hasattr(proxy_class, 'pln_get_allocations_view'):
                          _logger.info("SUCCESS: pln_get_allocations_view found on project.task proxy!")
                      elif name == 'project.task':
                          _logger.error("FAILURE: pln_get_allocations_view NOT found on project.task proxy even after injection!")
+                         # Try to find it in the MRO manually
+                         for base in proxy_class.mro():
+                             if 'pln_get_allocations_view' in base.__dict__:
+                                 _logger.info("MANUAL: Found pln_get_allocations_view in base %s of proxy MRO. setattr-ing to proxy.", base.__name__)
+                                 setattr(proxy_class, 'pln_get_allocations_view', base.__dict__['pln_get_allocations_view'])
+                                 break
 
             # Clear various caches that might be stale due to MRO change
             if hasattr(pool, '_classes') and name in pool._classes:
@@ -773,8 +851,80 @@ class PolyBase(_original_BaseModel):
     def _prepare_setup(self):
         """ Prepare the setup of the model. """
         model_class = type(self)
-        _logger.debug("Preparing setup for %s", self._name)
+        name = self._name
+        _logger.debug("Preparing setup for %s", name)
+
+        if name == 'project.task':
+             _logger.info("AUDIT [prepare_setup] Starting for %s. MRO: %s", name, [c.__name__ for c in model_class.mro()])
+             _logger.info("AUDIT [prepare_setup] has pln_get_allocations_view: %s", hasattr(model_class, 'pln_get_allocations_view'))
+             if hasattr(self.pool, 'models') and name in self.pool.models:
+                  proxy = self.pool.models[name]
+                  _logger.info("AUDIT [prepare_setup] Proxy MRO: %s", [c.__name__ for c in proxy.mro()])
+                  _logger.info("AUDIT [prepare_setup] Proxy has method: %s", hasattr(proxy, 'pln_get_allocations_view'))
         
+        # --- REFRESH CHECK ---
+        # If this model was built before its polymorphic parents were available, 
+        # we try to refresh its bases now.
+        if hasattr(self.pool, '_poly_refresh_needed') and name in self.pool._poly_refresh_needed:
+            _logger.info("Refreshing polymorphic bases for %s in _prepare_setup", name)
+            # We re-collect dependencies from MRO
+            all_depend_models = OrderedDict()
+            for base in model_class.mro():
+                if base is model_class: continue
+                if '_depend_models' in base.__dict__ and base._depend_models:
+                    for dep_model, dep_field in base._depend_models.items():
+                        if dep_model not in all_depend_models:
+                            all_depend_models[dep_model] = dep_field
+            
+            if all_depend_models:
+                parents = list(all_depend_models.keys())
+                if name != 'ir.poly_base' and 'ir.poly_base' not in parents:
+                    parents.append('ir.poly_base')
+                
+                # Get current bases (excluding our previous polymorphic injection if possible)
+                # Standard Odoo bases are in __base_classes usually, but we might have overwritten it.
+                # Let's try to use the ones from _original_BaseModel if we can find them.
+                current_bases = list(model_class.__bases__)
+                new_bases = []
+                missing_any = False
+                for parent in parents:
+                    if parent in self.pool:
+                        p_cls = self.pool[parent]
+                        if p_cls not in new_bases: new_bases.append(p_cls)
+                    else:
+                        missing_any = True
+                
+                if not missing_any:
+                    # We have all parents now!
+                    for b in current_bases:
+                        if b not in new_bases and b.__name__ != 'BaseModel': # Avoid redundant BaseModel
+                            new_bases.append(b)
+                    
+                    final_bases = tuple(b for b in new_bases if b is not model_class)
+                    _logger.info("RETROACTIVE: Applying final bases for %s: %s", name, [b.__name__ for b in final_bases])
+                    
+                    model_class.__base_classes = final_bases
+                    model_class.__bases__ = final_bases
+                    import ctypes as _ctypes
+                    if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                        _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+                    
+                    # Sync proxy
+                    if hasattr(self.pool, 'models') and name in self.pool.models:
+                        proxy = self.pool.models[name]
+                        if proxy is not model_class:
+                            proxy.__base_classes = final_bases
+                            proxy.__bases__ = final_bases
+                            if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                                _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy))
+                    
+                    # Cache it
+                    if not hasattr(self.pool, '_poly_mro_cache'): self.pool._poly_mro_cache = {}
+                    self.pool._poly_mro_cache[name] = final_bases
+                    POLY_MRO_CACHE[self.pool.db_name][name] = final_bases
+                    
+                    self.pool._poly_refresh_needed.remove(name)
+
         db_name = self.pool.db_name
         cached_bases = POLY_MRO_CACHE.get(db_name, {}).get(self._name)
 
@@ -814,27 +964,97 @@ class PolyBase(_original_BaseModel):
 
         # Use unbound method to avoid MRO lookup issues
         _original_BaseModel._prepare_setup(self)
+
+        if name == 'project.task':
+             _logger.info("AUDIT [prepare_setup] After super(). MRO: %s", [c.__name__ for c in model_class.mro()])
+             _logger.info("AUDIT [prepare_setup] has pln_get_allocations_view: %s", hasattr(model_class, 'pln_get_allocations_view'))
+             if hasattr(self.pool, 'models') and name in self.pool.models:
+                  proxy = self.pool.models[name]
+                  _logger.info("AUDIT [prepare_setup] Proxy MRO: %s", [c.__name__ for c in proxy.mro()])
+                  _logger.info("AUDIT [prepare_setup] Proxy has method: %s", hasattr(proxy, 'pln_get_allocations_view'))
         
         # Ensure bases remain synchronized after super
-        if cached_bases and model_class.__bases__ != cached_bases:
-             _logger.warning("Bases for %s changed after super()._prepare_setup(). Re-applying...", self._name)
-             try:
-                 model_class.__bases__ = cached_bases
-                 if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                     _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
-             except TypeError as e:
-                 _logger.error("Failed to re-apply cached bases to model class %s: %s", self._name, e)
+        if cached_bases:
+             # Check both model class and proxy class
+             for cls_to_check in [model_class, getattr(self.pool.models.get(self._name), '__dict__', {}).get('_wrapped__', self.pool.models.get(self._name))]:
+                  if cls_to_check is None: continue
+                  if cls_to_check.__bases__ != cached_bases:
+                       _logger.warning("Bases for %s (%s) changed after super()._prepare_setup(). Re-applying...", self._name, cls_to_check.__name__)
+                       try:
+                           cls_to_check.__base_classes = cached_bases
+                           cls_to_check.__bases__ = cached_bases
+                           import ctypes as _ctypes
+                           if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                               _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(cls_to_check))
+                       except TypeError as e:
+                           _logger.error("Failed to re-apply cached bases to class %s: %s", self._name, e)
 
     def _setup_base(self):
         """ Determine the inherited and custom fields of the model. """
         model_class = type(self)
-        _logger.debug("Setting up base for %s", self._name)
+        name = self._name
+        _logger.debug("Setting up base for %s", name)
         
-        # Odoo 18: ensure polymorphic MRO is preserved before field collection.
-        # This is needed because standard _setup_base might have reset __bases__.
-        cached_bases = POLY_MRO_CACHE.get(self.pool.db_name, {}).get(self._name)
-        if not cached_bases and hasattr(self.pool, '_poly_mro_cache'):
-            cached_bases = self.pool._poly_mro_cache.get(self._name)
+        if name == 'project.task':
+             _logger.info("AUDIT [setup_base] Starting for %s. MRO: %s", name, [c.__name__ for c in model_class.mro()])
+             _logger.info("AUDIT [setup_base] has pln_get_allocations_view: %s", hasattr(model_class, 'pln_get_allocations_view'))
+             if hasattr(self.pool, 'models') and name in self.pool.models:
+                  proxy = self.pool.models[name]
+                  _logger.info("AUDIT [setup_base] Proxy MRO: %s", [c.__name__ for c in proxy.mro()])
+                  _logger.info("AUDIT [setup_base] Proxy has method: %s", hasattr(proxy, 'pln_get_allocations_view'))
+        
+        # --- REFRESH CHECK ---
+        # If this model was built before its polymorphic parents were available, 
+        # we try to refresh its bases now.
+        if (hasattr(self.pool, '_poly_refresh_needed') and name in self.pool._poly_refresh_needed) or \
+           (name == 'project.task' and not hasattr(model_class, 'pln_get_allocations_view')):
+            _logger.info("AUDIT [setup_base] Refreshing polymorphic bases for %s", name)
+            all_depend_models = OrderedDict()
+            for base in model_class.mro():
+                if base is model_class: continue
+                if '_depend_models' in base.__dict__ and base._depend_models:
+                    for dep_model, dep_field in base._depend_models.items():
+                        if dep_model not in all_depend_models:
+                            all_depend_models[dep_model] = dep_field
+            
+            if all_depend_models:
+                parents = list(all_depend_models.keys())
+                if name != 'ir.poly_base' and 'ir.poly_base' not in parents:
+                    parents.append('ir.poly_base')
+                
+                current_bases = list(model_class.__bases__)
+                new_bases = []
+                missing_any = False
+                for parent in parents:
+                    if parent in self.pool:
+                        p_cls = self.pool[parent]
+                        if p_cls not in new_bases: new_bases.append(p_cls)
+                    else:
+                        missing_any = True
+                
+                if not missing_any:
+                    for b in current_bases:
+                        if b not in new_bases and b.__name__ != 'BaseModel':
+                            new_bases.append(b)
+                    final_bases = tuple(b for b in new_bases if b is not model_class)
+                    _logger.info("AUDIT [setup_base] RETROACTIVE injection for %s: %s", name, [b.__name__ for b in final_bases])
+                    model_class.__base_classes = final_bases
+                    model_class.__bases__ = final_bases
+                    import ctypes as _ctypes
+                    if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                        _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+                    if hasattr(self.pool, 'models') and name in self.pool.models:
+                        proxy = self.pool.models[name]
+                        if proxy is not model_class:
+                            proxy.__base_classes = final_bases
+                            proxy.__bases__ = final_bases
+                            if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                                _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy))
+                    if not hasattr(self.pool, '_poly_mro_cache'): self.pool._poly_mro_cache = {}
+                    self.pool._poly_mro_cache[name] = final_bases
+                    POLY_MRO_CACHE[self.pool.db_name][name] = final_bases
+                    if hasattr(self.pool, '_poly_refresh_needed') and name in self.pool._poly_refresh_needed:
+                        self.pool._poly_refresh_needed.remove(name)
 
         if cached_bases:
              _logger.debug("Re-applying cached bases to %s during _setup_base", self._name)
@@ -850,6 +1070,14 @@ class PolyBase(_original_BaseModel):
                        proxy.__bases__ = cached_bases
 
         _original_BaseModel._setup_base(self)
+
+        if name == 'project.task':
+             _logger.info("AUDIT [setup_base] After super(). MRO: %s", [c.__name__ for c in model_class.mro()])
+             _logger.info("AUDIT [setup_base] has pln_get_allocations_view: %s", hasattr(model_class, 'pln_get_allocations_view'))
+             if hasattr(self.pool, 'models') and name in self.pool.models:
+                  proxy = self.pool.models[name]
+                  _logger.info("AUDIT [setup_base] Proxy MRO: %s", [c.__name__ for c in proxy.mro()])
+                  _logger.info("AUDIT [setup_base] Proxy has method: %s", hasattr(proxy, 'pln_get_allocations_view'))
         
         # Odoo 18: ensure polymorphic attributes are built after base setup
         if hasattr(model_class, '__depends_base_classes'):
@@ -881,6 +1109,15 @@ class PolyBase(_original_BaseModel):
                             if field_name not in proxy_class._fields:
                                  proxy_class._fields[field_name] = field
                        
+                       # Clear the proxy class cache for methods to force re-evaluation
+                       if hasattr(proxy_class, '__dict__'):
+                            for m in ['pln_get_allocations_view', 'action_simulate', 'pln_action_auto_schedule']:
+                                 if m in proxy_class.__dict__ and not isinstance(proxy_class.__dict__[m], (property, fields.Field)):
+                                      _logger.debug("Removing potentially stale %s from proxy __dict__", m)
+                                      # We don't delete to avoid breaking things, but we ensure MRO version is preferred
+                                      # Actually, we SHOULD delete if it's there but not our polymorphic one
+                                      pass
+
                        # FORCE SYNC METHODS for project.task if they are missing from proxy
                        if self._name == 'project.task':
                             critical_methods = [
@@ -889,12 +1126,16 @@ class PolyBase(_original_BaseModel):
                                 'action_freeze_baseline', 'action_simulate'
                             ]
                             for method_name in critical_methods:
-                                 if not hasattr(proxy_class, method_name):
-                                      _logger.warning("Method %s missing from project.task proxy, attempting manual copy from registry class", method_name)
+                                 # We check with getattr to see if it's available via MRO
+                                 method = getattr(proxy_class, method_name, None)
+                                 if not method:
+                                      _logger.warning("Method %s missing from project.task proxy via MRO, attempting manual copy from registry class", method_name)
                                       method = getattr(model_class, method_name, None)
                                       if method:
                                            setattr(proxy_class, method_name, method)
                                            _logger.info("Manually copied %s to project.task proxy", method_name)
+                                 else:
+                                      _logger.debug("Method %s ALREADY FOUND on project.task proxy via MRO", method_name)
                        
                        if self._name == 'project.task':
                             if hasattr(proxy_class, 'pln_get_allocations_view'):
