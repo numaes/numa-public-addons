@@ -1207,6 +1207,13 @@ class PolyBase(_original_BaseModel):
                                  new_field._explicit = True
                                  if len(new_field.relation) > 63:
                                       new_field.relation = new_field.relation[:63]
+                            elif is_depend_model:
+                                 # Fields from depend_models should be handled by _build_dependant_model_attributes
+                                 # which adds them as related non-stored fields.
+                                 # If we are here, it means it wasn't in self._fields yet.
+                                 # Force it to be non-stored related here too just in case.
+                                 new_field.related = f"{base._name}.{field_name}"
+                                 new_field.store = False
 
                             model_class._fields[field_name] = new_field
                             
@@ -2092,23 +2099,21 @@ class PolyBase(_original_BaseModel):
                 related_path = f'{related_bases[model]}.{field_name}'
                 # Odoo 18: Ensure Many2many related fields don't cause table collisions.
                 # We use the comodel_name and related path.
+                # Use fresh field instantiation but force it to be a related field from the start.
                 new_field = field_subclass(
                     comodel_name=comodel,
                     string=description.string,
                     related=related_path,
                     automatic=True,
+                    store=False,  # Force non-stored to avoid setup_nonrelated checks
                 )
-                if field_type == 'many2many':
-                     # Explicitly mark as non-store or related to avoid Odoo 18's table check
-                     # Standard related fields in Odoo usually don't have relation/column attributes
-                     # unless they are stored.
-                     new_field.store = False 
             elif field_subclass:
                 new_field = field_subclass(
                     string=description.string,
                     related=f'{related_bases[model]}.{field_name}',
                     automatic=True,
                     readonly=False,
+                    store=False,
                 )
             else:
                 raise TypeError(_('Unsupported field type %s for field %s') %
