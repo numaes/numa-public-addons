@@ -1056,6 +1056,12 @@ class PolyBase(_original_BaseModel):
                     if hasattr(self.pool, '_poly_refresh_needed') and name in self.pool._poly_refresh_needed:
                         self.pool._poly_refresh_needed.remove(name)
 
+        db_name = self.pool.db_name
+        cached_bases = POLY_MRO_CACHE.get(db_name, {}).get(name)
+
+        if not cached_bases and hasattr(self.pool, '_poly_mro_cache'):
+            cached_bases = self.pool._poly_mro_cache.get(name)
+
         if cached_bases:
              _logger.debug("Re-applying cached bases to %s during _setup_base", self._name)
              model_class.__base_classes = cached_bases
