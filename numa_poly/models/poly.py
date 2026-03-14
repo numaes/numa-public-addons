@@ -929,6 +929,12 @@ class PolyBase(_original_BaseModel):
                      import ctypes as _ctypes
                      if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
                          _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+                     
+                     # Clear Environment cache
+                     from odoo.api import Environment
+                     if hasattr(Environment, '_classes') and Environment._classes is not None:
+                          if self.pool in Environment._classes:
+                               Environment._classes[self.pool].pop(self._name, None)
                  except TypeError as e:
                      _logger.error("Failed to apply cached bases to model class %s: %s", self._name, e)
 
@@ -1032,6 +1038,10 @@ class PolyBase(_original_BaseModel):
              model_class.__base_classes = cached_bases
              model_class.__bases__ = cached_bases
              
+             import ctypes as _ctypes
+             if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                 _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+             
              # Sync proxy if exists
              if hasattr(self.pool, 'models') and self._name in self.pool.models:
                   proxy = self.pool.models[self._name]
@@ -1039,6 +1049,8 @@ class PolyBase(_original_BaseModel):
                        _logger.debug("Syncing proxy for %s in _setup_base before super", self._name)
                        proxy.__base_classes = cached_bases
                        proxy.__bases__ = cached_bases
+                       if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                           _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy))
 
         _original_BaseModel._setup_base(self)
 
@@ -1051,6 +1063,25 @@ class PolyBase(_original_BaseModel):
                   _logger.debug("Clearing model_methods for %s in _setup_base after setup", self._name)
                   self.pool.model_methods.pop(self._name, None)
              
+             # Clear Environment cache to force recordset class re-creation
+             from odoo.api import Environment
+             if hasattr(Environment, '_classes') and Environment._classes is not None:
+                  if self.pool in Environment._classes:
+                       Environment._classes[self.pool].pop(self._name, None)
+
+             # Fail-safe: Copy methods from polymorphic parents if they are missing
+             # This ensures visibility even if MRO resolution is delayed or blocked by proxies
+             # Use a generic approach by inspecting bases in __depends_base_classes
+             depends_bases = getattr(model_class, '__depends_base_classes', ())
+             for base in depends_bases:
+                 if base is model_class: continue
+                 for m_name, m_meth in base.__dict__.items():
+                     # Copy methods that are not already present and are not internal/fields
+                     if not m_name.startswith('__') and not hasattr(model_class, m_name):
+                         if not isinstance(m_meth, (property, fields.Field)):
+                             _logger.debug("Fail-safe: Copying method %s from %s to %s", m_name, base.__name__, self._name)
+                             setattr(model_class, m_name, m_meth)
+
              # Force synchronization with pool.models if it's a proxy
              if hasattr(self.pool, 'models') and self._name in self.pool.models:
                   proxy_class = self.pool.models[self._name]
@@ -1068,14 +1099,27 @@ class PolyBase(_original_BaseModel):
                             if field_name not in proxy_class._fields:
                                  proxy_class._fields[field_name] = field
                        
+                       # Fail-safe for proxy methods too: ensure all methods from model_class are visible
+                       for m_name in dir(model_class):
+                           if not m_name.startswith('__') and not hasattr(proxy_class, m_name):
+                               m_meth = getattr(model_class, m_name)
+                               if not isinstance(m_meth, (property, fields.Field)):
+                                   setattr(proxy_class, m_name, m_meth)
+
                        # Clear the proxy class cache for methods to force re-evaluation
                        if hasattr(proxy_class, '__dict__'):
-                            for m in ['action_simulate']:
-                                 if m in proxy_class.__dict__ and not isinstance(proxy_class.__dict__[m], (property, fields.Field)):
+                            # List of methods that might be incorrectly cached as 'not found' or stale
+                            # We remove them to force Python to use the new MRO/dict
+                            for m in list(proxy_class.__dict__.keys()):
+                                 if not m.startswith('__') and not isinstance(proxy_class.__dict__[m], (property, fields.Field)):
+                                      # Special case: don't remove core Odoo attributes that should stay
+                                      if m in ('_ids', '_names', '_context', 'env', 'pool', '_wrapped__'):
+                                          continue
                                       _logger.debug("Removing potentially stale %s from proxy __dict__", m)
-                                      # We don't delete to avoid breaking things, but we ensure MRO version is preferred
-                                      # Actually, we SHOULD delete if it's there but not our polymorphic one
-                                      pass
+                                      try:
+                                          delattr(proxy_class, m)
+                                      except (AttributeError, KeyError):
+                                          pass
 
     def _setup_poly_fields(self):
         """ Inject polymorphic field definitions from parent models. """
