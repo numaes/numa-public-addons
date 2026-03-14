@@ -660,7 +660,7 @@ class PolyBase(_original_BaseModel):
         
         if name in pool._poly_pending_dependencies:
             waiting_models = list(pool._poly_pending_dependencies[name])
-            _logger.info("Retroactively updating models %s which depend on %s", waiting_models, name)
+            _logger.debug("Retroactively updating models %s which depend on %s", waiting_models, name)
             for waiting_name in waiting_models:
                 # We don't want to re-trigger the whole _build_model, but we want to re-evaluate its polymorphic bases.
                 # Since Registry.load calls _build_model for each class, we can't easily re-invoke it.
@@ -672,7 +672,7 @@ class PolyBase(_original_BaseModel):
                 
                 # If the model is already in the pool, we try to re-build it if it's currently being loaded
                 if waiting_name in pool:
-                    _logger.info("Triggering refresh for already-built model %s", waiting_name)
+                    _logger.debug("Triggering refresh for already-built model %s", waiting_name)
                     # We can't easily re-run _build_model without the original 'cls'.
                     # But we can set a flag to re-evaluate during _prepare_setup or _setup_base.
                     if not hasattr(pool, '_poly_refresh_needed'):
@@ -738,7 +738,7 @@ class PolyBase(_original_BaseModel):
                     new_bases.append(b)
 
             final_bases = tuple(b for b in new_bases if b is not model_class)
-            _logger.info("Applying final bases for %s: %s", name, [b.__name__ for b in final_bases])
+            _logger.debug("Applying final bases for %s: %s", name, [b.__name__ for b in final_bases])
             
             # Store the polymorphic bases for setup phases
             model_class.__depends_base_classes = final_bases
@@ -751,7 +751,7 @@ class PolyBase(_original_BaseModel):
             model_class.__base_classes = final_bases
 
             # Inject into Python's MRO:
-            _logger.info("Injecting bases into model class %s: %s", name, [b.__name__ for b in final_bases])
+            _logger.debug("Injecting bases into model class %s: %s", name, [b.__name__ for b in final_bases])
             model_class.__bases__ = final_bases
 
             # Force Python to refresh the class MRO cache
@@ -796,7 +796,7 @@ class PolyBase(_original_BaseModel):
                     if '_model_classes__' in model_class.__dict__:
                         delattr(model_class, '_model_classes__')
 
-            _logger.info("Final Polymorphic MRO for %s: %s", name, [c.__name__ for c in model_class.mro()])
+            _logger.debug("Final Polymorphic MRO for %s: %s", name, [c.__name__ for c in model_class.mro()])
 
         return model_class
 
@@ -852,7 +852,7 @@ class PolyBase(_original_BaseModel):
         # If this model was built before its polymorphic parents were available, 
         # we try to refresh its bases now.
         if hasattr(self.pool, '_poly_refresh_needed') and name in self.pool._poly_refresh_needed:
-            _logger.info("Refreshing polymorphic bases for %s in _prepare_setup", name)
+            _logger.debug("Refreshing polymorphic bases for %s in _prepare_setup", name)
             # We re-collect dependencies from MRO
             all_depend_models = OrderedDict()
             for base in model_class.mro():
@@ -885,7 +885,7 @@ class PolyBase(_original_BaseModel):
                             new_bases.append(b)
                     
                     final_bases = tuple(b for b in new_bases if b is not model_class)
-                    _logger.info("RETROACTIVE: Applying final bases for %s: %s", name, [b.__name__ for b in final_bases])
+                    _logger.debug("RETROACTIVE: Applying final bases for %s: %s", name, [b.__name__ for b in final_bases])
                     
                     model_class.__base_classes = final_bases
                     model_class.__bases__ = final_bases
@@ -922,7 +922,7 @@ class PolyBase(_original_BaseModel):
             model_class.__base_classes = cached_bases
             
             if model_class.__bases__ != cached_bases:
-                 _logger.info("Re-applying cached bases to model class %s in _prepare_setup", self._name)
+                 _logger.debug("Re-applying cached bases to model class %s in _prepare_setup", self._name)
                  try:
                      model_class.__bases__ = cached_bases
                      # Refresh MRO cache
@@ -936,7 +936,7 @@ class PolyBase(_original_BaseModel):
             if hasattr(self.pool, 'models') and self._name in self.pool.models:
                   proxy_class = self.pool.models[self._name]
                   if proxy_class is not model_class and proxy_class.__bases__ != cached_bases:
-                       _logger.info("Re-applying cached bases to proxy class %s in _prepare_setup", self._name)
+                       _logger.debug("Re-applying cached bases to proxy class %s in _prepare_setup", self._name)
                        proxy_class.__base_classes = cached_bases
                        try:
                            proxy_class.__bases__ = cached_bases
@@ -949,14 +949,6 @@ class PolyBase(_original_BaseModel):
         # Use unbound method to avoid MRO lookup issues
         _original_BaseModel._prepare_setup(self)
 
-        if name == 'project.task':
-             _logger.info("AUDIT [prepare_setup] After super(). MRO: %s", [c.__name__ for c in model_class.mro()])
-             _logger.info("AUDIT [prepare_setup] has pln_get_allocations_view: %s", hasattr(model_class, 'pln_get_allocations_view'))
-             if hasattr(self.pool, 'models') and name in self.pool.models:
-                  proxy = self.pool.models[name]
-                  _logger.info("AUDIT [prepare_setup] Proxy MRO: %s", [c.__name__ for c in proxy.mro()])
-                  _logger.info("AUDIT [prepare_setup] Proxy has method: %s", hasattr(proxy, 'pln_get_allocations_view'))
-        
         # Ensure bases remain synchronized after super
         if cached_bases:
              # Check both model class and proxy class
