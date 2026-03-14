@@ -681,6 +681,27 @@ class PolyBase(BaseModel):
             # Update the class directly. Since Odoo reuses some classes, this persists better.
             model_class_without_depends.__bases__ = tuple(final_bases)
 
+            # --- MRO CACHE INVALIDATION ---
+            # Python caches MRO. Since we are changing __bases__ on an existing class,
+            # we should ensure the cache is invalidated.
+            # (In modern Python, this is usually automatic, but for safety in Odoo's registry environment)
+            try:
+                import ctypes
+                ctypes.pythonapi.PyType_Modified(ctypes.py_object(model_class_without_depends))
+            except Exception:
+                pass
+
+            # Re-register with Odoo's registry to ensure methods are correctly recognized.
+            # Odoo 18 caches model methods during _build_model. Since we changed the MRO,
+            # we must ensure that any cached method lists are cleared.
+            if hasattr(pool, 'model_methods'):
+                pool.model_methods.pop(name, None)
+
+            # In Odoo 18, we may also need to trigger a setup for the newly built model class
+            # to ensure it correctly populates its internal Odoo-specific attributes.
+            if hasattr(model_class_without_depends, '_setup_complete') and model_class_without_depends._setup_complete:
+                 model_class_without_depends._setup_complete = False
+
             # Add the model to the registry
             pool[name] = model_class_without_depends
 
