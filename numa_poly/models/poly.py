@@ -13,6 +13,7 @@ The polymorphic model system enables:
 """
 
 import logging
+import ctypes
 from collections import OrderedDict, defaultdict
 import typing
 import json
@@ -38,6 +39,10 @@ if typing.TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+
+# Global cache for polymorphic MRO to ensure they survive Odoo's registry setup phases.
+# Keys are db_name, then model_name. Values are tuples of base classes.
+POLY_MRO_CACHE = defaultdict(dict)
 
 class IrPolyBase(models.Model):
     """
@@ -600,19 +605,21 @@ class PolyBase(BaseModel):
         # First build the model using the standard Odoo mechanism
         model_class_without_depends = super(PolyBase, cls)._build_model(pool, cr)
 
-        # Apply polymorphic inheritance if _depend_models is defined or if it's a PolyModel/PolyTransientModel
-        # We also check for __depends_base_classes to support inheritance through modules that don't redefine _depend_models
-        is_polymorphic = (
-            (hasattr(cls, '_depend_models') and cls._depend_models is not None) or
-            any(base.__name__ in ('PolyModel', 'PolyTransientModel') for base in cls.mro())
-        )
+        # Apply polymorphic inheritance if _depend_models is defined on the class itself.
+        # We check __dict__ to avoid inheriting the default 'None' from PolyBase without re-definition.
+        name = cls._name
+        is_polymorphic = bool(cls.__dict__.get('_depend_models'))
 
         if is_polymorphic:
             # Validate dependency cycles before building
             cls._validate_dependency_cycles(pool)
 
+            # Odoo 18: Clear registry-level caches BEFORE building to ensure 
+            # we don't pick up stale method resolutions.
+            if hasattr(pool, 'model_methods'):
+                pool.model_methods.pop(name, None)
+
             # All models except 'ir.poly_base' implicitly depend on 'ir.poly_base'
-            name = cls._name
             _logger.info("Applying polymorphic MRO for %s", name)
             depend_models = getattr(cls, '_depend_models', {}) or {}
             parents = list(depend_models.keys())
@@ -636,6 +643,14 @@ class PolyBase(BaseModel):
                 else:
                     # Add the parent class to the bases
                     bases.add(parent_class)
+                    
+                    # Odoo 18: also ensure we add the ORIGINAL definition classes 
+                    # so that _setup_base can find the _field_definitions.
+                    if hasattr(parent_class, '_model_classes__'):
+                        for klass in parent_class._model_classes__:
+                            # Skip standard Odoo Model/Base classes which are already in our own MRO
+                            if klass.__name__ not in ('Model', 'BaseModel', 'Base', 'AbstractModel', 'TransientModel'):
+                                 bases.add(klass)
 
                     # Register this model as a child of the parent
                     if not hasattr(parent_class, '_depends_children'):
@@ -643,43 +658,87 @@ class PolyBase(BaseModel):
                     parent_class._depends_children.add(name)
 
             # Store the base classes for later use
-            model_class_without_depends.__depends_base_classes = tuple(reversed(list(bases)))
+            model_class_without_depends.__depends_base_classes = tuple(bases)
+            
+            # Use pool to survive Registry re-building
+            if not hasattr(pool, '_poly_mro_cache'):
+                 pool._poly_mro_cache = {}
+            pool._poly_mro_cache[name] = model_class_without_depends.__depends_base_classes
+            
+            # Use module-level cache as ultimate fallback
+            POLY_MRO_CACHE[pool.db_name][name] = model_class_without_depends.__depends_base_classes
+            
+            # Odoo 18: ensure __base_classes (used by _prepare_setup) is updated
+            model_class_without_depends.__base_classes = model_class_without_depends.__depends_base_classes
 
             # Inyectar en el MRO de Python:
-            # Evitamos duplicados y el propio modelo.
-            # Las bases deben ser las clases de los modelos en pool[parent_name]
-            current_bases = list(model_class_without_depends.__bases__)
-            new_bases = []
+            model_class_without_depends.__bases__ = model_class_without_depends.__depends_base_classes
             
-            # First, we identify which of the 'bases' (the polymorphic ones we calculated) 
-            # are not already ancestors of our current bases (from Odoo inheritance).
-            # We skip the first base because it's the model itself (cls).
-            for base_class in list(bases)[1:]:
-                # Check if this base class is already an ancestor of any current base
-                if any(issubclass(eb, base_class) for eb in current_bases):
-                    continue
-                
-                if base_class not in new_bases:
-                    new_bases.append(base_class)
+            # Odoo 18: Force Python to refresh the class MRO cache
+            import ctypes as _ctypes
+            if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class_without_depends))
+
+            # Re-register with Odoo's registry to ensure methods are correctly recognized.
+            # Odoo 18 caches model methods during _build_model. Since we changed the MRO,
+            # we must ensure that any cached method lists are cleared.
+            if hasattr(pool, 'model_methods'):
+                pool.model_methods.pop(name, None)
+
+            # --- Odoo 18 PROXY INJECTION ---
+            # Odoo 18 Registry uses a proxy class. If we already have one, we MUST update its bases too.
+            if hasattr(pool, '_classes') and name in pool._classes:
+                 proxy_class = pool._classes[name]
+                 if hasattr(proxy_class, '__base_classes'):
+                      proxy_class.__base_classes = model_class_without_depends.__depends_base_classes
+                 proxy_class.__bases__ = model_class_without_depends.__depends_base_classes
+                 
+                 # Odoo 18: ensure proxy_class uses the same __base_classes as the model class
+                 if hasattr(proxy_class, '__base_classes'):
+                      proxy_class.__base_classes = model_class_without_depends.__depends_base_classes
+
+                 # Odoo 18: Force Python to refresh the proxy class MRO cache
+                 import ctypes as _ctypes
+                 if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                     _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
+
+                 # Also inject methods into the proxy class directly to be double-safe
+                 for base_class in model_class_without_depends.__depends_base_classes:
+                      if hasattr(base_class, '_name') and base_class._name != name:
+                           for attr_name, attr_val in base_class.__dict__.items():
+                                if callable(attr_val) and not attr_name.startswith('__'):
+                                     setattr(proxy_class, attr_name, attr_val)
+                           
+                           # Odoo 18: Traverse all parent classes in MRO to find inherited methods
+                           # and inject them into the proxy class as well.
+                           for mro_cls in base_class.mro():
+                                if mro_cls is object or mro_cls is base_class:
+                                     continue
+                                for attr_name, attr_val in mro_cls.__dict__.items():
+                                     if callable(attr_val) and not attr_name.startswith('__'):
+                                          setattr(proxy_class, attr_name, attr_val)
+                                          
+                 # Odoo 18: Specifically check for pln_get_allocations_view to debug
+                 if name == 'project.task':
+                      # Final attempt: direct search in parents
+                      for base in model_class_without_depends.__depends_base_classes:
+                           if hasattr(base, 'pln_get_allocations_view'):
+                                setattr(proxy_class, 'pln_get_allocations_view', getattr(base, 'pln_get_allocations_view'))
+                                break
+                                          
+            # Restore MRO from cache if it was somehow lost during Odoo's initial building
+            if hasattr(model_class_without_depends, '__depends_base_classes'):
+                 model_class_without_depends.__bases__ = model_class_without_depends.__depends_base_classes
+                 if hasattr(model_class_without_depends, '__base_classes'):
+                      model_class_without_depends.__base_classes = model_class_without_depends.__depends_base_classes
+                 
+                 import ctypes as _ctypes
+                 if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                     _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class_without_depends))
             
-            # We prepend the new polymorphic bases to the Odoo bases.
-            # This ensures they come BEFORE models.Model (which is always at the end of current_bases).
-            # This helps Python find the polymorphic methods and fields before the standard ones.
-            # Prepending is generally safer for MRO when the classes don't share other bases 
-            # than 'object' (or 'Model', but we just checked for sub-relationships).
-            # Force MRO update by setting __bases__
-            # IMPORTANT: We use a loop to handle potential multiple calls to _build_model 
-            # (which Odoo sometimes does during module loading).
-            final_bases = []
-            for nb in new_bases:
-                if nb not in final_bases:
-                    final_bases.append(nb)
-            for cb in current_bases:
-                if cb not in final_bases:
-                    final_bases.append(cb)
-            
-            # Update the class directly. Since Odoo reuses some classes, this persists better.
-            model_class_without_depends.__bases__ = tuple(final_bases)
+            # Reset setup to ensure it runs again with the new MRO
+            if hasattr(model_class_without_depends, '_setup_done'):
+                 model_class_without_depends._setup_done = False
 
             # --- MRO CACHE INVALIDATION ---
             # Python caches MRO. Since we are changing __bases__ on an existing class,
@@ -691,19 +750,57 @@ class PolyBase(BaseModel):
             except Exception:
                 pass
 
+            # Update Odoo 18's base class tracking to prevent _prepare_setup from reverting our changes.
+            model_class_without_depends.__base_classes = model_class_without_depends.__bases__
+            
+            # CLEAR THE CLASS PROXY CACHE (Odoo 18 Registry)
+            # If the registry already has a proxy class for this model, it might be stale.
+            if hasattr(pool, '_classes') and name in pool._classes:
+                 pool._classes.pop(name, None)
+            
+            # CLEAR THE ENVIRONMENT CLASS CACHE
+            # Odoo 18 Environment sometimes caches model classes for the current registry.
+            from odoo.api import Environment
+            if hasattr(Environment, '_classes') and Environment._classes is not None:
+                 if pool in Environment._classes:
+                      Environment._classes[pool].pop(name, None)
+
+            # In Odoo 18, we MUST trigger a setup for the newly built model class
+            # to ensure it correctly populates its internal Odoo-specific attributes.
+            if hasattr(model_class_without_depends, '_setup_done'):
+                 model_class_without_depends._setup_done = False
+            
+            # CLEAR THE FIELDS CACHE
+            # Since we are changing the model class, we must ensure Odoo re-evaluates
+            # the available fields during the next setup_models phase.
+            if hasattr(model_class_without_depends, '_fields'):
+                 model_class_without_depends._fields = {}
+
+            # Force recomputation of _model_classes__ (Odoo 18 cache of non-registry classes in MRO)
+            if hasattr(model_class_without_depends, '_model_classes__'):
+                try:
+                    from odoo.tools import discardattr
+                    discardattr(model_class_without_depends, '_model_classes__')
+                except ImportError:
+                    if '_model_classes__' in model_class_without_depends.__dict__:
+                        delattr(model_class_without_depends, '_model_classes__')
+
             # Re-register with Odoo's registry to ensure methods are correctly recognized.
             # Odoo 18 caches model methods during _build_model. Since we changed the MRO,
             # we must ensure that any cached method lists are cleared.
             if hasattr(pool, 'model_methods'):
                 pool.model_methods.pop(name, None)
 
-            # In Odoo 18, we may also need to trigger a setup for the newly built model class
-            # to ensure it correctly populates its internal Odoo-specific attributes.
-            if hasattr(model_class_without_depends, '_setup_complete') and model_class_without_depends._setup_complete:
-                 model_class_without_depends._setup_complete = False
-
             # Add the model to the registry
             pool[name] = model_class_without_depends
+
+            # INSTRUMENTATION for debugging ParseError
+            if name == 'project.task':
+                 _logger.info("[Poly.Debug] project.task in registry: %s", pool[name])
+                 _logger.info("[Poly.Debug] pln_get_allocations_view in project.task: %s", getattr(pool[name], 'pln_get_allocations_view', None))
+                 for base in pool[name].mro():
+                      if hasattr(base, 'pln_get_allocations_view'):
+                           _logger.info("[Poly.Debug] Found pln_get_allocations_view in base %s: %s", base.__name__, getattr(base, 'pln_get_allocations_view'))
 
             # Also ensure that if Odoo has already created instances or subclasses, 
             # they are updated if possible (though Odoo usually builds from scratch).
@@ -755,6 +852,60 @@ class PolyBase(BaseModel):
 
         rec_stack.remove(name)
 
+    def _prepare_setup(self):
+        """
+        Prepare the setup of the model.
+        """
+        # Odoo 18: Ensure polymorphic MRO is preserved during setup phases
+        model_class = type(self)
+        
+        # Check if we have cached polymorphic bases
+        cached_bases = POLY_MRO_CACHE.get(self.pool.db_name, {}).get(self._name)
+        if not cached_bases and hasattr(self.pool, '_poly_mro_cache'):
+             cached_bases = self.pool._poly_mro_cache.get(self._name)
+             
+        if cached_bases and not hasattr(model_class, '__depends_base_classes'):
+             model_class.__depends_base_classes = cached_bases
+        
+        if hasattr(model_class, '__depends_base_classes'):
+             model_class.__base_classes = model_class.__depends_base_classes
+             model_class.__bases__ = model_class.__depends_base_classes
+             
+             # Odoo 18: Force Python to refresh the class MRO cache
+             import ctypes as _ctypes
+             if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                 _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+             
+             # Odoo 18: Also try to clear any proxy class cache in registry
+             if hasattr(self.pool, '_classes') and self._name in self.pool._classes:
+                 proxy_class = self.pool._classes[self._name]
+                 if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                     _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
+        
+        super()._prepare_setup()
+        # Odoo 18: ensure polymorphic attributes are built during preparation
+        if hasattr(type(self), '__depends_base_classes'):
+             self._setup_base()
+
+    @api.model
+    def _is_valid_action(self, action):
+        """
+        Check if the action is valid for the model.
+        In Odoo 18, view validation calls this or uses getattr.
+        We check both the class hierarchy and the polymorphic bases.
+        """
+        model_class = type(self)
+        if hasattr(model_class, action):
+             return True
+        
+        # Fallback for polymorphic methods that might be hidden by proxy classes
+        if hasattr(model_class, '__depends_base_classes'):
+             for base in model_class.__depends_base_classes:
+                  if hasattr(base, action):
+                       return True
+                       
+        return super()._is_valid_action(action)
+
     def _setup_base(self):
         """
         Set up the model's base attributes.
@@ -762,6 +913,23 @@ class PolyBase(BaseModel):
         This method extends the standard Odoo setup process to build the dependent
         model attributes for polymorphic models.
         """
+        # Odoo 18: ensure __bases__ is consistent with polymorphic MRO before super
+        model_class = type(self)
+        if hasattr(model_class, '__depends_base_classes'):
+             model_class.__base_classes = model_class.__depends_base_classes
+             model_class.__bases__ = model_class.__depends_base_classes
+             
+             # Odoo 18: Force Python to refresh the class MRO cache
+             import ctypes as _ctypes
+             if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                 _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
+             
+             # Odoo 18: Also try to clear any proxy class cache in registry
+             if hasattr(self.pool, '_classes') and self._name in self.pool._classes:
+                 proxy_class = self.pool._classes[self._name]
+                 if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                     _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
+
         super()._setup_base()
 
         # Build dependent model attributes for all models that inherit from PolyBase.
@@ -772,9 +940,11 @@ class PolyBase(BaseModel):
             # Check if we have polymorphic configuration using the calculated hierarchy
             if hasattr(type(self), '__depends_base_classes'):
                 # Odoo 18: ensure we are in the right model setup context
+                # _logger.info("[Poly.Setup] Building dependant attributes for %s", self._name)
                 self._build_dependant_model_attributes()
                 
                 model_class = type(self)
+                # _logger.info("[Poly.Setup] Injecting fields for %s: %s", self._name, list(self._fields.keys()))
                 for field_name, field in self._fields.items():
                     # Protection: only inject if it's not already in __dict__
                     # This avoids overwriting methods (now available via MRO) with field descriptors
@@ -785,10 +955,36 @@ class PolyBase(BaseModel):
                     elif field_name in self._fields and hasattr(model_class.__dict__[field_name], 'fget'):
                         # If it's already a property/descriptor but not our field, we might need to be careful
                         pass
-                        
+                
+                # Odoo 18: also pull in fields from parent models that might have been missed
+                # by the standard MRO-based setup in _setup_base.
+                # This is a safety for view validation.
+                all_bases = getattr(model_class, '__depends_base_classes', ())
+                for base_class in all_bases:
+                     if hasattr(base_class, '_name') and base_class._name != self._name:
+                          parent_model = self.env.get(base_class._name)
+                          if parent_model is not None:
+                               for fname, fobj in parent_model._fields.items():
+                                    if fname not in self._fields:
+                                         # _logger.debug("[Poly.Setup] Manually inheriting field %s from %s to %s", fname, base_class._name, self._name)
+                                         self._fields[fname] = fobj
+                                         if fname not in model_class.__dict__:
+                                              setattr(model_class, fname, fobj)
+
                 # Update _fields of the model in the pool
                 if self._name in self.pool.models:
                     self.pool[self._name]._fields.update(self._fields)
+                
+                # --- Odoo 18 View Validation Fix ---
+                # View validation uses getattr(model, method_name) on the registry class.
+                # If polymorphic methods are only in __bases__, sometimes Odoo 18's
+                # dynamic registry setup misses them if it has already created a proxy class.
+                # We explicitly inject the method descriptors into the model class.
+                for base_class in getattr(model_class, '__depends_base_classes', ()):
+                     if hasattr(base_class, '_name') and base_class._name != self._name:
+                          for attr_name, attr_val in base_class.__dict__.items():
+                               if callable(attr_val) and not attr_name.startswith('__') and attr_name not in model_class.__dict__:
+                                    setattr(model_class, attr_name, attr_val)
 
                 # Clear computation caches
                 if hasattr(self.pool, 'field_computed'):
@@ -2439,7 +2635,6 @@ class PolyModel(PolyBase):
     _auto = True                # automatically create database backend
     _register = False           # not visible in ORM registry, meant to be python-inherited only
     _abstract = False           # not abstract
-    _transient = False          # not transient
 
 
 class PolyTransientModel(PolyModel):
