@@ -672,12 +672,70 @@ class PolyBase(_original_BaseModel):
                 
                 # If the model is already in the pool, we try to re-build it if it's currently being loaded
                 if waiting_name in pool:
-                    _logger.debug("Triggering refresh for already-built model %s", waiting_name)
-                    # We can't easily re-run _build_model without the original 'cls'.
-                    # But we can set a flag to re-evaluate during _prepare_setup or _setup_base.
-                    if not hasattr(pool, '_poly_refresh_needed'):
-                        pool._poly_refresh_needed = set()
-                    pool._poly_refresh_needed.add(waiting_name)
+                    waiting_class = pool[waiting_name]
+                    _logger.debug("Triggering IMMEDIATE refresh for already-built model %s because parent %s is now ready", waiting_name, name)
+                    
+                    # Force re-evaluation of bases for the waiting class
+                    # We look for all depend models in its hierarchy
+                    child_all_depends = OrderedDict()
+                    for base in waiting_class.mro():
+                        if base is waiting_class: continue
+                        if '_depend_models' in base.__dict__ and base._depend_models:
+                            for dep_model, dep_field in base._depend_models.items():
+                                if dep_model not in child_all_depends:
+                                    child_all_depends[dep_model] = dep_field
+                    
+                    if child_all_depends:
+                        child_parents = list(child_all_depends.keys())
+                        if waiting_name != 'ir.poly_base' and 'ir.poly_base' not in child_parents:
+                            child_parents.append('ir.poly_base')
+                        
+                        child_new_bases = []
+                        child_missing = False
+                        for p in child_parents:
+                            if p in pool:
+                                p_cls = pool[p]
+                                if p_cls not in child_new_bases: child_new_bases.append(p_cls)
+                            else:
+                                child_missing = True
+                        
+                        if not child_missing:
+                            # We have everything! Update MRO immediately
+                            child_current_bases = list(waiting_class.__bases__)
+                            for b in child_current_bases:
+                                if b not in child_new_bases and b.__name__ != 'BaseModel':
+                                    child_new_bases.append(b)
+                            child_final_bases = tuple(b for b in child_new_bases if b is not waiting_class)
+                            
+                            waiting_class.__base_classes = child_final_bases
+                            waiting_class.__bases__ = child_final_bases
+                            waiting_class.__depends_base_classes = child_final_bases
+                            import ctypes as _ctypes
+                            if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                                _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(waiting_class))
+                            
+                            # Update proxy as well
+                            if hasattr(pool, 'models') and waiting_name in pool.models:
+                                child_proxy = pool.models[waiting_name]
+                                if child_proxy is not waiting_class:
+                                    child_proxy.__base_classes = child_final_bases
+                                    child_proxy.__bases__ = child_final_bases
+                                    if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
+                                        _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(child_proxy))
+                            
+                            # Update caches
+                            if not hasattr(pool, '_poly_mro_cache'): pool._poly_mro_cache = {}
+                            pool._poly_mro_cache[waiting_name] = child_final_bases
+                            POLY_MRO_CACHE[pool.db_name][waiting_name] = child_final_bases
+                            
+                            # Mark as setup not done to force re-setup if needed
+                            if hasattr(waiting_class, '_setup_done'):
+                                waiting_class._setup_done = False
+
+                # Set a flag to ensure it's checked during setup too
+                if not hasattr(pool, '_poly_refresh_needed'):
+                    pool._poly_refresh_needed = set()
+                pool._poly_refresh_needed.add(waiting_name)
 
                 pool._poly_pending_dependencies[name].remove(waiting_name)
 
@@ -1075,12 +1133,15 @@ class PolyBase(_original_BaseModel):
              depends_bases = getattr(model_class, '__depends_base_classes', ())
              for base in depends_bases:
                  if base is model_class: continue
-                 for m_name, m_meth in base.__dict__.items():
-                     # Copy methods that are not already present and are not internal/fields
-                     if not m_name.startswith('__') and not hasattr(model_class, m_name):
-                         if not isinstance(m_meth, (property, fields.Field)):
-                             _logger.debug("Fail-safe: Copying method %s from %s to %s", m_name, base.__name__, self._name)
-                             setattr(model_class, m_name, m_meth)
+                 # Look into the base and its MRO for methods
+                 for parent in base.mro():
+                     if parent in (model_class, object): continue
+                     for m_name, m_meth in parent.__dict__.items():
+                         # Copy methods that are not already present and are not internal/fields
+                         if not m_name.startswith('__') and not hasattr(model_class, m_name):
+                             if not isinstance(m_meth, (property, fields.Field)):
+                                 _logger.debug("Fail-safe: Copying method %s from %s to %s", m_name, parent.__name__, self._name)
+                                 setattr(model_class, m_name, m_meth)
 
              # Force synchronization with pool.models if it's a proxy
              if hasattr(self.pool, 'models') and self._name in self.pool.models:
@@ -1102,9 +1163,12 @@ class PolyBase(_original_BaseModel):
                        # Fail-safe for proxy methods too: ensure all methods from model_class are visible
                        for m_name in dir(model_class):
                            if not m_name.startswith('__') and not hasattr(proxy_class, m_name):
-                               m_meth = getattr(model_class, m_name)
-                               if not isinstance(m_meth, (property, fields.Field)):
-                                   setattr(proxy_class, m_name, m_meth)
+                               try:
+                                   m_meth = getattr(model_class, m_name)
+                                   if not isinstance(m_meth, (property, fields.Field)):
+                                       setattr(proxy_class, m_name, m_meth)
+                               except Exception:
+                                   continue
 
                        # Clear the proxy class cache for methods to force re-evaluation
                        if hasattr(proxy_class, '__dict__'):
