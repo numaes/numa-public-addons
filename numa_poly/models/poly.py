@@ -49,6 +49,7 @@ _original_BaseModel = odoo.models.BaseModel
 _original_AbstractModel = odoo.models.AbstractModel
 _original_Model = odoo.models.Model
 _original_TransientModel = odoo.models.TransientModel
+_original_Many2many_setup_nonrelated = odoo.fields.Many2many.setup_nonrelated
 
 class IrPolyBase(models.Model):
     """
@@ -140,6 +141,51 @@ def poly_many2one_convert_to_read(self, value, record, use_display_name=True):
             return value.id
         else:
             return False
+
+
+def poly_many2many_setup_nonrelated(self, model):
+    """
+    Monkey-patch for Many2many.setup_nonrelated to allow sharing the same
+    relation table and columns between models that are polymorphic counterparts.
+    """
+    try:
+        return _original_Many2many_setup_nonrelated(self, model)
+    except TypeError as e:
+        # Check if the error is about shared table/columns
+        if "Many2many fields" in str(e) and "use the same table and columns" in str(e):
+            # Attempt to find the conflicting field in the error message or pool
+            m2m = model.pool._m2m
+            fields = m2m[(self.relation, self.column1, self.column2)]
+            
+            is_poly_counterpart = False
+            for other in fields:
+                # If they are different models, check if they are in each other's polymorphic hierarchy
+                if self.model_name != other.model_name:
+                    # Check if one is a polymorphic base of the other
+                    model_class = model.pool[self.model_name]
+                    other_class = model.pool[other.model_name]
+                    
+                    # Check MRO for polymorphic relationship
+                    if other.model_name in [getattr(c, '_name', None) for c in model_class.mro()] or \
+                       self.model_name in [getattr(c, '_name', None) for c in other_class.mro()]:
+                        is_poly_counterpart = True
+                        break
+            
+            if is_poly_counterpart:
+                _logger.debug("Allowing shared Many2many table %s for polymorphic counterparts %s and %s", 
+                              self.relation, self.model_name, [f.model_name for f in fields])
+                # Silently allow sharing by ignoring the TypeError and appending to the list
+                if self not in fields:
+                    fields.append(self)
+                
+                # Re-implement the inverse fields logic that follows the TypeError raise in original
+                for field in m2m[(self.relation, self.column2, self.column1)]:
+                    model.pool.field_inverses.add(self, field)
+                    model.pool.field_inverses.add(field, self)
+                return
+        
+        # If not handled, re-raise original exception
+        raise e
 
 
 class PolyReference(fields.Many2one):
@@ -3033,3 +3079,4 @@ odoo.models.AbstractModel = PolyBase
 odoo.models.Model = PolyModel
 odoo.models.TransientModel = PolyTransientModel
 odoo.fields.Many2one.convert_to_read = poly_many2one_convert_to_read
+odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
