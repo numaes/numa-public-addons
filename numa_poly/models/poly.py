@@ -714,7 +714,7 @@ class PolyBase(_original_BaseModel):
                             if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
                                 _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(waiting_class))
                             
-                            # Update proxy as well
+                            # Sync proxy
                             if hasattr(pool, 'models') and waiting_name in pool.models:
                                 child_proxy = pool.models[waiting_name]
                                 if child_proxy is not waiting_class:
@@ -722,11 +722,32 @@ class PolyBase(_original_BaseModel):
                                     child_proxy.__bases__ = child_final_bases
                                     if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
                                         _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(child_proxy))
+                                    
+                                    # Odoo 18: Proxy uses ProxyFunc/ProxyAttr descriptors.
+                                    # Copy methods from parents to proxy class explicitly for IMMEDIATE view validation.
+                                    for p_model_name in child_parents:
+                                        if p_model_name in pool:
+                                            p_cls = pool[p_model_name]
+                                            for attr_name, attr_val in p_cls.__dict__.items():
+                                                if callable(attr_val) and not attr_name.startswith('__') and attr_name not in child_proxy.__dict__:
+                                                    try:
+                                                        setattr(child_proxy, attr_name, attr_val)
+                                                    except Exception:
+                                                        pass
                             
                             # Update caches
                             if not hasattr(pool, '_poly_mro_cache'): pool._poly_mro_cache = {}
                             pool._poly_mro_cache[waiting_name] = child_final_bases
                             POLY_MRO_CACHE[pool.db_name][waiting_name] = child_final_bases
+                            
+                            # Invalidate Environment and Pool caches for the child model
+                            if hasattr(pool, 'model_methods'):
+                                pool.model_methods.pop(waiting_name, None)
+                            
+                            from odoo.api import Environment
+                            if hasattr(Environment, '_classes') and Environment._classes is not None:
+                                if pool in Environment._classes:
+                                    Environment._classes[pool].pop(waiting_name, None)
                             
                             # Mark as setup not done to force re-setup if needed
                             if hasattr(waiting_class, '_setup_done'):
@@ -1095,6 +1116,7 @@ class PolyBase(_original_BaseModel):
              _logger.debug("Re-applying cached bases to %s during _setup_base", self._name)
              model_class.__base_classes = cached_bases
              model_class.__bases__ = cached_bases
+             model_class.__depends_base_classes = cached_bases
              
              import ctypes as _ctypes
              if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
@@ -1109,6 +1131,28 @@ class PolyBase(_original_BaseModel):
                        proxy.__bases__ = cached_bases
                        if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
                            _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy))
+                       
+                       # Exhaustive method copying from polymorphic parents to proxy
+                       for base_class in cached_bases:
+                            if hasattr(base_class, '_name') and base_class._name != self._name:
+                                 # We inspect the whole MRO of the parent to ensure we get all methods
+                                 for p_base in base_class.mro():
+                                      if p_base.__name__ in ('BaseModel', 'object', 'Base'): continue
+                                      for attr_name, attr_val in p_base.__dict__.items():
+                                           if callable(attr_val) and not attr_name.startswith('__') and attr_name not in proxy.__dict__:
+                                                try:
+                                                     setattr(proxy, attr_name, attr_val)
+                                                except Exception:
+                                                     pass
+             
+             # Clear caches to force re-discovery
+             if hasattr(self.pool, 'model_methods'):
+                 self.pool.model_methods.pop(self._name, None)
+             
+             from odoo.api import Environment
+             if hasattr(Environment, '_classes') and Environment._classes is not None:
+                  if self.pool in Environment._classes:
+                       Environment._classes[self.pool].pop(self._name, None)
 
         _original_BaseModel._setup_base(self)
 
