@@ -1158,15 +1158,23 @@ class PolyBase(_original_BaseModel):
     def _setup_poly_fields(self):
         """ Inject polymorphic field definitions from parent models. """
         model_class = type(self)
+        
+        # Odoo 18: We collect all fields that should be added as related fields first.
+        # This is handled by _build_dependant_model_attributes.
+        # Then we handle fields that might need fresh instances if they are NOT in _depend_models.
+        
         for base in model_class.__depends_base_classes:
             if hasattr(base, '_name') and base._name != self._name:
                 # Add missing or inherited polymorphic fields to _fields
                 if hasattr(base, '_fields'):
                     for field_name, field in base._fields.items():
-                        # Odoo 18: Identify fields belonging specifically to this polymorphic parent.
-                        # We inject fresh instances of these fields into the child model.
-                        # This ensures that framework metadata (like Many2many relation tables)
-                        # is correctly isolated for the child model without causing collisions.
+                        # Protection: if the field is already in self._fields, it might be
+                        # already added as a related field by _build_dependant_model_attributes.
+                        # We should not overwrite it with a fresh instance which would cause collisions.
+                        if field_name in self._fields:
+                            continue
+
+                        # Identify fields belonging specifically to this polymorphic parent.
                         if field.model_name == base._name:
                             # Create a fresh field instance using parent's arguments
                             args = getattr(field, '_args', {})
@@ -1178,7 +1186,6 @@ class PolyBase(_original_BaseModel):
                             # We should NOT redefine Many2many tables if the field is
                             # supposed to reuse the existing relation.
                             
-                            # If the model is in _depend_models, we keep the original relation.
                             is_depend_model = False
                             if hasattr(model_class, '_depend_models') and model_class._depend_models:
                                 if base._name in model_class._depend_models:
@@ -2082,12 +2089,20 @@ class PolyBase(_original_BaseModel):
 
             # Create the appropriate field type
             if field_type in ['many2one', 'many2many', 'one2many']:
+                related_path = f'{related_bases[model]}.{field_name}'
+                # Odoo 18: Ensure Many2many related fields don't cause table collisions.
+                # We use the comodel_name and related path.
                 new_field = field_subclass(
                     comodel_name=comodel,
                     string=description.string,
-                    related=f'{related_bases[model]}.{field_name}',
+                    related=related_path,
                     automatic=True,
                 )
+                if field_type == 'many2many':
+                     # Explicitly mark as non-store or related to avoid Odoo 18's table check
+                     # Standard related fields in Odoo usually don't have relation/column attributes
+                     # unless they are stored.
+                     new_field.store = False 
             elif field_subclass:
                 new_field = field_subclass(
                     string=description.string,
