@@ -14,6 +14,7 @@
 10. [Seguridad y Permisos](#seguridad-y-permisos)
 11. [Puntos Críticos y Riesgos](#puntos-críticos-y-riesgos)
 12. [Mejoras Potenciales](#mejoras-potenciales)
+13. [Compatibilidad con Odoo 18](#compatibilidad-con-odoo-18)
 
 ---
 
@@ -769,6 +770,42 @@ new_field = field_subclass(
 - Tests de jerarquías profundas
 - Tests de rendimiento
 - Tests de seguridad
+
+---
+
+## Compatibilidad con Odoo 18
+
+La versión 18 de Odoo introdujo cambios significativos en la construcción del registro (pool) y la gestión de clases, lo que requirió adaptaciones críticas en el motor polimórfico.
+
+### 1. Resolución Retroactiva de Dependencias
+
+Odoo 18 construye el pool de forma incremental. Un modelo puede ser "extendido" por múltiples módulos en diferentes etapas.
+
+*   **Problema**: Si el modelo `A` depende polimórficamente del modelo `B` (vía `_depend_models`), pero el modelo `B` aún no ha sido registrado en el pool cuando se construye `A`, la herencia Python (MRO) de `A` quedará incompleta.
+*   **Solución**: Se implementó un sistema de **Resolución Retroactiva**.
+    *   Los modelos con dependencias faltantes se registran en `pool._poly_pending_dependencies`.
+    *   Cuando cualquier modelo se construye, se verifica si hay "hijos esperando".
+    *   Si un padre se vuelve disponible, se marca al hijo con `pool._poly_refresh_needed`.
+    *   En los hooks de configuración (`_prepare_setup`, `_setup_base`), el hijo detecta la bandera, re-calcula su jerarquía completa e inyecta los padres ahora disponibles.
+
+### 2. Sincronización de Proxy Classes
+
+Odoo 18 hace un uso intensivo de **Proxy Classes** (clases dinámicas que envuelven las implementaciones reales).
+
+*   **Desincronización**: Modificar los `__bases__` de la clase de implementación no siempre actualiza automáticamente la clase Proxy que el entorno (`self.env`) devuelve a los usuarios.
+*   **Mecanismo de Sincronización**:
+    *   `numa_poly` sincroniza explícitamente `__bases__` y `__base_classes` entre la clase real y su Proxy.
+    *   Uso de `ctypes.pythonapi.PyType_Modified` para forzar a Python a invalidar sus caches internos de resolución de métodos tanto en la clase base como en el Proxy.
+    *   Limpieza de `pool.model_methods` y `Environment._classes` para asegurar que el framework descubra los nuevos métodos inyectados.
+
+### 3. Colisiones en Many2many Polimórficos
+
+En Odoo estándar, dos modelos no pueden compartir la misma tabla y columnas de relación `Many2many`.
+
+*   **Conflicto Natural**: En un sistema polimórfico, es **correcto** que un modelo y su contraparte compartan la misma tabla de relación (ya que son, conceptualmente, el mismo registro).
+*   **Intervención del Check**: Se parcheó `odoo.fields.Many2many.setup_nonrelated` para interceptar el `TypeError` de colisión.
+    *   Si los modelos en conflicto son parientes polimórficos (uno está en el MRO del otro), el error se ignora silenciosamente.
+    *   Se restaura manualmente la lógica de vinculación de campos inversos que Odoo omite al detectar el conflicto.
 
 ---
 
