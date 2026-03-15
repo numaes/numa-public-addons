@@ -882,7 +882,14 @@ class PolyBase(_original_BaseModel):
                 parents.append('ir.poly_base')
 
             # Calculate polymorphic bases.
-            original_bases = list(model_class.__bases__)
+            # Use __base_classes (updated by Odoo's _build_model to include the
+            # newly added extension class) rather than __bases__ (only updated in
+            # _prepare_setup, so it lags behind and misses the new extension class).
+            # Without this, extension modules like project_timesheet_holidays that
+            # extend a polymorphic model lose their fields (e.g. is_timeoff_task)
+            # because the extension class is never included in final_bases nor in
+            # POLY_MRO_CACHE, so _setup_base never scans its _field_definitions.
+            original_bases = list(getattr(model_class, '__base_classes', None) or model_class.__bases__)
             
             new_bases = []
             missing_parents = False
@@ -3262,43 +3269,89 @@ def _poly_registry_setup_models(self, cr):
             parents = list(all_depend_models.keys())
             if name != 'ir.poly_base' and 'ir.poly_base' not in parents:
                 parents.append('ir.poly_base')
-            
+
             # Check if parents are already in MRO names
             current_mro_names = [c._name for c in mro if hasattr(c, '_name')]
+            poly_applied = False
             if any(p_name not in current_mro_names for p_name in parents):
                 # We use the PolyBase class which is fully defined at this point
-                PolyBase._apply_polymorphic_hierarchy(self, name, model_class, parents)
-                
-            # Odoo 18: ensure all fields from bases are present on the model class for view validation.
-            # We do this EVERY time setup_models is called for critical models, 
-            # because Odoo might have rebuilt them and stripped our recovered fields.
-            if is_polymorphic:
-                # Odoo 18: In Registry.setup_models, parent_model._fields might be empty
-                # because it hasn't been built yet in this incremental setup.
-                # However, we can look at the classes in the MRO and their _field_definitions.
-                for base_class in model_class.mro():
-                     if hasattr(base_class, '_field_definitions'):
-                          for fobj in base_class._field_definitions:
-                               fname = fobj.name
-                               if fname not in model_class._fields:
-                                    model_class._fields[fname] = fobj
-                                    fobj.model_name = name
-                                    if fname not in model_class.__dict__:
-                                         setattr(model_class, fname, fobj)
-                                    # Add to _field_definitions if missing, so _setup_base sees it
-                                    if hasattr(model_class, '_field_definitions'):
-                                         if fobj not in model_class._field_definitions:
-                                              model_class._field_definitions.append(fobj)
-                                         
-                                    # Odoo 18: ensure the field is NOT setup for the old model class
-                                    if hasattr(fobj, '_setup_done'):
-                                         fobj._setup_done = False
-                
-                # Clear Env cache for this model to ensure fields are fresh
-                from odoo.api import Environment
-                if hasattr(Environment, '_classes') and Environment._classes is not None:
-                     if self in Environment._classes:
-                          Environment._classes[self].pop(name, None)
+                poly_applied = PolyBase._apply_polymorphic_hierarchy(self, name, model_class, parents)
+
+            if poly_applied:
+                # _apply_polymorphic_hierarchy changed MRO but does NOT set _setup_done=False
+                # (unlike poly's _build_model). We must reset it before calling _setup_base,
+                # otherwise _setup_base returns early due to the _setup_done guard.
+                model_class._setup_done = False
+                try:
+                    _env = api.Environment(cr, SUPERUSER_ID, {})
+                    _env[name]._setup_base()
+                    # Re-run _setup_fields to resolve comodels and field relations.
+                    # Guard _m2m as Odoo sets it in setup_models around _setup_fields.
+                    _m2m_was_set = hasattr(self, '_m2m')
+                    if not _m2m_was_set:
+                        self._m2m = defaultdict(list)
+                    try:
+                        _env[name]._setup_fields()
+                    finally:
+                        if not _m2m_was_set and hasattr(self, '_m2m'):
+                            del self._m2m
+                    _logger.debug(
+                        "Re-ran _setup_base/_setup_fields for %s after poly hierarchy "
+                        "injection; _fields now has %d entries",
+                        name, len(model_class._fields),
+                    )
+                except Exception as _e:
+                    _logger.warning(
+                        "Re-running _setup_base/_setup_fields for %s after poly "
+                        "injection failed (%s); falling back to _field_definitions scan",
+                        name, _e,
+                    )
+
+            # After _original_Registry_setup_models (and any poly hierarchy injection),
+            # ensure all fields from definition classes in the MRO are present in _fields.
+            # This is necessary because _setup_base may have run before some extension
+            # modules (e.g. project_timesheet_holidays defining is_timeoff_task) were
+            # loaded, or because poly's MRO manipulation caused _setup_base to use a
+            # stale MRO that excluded the extension's definition class.
+            # We scan ALL definition classes (pool=None, MetaModel instance) in the
+            # current MRO and add any missing fields.
+            from odoo.models import MetaModel
+            _current_mro = model_class.mro()
+            _fields_before = set(model_class._fields.keys())
+            for _base_class in _current_mro:
+                if (getattr(_base_class, 'pool', None) is None
+                        and isinstance(_base_class, MetaModel)
+                        and hasattr(_base_class, '_field_definitions')):
+                    for _fobj in _base_class._field_definitions:
+                        _fname = _fobj.name
+                        if _fname not in model_class._fields:
+                            _logger.debug(
+                                "[poly] Recovering missing field %s.%s from "
+                                "%s._field_definitions (not found after _setup_base)",
+                                name, _fname, _base_class.__name__,
+                            )
+                            _fobj.model_name = name
+                            model_class._fields[_fname] = _fobj
+                            if _fname not in model_class.__dict__:
+                                try:
+                                    setattr(model_class, _fname, _fobj)
+                                except Exception:
+                                    pass
+                            if hasattr(_fobj, '_setup_done'):
+                                _fobj._setup_done = False
+            _fields_added = set(model_class._fields.keys()) - _fields_before
+            if _fields_added:
+                _logger.info(
+                    "[poly] _poly_registry_setup_models: recovered %d missing field(s) "
+                    "for %s: %s",
+                    len(_fields_added), name, sorted(_fields_added),
+                )
+
+            # Clear Env cache for this model to ensure fields are fresh
+            from odoo.api import Environment
+            if hasattr(Environment, '_classes') and Environment._classes is not None:
+                if self in Environment._classes:
+                    Environment._classes[self].pop(name, None)
                 
     return res
 
