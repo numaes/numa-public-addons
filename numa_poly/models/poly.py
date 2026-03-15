@@ -3379,9 +3379,10 @@ def _poly_registry_setup_models(self, cr):
                     
                     # Ensure descriptor is in model class __dict__
                     if _fname not in model_class.__dict__:
+                        _logger.info("[poly] FORCING descriptor for %s in %s class", _fname, name)
                         try: setattr(model_class, _fname, _fobj)
                         except Exception: pass
-                    
+
                     # Ensure descriptor is in proxy class __dict__
                     if hasattr(self, 'models') and name in self.models:
                         _proxy = self.models[name]
@@ -3389,6 +3390,7 @@ def _poly_registry_setup_models(self, cr):
                             if _fname not in _proxy._fields:
                                 _proxy._fields[_fname] = _fobj
                             if _fname not in _proxy.__dict__:
+                                _logger.info("[poly] FORCING descriptor for %s in %s proxy", _fname, name)
                                 try: setattr(_proxy, _fname, _fobj)
                                 except Exception: pass
 
@@ -3403,15 +3405,17 @@ def _poly_registry_setup_models(self, cr):
                         _recovered_from_this_base.append(_fname)
                     
                     if _fname not in model_class.__dict__:
+                        _logger.info("[poly] FORCING descriptor for %s in %s class (from __dict__)", _fname, name)
                         try: setattr(model_class, _fname, _fobj)
                         except Exception: pass
-                        
+
                     if hasattr(self, 'models') and name in self.models:
                         _proxy = self.models[name]
                         if _proxy is not model_class:
                             if _fname not in _proxy._fields:
                                 _proxy._fields[_fname] = _fobj
                             if _fname not in _proxy.__dict__:
+                                _logger.info("[poly] FORCING descriptor for %s in %s proxy (from __dict__)", _fname, name)
                                 try: setattr(_proxy, _fname, _fobj)
                                 except Exception: pass
 
