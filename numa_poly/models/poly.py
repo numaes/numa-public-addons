@@ -1408,6 +1408,16 @@ class PolyBase(_original_BaseModel):
                                     if fname not in self._fields:
                                          # _logger.debug("[Poly.Setup] Manually inheriting field %s from %s to %s", fname, base_class._name, self._name)
                                          self._fields[fname] = fobj
+                                         # Odoo 18: ensure field metadata is correct
+                                         fobj.model_name = self._name
+                                         # Odoo 18: view validation needs the field to be in the model's registry
+                                         # but we must NOT use the same field instance if it belongs to another model.
+                                         # However, for non-stored fields it might be safe to alias them.
+                                         # For 'is_timeoff_task' which is a standard boolean, it should be fine.
+                                         
+                                         # Force setup for the new model if already setup
+                                         if fobj.setup_done:
+                                              fobj.setup_done = False
                                          if fname not in model_class.__dict__:
                                               setattr(model_class, fname, fobj)
                                     elif fobj is not self._fields[fname] and fobj.manual and not self._fields[fname].manual:
