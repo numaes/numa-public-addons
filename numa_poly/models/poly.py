@@ -3361,41 +3361,66 @@ def _poly_registry_setup_models(self, cr):
         _current_mro = model_class.mro()
         _fields_before = set(model_class._fields.keys())
         for _base_class in _current_mro:
-            if (getattr(_base_class, 'pool', None) is None
-                    and isinstance(_base_class, MetaModel)
-                    and hasattr(_base_class, '_field_definitions')):
+            # RECOVERY: Scan ALL base classes in the MRO for field definitions.
+            # Odoo 18's incremental loading often misses fields from extension modules
+            # if they inherit from a model that was already partially built.
+            _recovered_from_this_base = []
+            
+            # 1. From _field_definitions (standard Odoo way for non-setup models)
+            if hasattr(_base_class, '_field_definitions'):
                 for _fobj in _base_class._field_definitions:
                     _fname = _fobj.name
-                    # RECOVERY: Always ensure the field is a descriptor on the model class.
-                    # Odoo 18's view validation and incremental loading can leave 
-                    # _fields populated but the class attribute missing.
-                    if _fname not in model_class.__dict__:
-                        try:
-                            setattr(model_class, _fname, _fobj)
-                        except Exception:
-                            pass
-                    
-                    # Ensure proxy consistency
-                    if hasattr(self, 'models') and name in self.models:
-                        _proxy = self.models[name]
-                        if _proxy is not model_class and _fname not in _proxy.__dict__:
-                            try: setattr(_proxy, _fname, _fobj)
-                            except Exception: pass
-
                     if _fname not in model_class._fields:
                         _fobj.model_name = name
                         model_class._fields[_fname] = _fobj
-                        
-                        # Also ensure the proxy class (if any) has it in _fields
-                        if hasattr(self, 'models') and name in self.models:
-                            _proxy = self.models[name]
-                            if _proxy is not model_class:
+                        if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
+                        elif hasattr(_fobj, 'setup_done'): _fobj.setup_done = False
+                        _recovered_from_this_base.append(_fname)
+                    
+                    # Ensure descriptor is in model class __dict__
+                    if _fname not in model_class.__dict__:
+                        try: setattr(model_class, _fname, _fobj)
+                        except Exception: pass
+                    
+                    # Ensure descriptor is in proxy class __dict__
+                    if hasattr(self, 'models') and name in self.models:
+                        _proxy = self.models[name]
+                        if _proxy is not model_class:
+                            if _fname not in _proxy._fields:
                                 _proxy._fields[_fname] = _fobj
+                            if _fname not in _proxy.__dict__:
+                                try: setattr(_proxy, _fname, _fobj)
+                                except Exception: pass
 
-                        if hasattr(_fobj, '_setup_done'):
-                            _fobj._setup_done = False
-                        elif hasattr(_fobj, 'setup_done'):
-                            _fobj.setup_done = False
+            # 2. From __dict__ (fallback for fields already instantiated as descriptors)
+            for _fname, _fobj in _base_class.__dict__.items():
+                if isinstance(_fobj, fields.Field):
+                    if _fname not in model_class._fields:
+                        _fobj.model_name = name
+                        model_class._fields[_fname] = _fobj
+                        if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
+                        elif hasattr(_fobj, 'setup_done'): _fobj.setup_done = False
+                        _recovered_from_this_base.append(_fname)
+                    
+                    if _fname not in model_class.__dict__:
+                        try: setattr(model_class, _fname, _fobj)
+                        except Exception: pass
+                        
+                    if hasattr(self, 'models') and name in self.models:
+                        _proxy = self.models[name]
+                        if _proxy is not model_class:
+                            if _fname not in _proxy._fields:
+                                _proxy._fields[_fname] = _fobj
+                            if _fname not in _proxy.__dict__:
+                                try: setattr(_proxy, _fname, _fobj)
+                                except Exception: pass
+
+            # 3. Method propagation (Odoo 18 MRO might miss methods if classes are skipped)
+            # We already use MRO, so methods should be found by Python. 
+            # But calculated fields depend on methods (compute='_compute_...')
+            # If the method is NOT found in the model class but exists in a base,
+            # Python's MRO will find it. If it was skipped by Odoo, it might still be in the class MRO.
+
         _fields_added = set(model_class._fields.keys()) - _fields_before
         if _fields_added:
             _logger.info(
