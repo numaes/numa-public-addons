@@ -1427,7 +1427,16 @@ class PolyBase(_original_BaseModel):
 
                 # Update _fields of the model in the pool
                 if self._name in self.pool.models:
-                    self.pool[self._name]._fields.update(self._fields)
+                    proxy_class = self.pool.models[self._name]
+                    proxy_class._fields.update(self._fields)
+                    # Odoo 18: Ensure all recovered fields are in proxy class descriptors
+                    if proxy_class is not model_class:
+                         for fname, fobj in self._fields.items():
+                              if fname not in proxy_class.__dict__:
+                                   try:
+                                        setattr(proxy_class, fname, fobj)
+                                   except Exception:
+                                        pass
                 
                 # --- Odoo 18 View Validation Fix ---
                 # View validation uses getattr(model, method_name) on the registry class.
