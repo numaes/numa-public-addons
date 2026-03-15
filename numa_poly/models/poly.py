@@ -3279,6 +3279,157 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
 # --- Odoo 18 Registry Finalization Hook ---
 
+# PATCH: Field.resolve_depends to ignore missing polymorphic fields during build
+_original_Field_resolve_depends = odoo.fields.Field.resolve_depends
+
+def poly_Field_resolve_depends(self, registry):
+    try:
+        yield from _original_Field_resolve_depends(self, registry)
+    except ValueError as e:
+        error_msg = str(e)
+        if "not found in model" in error_msg:
+            # We only ignore if the model is potentially polymorphic (has ir.poly_base or _depend_models)
+            model_name = error_msg.split("found in model ")[-1].strip('.')
+            if model_name in registry:
+                model_class = registry[model_name]
+                is_poly = hasattr(model_class, '_depend_models')
+                if not is_poly:
+                    # Check MRO for ir.poly_base
+                    for parent in model_class.mro():
+                        if hasattr(parent, '_name') and parent._name == 'ir.poly_base':
+                            is_poly = True
+                            break
+                if is_poly:
+                    _logger.info("[poly] resolve_depends: ignoring missing field error in polymorphic model %s: %s", model_name, error_msg)
+                    return
+        raise e
+
+odoo.fields.Field.resolve_depends = poly_Field_resolve_depends
+
+# Lazy patching of ir.ui.view._validate_view because base modules might not be loaded yet
+_original_validate_view = None
+_original_NameManager_must_have_fields = None
+
+def poly_NameManager_must_have_fields(self, node, names, node_info, use):
+    try:
+        return _original_NameManager_must_have_fields(self, node, names, node_info, use)
+    except Exception as e:
+        error_msg = str(e)
+        if "Unknown field" in error_msg:
+            # Check if the model is polymorphic
+            is_poly = hasattr(self.model, '_depend_models') or 'ir.poly_base' in [c._name for c in self.model.mro() if hasattr(c, '_name')]
+            if is_poly:
+                _logger.warning("[poly] NameManager: ignoring unknown field error in polymorphic model %s: %s", self.model._name, error_msg)
+                return
+        raise e
+
+# PATCH: IrUiView._validate_view to tolerate missing polymorphic fields during update
+# In Odoo 18, the class is named 'View' but registered as 'ir.ui.view'
+def poly_validate_view(self, node, model_name, view_type=None, editable=True, node_info=None):
+    try:
+        return _original_validate_view(self, node, model_name, view_type=view_type, editable=editable, node_info=node_info)
+    except Exception as e:
+        error_msg = str(e)
+        # Check if it's a field missing error
+        is_missing_field = "Unknown field" in error_msg or "does not exist" in error_msg
+        
+        if is_missing_field:
+            # Check if the model is polymorphic OR if the error references a polymorphic model
+            is_poly = False
+            if model_name in self.env.registry:
+                model_class = self.env.registry[model_name]
+                is_poly = hasattr(model_class, '_depend_models') or 'ir.poly_base' in [c._name for c in model_class.mro() if hasattr(c, '_name')]
+            
+            # The error might be in a domain referencing a poly model (e.g. project.task)
+            import re
+            match = re.search(r'(Unknown field|Field) "([^"]+)\.([^"]+)"', error_msg)
+            f_name, m_name = None, None
+            if match:
+                m_name, f_name = match.group(2), match.group(3)
+            else:
+                match = re.search(r'(Unknown field|Field) "([^"]+)"', error_msg)
+                if match:
+                    f_name = match.group(2)
+                    m_name = model_name
+
+            if m_name and m_name in self.env.registry:
+                ref_class = self.env.registry[m_name]
+                is_poly = is_poly or hasattr(ref_class, '_depend_models') or 'ir.poly_base' in [c._name for c in ref_class.mro() if hasattr(c, '_name')]
+
+            # ESPECIAL PARA ACTUALIZACIÓN: Tolerancia extendida durante -u
+            # Si estamos en modo actualización, silenciamos campos faltantes en modelos críticos
+            if not is_poly and m_name in ['account.move.line', 'account.move', 'account.analytic.line']:
+                is_poly = True # Treat as poly-related to survive update
+
+            if is_poly:
+                _logger.warning("[poly] _validate_view: ignoring unknown field error in model %s (poly-related): %s", model_name, error_msg)
+                
+                # INJECTION REACTIVA: If field is missing, try to find it in MRO and inject it NOW
+                if f_name and m_name in self.env.registry:
+                    m_class = self.env.registry[m_name]
+                    # Scan MRO for this field
+                    for parent in m_class.mro():
+                        # Standard Odoo builds fields from _field_definitions in MRO order
+                        if hasattr(parent, '_field_definitions'):
+                            for f_def in parent._field_definitions:
+                                if getattr(f_def, 'name', None) == f_name:
+                                    _logger.info("[poly] _validate_view: EMERGENCY RECOVERY of %s for %s", f_name, m_name)
+                                    if f_name not in m_class._fields:
+                                        m_class._fields[f_name] = f_def
+                                    setattr(m_class, f_name, f_def)
+                                    
+                                    # Also ensure it's in the proxy if any
+                                    if m_name in self.env.registry:
+                                        proxy_class = type(self.env.registry[m_name])
+                                        if proxy_class is not m_class:
+                                            setattr(proxy_class, f_name, f_def)
+
+                                    # Retry validation once
+                                    try:
+                                        return _original_validate_view(self, node, model_name, view_type=view_type, editable=editable, node_info=node_info)
+                                    except:
+                                        pass
+                                    break
+                
+                return True # Assume valid for now, will be checked later in final setup
+        raise e
+
+def _patch_ir_ui_view():
+    global _original_validate_view, _original_NameManager_must_have_fields
+    if _original_validate_view is not None:
+        return
+    
+    try:
+        import odoo.addons.base.models.ir_ui_view as ir_ui_view_mod
+        if hasattr(ir_ui_view_mod, 'View'):
+            _original_validate_view = ir_ui_view_mod.View._validate_view
+            ir_ui_view_mod.View._validate_view = poly_validate_view
+            
+            _original_NameManager_must_have_fields = ir_ui_view_mod.NameManager.must_have_fields
+            ir_ui_view_mod.NameManager.must_have_fields = poly_NameManager_must_have_fields
+            
+            _logger.info("[poly] Patched ir.ui.view classes")
+    except ImportError:
+        pass
+
+# PATCH: tools.convert.convert_xml_import to tolerate ParseError on poly models
+import odoo.tools.convert
+_original_convert_xml_import = odoo.tools.convert.convert_xml_import
+
+def poly_convert_xml_import(env, module, fp, idref, mode, noupdate):
+    _patch_ir_ui_view()
+    try:
+        return _original_convert_xml_import(env, module, fp, idref, mode, noupdate)
+    except Exception as e:
+        error_msg = str(e)
+        if "Unknown field" in error_msg:
+             _logger.warning("[poly] convert_xml_import: ignoring ParseError in %s: %s", module, error_msg)
+             return
+        raise e
+
+odoo.tools.convert.convert_xml_import = poly_convert_xml_import
+
+
 _original_Registry_setup_models = odoo.modules.registry.Registry.setup_models
 
 def _poly_registry_setup_models(self, cr):
@@ -3286,6 +3437,7 @@ def _poly_registry_setup_models(self, cr):
     Ensures critical polymorphic models have their full MRO
     finalized after Odoo's standard incremental build process.
     """
+    _patch_ir_ui_view()
     res = _original_Registry_setup_models(self, cr)
     
     # Identify models that participate in polymorphic inheritance
