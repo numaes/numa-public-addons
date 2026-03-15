@@ -1410,16 +1410,25 @@ class PolyBase(_original_BaseModel):
                                          self._fields[fname] = fobj
                                          # Odoo 18: ensure field metadata is correct
                                          fobj.model_name = self._name
+                                         
+                                         # Odoo 18: Injected fields from bases should NOT shadow actual methods.
+                                         # This is critical for 'pln_get_allocations_view' and others.
+                                         if fname not in model_class.__dict__:
+                                              setattr(model_class, fname, fobj)
+                                         
+                                         # Add to _field_definitions if missing, so _setup_base sees it
+                                         if hasattr(model_class, '_field_definitions'):
+                                              if fobj not in model_class._field_definitions:
+                                                   model_class._field_definitions.append(fobj)
+
                                          # Odoo 18: view validation needs the field to be in the model's registry
                                          # but we must NOT use the same field instance if it belongs to another model.
                                          # However, for non-stored fields it might be safe to alias them.
                                          # For 'is_timeoff_task' which is a standard boolean, it should be fine.
                                          
                                          # Force setup for the new model if already setup
-                                         if fobj.setup_done:
-                                              fobj.setup_done = False
-                                         if fname not in model_class.__dict__:
-                                              setattr(model_class, fname, fobj)
+                                         if hasattr(fobj, '_setup_done'):
+                                              fobj._setup_done = False
                                     elif fobj is not self._fields[fname] and fobj.manual and not self._fields[fname].manual:
                                          # Special case: manual fields (from customizations) might be lost if Odoo rebuilds 
                                          # and our polymorphic fields are shadowing them too aggressively.
@@ -3259,6 +3268,37 @@ def _poly_registry_setup_models(self, cr):
             if any(p_name not in current_mro_names for p_name in parents):
                 # We use the PolyBase class which is fully defined at this point
                 PolyBase._apply_polymorphic_hierarchy(self, name, model_class, parents)
+                
+            # Odoo 18: ensure all fields from bases are present on the model class for view validation.
+            # We do this EVERY time setup_models is called for critical models, 
+            # because Odoo might have rebuilt them and stripped our recovered fields.
+            if is_polymorphic:
+                # Odoo 18: In Registry.setup_models, parent_model._fields might be empty
+                # because it hasn't been built yet in this incremental setup.
+                # However, we can look at the classes in the MRO and their _field_definitions.
+                for base_class in model_class.mro():
+                     if hasattr(base_class, '_field_definitions'):
+                          for fobj in base_class._field_definitions:
+                               fname = fobj.name
+                               if fname not in model_class._fields:
+                                    model_class._fields[fname] = fobj
+                                    fobj.model_name = name
+                                    if fname not in model_class.__dict__:
+                                         setattr(model_class, fname, fobj)
+                                    # Add to _field_definitions if missing, so _setup_base sees it
+                                    if hasattr(model_class, '_field_definitions'):
+                                         if fobj not in model_class._field_definitions:
+                                              model_class._field_definitions.append(fobj)
+                                         
+                                    # Odoo 18: ensure the field is NOT setup for the old model class
+                                    if hasattr(fobj, '_setup_done'):
+                                         fobj._setup_done = False
+                
+                # Clear Env cache for this model to ensure fields are fresh
+                from odoo.api import Environment
+                if hasattr(Environment, '_classes') and Environment._classes is not None:
+                     if self in Environment._classes:
+                          Environment._classes[self].pop(name, None)
                 
     return res
 
