@@ -784,9 +784,10 @@ Odoo 18 builds the pool incrementally and has changed how it manages model inher
 *   **Problem**: During registry loading, critical models like `project.task` may lose their inheritance from `numa.planning.node` or `ir.poly_base` if the Odoo framework finalizes the hierarchy prematurely.
 *   **Solution (Final)**: A monkey-patch has been implemented in `Registry.setup_models`.
     *   This hook executes after Odoo's standard configuration process.
-    *   It inspects specific models (`project.task`, `numa.planning.node`) and verifies if their MRO contains all declared dependencies in `_depend_models`.
+    *   It dynamically identifies all models in the registry that participate in polymorphic inheritance by inspecting their MRO for `_depend_models` declarations.
+    *   It verifies if their MRO contains all declared dependencies.
     *   If a dependency is missing, it uses `_apply_polymorphic_hierarchy` to forcibly inject the missing parents into the Python class hierarchy at runtime.
-    *   This ensures that methods like `pln_get_allocations_view` (inherited from polymorphic models) are always available in the final model.
+    *   This ensures that inherited methods (like `pln_get_allocations_view`) and fields from polymorphic extensions are always available in the final model, even in complex incremental loading scenarios.
 
 ### 2. Proxy Classes Synchronization and Python Cache
 
@@ -807,11 +808,11 @@ In standard Odoo, two models cannot share the same relationship table and column
     *   If the conflicting models are polymorphic relatives (one is in the other's MRO), the error is silently ignored.
     *   The inverse field binding logic that Odoo skips upon detecting the conflict is manually restored.
 
-### 4. Registry Hierarchy Guarantee
+### 4. Registry Hierarchy and Field Recovery Guarantee
 
-To ensure that key models like `project.task` never lose their polymorphic capabilities (such as access to `numa.planning.node` methods), the system performs a final check upon completing registry loading (`Registry.setup_models`).
+To ensure that key models never lose their polymorphic capabilities or inherited fields, the system performs a final check upon completing registry loading (`Registry.setup_models`).
 
-If it detects that a model should be polymorphic but its Python MRO does not reflect the full hierarchy, it dynamically injects the missing bases and synchronizes its proxy classes. This solves incremental loading issues in Odoo 18 where module extensions can alter the expected construction order.
+If it detects that a model should be polymorphic but its Python MRO does not reflect the full hierarchy, it dynamically injects the missing bases and synchronizes its proxy classes. Additionally, it performs an exhaustive scan of the MRO to "recover" any fields that Odoo's incremental loading might have missed (e.g., standard Odoo fields added by bridge modules). This ensures a robust state for view validation and business logic.
 
 ---
 

@@ -727,6 +727,40 @@ class PolyBase(_original_BaseModel):
             if not hasattr(pool, '_poly_mro_cache'): pool._poly_mro_cache = {}
             pool._poly_mro_cache[name] = final_bases
             POLY_MRO_CACHE[pool.db_name][name] = final_bases
+
+            # Odoo 18: Immediate field recovery after hierarchy change
+            # to prevent stale _fields during incremental module loading
+            from odoo.models import MetaModel
+            _current_mro = model_class.mro()
+            for _base_class in _current_mro:
+                if (getattr(_base_class, 'pool', None) is None
+                        and isinstance(_base_class, MetaModel)
+                        and hasattr(_base_class, '_field_definitions')):
+                    for _fobj in _base_class._field_definitions:
+                        _fname = _fobj.name
+                        if _fname not in model_class._fields:
+                            _fobj.model_name = name
+                            model_class._fields[_fname] = _fobj
+                            if _fname not in model_class.__dict__:
+                                try:
+                                    setattr(model_class, _fname, _fobj)
+                                except Exception:
+                                    pass
+                            
+                            # Also ensure the proxy class (if any) has it
+                            if hasattr(pool, 'models') and name in pool.models:
+                                _proxy = pool.models[name]
+                                if _proxy is not model_class:
+                                    _proxy._fields[_fname] = _fobj
+                                    if _fname not in _proxy.__dict__:
+                                        try: setattr(_proxy, _fname, _fobj)
+                                        except Exception: pass
+
+                            if hasattr(_fobj, '_setup_done'):
+                                _fobj._setup_done = False
+                            elif hasattr(_fobj, 'setup_done'):
+                                _fobj.setup_done = False
+            
             return True
         except Exception: return False
 
@@ -1243,6 +1277,23 @@ class PolyBase(_original_BaseModel):
 
         # Odoo 18: ensure polymorphic attributes are built after base setup
         if hasattr(model_class, '__depends_base_classes'):
+             # Fail-safe: Recovery of missing fields from MRO after super()._setup_base()
+             # to catch fields added by standard Odoo inheritance during incremental loading.
+             from odoo.models import MetaModel
+             for cls in model_class.mro():
+                 if (getattr(cls, 'pool', None) is None
+                         and isinstance(cls, MetaModel)
+                         and hasattr(cls, '_field_definitions')):
+                     for f in cls._field_definitions:
+                         if f.name not in self._fields:
+                             f.model_name = self._name
+                             self._fields[f.name] = f
+                             if f.name not in model_class.__dict__:
+                                 try: setattr(model_class, f.name, f)
+                                 except Exception: pass
+                             if hasattr(f, '_setup_done'): f._setup_done = False
+                             elif hasattr(f, 'setup_done'): f.setup_done = False
+
              self._setup_poly_fields()
              
              # Clear registry caches to force method re-discovery
@@ -3232,29 +3283,22 @@ _original_Registry_setup_models = odoo.modules.registry.Registry.setup_models
 
 def _poly_registry_setup_models(self, cr):
     """
-    Ensures critical polymorphic models (like project.task) have their full MRO
+    Ensures critical polymorphic models have their full MRO
     finalized after Odoo's standard incremental build process.
     """
     res = _original_Registry_setup_models(self, cr)
     
-    for name in ('project.task', 'numa.planning.node'):
-        if name not in self:
-            continue
-            
-        model_class = self[name]
+    # Identify models that participate in polymorphic inheritance
+    poly_models = []
+    for name, model_class in self.items():
         if not isinstance(model_class, type):
             continue
-
+            
         mro = model_class.mro()
         all_depend_models = OrderedDict()
         is_polymorphic = False
         
-        # Odoo 18: project.task MUST be polymorphic with numa.planning.node
-        if name == 'project.task':
-            is_polymorphic = True
-            all_depend_models['numa.planning.node'] = 'planning_node_id'
-
-        # Collect any other polymorphic dependencies from the MRO
+        # Collect polymorphic dependencies from the MRO
         for base in mro:
             if base is model_class:
                 continue
@@ -3264,88 +3308,101 @@ def _poly_registry_setup_models(self, cr):
                 for dep_model, dep_field in dep_models.items():
                     if dep_model not in all_depend_models:
                         all_depend_models[dep_model] = dep_field
-
+        
         if is_polymorphic:
-            parents = list(all_depend_models.keys())
-            if name != 'ir.poly_base' and 'ir.poly_base' not in parents:
-                parents.append('ir.poly_base')
+            poly_models.append((name, model_class, all_depend_models))
 
-            # Check if parents are already in MRO names
-            current_mro_names = [c._name for c in mro if hasattr(c, '_name')]
-            poly_applied = False
-            if any(p_name not in current_mro_names for p_name in parents):
-                # We use the PolyBase class which is fully defined at this point
-                poly_applied = PolyBase._apply_polymorphic_hierarchy(self, name, model_class, parents)
+    for name, model_class, all_depend_models in poly_models:
+        parents = list(all_depend_models.keys())
+        if name != 'ir.poly_base' and 'ir.poly_base' not in parents:
+            parents.append('ir.poly_base')
 
-            if poly_applied:
-                # _apply_polymorphic_hierarchy changed MRO but does NOT set _setup_done=False
-                # (unlike poly's _build_model). We must reset it before calling _setup_base,
-                # otherwise _setup_base returns early due to the _setup_done guard.
-                model_class._setup_done = False
+        # Check if parents are already in MRO names
+        mro = model_class.mro()
+        current_mro_names = [getattr(c, '_name', None) for c in mro]
+        poly_applied = False
+        if any(p_name not in current_mro_names for p_name in parents):
+            # We use the PolyBase class which is fully defined at this point
+            poly_applied = PolyBase._apply_polymorphic_hierarchy(self, name, model_class, parents)
+
+        if poly_applied:
+            # _apply_polymorphic_hierarchy changed MRO but does NOT set _setup_done=False
+            # (unlike poly's _build_model). We must reset it before calling _setup_base,
+            # otherwise _setup_base returns early due to the _setup_done guard.
+            model_class._setup_done = False
+            try:
+                _env = api.Environment(cr, SUPERUSER_ID, {})
+                _env[name]._setup_base()
+                # Re-run _setup_fields to resolve comodels and field relations.
+                # Guard _m2m as Odoo sets it in setup_models around _setup_fields.
+                _m2m_was_set = hasattr(self, '_m2m')
+                if not _m2m_was_set:
+                    self._m2m = defaultdict(list)
                 try:
-                    _env = api.Environment(cr, SUPERUSER_ID, {})
-                    _env[name]._setup_base()
-                    # Re-run _setup_fields to resolve comodels and field relations.
-                    # Guard _m2m as Odoo sets it in setup_models around _setup_fields.
-                    _m2m_was_set = hasattr(self, '_m2m')
-                    if not _m2m_was_set:
-                        self._m2m = defaultdict(list)
-                    try:
-                        _env[name]._setup_fields()
-                    finally:
-                        if not _m2m_was_set and hasattr(self, '_m2m'):
-                            del self._m2m
-                    _logger.debug(
-                        "Re-ran _setup_base/_setup_fields for %s after poly hierarchy "
-                        "injection; _fields now has %d entries",
-                        name, len(model_class._fields),
-                    )
-                except Exception as _e:
-                    _logger.warning(
-                        "Re-running _setup_base/_setup_fields for %s after poly "
-                        "injection failed (%s); falling back to _field_definitions scan",
-                        name, _e,
-                    )
-
-            # After _original_Registry_setup_models (and any poly hierarchy injection),
-            # ensure all fields from definition classes in the MRO are present in _fields.
-            # This is necessary because _setup_base may have run before some extension
-            # modules (e.g. project_timesheet_holidays defining is_timeoff_task) were
-            # loaded, or because poly's MRO manipulation caused _setup_base to use a
-            # stale MRO that excluded the extension's definition class.
-            # We scan ALL definition classes (pool=None, MetaModel instance) in the
-            # current MRO and add any missing fields.
-            from odoo.models import MetaModel
-            _current_mro = model_class.mro()
-            _fields_before = set(model_class._fields.keys())
-            for _base_class in _current_mro:
-                if (getattr(_base_class, 'pool', None) is None
-                        and isinstance(_base_class, MetaModel)
-                        and hasattr(_base_class, '_field_definitions')):
-                    for _fobj in _base_class._field_definitions:
-                        _fname = _fobj.name
-                        if _fname not in model_class._fields:
-                            _logger.debug(
-                                "[poly] Recovering missing field %s.%s from "
-                                "%s._field_definitions (not found after _setup_base)",
-                                name, _fname, _base_class.__name__,
-                            )
-                            _fobj.model_name = name
-                            model_class._fields[_fname] = _fobj
-                            if _fname not in model_class.__dict__:
-                                try:
-                                    setattr(model_class, _fname, _fobj)
-                                except Exception:
-                                    pass
-                            if hasattr(_fobj, '_setup_done'):
-                                _fobj._setup_done = False
-            _fields_added = set(model_class._fields.keys()) - _fields_before
-            if _fields_added:
-                _logger.info(
-                    "[poly] _poly_registry_setup_models: recovered %d missing field(s) "
-                    "for %s: %s",
-                    len(_fields_added), name, sorted(_fields_added),
+                    _env[name]._setup_fields()
+                finally:
+                    if not _m2m_was_set and hasattr(self, '_m2m'):
+                        del self._m2m
+            except Exception as _e:
+                _logger.warning(
+                    "Re-running _setup_base/_setup_fields for %s after poly "
+                    "injection failed (%s); falling back to _field_definitions scan",
+                    name, _e,
                 )
+
+        # After _original_Registry_setup_models (and any poly hierarchy injection),
+        # ensure all fields from definition classes in the MRO are present in _fields.
+        # This is necessary because _setup_base may have run before some extension
+        # modules were loaded, or because poly's MRO manipulation caused _setup_base
+        # to use a stale MRO that excluded the extension's definition class.
+        # We scan ALL definition classes (pool=None, MetaModel instance) in the
+        # current MRO and add any missing fields or descriptors.
+        from odoo.models import MetaModel
+        _current_mro = model_class.mro()
+        _fields_before = set(model_class._fields.keys())
+        for _base_class in _current_mro:
+            if (getattr(_base_class, 'pool', None) is None
+                    and isinstance(_base_class, MetaModel)
+                    and hasattr(_base_class, '_field_definitions')):
+                for _fobj in _base_class._field_definitions:
+                    _fname = _fobj.name
+                    # RECOVERY: Always ensure the field is a descriptor on the model class.
+                    # Odoo 18's view validation and incremental loading can leave 
+                    # _fields populated but the class attribute missing.
+                    if _fname not in model_class.__dict__:
+                        try:
+                            setattr(model_class, _fname, _fobj)
+                        except Exception:
+                            pass
+                    
+                    # Ensure proxy consistency
+                    if hasattr(self, 'models') and name in self.models:
+                        _proxy = self.models[name]
+                        if _proxy is not model_class and _fname not in _proxy.__dict__:
+                            try: setattr(_proxy, _fname, _fobj)
+                            except Exception: pass
+
+                    if _fname not in model_class._fields:
+                        _fobj.model_name = name
+                        model_class._fields[_fname] = _fobj
+                        
+                        # Also ensure the proxy class (if any) has it in _fields
+                        if hasattr(self, 'models') and name in self.models:
+                            _proxy = self.models[name]
+                            if _proxy is not model_class:
+                                _proxy._fields[_fname] = _fobj
+
+                        if hasattr(_fobj, '_setup_done'):
+                            _fobj._setup_done = False
+                        elif hasattr(_fobj, 'setup_done'):
+                            _fobj.setup_done = False
+        _fields_added = set(model_class._fields.keys()) - _fields_before
+        if _fields_added:
+            _logger.info(
+                "[poly] _poly_registry_setup_models: recovered %d missing field(s) "
+                "for %s: %s",
+                len(_fields_added), name, sorted(_fields_added),
+            )
 
             # Clear Env cache for this model to ensure fields are fresh
             from odoo.api import Environment
