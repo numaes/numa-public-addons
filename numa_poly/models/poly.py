@@ -1398,8 +1398,9 @@ class PolyBase(_original_BaseModel):
                 # Odoo 18: also pull in fields from parent models that might have been missed
                 # by the standard MRO-based setup in _setup_base.
                 # This is a safety for view validation.
-                all_bases = getattr(model_class, '__depends_base_classes', ())
-                for base_class in all_bases:
+                # In Odoo 18, we search the ENTIRE MRO to recover fields that might
+                # have been lost during incremental registry loading.
+                for base_class in model_class.mro():
                      if hasattr(base_class, '_name') and base_class._name != self._name:
                           parent_model = self.env.get(base_class._name)
                           if parent_model is not None:
@@ -1409,6 +1410,10 @@ class PolyBase(_original_BaseModel):
                                          self._fields[fname] = fobj
                                          if fname not in model_class.__dict__:
                                               setattr(model_class, fname, fobj)
+                                    elif fobj is not self._fields[fname] and fobj.manual and not self._fields[fname].manual:
+                                         # Special case: manual fields (from customizations) might be lost if Odoo rebuilds 
+                                         # and our polymorphic fields are shadowing them too aggressively.
+                                         pass
 
                 # Update _fields of the model in the pool
                 if self._name in self.pool.models:
