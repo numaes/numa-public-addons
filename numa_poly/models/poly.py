@@ -3239,17 +3239,44 @@ class IrModel(models.Model):
         """
         all_model_names = list(model_names)
         
+        # Odoo 18: Get the module being initialized
+        module = self._context.get('module')
+        
         # Add all polymorphic models that are currently in the registry
         # but might have been missed by standard reflection.
         for name, model in self.env.registry.items():
             if name not in all_model_names:
                 if hasattr(model, '__depends_base_classes'):
                     # Check if the model belongs to the module being initialized
-                    module = self._context.get('module')
                     if module and (model._module == module or getattr(model, '_original_module', None) == module):
                         all_model_names.append(name)
         
-        return super()._reflect_models(all_model_names)
+        # Call super to do the actual reflection and XML ID generation
+        res = super()._reflect_models(all_model_names)
+        
+        # FORCED FIX for XML IDs: Sometimes Odoo's super()._reflect_models skips XML ID creation
+        # if the registry has an inconsistent state during incremental load.
+        if module:
+            data_list = []
+            for name in all_model_names:
+                model = self.env[name]
+                # If the model belongs to this module, ensure its XML ID exists.
+                if model._module == module or getattr(model, '_original_module', None) == module:
+                    xml_id = f"model_{name.replace('.', '_')}"
+                    # Check if external ID already exists to avoid unnecessary updates
+                    if not self.env['ir.model.data']._xmlid_to_res_id(f"{module}.{xml_id}", raise_if_not_found=False):
+                        model_id = self._get_id(name)
+                        if model_id:
+                            _logger.debug("[poly] Forcefully registering external ID %s.%s for model %s", module, xml_id, name)
+                            data_list.append({
+                                'xml_id': f"{module}.{xml_id}",
+                                'record': self.browse(model_id),
+                            })
+            
+            if data_list:
+                self.env['ir.model.data']._update_xmlids(data_list)
+                
+        return res
 
 
 class IrModelFields(models.Model):
