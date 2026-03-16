@@ -3573,7 +3573,12 @@ def _poly_registry_setup_models(self, cr):
                                 if _comodel and isinstance(_comodel, odoo_fields.Sentinel):
                                     _comodel = None
 
-                                _logger.info("[poly] Recovery field %s on %s: relational=%s, comodel=%s", _fname, name, _fobj.relational, _comodel)
+                                # EXTRA: Extraer inverse_name para campos One2many
+                                _inverse = getattr(_fobj, 'inverse_name', None) or _args.get('inverse_name')
+                                if _inverse and isinstance(_inverse, odoo_fields.Sentinel):
+                                    _inverse = None
+
+                                _logger.info("[poly] Recovery field %s on %s: relational=%s, comodel=%s, inverse=%s", _fname, name, _fobj.relational, _comodel, _inverse)
 
                                 # Si es un campo relacional (m2o, o2m, m2m) y no tenemos comodel_name,
                                 # NO podemos instanciarlo ni inyectarlo, ya que update_db fallará.
@@ -3581,6 +3586,11 @@ def _poly_registry_setup_models(self, cr):
                                     _logger.warning('[poly] Skipping relational field %s on %s: missing comodel_name (type: %s)', _fname, name, type(_fobj))
                                     continue
                                 
+                                # Si es One2many y no es computado Y no tiene inverso, fallará en update_db.
+                                if _fobj.type == 'one2many' and not _inverse and not getattr(_fobj, 'compute', None) and not _args.get('compute'):
+                                    _logger.warning('[poly] Skipping non-computed One2many field %s on %s: missing inverse_name', _fname, name)
+                                    continue
+
                                 # Asegurar comodel_name en los argumentos de inicializacion
                                 if _comodel and 'comodel_name' not in _args:
                                     _args['comodel_name'] = _comodel
@@ -3632,15 +3642,23 @@ def _poly_registry_setup_models(self, cr):
                                 _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
                                 _base_inverse = getattr(_fobj, 'inverse_name', None) or getattr(_fobj, '_args', {}).get('inverse_name')
                                 
+                                # Si el original tampoco tiene comodel o inverso, y es un campo incompleto inyectado por Odoo,
+                                # tal vez deberíamos forzarlo a store=False si no tiene forma de ser válido.
+                                
                                 if _base_comodel and not isinstance(_base_comodel, odoo_fields.Sentinel):
                                     if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
                                         _logger.info("[poly] Correcting comodel_name for existing field %s on %s: %s -> %s", _fname, name, _comodel, _base_comodel)
                                         _existing_fobj.comodel_name = _base_comodel
                                 
-                                if _existing_fobj.type == 'one2many' and _base_inverse and not isinstance(_base_inverse, odoo_fields.Sentinel):
-                                    if not _inverse or isinstance(_inverse, odoo_fields.Sentinel):
-                                        _logger.info("[poly] Correcting inverse_name for existing field %s on %s: %s -> %s", _fname, name, _inverse, _base_inverse)
-                                        _existing_fobj.inverse_name = _base_inverse
+                                if _existing_fobj.type == 'one2many':
+                                    if _base_inverse and not isinstance(_base_inverse, odoo_fields.Sentinel):
+                                        if not _inverse or isinstance(_inverse, odoo_fields.Sentinel):
+                                            _logger.info("[poly] Correcting inverse_name for existing field %s on %s: %s -> %s", _fname, name, _inverse, _base_inverse)
+                                            _existing_fobj.inverse_name = _base_inverse
+                                    elif not _existing_fobj.inverse_name and not getattr(_existing_fobj, 'compute', None):
+                                         # Si sigue sin inverso y no es computado, forzar store=False para evitar update_db
+                                         _logger.warning("[poly] Field %s on %s still missing inverse_name, forcing store=False", _fname, name)
+                                         _existing_fobj.store = False
                                 
                                 if hasattr(_existing_fobj, '_setup_done'): 
                                     _existing_fobj._setup_done = False
@@ -3694,13 +3712,23 @@ def _poly_registry_setup_models(self, cr):
                                 if _comodel and isinstance(_comodel, odoo_fields.Sentinel):
                                     _comodel = None
 
-                                _logger.info("[poly] Recovery field %s on %s (dict): relational=%s, comodel=%s", _fname, name, _fobj.relational, _comodel)
+                                # EXTRA: Extraer inverse_name para campos One2many
+                                _inverse = getattr(_fobj, 'inverse_name', None) or _args.get('inverse_name')
+                                if _inverse and isinstance(_inverse, odoo_fields.Sentinel):
+                                    _inverse = None
+
+                                _logger.info("[poly] Recovery field %s on %s (dict): relational=%s, comodel=%s, inverse=%s", _fname, name, _fobj.relational, _comodel, _inverse)
 
                                 # Si es un campo relacional y no tenemos comodel_name, saltar para evitar KeyError: None
                                 if _fobj.relational and not _comodel:
                                     _logger.warning('[poly] Skipping relational field %s on %s (dict): missing comodel_name (type: %s)', _fname, name, type(_fobj))
                                     continue
                                 
+                                # Si es One2many y no es computado Y no tiene inverso, saltar
+                                if _fobj.type == 'one2many' and not _inverse and not getattr(_fobj, 'compute', None) and not _args.get('compute'):
+                                    _logger.warning('[poly] Skipping non-computed One2many field %s on %s (dict): missing inverse_name', _fname, name)
+                                    continue
+
                                 # Asegurar comodel_name en los argumentos de inicializacion
                                 if _comodel and 'comodel_name' not in _args:
                                     _args['comodel_name'] = _comodel
@@ -3757,10 +3785,15 @@ def _poly_registry_setup_models(self, cr):
                                         _logger.info("[poly] Correcting comodel_name for existing field %s on %s (dict): %s -> %s", _fname, name, _comodel, _base_comodel)
                                         _existing_fobj.comodel_name = _base_comodel
                                 
-                                if _existing_fobj.type == 'one2many' and _base_inverse and not isinstance(_base_inverse, odoo_fields.Sentinel):
-                                    if not _inverse or isinstance(_inverse, odoo_fields.Sentinel):
-                                        _logger.info("[poly] Correcting inverse_name for existing field %s on %s (dict): %s -> %s", _fname, name, _inverse, _base_inverse)
-                                        _existing_fobj.inverse_name = _base_inverse
+                                if _existing_fobj.type == 'one2many':
+                                    if _base_inverse and not isinstance(_base_inverse, odoo_fields.Sentinel):
+                                        if not _inverse or isinstance(_inverse, odoo_fields.Sentinel):
+                                            _logger.info("[poly] Correcting inverse_name for existing field %s on %s (dict): %s -> %s", _fname, name, _inverse, _base_inverse)
+                                            _existing_fobj.inverse_name = _base_inverse
+                                    elif not _existing_fobj.inverse_name and not getattr(_existing_fobj, 'compute', None):
+                                         # Si sigue sin inverso y no es computado, forzar store=False para evitar update_db
+                                         _logger.warning("[poly] Field %s on %s (dict) still missing inverse_name, forcing store=False", _fname, name)
+                                         _existing_fobj.store = False
                                 
                                 if hasattr(_existing_fobj, '_setup_done'): 
                                     _existing_fobj._setup_done = False
