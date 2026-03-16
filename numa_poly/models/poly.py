@@ -2123,7 +2123,65 @@ class PolyBase(_original_BaseModel):
     def _auto_init(self):
         """
         Extend _auto_init to ensure migration is performed when the table is created/updated.
+        In Odoo 18, we also ensure Many2many fields have a 'relation', 'column1', 'column2'
+        and '_modules' defined to avoid AttributeError and NotNullViolation in update_db.
         """
+        for _fname, _fobj in self._fields.items():
+            if _fobj.type == 'many2many':
+                _changed = False
+                if not getattr(_fobj, 'relation', None):
+                    if _fobj.comodel_name:
+                        _fobj.relation = f"{self._name.replace('.', '_')}_{_fname}_rel"
+                        _changed = True
+                
+                if not getattr(_fobj, 'column1', None):
+                    _fobj.column1 = 'id1' # Default column name if missing
+                    _changed = True
+                
+                if not getattr(_fobj, 'column2', None):
+                    _fobj.column2 = 'id2' # Default column name if missing
+                    _changed = True
+                
+                if not getattr(_fobj, '_module', None):
+                     _mod_name = getattr(self, '_module', None) or 'numa_poly'
+                     _fobj._module = _mod_name
+                     _changed = True
+
+                if not getattr(_fobj, '_modules', None) or None in _fobj._modules:
+                    # Odoo 18: _reflect_relation needs a module name.
+                    # We must ensure it's a set of strings. Use a fallback module name if needed.
+                    _mod_name = getattr(self, '_module', None)
+                    if not _mod_name:
+                        # Try to guess from comodel or field name
+                        _mod_name = 'numa_poly'
+                    
+                    # Ensure the module exists in ir_module_module to avoid NotNullViolation in ir_model_relation
+                    # Fallback to 'base' if not found.
+                    if _mod_name != 'base':
+                        self.env.cr.execute("SELECT 1 FROM ir_module_module WHERE name = %s", (_mod_name,))
+                        if not self.env.cr.rowcount:
+                            # Fallback to 'base' which always exists
+                            _mod_name = 'base'
+                        
+                    if not getattr(_fobj, '_modules', None):
+                        _fobj._modules = {_mod_name}
+                    else:
+                        _fobj._modules = {m for m in _fobj._modules if m is not None}
+                        if not _fobj._modules:
+                            _fobj._modules = {_mod_name}
+
+                    _changed = True
+                
+                # Proactive label recovery to avoid NotNullViolation in ir_model_fields
+                if not getattr(_fobj, 'string', None) or isinstance(_fobj.string, fields.Sentinel):
+                    _fobj.string = _fname.replace('_', ' ').capitalize()
+                    _changed = True
+
+                if _changed:
+                    _fobj._explicit = True
+                    _logger.warning("[poly] _auto_init: forcing physical metadata for %s on %s: rel=%s, col1=%s, col2=%s, modules=%s", 
+                                    _fname, self._name, _fobj.relation, _fobj.column1, _fobj.column2, _fobj._modules)
+
         res = super()._auto_init()
         # Only migrate if _depend_models is defined (is a polymorphic model)
         if getattr(self, '_depend_models', None) is not None:
@@ -3678,6 +3736,15 @@ def _poly_registry_setup_models(self, cr):
                                         if _base_val:
                                             setattr(_new_fobj, _attr, _base_val)
 
+                                    # [poly] FIX: Ensure relation is NEVER None for Many2many during recovery
+                                    if not getattr(_new_fobj, 'relation', None):
+                                        if _comodel:
+                                            # Generate a predictable relation name if missing
+                                            # Odoo's default is usually model1_model2_rel, but here we can't be sure of the other model.
+                                            # Use a generic name based on model and field if really missing.
+                                            _new_fobj.relation = f"{name.replace('.', '_')}_{_fname}_rel"
+                                            _logger.warning("[poly] Generated missing relation for field %s on %s: %s", _fname, name, _new_fobj.relation)
+
                                     if getattr(_new_fobj, 'relation', None):
                                         _new_fobj._explicit = True
                                     
@@ -3745,6 +3812,13 @@ def _poly_registry_setup_models(self, cr):
                                             setattr(_existing_fobj, _attr, _base_val)
                                             if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
                                     
+                                    # [poly] FIX: Ensure relation is NEVER None for Many2many during recovery (existing)
+                                    if not getattr(_existing_fobj, 'relation', None):
+                                        _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
+                                        if _base_comodel:
+                                            _existing_fobj.relation = f"{name.replace('.', '_')}_{_fname}_rel"
+                                            _logger.warning("[poly] Generated missing relation for existing field %s on %s: %s", _fname, name, _existing_fobj.relation)
+
                                     if getattr(_existing_fobj, 'relation', None):
                                         _existing_fobj._explicit = True
                                     if getattr(_existing_fobj, 'column1', None) or getattr(_existing_fobj, 'column2', None):
@@ -3850,6 +3924,12 @@ def _poly_registry_setup_models(self, cr):
                                         if _base_val:
                                             setattr(_new_fobj, _attr, _base_val)
 
+                                    # [poly] FIX: Ensure relation is NEVER None for Many2many during recovery (dict)
+                                    if not getattr(_new_fobj, 'relation', None):
+                                        if _comodel:
+                                            _new_fobj.relation = f"{name.replace('.', '_')}_{_fname}_rel"
+                                            _logger.warning("[poly] Generated missing relation for field %s on %s (dict): %s", _fname, name, _new_fobj.relation)
+
                                     if getattr(_new_fobj, 'relation', None):
                                         _new_fobj._explicit = True
                                     
@@ -3914,6 +3994,13 @@ def _poly_registry_setup_models(self, cr):
                                             setattr(_existing_fobj, _attr, _base_val)
                                             if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
                                     
+                                    # [poly] FIX: Ensure relation is NEVER None for Many2many during recovery (existing dict)
+                                    if not getattr(_existing_fobj, 'relation', None):
+                                        _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
+                                        if _base_comodel:
+                                            _existing_fobj.relation = f"{name.replace('.', '_')}_{_fname}_rel"
+                                            _logger.warning("[poly] Generated missing relation for existing field %s on %s (dict): %s", _fname, name, _existing_fobj.relation)
+
                                     if getattr(_existing_fobj, 'relation', None):
                                         _existing_fobj._explicit = True
                                     if getattr(_existing_fobj, 'column1', None) or getattr(_existing_fobj, 'column2', None):
@@ -3936,6 +4023,25 @@ def _poly_registry_setup_models(self, cr):
                                 _logger.info("[poly] FORCING descriptor for %s in %s proxy (from __dict__)", _fname, name)
                                 try: setattr(_proxy, _fname, _fobj)
                                 except Exception: pass
+
+                    # [poly] FIX: Ensure _modules and _module is NEVER empty or containing None for relational fields
+                    if _fobj.relational:
+                        # Odoo 18: Many2many fields use self._module in update_db -> post_init(_reflect_relation, ...)
+                        if not getattr(_fobj, '_module', None):
+                            _mod_name = getattr(model_class, '_module', None) or 'numa_poly'
+                            _fobj._module = _mod_name
+                            _logger.info("[poly] Recovery field %s on %s: set missing _module to %s", _fname, name, _fobj._module)
+                        
+                        if not getattr(_fobj, '_modules', None):
+                            _mod_name = getattr(_fobj, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
+                            _fobj._modules = {_mod_name}
+                            _logger.info("[poly] Recovery field %s on %s: set missing _modules to %s", _fname, name, _fobj._modules)
+                        elif None in _fobj._modules:
+                            _fobj._modules = {m for m in _fobj._modules if m is not None}
+                            if not _fobj._modules:
+                                _mod_name = getattr(_fobj, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
+                                _fobj._modules = {_mod_name}
+                            _logger.info("[poly] Recovery field %s on %s: cleaned None from _modules, now %s", _fname, name, _fobj._modules)
 
             # 3. Method propagation (Odoo 18 MRO might miss methods if classes are skipped)
             # We already use MRO, so methods should be found by Python. 
