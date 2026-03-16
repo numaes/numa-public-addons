@@ -15,6 +15,38 @@ Technical Note (Odoo 18):
 This module uses a retroactive dependency resolution mechanism to handle models that
 depend on each other across different module loading phases. It also ensures
 synchronization between Odoo 18 Proxy classes and their underlying implementation classes.
+
+Architecture & Design Decisions:
+
+1. Method Resolution Order (MRO) Logic:
+   The system explicitly prioritizes polymorphic parents (from `_depend_models`) over
+   Odoo's standard inheritance (`_inherit`). This ensures that polymorphic behavior
+   can effectively intercept and override standard model methods.
+   MRO Hierarchy: [PolymorphicParents, ir.poly_base, OdooInheritBases, BaseModel, object]
+
+2. Retroactive Dependency Resolution:
+   In Odoo's incremental loading, a child model might be instantiated before its
+   polymorphic parent is fully processed or promoted. To solve this "immutability"
+   problem, `numa_poly` implements a post-setup hook in `Registry.setup_models`
+   that scans all models, recalculates hierarchies, and updates `__bases__`
+   dynamically to ensure that all children acquire their parent's polymorphic methods.
+
+3. Reactive View Validation & Error Masking:
+   Odoo 18 validates views (`_validate_view`) immediately after XML record loading,
+   often before the final MRO has been synchronized across all models. This leads
+   to "Unknown field" or "Method not found" errors for buttons or actions referencing
+   polymorphic logic.
+   To survive the `-u` (update) process:
+   - A reactive injection patch scans the MRO for missing elements during validation.
+   - If inconsistency persists, errors are masked (`return True`) as a fail-safe.
+   This masking is critical because the Registry is in a transient, inconsistent state
+   during update; final consistency is guaranteed only after the full registry setup.
+
+4. Cache and Proxy Synchronization:
+   Modern Odoo uses internal caches (like `Environment._classes` and Proxy classes)
+   that may hold stale versions of model definitions. `numa_poly` forcefully clears
+   these caches and synchronizes Proxy `__bases__` to ensure that Python's attribute
+   lookup reflects the injected polymorphic hierarchy.
 """
 
 import logging
