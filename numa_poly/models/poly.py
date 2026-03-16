@@ -3619,15 +3619,42 @@ def _poly_registry_setup_models(self, cr):
                         _existing_fobj = model_class._fields[_fname]
                         if _existing_fobj.relational:
                             _comodel = getattr(_existing_fobj, 'comodel_name', None)
+                            _inverse = getattr(_existing_fobj, 'inverse_name', None)
+                            
+                            _needs_correction = False
                             if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
-                                # Try to recover comodel_name from _base_class's version of the field
+                                _needs_correction = True
+                            if _existing_fobj.type == 'one2many' and (not _inverse or isinstance(_inverse, odoo_fields.Sentinel)):
+                                _needs_correction = True
+
+                            if _needs_correction:
+                                # Try to recover attributes from _base_class's version of the field
                                 _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
+                                _base_inverse = getattr(_fobj, 'inverse_name', None) or getattr(_fobj, '_args', {}).get('inverse_name')
+                                
                                 if _base_comodel and not isinstance(_base_comodel, odoo_fields.Sentinel):
-                                    _logger.info("[poly] Correcting comodel_name for existing field %s on %s: %s -> %s", _fname, name, _comodel, _base_comodel)
-                                    _existing_fobj.comodel_name = _base_comodel
-                                    if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
-                                else:
-                                    _logger.warning("[poly] Field %s on %s already in _fields but has no comodel_name (Sentinel: %s)", _fname, name, isinstance(_comodel, odoo_fields.Sentinel))
+                                    if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
+                                        _logger.info("[poly] Correcting comodel_name for existing field %s on %s: %s -> %s", _fname, name, _comodel, _base_comodel)
+                                        _existing_fobj.comodel_name = _base_comodel
+                                
+                                if _existing_fobj.type == 'one2many' and _base_inverse and not isinstance(_base_inverse, odoo_fields.Sentinel):
+                                    if not _inverse or isinstance(_inverse, odoo_fields.Sentinel):
+                                        _logger.info("[poly] Correcting inverse_name for existing field %s on %s: %s -> %s", _fname, name, _inverse, _base_inverse)
+                                        _existing_fobj.inverse_name = _base_inverse
+                                
+                                if hasattr(_existing_fobj, '_setup_done'): 
+                                    _existing_fobj._setup_done = False
+                            else:
+                                # Even if not missing, ensure critical relational attributes are synced if they differ
+                                # (e.g. Many2many relation/column names)
+                                if _existing_fobj.type == 'many2many':
+                                    for _attr in ['relation', 'column1', 'column2']:
+                                        _val = getattr(_existing_fobj, _attr, None)
+                                        _base_val = getattr(_fobj, _attr, None)
+                                        if _base_val and _val != _base_val:
+                                            _logger.info("[poly] Syncing %s for existing Many2many field %s on %s: %s -> %s", _attr, _fname, name, _val, _base_val)
+                                            setattr(_existing_fobj, _attr, _base_val)
+                                            if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
                     
                     # Ensure descriptor is in model class __dict__
                     if _fname not in model_class.__dict__:
@@ -3712,15 +3739,42 @@ def _poly_registry_setup_models(self, cr):
                         _existing_fobj = model_class._fields[_fname]
                         if _existing_fobj.relational:
                             _comodel = getattr(_existing_fobj, 'comodel_name', None)
+                            _inverse = getattr(_existing_fobj, 'inverse_name', None)
+                            
+                            _needs_correction = False
                             if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
-                                # Try to recover comodel_name from _base_class's version of the field
+                                _needs_correction = True
+                            if _existing_fobj.type == 'one2many' and (not _inverse or isinstance(_inverse, odoo_fields.Sentinel)):
+                                _needs_correction = True
+
+                            if _needs_correction:
+                                # Try to recover attributes from _base_class's version of the field
                                 _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
+                                _base_inverse = getattr(_fobj, 'inverse_name', None) or getattr(_fobj, '_args', {}).get('inverse_name')
+                                
                                 if _base_comodel and not isinstance(_base_comodel, odoo_fields.Sentinel):
-                                    _logger.info("[poly] Correcting comodel_name for existing field %s on %s (dict): %s -> %s", _fname, name, _comodel, _base_comodel)
-                                    _existing_fobj.comodel_name = _base_comodel
-                                    if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
-                                else:
-                                    _logger.warning("[poly] Field %s on %s (dict) already in _fields but has no comodel_name (Sentinel: %s)", _fname, name, isinstance(_comodel, odoo_fields.Sentinel))
+                                    if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
+                                        _logger.info("[poly] Correcting comodel_name for existing field %s on %s (dict): %s -> %s", _fname, name, _comodel, _base_comodel)
+                                        _existing_fobj.comodel_name = _base_comodel
+                                
+                                if _existing_fobj.type == 'one2many' and _base_inverse and not isinstance(_base_inverse, odoo_fields.Sentinel):
+                                    if not _inverse or isinstance(_inverse, odoo_fields.Sentinel):
+                                        _logger.info("[poly] Correcting inverse_name for existing field %s on %s (dict): %s -> %s", _fname, name, _inverse, _base_inverse)
+                                        _existing_fobj.inverse_name = _base_inverse
+                                
+                                if hasattr(_existing_fobj, '_setup_done'): 
+                                    _existing_fobj._setup_done = False
+                            else:
+                                # Even if not missing, ensure critical relational attributes are synced if they differ
+                                # (e.g. Many2many relation/column names)
+                                if _existing_fobj.type == 'many2many':
+                                    for _attr in ['relation', 'column1', 'column2']:
+                                        _val = getattr(_existing_fobj, _attr, None)
+                                        _base_val = getattr(_fobj, _attr, None)
+                                        if _base_val and _val != _base_val:
+                                            _logger.info("[poly] Syncing %s for existing Many2many field %s on %s (dict): %s -> %s", _attr, _fname, name, _val, _base_val)
+                                            setattr(_existing_fobj, _attr, _base_val)
+                                            if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
                     
                     if _fname not in model_class.__dict__:
                         _logger.info("[poly] FORCING descriptor for %s in %s class (from __dict__)", _fname, name)
