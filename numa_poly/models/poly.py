@@ -1452,10 +1452,9 @@ class PolyBase(_original_BaseModel):
                                  
                                  # Odoo 18: ensure column1 and column2 are set from original if present
                                  for _attr in ['column1', 'column2']:
-                                     if not getattr(new_field, _attr, None):
-                                         _base_val = getattr(field, _attr, None)
-                                         if _base_val:
-                                             setattr(new_field, _attr, _base_val)
+                                     _base_val = getattr(field, _attr, None)
+                                     if _base_val:
+                                         setattr(new_field, _attr, _base_val)
 
                                  if not getattr(new_field, 'column1', None):
                                       new_field.column1 = "%s_id" % self._name.replace('.', '_')
@@ -3631,10 +3630,12 @@ def _poly_registry_setup_models(self, cr):
                                     
                                     # Odoo 18: Ensure column1 and column2 are explicitly set if present in base
                                     for _attr in ['column1', 'column2']:
-                                        if not getattr(_new_fobj, _attr, None):
-                                            _base_val = getattr(_fobj, _attr, None)
-                                            if _base_val:
-                                                setattr(_new_fobj, _attr, _base_val)
+                                        _base_val = getattr(_fobj, _attr, None)
+                                        if _base_val:
+                                            setattr(_new_fobj, _attr, _base_val)
+
+                                    if getattr(_new_fobj, 'column1', None) and getattr(_new_fobj, 'column2', None):
+                                        _new_fobj._explicit = True
                                     
                             except Exception as e:
                                 _logger.error('[poly] Error cloning field %s: %s', _fname, e)
@@ -3770,17 +3771,19 @@ def _poly_registry_setup_models(self, cr):
                                         if val is not None:
                                             setattr(_new_fobj, attr, val)
                                 
-                                # Forzar explicitud en Many2many para evitar que Odoo recalcule nombres de columnas
+                                # Forzar explicitud en Many2many para evitar que Odoo recalcule nombres de columnas (dict recovery)
                                 if _new_fobj.type == 'many2many':
                                     if getattr(_new_fobj, 'relation', None):
                                         _new_fobj._explicit = True
                                     
                                     # Odoo 18: Ensure column1 and column2 are explicitly set if present in base
                                     for _attr in ['column1', 'column2']:
-                                        if not getattr(_new_fobj, _attr, None):
-                                            _base_val = getattr(_fobj, _attr, None)
-                                            if _base_val:
-                                                setattr(_new_fobj, _attr, _base_val)
+                                        _base_val = getattr(_fobj, _attr, None)
+                                        if _base_val:
+                                            setattr(_new_fobj, _attr, _base_val)
+
+                                    if getattr(_new_fobj, 'column1', None) and getattr(_new_fobj, 'column2', None):
+                                        _new_fobj._explicit = True
                                     
                             except Exception as e:
                                 _logger.error('[poly] Error cloning field %s: %s', _fname, e)
