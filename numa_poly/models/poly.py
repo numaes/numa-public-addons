@@ -824,7 +824,7 @@ class PolyBase(_original_BaseModel):
                                             cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
                                             if not cr.fetchone():
                                                 _col_type = _attr.column_type[1]
-                                                _logger.info("[poly] Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
+                                                _logger.debug("[poly] Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
                                                 cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
                                                 # Ensure Odoo knows it's a column
                                                 _attr.column = True
@@ -1592,7 +1592,7 @@ class PolyBase(_original_BaseModel):
         if not self._check_migration_needed():
             return
 
-        _logger.info("Migrating model %s to polymorphic hierarchy", self._name)
+        _logger.debug("Migrating model %s to polymorphic hierarchy", self._name)
 
         concrete_model_id = self.env['ir.model']._get_id(self._name)
 
@@ -1830,7 +1830,7 @@ class PolyBase(_original_BaseModel):
         
         # Post-migration: re-trigger syncs that were skipped during migration
         # We search all records of this model that now exist in ir_poly_base
-        _logger.info("Performing post-migration sync for %s", self._name)
+        _logger.debug("Performing post-migration sync for %s", self._name)
 
         # Before syncing, we perform a repository-wide update for pln_root_id
         # since all records are now migrated and have their new IDs in ir_poly_base
@@ -2171,7 +2171,7 @@ class PolyBase(_original_BaseModel):
         if getattr(self, '_depend_models', None) is not None:
             # Check if migration is needed and perform it
             if self._check_migration_needed():
-                _logger.info("Auto-migrating %s to polymorphic hierarchy in _auto_init", self._name)
+                _logger.debug("Auto-migrating %s to polymorphic hierarchy in _auto_init", self._name)
                 self._migrate_to_poly()
         return res
 
@@ -4024,8 +4024,7 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
             # In Odoo 18 incremental loading, context usually contains {'module': ...}
             current_module = (context or {}).get('module')
             if current_module:
-                _logger.info("[poly] _poly_registry_init_models: analyzing extensions for module %s", current_module)
-                _logger.info("[poly] _poly_registry_init_models: model_names ON START: %s", model_names)
+                _logger.debug("[poly] _poly_registry_init_models: analyzing extensions for module %s", current_module)
                 
                 # [poly] DEBT: If we have views in model_names, we MUST ensure their tables
                 # are also in model_names and come FIRST. Odoo might not include them if they were
@@ -4046,14 +4045,14 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
                     # We check both _module and _modules (Odoo 18 style)
                     for f in mclass._fields.values():
                         if f.store and (getattr(f, '_module', None) == current_module or (getattr(f, '_modules', None) and current_module in f._modules)):
-                             _logger.info("[poly] Model %s has stored field %s from %s", mname, f.name, current_module)
+                             _logger.debug("[poly] Model %s has stored field %s from %s", mname, f.name, current_module)
                              extra_models.add(mname)
                              break
                 
                 # Combine extra_models and tables_to_add
                 all_extra = extra_models | tables_to_add
                 if all_extra:
-                     _logger.info("[poly] Adding %d extra models: %s", len(all_extra), sorted(all_extra))
+                     _logger.debug("[poly] Adding %d extra models: %s", len(all_extra), sorted(all_extra))
                      if isinstance(model_names, set):
                          model_names.update(all_extra)
                      else:
@@ -4069,13 +4068,11 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
                         return 1 # Lower priority (views)
                     return 0 # Higher priority (tables)
 
-                _logger.info("[poly] _poly_registry_init_models: debug priority for project.task: %s", model_init_priority('project.task'))
-                _logger.info("[poly] _poly_registry_init_models: debug priority for report.project.task.user: %s", model_init_priority('report.project.task.user'))
 
                 # Always sort and convert to list to be 100% sure of the order
                 model_names = sorted(list(model_names), key=model_init_priority)
 
-                _logger.info("[poly] _poly_registry_init_models: model_names FINAL: %s", model_names)
+                _logger.debug("[poly] _poly_registry_init_models: model_names FINAL: %s", model_names)
                 
                 # [poly] CRITICAL: Ensure base tables have their columns updated BEFORE views are initialized.
                 # Odoo's init_models iterates and calls model._auto_init() and model.init().
@@ -4089,15 +4086,19 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
                     cr.execute("SELECT 1 FROM pg_catalog.pg_class WHERE relname = %s AND relkind = 'r'", (table,))
                     return bool(cr.fetchone())
 
+                # [poly] Professional Fix: Odoo 18 incremental setup_models might skip some
+                # extensions if they are not yet fully processed in the current Registry.load phase.
+                # We force setup_models() to ensure mclass._fields is fully up-to-date with
+                # all extensions (like sale_project extending project.task).
+                self.registry_invalidated = True
+                self.setup_models(cr)
+
                 for mname in model_names:
                     mclass = self.get(mname)
                     if mclass and getattr(mclass, '_auto', True) and mname != 'base':
                         _table = getattr(mclass, '_table', None)
                         if _table and table_exists(cr, _table):
-                             # [poly] Ensure models are fully set up before analyzing them, especially for extensions
-                             # self is the registry here
                              mclass = self[mname]
-                             _logger.info("[poly] MANUALLY ensuring columns for model %s (%s). Fields count: %d. MRO: %s. DIR_has_sale: %s", mname, _table, len(mclass._fields), mclass.__mro__, 'sale_line_id' in dir(mclass))
                              for _fname, _fobj in mclass._fields.items():
                                  if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None):
                                      _fmodule = getattr(_fobj, '_module', None)
@@ -4106,12 +4107,11 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
                                      # [poly] Professional Fix: Odoo 18 Registry initialization batching can lead to views being initialized
                                      # before the extended columns are in SQL, because _auto_init() might skip them if they are not in the current load context.
                                      # If the field is stored and has a column type, it MUST be in the database before views are created.
-                                     _logger.info("[poly] Checking field %s on %s (module: %s, modules: %s, current: %s, is_extended: %s)", _fname, mname, _fmodule, _fmodules, current_module, _is_extended)
-                                     if True: # Always check stored fields for models being initialized in the current batch
+                                     if _is_extended:
                                          cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
                                          if not cr.fetchone():
                                              _col_type = _fobj.column_type[1]
-                                             _logger.info("[poly] GENERIC (INIT): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
+                                             _logger.debug("[poly] GENERIC (INIT): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
                                              cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
                                              _fobj.column = True
                 
@@ -4137,7 +4137,7 @@ def _poly_registry_load(self, cr, module):
     if not getattr(cr, '_poly_in_load', False):
         try:
             cr._poly_in_load = True
-            _logger.info("[poly] Forcing setup_models after loading module %s", module.name)
+            _logger.debug("[poly] Forcing setup_models after loading module %s", module.name)
             self.setup_models(cr)
         finally:
             cr._poly_in_load = False

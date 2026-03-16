@@ -816,6 +816,7 @@ To ensure that key models never lose their polymorphic capabilities or inherited
 If it detects that a model should be polymorphic but its Python MRO does not reflect the full hierarchy, it dynamically injects the missing bases and synchronizes its proxy classes. Additionally:
 - **Retroactive MRO-Recovery**: Performs an exhaustive scan of the MRO to "recover" any fields or methods that Odoo's incremental loading might have missed (e.g., standard Odoo members added by bridge modules).
 - **Emergency View Recovery**: Patches `ir.ui.view` to intercept `ParseError` (unknown fields/methods) during view validation. If a member is missing but present in the MRO, it is reactively injected into the model's registry proxy to allow the update process to continue without fatal errors.
+- **Enforced Model Initialization Batching**: To prevent `psycopg2.errors.UndefinedColumn` when creating views (e.g., `report.project.task.user` in `sale_project`), the engine now forces `setup_models()` and sets `registry_invalidated = True` during the `init_models` phase of any extending module. This ensures that all stored fields from the current module's extensions are correctly added to the model's `_fields` and subsequently created in SQL before any dependent views are initialized.
 - **Relation Metadata Enforcement**: Proactively forces physical metadata (`relation`, `columns`, `_modules`) for relational fields during `_auto_init` and registry setup to satisfy strict database constraints (like `ir_model_relation.module` NOT NULL).
 
 ---
