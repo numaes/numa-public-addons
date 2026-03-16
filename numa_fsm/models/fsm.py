@@ -52,8 +52,18 @@ class FSMDefinition(models.Model):
     )
     parent_id = fields.Many2one('fsm.definition', 'Parent FSM')
     children_ids = fields.One2many('fsm.definition', 'parent_id', 'Children FSMs')
-    pages = fields.Many2many('fsm.wf.page_template', 'wf_page_templates_rel', string='Pages')
-    mail_templates = fields.Many2many('fsm.wf.mail_template', 'wf_mail_templates_rel', string='Mail templates')
+    pages = fields.Many2many(
+        'fsm.wf.page_template', 
+        'wf_page_templates_rel', 
+        column1='fsm_definition_id', 
+        string='Pages'
+    )
+    mail_templates = fields.Many2many(
+        'fsm.wf.mail_template', 
+        'wf_mail_templates_rel', 
+        column1='fsm_definition_id', 
+        string='Mail templates'
+    )
     type = fields.Char('Type')
 
     def compile_ui_schema_to_definition(self):

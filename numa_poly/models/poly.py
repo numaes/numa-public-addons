@@ -3523,10 +3523,50 @@ def _poly_registry_setup_models(self, cr):
                 for _fobj in _base_class._field_definitions:
                     _fname = _fobj.name
                     if _fname not in model_class._fields:
-                        _fobj.model_name = name
-                        model_class._fields[_fname] = _fobj
+                        _base_name = getattr(_base_class, '_name', None)
+                        _is_poly_ancestor = (_base_name and (hasattr(_base_class, '_depend_models') or _base_name == 'ir.poly_base' or _base_name in getattr(model_class, '_depend_models', {})))
+                        if _is_poly_ancestor and _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
+                            from odoo import fields as odoo_fields
+                            _new_fobj = type(_fobj)(related=f'{_base_name}.{_fname}', store=False)
+                            _new_fobj.model_name = name
+                            _new_fobj.name = _fname
+                        else:
+                            try:
+                                # Clonar preservando TODOS los atributos criticos
+                                # Usamos _args del objeto original si existen
+                                _args = dict(getattr(_fobj, '_args', {}))
+                                
+                                # Asegurar comodel_name en los argumentos de inicializacion si es un campo relacional
+                                if hasattr(_fobj, 'comodel_name') and 'comodel_name' not in _args:
+                                    _args['comodel_name'] = _fobj.comodel_name
+                                
+                                _new_fobj = type(_fobj)(**_args)
+                                
+                                # Lista de atributos a copiar explícitamente
+                                attrs_to_copy = [
+                                    'string', 'help', 'compute', 'search', 'inverse', '_modules', 
+                                    'relation', 'column1', 'column2', 'comodel_name', 'inverse_name', 
+                                    'delegate', 'store', 'related', 'selection', 'domain'
+                                ]
+                                for attr in attrs_to_copy:
+                                    if hasattr(_fobj, attr):
+                                        val = getattr(_fobj, attr)
+                                        if val is not None:
+                                            setattr(_new_fobj, attr, val)
+                                
+                                # Forzar explicitud en Many2many para evitar que Odoo recalcule nombres de columnas
+                                if _new_fobj.type == 'many2many' and getattr(_new_fobj, 'relation', None):
+                                    _new_fobj._explicit = True
+                                    
+                            except Exception as e:
+                                _logger.error('[poly] Error cloning field %s: %s', _fname, e)
+                                # Si falla el clonado, usamos el original con el riesgo de corromper model_name
+                                _new_fobj = _fobj
+                            _new_fobj.model_name = name
+                            _new_fobj.name = _fname
+                        model_class._fields[_fname] = _new_fobj
+                        _fobj = _new_fobj
                         if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
-                        elif hasattr(_fobj, 'setup_done'): _fobj.setup_done = False
                         _recovered_from_this_base.append(_fname)
                     
                     # Ensure descriptor is in model class __dict__
@@ -3550,10 +3590,50 @@ def _poly_registry_setup_models(self, cr):
             for _fname, _fobj in _base_class.__dict__.items():
                 if isinstance(_fobj, fields.Field):
                     if _fname not in model_class._fields:
-                        _fobj.model_name = name
-                        model_class._fields[_fname] = _fobj
+                        _base_name = getattr(_base_class, '_name', None)
+                        _is_poly_ancestor = (_base_name and (hasattr(_base_class, '_depend_models') or _base_name == 'ir.poly_base' or _base_name in getattr(model_class, '_depend_models', {})))
+                        if _is_poly_ancestor and _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
+                            from odoo import fields as odoo_fields
+                            _new_fobj = type(_fobj)(related=f'{_base_name}.{_fname}', store=False)
+                            _new_fobj.model_name = name
+                            _new_fobj.name = _fname
+                        else:
+                            try:
+                                # Clonar preservando TODOS los atributos criticos
+                                # Usamos _args del objeto original si existen
+                                _args = dict(getattr(_fobj, '_args', {}))
+                                
+                                # Asegurar comodel_name en los argumentos de inicializacion si es un campo relacional
+                                if hasattr(_fobj, 'comodel_name') and 'comodel_name' not in _args:
+                                    _args['comodel_name'] = _fobj.comodel_name
+                                
+                                _new_fobj = type(_fobj)(**_args)
+                                
+                                # Lista de atributos a copiar explícitamente
+                                attrs_to_copy = [
+                                    'string', 'help', 'compute', 'search', 'inverse', '_modules', 
+                                    'relation', 'column1', 'column2', 'comodel_name', 'inverse_name', 
+                                    'delegate', 'store', 'related', 'selection', 'domain'
+                                ]
+                                for attr in attrs_to_copy:
+                                    if hasattr(_fobj, attr):
+                                        val = getattr(_fobj, attr)
+                                        if val is not None:
+                                            setattr(_new_fobj, attr, val)
+                                
+                                # Forzar explicitud en Many2many para evitar que Odoo recalcule nombres de columnas
+                                if _new_fobj.type == 'many2many' and getattr(_new_fobj, 'relation', None):
+                                    _new_fobj._explicit = True
+                                    
+                            except Exception as e:
+                                _logger.error('[poly] Error cloning field %s: %s', _fname, e)
+                                # Si falla el clonado, usamos el original con el riesgo de corromper model_name
+                                _new_fobj = _fobj
+                            _new_fobj.model_name = name
+                            _new_fobj.name = _fname
+                        model_class._fields[_fname] = _new_fobj
+                        _fobj = _new_fobj
                         if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
-                        elif hasattr(_fobj, 'setup_done'): _fobj.setup_done = False
                         _recovered_from_this_base.append(_fname)
                     
                     if _fname not in model_class.__dict__:
