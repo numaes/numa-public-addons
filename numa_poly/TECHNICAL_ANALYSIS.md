@@ -153,7 +153,8 @@ Numa Poly includes a robust system to migrate existing records when a model conv
 - **Type Sanitization**: Deep cleaning of values (recordsets, ID lists) is performed before new record creation.
 - **Conflict Resolution**: Handles unique constraint violations (e.g., `mail_followers`, Many2many) by removing redundant records before updating IDs.
 - **Transactionality**: Uses database `savepoints` in critical updates to ensure that minor failures (such as third-party tables or complex constraints in Odoo 18) do not abort the entire migration.
-- **Odoo 18 Compatibility**: Specific handling for `project.task` by injecting its polymorphic hierarchy (`numa.planning.node`) after registry initialization to prevent loss of inherited methods. It also includes shared Many2many collision handling and deep type cleaning to prevent recordset interference in direct SQL operations.
+- **Odoo 18 Compatibility**: Specific handling for `project.task` by injecting its polymorphic hierarchy (`numa.planning.node`) after registry initialization to prevent loss of inherited methods. It also includes shared Many2many collision handling and deep type cleaning to prevent recordset interference in direct SQL operations. The engine now features **Retroactive MRO-Recovery** and **Emergency View Recovery** to proactively find and inject missing fields or methods from the MRO during registry setup and view validation, ensuring robustness during complex incremental loading and module updates (`-u`).
+- **Field and Relation Metadata Recovery**: Enhanced proactive label and relation metadata recovery to avoid `NotNullViolation` in `ir_model_relation` and `ir_model_fields` by ensuring `_module`, `_modules`, and physical metadata (relation, columns) are correctly populated even when fields are recovered or cloned.
 - **ID Extraction**: Recursive logic implemented to ensure Many2one fields always reduce to integer IDs, eliminating interference from recordsets or tuples returned by the Odoo 18 ORM.
 - **Referential Integrity**: Related objects are updated to point to the new ID before physically deleting the old record, satisfying foreign key (FK) constraints.
 
@@ -808,11 +809,14 @@ In standard Odoo, two models cannot share the same relationship table and column
     *   If the conflicting models are polymorphic relatives (one is in the other's MRO), the error is silently ignored.
     *   The inverse field binding logic that Odoo skips upon detecting the conflict is manually restored.
 
-### 4. Registry Hierarchy and Field Recovery Guarantee
+### 4. Odoo 18 Registry and View Resilience
 
 To ensure that key models never lose their polymorphic capabilities or inherited fields, the system performs a final check upon completing registry loading (`Registry.setup_models`).
 
-If it detects that a model should be polymorphic but its Python MRO does not reflect the full hierarchy, it dynamically injects the missing bases and synchronizes its proxy classes. Additionally, it performs an exhaustive scan of the MRO to "recover" any fields that Odoo's incremental loading might have missed (e.g., standard Odoo fields added by bridge modules). This ensures a robust state for view validation and business logic.
+If it detects that a model should be polymorphic but its Python MRO does not reflect the full hierarchy, it dynamically injects the missing bases and synchronizes its proxy classes. Additionally:
+- **Retroactive MRO-Recovery**: Performs an exhaustive scan of the MRO to "recover" any fields or methods that Odoo's incremental loading might have missed (e.g., standard Odoo members added by bridge modules).
+- **Emergency View Recovery**: Patches `ir.ui.view` to intercept `ParseError` (unknown fields/methods) during view validation. If a member is missing but present in the MRO, it is reactively injected into the model's registry proxy to allow the update process to continue without fatal errors.
+- **Relation Metadata Enforcement**: Proactively forces physical metadata (`relation`, `columns`, `_modules`) for relational fields during `_auto_init` and registry setup to satisfy strict database constraints (like `ir_model_relation.module` NOT NULL).
 
 ---
 

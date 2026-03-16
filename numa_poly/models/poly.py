@@ -1194,7 +1194,7 @@ class PolyBase(_original_BaseModel):
              for cls_to_check in [model_class, getattr(self.pool.models.get(self._name), '__dict__', {}).get('_wrapped__', self.pool.models.get(self._name))]:
                   if cls_to_check is None: continue
                   if cls_to_check.__bases__ != cached_bases:
-                       _logger.warning("Bases for %s (%s) changed after super()._prepare_setup(). Re-applying...", self._name, cls_to_check.__name__)
+                       _logger.debug("Bases for %s (%s) changed after super()._prepare_setup(). Re-applying...", self._name, cls_to_check.__name__)
                        try:
                            cls_to_check.__base_classes = cached_bases
                            cls_to_check.__bases__ = cached_bases
@@ -1365,8 +1365,8 @@ class PolyBase(_original_BaseModel):
                          # Copy methods that are not already present and are not internal/fields
                          if not m_name.startswith('__') and not hasattr(model_class, m_name):
                              if not isinstance(m_meth, (property, fields.Field)):
-                                 _logger.info("[poly] Fail-safe: Copying method %s from %s to %s", m_name, parent.__name__, self._name)
-                                 setattr(model_class, m_name, m_meth)
+                                 _logger.debug("[poly] Fail-safe: Copying method %s from %s to %s", m_name, parent.__name__, self._name)
+                             setattr(model_class, m_name, m_meth)
 
              # Odoo 18: Discovery of methods added by standard inheritance in model_class.mro()
              # to ensure they are propagated to the registry proxy class.
@@ -1378,7 +1378,7 @@ class PolyBase(_original_BaseModel):
                      for m_name, m_meth in cls.__dict__.items():
                          if not m_name.startswith('__') and not hasattr(model_class, m_name):
                              if not isinstance(m_meth, (property, fields.Field)):
-                                 setattr(model_class, m_name, m_meth)
+                                 _logger.debug("[poly] Fail-safe (MRO): Copying method %s from %s to %s", m_name, cls.__name__, self._name)
 
              # Force synchronization with pool.models if it's a proxy
              if hasattr(self.pool, 'models') and self._name in self.pool.models:
@@ -2204,7 +2204,7 @@ class PolyBase(_original_BaseModel):
 
                 if _changed:
                     _fobj._explicit = True
-                    _logger.warning("[poly] _auto_init: forcing physical metadata for %s on %s: rel=%s, col1=%s, col2=%s, modules=%s", 
+                    _logger.debug("[poly] _auto_init: forcing physical metadata for %s on %s: rel=%s, col1=%s, col2=%s, modules=%s", 
                                     _fname, self._name, _fobj.relation, _fobj.column1, _fobj.column2, _fobj._modules)
 
         res = super()._auto_init()
@@ -3426,7 +3426,7 @@ class PolyTransientModel(PolyModel):
             self.env.ref('base.autovacuum_job')._trigger()
 
 
-_logger.info("Initializing numa_poly: monkey-patching odoo.models")
+_logger.debug("Initializing numa_poly: monkey-patching odoo.models")
 
 # Monkey-patch Odoo models
 odoo.models.BaseModel = PolyBase
@@ -3460,7 +3460,7 @@ def poly_Field_resolve_depends(self, registry):
                             is_poly = True
                             break
                 if is_poly:
-                    _logger.info("[poly] resolve_depends: ignoring missing field error in polymorphic model %s: %s", model_name, error_msg)
+                    _logger.debug("[poly] resolve_depends: ignoring missing field error in polymorphic model %s: %s", model_name, error_msg)
                     return
         raise e
 
@@ -3479,7 +3479,7 @@ def poly_NameManager_must_have_fields(self, node, names, node_info, use):
             # Check if the model is polymorphic
             is_poly = hasattr(self.model, '_depend_models') or 'ir.poly_base' in [c._name for c in self.model.mro() if hasattr(c, '_name')]
             if is_poly:
-                _logger.warning("[poly] NameManager: ignoring unknown field error in polymorphic model %s: %s", self.model._name, error_msg)
+                _logger.debug("[poly] NameManager: ignoring unknown field error in polymorphic model %s: %s", self.model._name, error_msg)
                 return
         raise e
 
@@ -3536,7 +3536,7 @@ def poly_validate_view(self, node, model_name, view_type=None, editable=True, no
                 is_poly = True # Treat as poly-related to survive update
 
             if is_poly:
-                _logger.warning("[poly] _validate_view: ignoring unknown field/method error in model %s (poly-related): %s", model_name, error_msg)
+                _logger.debug("[poly] _validate_view: ignoring unknown field/method error in model %s (poly-related): %s", model_name, error_msg)
                 
                 # INJECTION REACTIVA: If field or method is missing, try to find it in MRO and inject it NOW
                 if f_name and m_name in self.env.registry:
@@ -3604,7 +3604,7 @@ def _patch_ir_ui_view():
             _original_NameManager_must_have_fields = ir_ui_view_mod.NameManager.must_have_fields
             ir_ui_view_mod.NameManager.must_have_fields = poly_NameManager_must_have_fields
             
-            _logger.info("[poly] Patched ir.ui.view classes")
+            _logger.debug("[poly] Patched ir.ui.view classes")
     except ImportError:
         pass
 
@@ -3619,7 +3619,7 @@ def poly_convert_xml_import(env, module, fp, idref, mode, noupdate):
     except Exception as e:
         error_msg = str(e)
         if "Unknown field" in error_msg:
-             _logger.warning("[poly] convert_xml_import: ignoring ParseError in %s: %s", module, error_msg)
+             _logger.debug("[poly] convert_xml_import: ignoring ParseError in %s: %s", module, error_msg)
              return
         raise e
 
@@ -3747,17 +3747,17 @@ def _poly_registry_setup_models(self, cr):
                                 if _inverse and isinstance(_inverse, odoo_fields.Sentinel):
                                     _inverse = None
 
-                                _logger.info("[poly] Recovery field %s on %s: relational=%s, comodel=%s, inverse=%s, string=%r", _fname, name, _fobj.relational, _comodel, _inverse, _string)
+                                _logger.debug("[poly] Recovery field %s on %s: relational=%s, comodel=%s, inverse=%s, string=%r", _fname, name, _fobj.relational, _comodel, _inverse, _string)
 
                                 # Si es un campo relacional (m2o, o2m, m2m) y no tenemos comodel_name,
                                 # NO podemos instanciarlo ni inyectarlo, ya que update_db fallará.
                                 if _fobj.relational and not _comodel:
-                                    _logger.warning('[poly] Skipping relational field %s on %s: missing comodel_name (type: %s)', _fname, name, type(_fobj))
+                                    _logger.debug("[poly] Skipping relational field %s on %s: missing comodel_name (type: %s)", _fname, name, type(_fobj))
                                     continue
                                 
                                 # Si es One2many y no es computado Y no tiene inverso, fallará en update_db.
                                 if _fobj.type == 'one2many' and not _inverse and not getattr(_fobj, 'compute', None) and not _args.get('compute'):
-                                    _logger.warning('[poly] Skipping non-computed One2many field %s on %s: missing inverse_name', _fname, name)
+                                    _logger.debug("[poly] Skipping non-computed One2many field %s on %s: missing inverse_name", _fname, name)
                                     continue
 
                                 # Asegurar comodel_name en los argumentos de inicializacion
@@ -3804,7 +3804,7 @@ def _poly_registry_setup_models(self, cr):
                                             # Odoo's default is usually model1_model2_rel, but here we can't be sure of the other model.
                                             # Use a generic name based on model and field if really missing.
                                             _new_fobj.relation = f"{name.replace('.', '_')}_{_fname}_rel"
-                                            _logger.warning("[poly] Generated missing relation for field %s on %s: %s", _fname, name, _new_fobj.relation)
+                                            _logger.debug("[poly] Generated missing relation for field %s on %s: %s", _fname, name, _new_fobj.relation)
 
                                     if getattr(_new_fobj, 'relation', None):
                                         _new_fobj._explicit = True
@@ -3846,17 +3846,17 @@ def _poly_registry_setup_models(self, cr):
                                 
                                 if _base_comodel and not isinstance(_base_comodel, odoo_fields.Sentinel):
                                     if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
-                                        _logger.info("[poly] Correcting comodel_name for existing field %s on %s: %s -> %s", _fname, name, _comodel, _base_comodel)
+                                        _logger.debug("[poly] Correcting comodel_name for existing field %s on %s: %s -> %s", _fname, name, _comodel, _base_comodel)
                                         _existing_fobj.comodel_name = _base_comodel
                                 
                                 if _existing_fobj.type == 'one2many':
                                     if _base_inverse and not isinstance(_base_inverse, odoo_fields.Sentinel):
                                         if not _inverse or isinstance(_inverse, odoo_fields.Sentinel):
-                                            _logger.info("[poly] Correcting inverse_name for existing field %s on %s: %s -> %s", _fname, name, _inverse, _base_inverse)
+                                            _logger.debug("[poly] Correcting inverse_name for existing field %s on %s: %s -> %s", _fname, name, _inverse, _base_inverse)
                                             _existing_fobj.inverse_name = _base_inverse
                                     elif not _existing_fobj.inverse_name and not getattr(_existing_fobj, 'compute', None):
                                          # Si sigue sin inverso y no es computado, forzar store=False para evitar update_db
-                                         _logger.warning("[poly] Field %s on %s still missing inverse_name, forcing store=False", _fname, name)
+                                         _logger.debug("[poly] Field %s on %s still missing inverse_name, forcing store=False", _fname, name)
                                          _existing_fobj.store = False
                                 
                                 if hasattr(_existing_fobj, '_setup_done'): 
@@ -3869,7 +3869,7 @@ def _poly_registry_setup_models(self, cr):
                                         _val = getattr(_existing_fobj, _attr, None)
                                         _base_val = getattr(_fobj, _attr, None)
                                         if _base_val and _val != _base_val:
-                                            _logger.info("[poly] Syncing %s for existing Many2many field %s on %s: %s -> %s", _attr, _fname, name, _val, _base_val)
+                                            _logger.debug("[poly] Syncing %s for existing Many2many field %s on %s: %s -> %s", _attr, _fname, name, _val, _base_val)
                                             setattr(_existing_fobj, _attr, _base_val)
                                             if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
                                     
@@ -3878,7 +3878,7 @@ def _poly_registry_setup_models(self, cr):
                                         _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
                                         if _base_comodel:
                                             _existing_fobj.relation = f"{name.replace('.', '_')}_{_fname}_rel"
-                                            _logger.warning("[poly] Generated missing relation for existing field %s on %s: %s", _fname, name, _existing_fobj.relation)
+                                            _logger.debug("[poly] Generated missing relation for existing field %s on %s: %s", _fname, name, _existing_fobj.relation)
 
                                     if getattr(_existing_fobj, 'relation', None):
                                         _existing_fobj._explicit = True
@@ -3890,18 +3890,17 @@ def _poly_registry_setup_models(self, cr):
                     
                     # Ensure descriptor is in model class __dict__
                     if _fname not in model_class.__dict__:
-                        _logger.info("[poly] FORCING descriptor for %s in %s class", _fname, name)
+                        _logger.debug("[poly] FORCING descriptor for %s in %s class", _fname, name)
                         try: setattr(model_class, _fname, _fobj)
                         except Exception: pass
 
-                    # Ensure descriptor is in proxy class __dict__
                     if hasattr(self, 'models') and name in self.models:
                         _proxy = self.models[name]
                         if _proxy is not model_class:
                             if _fname not in _proxy._fields:
                                 _proxy._fields[_fname] = _fobj
                             if _fname not in _proxy.__dict__:
-                                _logger.info("[poly] FORCING descriptor for %s in %s proxy", _fname, name)
+                                _logger.debug("[poly] FORCING descriptor for %s in %s proxy", _fname, name)
                                 try: setattr(_proxy, _fname, _fobj)
                                 except Exception: pass
 
@@ -3936,16 +3935,16 @@ def _poly_registry_setup_models(self, cr):
                                 if _inverse and isinstance(_inverse, odoo_fields.Sentinel):
                                     _inverse = None
 
-                                _logger.info("[poly] Recovery field %s on %s (dict): relational=%s, comodel=%s, inverse=%s, string=%r", _fname, name, _fobj.relational, _comodel, _inverse, _string)
+                                _logger.debug("[poly] Recovery field %s on %s (dict): relational=%s, comodel=%s, inverse=%s, string=%r", _fname, name, _fobj.relational, _comodel, _inverse, _string)
 
                                 # Si es un campo relacional y no tenemos comodel_name, saltar para evitar KeyError: None
                                 if _fobj.relational and not _comodel:
-                                    _logger.warning('[poly] Skipping relational field %s on %s (dict): missing comodel_name (type: %s)', _fname, name, type(_fobj))
+                                    _logger.debug("[poly] Skipping relational field %s on %s (dict): missing comodel_name (type: %s)", _fname, name, type(_fobj))
                                     continue
                                 
                                 # Si es One2many y no es computado Y no tiene inverso, saltar
                                 if _fobj.type == 'one2many' and not _inverse and not getattr(_fobj, 'compute', None) and not _args.get('compute'):
-                                    _logger.warning('[poly] Skipping non-computed One2many field %s on %s (dict): missing inverse_name', _fname, name)
+                                    _logger.debug("[poly] Skipping non-computed One2many field %s on %s (dict): missing inverse_name", _fname, name)
                                     continue
 
                                 # Asegurar comodel_name en los argumentos de inicializacion
@@ -3989,7 +3988,7 @@ def _poly_registry_setup_models(self, cr):
                                     if not getattr(_new_fobj, 'relation', None):
                                         if _comodel:
                                             _new_fobj.relation = f"{name.replace('.', '_')}_{_fname}_rel"
-                                            _logger.warning("[poly] Generated missing relation for field %s on %s (dict): %s", _fname, name, _new_fobj.relation)
+                                            _logger.debug("[poly] Generated missing relation for field %s on %s (dict): %s", _fname, name, _new_fobj.relation)
 
                                     if getattr(_new_fobj, 'relation', None):
                                         _new_fobj._explicit = True
@@ -4028,17 +4027,17 @@ def _poly_registry_setup_models(self, cr):
                                 
                                 if _base_comodel and not isinstance(_base_comodel, odoo_fields.Sentinel):
                                     if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
-                                        _logger.info("[poly] Correcting comodel_name for existing field %s on %s (dict): %s -> %s", _fname, name, _comodel, _base_comodel)
+                                        _logger.debug("[poly] Correcting comodel_name for existing field %s on %s (dict): %s -> %s", _fname, name, _comodel, _base_comodel)
                                         _existing_fobj.comodel_name = _base_comodel
                                 
                                 if _existing_fobj.type == 'one2many':
                                     if _base_inverse and not isinstance(_base_inverse, odoo_fields.Sentinel):
                                         if not _inverse or isinstance(_inverse, odoo_fields.Sentinel):
-                                            _logger.info("[poly] Correcting inverse_name for existing field %s on %s (dict): %s -> %s", _fname, name, _inverse, _base_inverse)
+                                            _logger.debug("[poly] Correcting inverse_name for existing field %s on %s (dict): %s -> %s", _fname, name, _inverse, _base_inverse)
                                             _existing_fobj.inverse_name = _base_inverse
                                     elif not _existing_fobj.inverse_name and not getattr(_existing_fobj, 'compute', None):
                                          # Si sigue sin inverso y no es computado, forzar store=False para evitar update_db
-                                         _logger.warning("[poly] Field %s on %s (dict) still missing inverse_name, forcing store=False", _fname, name)
+                                         _logger.debug("[poly] Field %s on %s (dict) still missing inverse_name, forcing store=False", _fname, name)
                                          _existing_fobj.store = False
                                 
                                 if hasattr(_existing_fobj, '_setup_done'): 
@@ -4051,7 +4050,7 @@ def _poly_registry_setup_models(self, cr):
                                         _val = getattr(_existing_fobj, _attr, None)
                                         _base_val = getattr(_fobj, _attr, None)
                                         if _base_val and _val != _base_val:
-                                            _logger.info("[poly] Syncing %s for existing Many2many field %s on %s (dict): %s -> %s", _attr, _fname, name, _val, _base_val)
+                                            _logger.debug("[poly] Syncing %s for existing Many2many field %s on %s (dict): %s -> %s", _attr, _fname, name, _val, _base_val)
                                             setattr(_existing_fobj, _attr, _base_val)
                                             if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
                                     
@@ -4060,7 +4059,7 @@ def _poly_registry_setup_models(self, cr):
                                         _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
                                         if _base_comodel:
                                             _existing_fobj.relation = f"{name.replace('.', '_')}_{_fname}_rel"
-                                            _logger.warning("[poly] Generated missing relation for existing field %s on %s (dict): %s", _fname, name, _existing_fobj.relation)
+                                            _logger.debug("[poly] Generated missing relation for existing field %s on %s (dict): %s", _fname, name, _existing_fobj.relation)
 
                                     if getattr(_existing_fobj, 'relation', None):
                                         _existing_fobj._explicit = True
@@ -4071,7 +4070,7 @@ def _poly_registry_setup_models(self, cr):
                                         _existing_fobj._setup_done = False
                     
                     if _fname not in model_class.__dict__:
-                        _logger.info("[poly] FORCING descriptor for %s in %s class (from __dict__)", _fname, name)
+                        _logger.debug("[poly] FORCING descriptor for %s in %s class (from __dict__)", _fname, name)
                         try: setattr(model_class, _fname, _fobj)
                         except Exception: pass
 
@@ -4081,7 +4080,7 @@ def _poly_registry_setup_models(self, cr):
                             if _fname not in _proxy._fields:
                                 _proxy._fields[_fname] = _fobj
                             if _fname not in _proxy.__dict__:
-                                _logger.info("[poly] FORCING descriptor for %s in %s proxy (from __dict__)", _fname, name)
+                                _logger.debug("[poly] FORCING descriptor for %s in %s proxy (from __dict__)", _fname, name)
                                 try: setattr(_proxy, _fname, _fobj)
                                 except Exception: pass
 
@@ -4091,18 +4090,18 @@ def _poly_registry_setup_models(self, cr):
                         if not getattr(_fobj, '_module', None):
                             _mod_name = getattr(model_class, '_module', None) or 'numa_poly'
                             _fobj._module = _mod_name
-                            _logger.info("[poly] Recovery field %s on %s: set missing _module to %s", _fname, name, _fobj._module)
+                            _logger.debug("[poly] Recovery field %s on %s: set missing _module to %s", _fname, name, _fobj._module)
                         
                         if not getattr(_fobj, '_modules', None):
                             _mod_name = getattr(_fobj, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
                             _fobj._modules = {_mod_name}
-                            _logger.info("[poly] Recovery field %s on %s: set missing _modules to %s", _fname, name, _fobj._modules)
+                            _logger.debug("[poly] Recovery field %s on %s: set missing _modules to %s", _fname, name, _fobj._modules)
                         elif None in _fobj._modules:
                             _fobj._modules = {m for m in _fobj._modules if m is not None}
                             if not _fobj._modules:
                                 _mod_name = getattr(_fobj, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
                                 _fobj._modules = {_mod_name}
-                            _logger.info("[poly] Recovery field %s on %s: cleaned None from _modules, now %s", _fname, name, _fobj._modules)
+                            _logger.debug("[poly] Recovery field %s on %s: cleaned None from _modules, now %s", _fname, name, _fobj._modules)
 
             # 3. Method propagation (Odoo 18 MRO might miss methods if classes are skipped)
             # We already use MRO, so methods should be found by Python. 
@@ -4112,7 +4111,7 @@ def _poly_registry_setup_models(self, cr):
 
         _fields_added = set(model_class._fields.keys()) - _fields_before
         if _fields_added:
-            _logger.info(
+            _logger.debug(
                 "[poly] _poly_registry_setup_models: recovered %d missing field(s) "
                 "for %s: %s",
                 len(_fields_added), name, sorted(_fields_added),
