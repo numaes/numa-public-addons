@@ -81,6 +81,9 @@ _logger = logging.getLogger(__name__)
 # Keys are db_name, then model_name. Values are tuples of base classes.
 POLY_MRO_CACHE = defaultdict(dict)
 
+# [poly] Technical list for deferred view validation
+PENDING_POLY_VIEWS = defaultdict(list)
+
 # Save the original Odoo classes to avoid cyclic inheritance
 _original_BaseModel = odoo.models.BaseModel
 _original_AbstractModel = odoo.models.AbstractModel
@@ -760,6 +763,13 @@ class PolyBase(_original_BaseModel):
             pool._poly_mro_cache[name] = final_bases
             POLY_MRO_CACHE[pool.db_name][name] = final_bases
 
+            # [poly] FORCE RE-SETUP: Mark this model and its descendants for re-setup
+            # to ensure Odoo re-evaluates the full MRO including the new parents.
+            model_class._setup_done = False
+            for mname, mclass in pool.items():
+                if issubclass(mclass, model_class):
+                    mclass._setup_done = False
+
             # Odoo 18: Immediate field recovery after hierarchy change
             # to prevent stale _fields during incremental module loading
             from odoo.models import MetaModel
@@ -797,6 +807,23 @@ class PolyBase(_original_BaseModel):
                                 _fobj._setup_done = False
                             elif hasattr(_fobj, 'setup_done'):
                                 _fobj.setup_done = False
+                            
+                            # [poly] GENERIC COLUMN RECOVERY: If a field is recovered and it should be a stored column,
+                            # ensure it exists in the database. Odoo 18 incremental loading may skip columns if
+                            # registry setup is not fully re-evaluated at the right time.
+                            if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None):
+                                try:
+                                    _table = getattr(model_class, '_table', None)
+                                    if _table:
+                                        cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
+                                        if not cr.fetchone():
+                                            _col_type = _fobj.column_type[1]
+                                            _logger.info("[poly] GENERIC (HIERARCHY): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
+                                            cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
+                                            # Ensure Odoo knows it's a column
+                                            _fobj.column = True
+                                except Exception as _e:
+                                    _logger.error("[poly] GENERIC (HIERARCHY): Failed to manually create column %s on %s: %s", _fname, getattr(model_class, '_table', 'unknown'), _e)
             
             return True
         except Exception: return False
@@ -1433,86 +1460,7 @@ class PolyBase(_original_BaseModel):
         
         # Odoo 18: We collect all fields that should be added as related fields first.
         # This is handled by _build_dependant_model_attributes.
-        # Then we handle fields that might need fresh instances if they are NOT in _depend_models.
         
-        for base in model_class.__depends_base_classes:
-            if hasattr(base, '_name') and base._name != self._name:
-                # Add missing or inherited polymorphic fields to _fields
-                if hasattr(base, '_fields'):
-                    for field_name, field in base._fields.items():
-                        # Protection: if the field is already in self._fields, it might be
-                        # already added as a related field by _build_dependant_model_attributes.
-                        # We should not overwrite it with a fresh instance which would cause collisions.
-                        if field_name in self._fields:
-                            continue
-
-                        # Identify fields belonging specifically to this polymorphic parent.
-                        if field.model_name == base._name:
-                            # Create a fresh field instance using parent's arguments
-                            args = getattr(field, '_args', {})
-                            new_field = type(field)(**args)
-                            new_field.model_name = self._name
-                            
-                            # Fields originating from _depend_models are often accessed
-                            # as related fields to the base model.
-                            # We should NOT redefine Many2many tables if the field is
-                            # supposed to reuse the existing relation.
-                            
-                            is_depend_model = False
-                            if hasattr(model_class, '_depend_models') and model_class._depend_models:
-                                if base._name in model_class._depend_models:
-                                    is_depend_model = True
-
-                            # For Many2many, force unique naming ONLY if it's NOT a depend_model.
-                            if new_field.type == 'many2many' and not is_depend_model:
-                                 # Resetting these triggers Odoo's native automatic naming logic.
-                                 # BUT only if we don't have explicit values yet.
-                                 # Odoo 18: If the original field already has relation/column1/column2, 
-                                 # we MUST use them to avoid creating dynamic column names that don't exist.
-                                 if not getattr(new_field, 'relation', None) or not getattr(new_field, 'column1', None) or not getattr(new_field, 'column2', None):
-                                      new_field.relation = False
-                                      new_field.column1 = False
-                                      new_field.column2 = False
-                                      new_field._explicit = False
-                                 
-                                 # Odoo 18: ensure relation, column1, column2 and ondelete are set from original if present
-                                 for _attr in ['relation', 'column1', 'column2', 'ondelete']:
-                                     _base_val = getattr(field, _attr, None)
-                                     if _base_val:
-                                         setattr(new_field, _attr, _base_val)
-
-                                 if not getattr(new_field, 'relation', None):
-                                      new_field.relation = "rel_%s_%s" % (self._name.replace('.', '_'), field_name)
-                                 
-                                 if not getattr(new_field, 'column1', None):
-                                      new_field.column1 = "%s_id" % self._name.replace('.', '_')
-                                 if not getattr(new_field, 'column2', None):
-                                      new_field.column2 = "%s_id" % new_field.comodel_name.replace('.', '_')
-                                 
-                                 # FORZADO: Si el campo tiene relación o columnas, marcar como explícito
-                                 # para que Odoo no intente recalcular nombres durante check_foreign_keys.
-                                 if getattr(new_field, 'relation', None):
-                                      new_field._explicit = True
-                                 if getattr(new_field, 'column1', None) or getattr(new_field, 'column2', None):
-                                      new_field._explicit = True
-                                 
-                                 if len(new_field.relation) > 63:
-                                      new_field.relation = new_field.relation[:63]
-                            elif is_depend_model:
-                                 # Fields from depend_models should be handled by _build_dependant_model_attributes
-                                 # which adds them as related non-stored fields.
-                                 # If we are here, it means it wasn't in self._fields yet.
-                                 # Force it to be non-stored related here too just in case.
-                                 new_field.related = f"{base._name}.{field_name}"
-                                 new_field.store = False
-
-                            model_class._fields[field_name] = new_field
-                            
-                            # Ensure Odoo registry's internal field list is aware
-                            if hasattr(model_class, '_field_definitions'):
-                                 if new_field not in model_class._field_definitions:
-                                      model_class._field_definitions.append(new_field)
-
         # Build dependent model attributes for all models that inherit from PolyBase.
         # This includes models with _depend_models defined (even if empty) and
         # any model that participates in the polymorphic hierarchy.
@@ -3518,112 +3466,70 @@ def poly_NameManager_must_have_fields(self, node, names, node_info, use):
 # PATCH: IrUiView._validate_view to tolerate missing polymorphic fields during update
 # In Odoo 18, the class is named 'View' but registered as 'ir.ui.view'
 def poly_validate_view(self, node, model_name, view_type=None, editable=True, node_info=None):
-    try:
+    # DEFERRED VALIDATION: If we are here and the context has poly_validated, we run strictly.
+    # Otherwise, we rely on the deferred validation mechanism.
+    if self.env.context.get('poly_validated'):
         return _original_validate_view(self, node, model_name, view_type=view_type, editable=editable, node_info=node_info)
-    except Exception as e:
-        error_msg = str(e)
-        # Check if it's a field missing error
-        is_missing_field = "Unknown field" in error_msg or "does not exist" in error_msg
-        # Odoo 18: Method missing in view validation
-        is_missing_method = "not a valid action on" in error_msg or "is not a valid action" in error_msg
+    
+    # If not poly_validated, we still check if the model is polymorphic
+    model_class = self.env.registry.get(model_name)
+    is_poly = False
+    if model_class:
+        is_poly = hasattr(model_class, '_depend_models') or 'ir.poly_base' in [getattr(c, '_name', None) for c in model_class.mro() if hasattr(c, '_name')]
+    
+    if is_poly and self.pool._init:
+        # Silently skip during update, it will be validated later in _poly_registry_setup_models
+        return True
+
+    return _original_validate_view(self, node, model_name, view_type=view_type, editable=editable, node_info=node_info)
+
+_original_validate_module_views = None
+
+def poly_validate_module_views(self, module):
+    """
+    [poly] Intercepts module view validation to defer polymorphic models.
+    """
+    assert self.pool._init
+    
+    # Identify views of this module
+    prefix = module + '.'
+    prefix_len = len(prefix)
+    names = tuple(
+        xmlid[prefix_len:]
+        for xmlid in self.pool.loaded_xmlids
+        if xmlid.startswith(prefix)
+    )
+    if not names:
+        return
+
+    # retrieve the views with an XML id that has not been checked yet
+    views = self.browse(id_ for id_, in self.env.execute_query(SQL("""
+        SELECT v.id
+        FROM ir_ui_view v
+        JOIN ir_model_data md ON (md.model = 'ir.ui.view' AND md.res_id = v.id)
+        WHERE md.module = %s AND md.name IN %s AND md.noupdate
+    """, module, names)))
+
+    for view in views:
+        # Check if the model is polymorphic
+        model_name = view.model
+        model_class = self.env.registry.get(model_name)
+        is_poly = False
+        if model_class:
+            is_poly = hasattr(model_class, '_depend_models') or 'ir.poly_base' in [getattr(c, '_name', None) for c in model_class.mro() if hasattr(c, '_name')]
         
-        if is_missing_field or is_missing_method:
-            # Check if the model is polymorphic OR if the error references a polymorphic model
-            is_poly = False
-            if model_name in self.env.registry:
-                model_class = self.env.registry[model_name]
-                is_poly = hasattr(model_class, '_depend_models') or 'ir.poly_base' in [c._name for c in model_class.mro() if hasattr(c, '_name')]
-            
-            # The error might be in a domain referencing a poly model (e.g. project.task)
-            import re
-            m_name, f_name = None, None
-            if is_missing_field:
-                match = re.search(r'(Unknown field|Field) "([^"]+)\.([^"]+)"', error_msg)
-                if match:
-                    m_name, f_name = match.group(2), match.group(3)
-                else:
-                    match = re.search(r'(Unknown field|Field) "([^"]+)"', error_msg)
-                    if match:
-                        f_name = match.group(2)
-                        m_name = model_name
-            elif is_missing_method:
-                # Format: "action_view_so is not a valid action on project.task"
-                match = re.search(r'([^ ]+) is not a valid action on ([^ ]+)', error_msg)
-                if match:
-                    f_name, m_name = match.group(1), match.group(2)
-                else:
-                    # Alternative format
-                    match = re.search(r'is not a valid action on ([^ ]+)', error_msg)
-                    if match:
-                         m_name = match.group(1)
-                         # We don't have the method name easily from this regex, but we know the model
-            
-            if m_name and m_name in self.env.registry:
-                ref_class = self.env.registry[m_name]
-                is_poly = is_poly or hasattr(ref_class, '_depend_models') or 'ir.poly_base' in [c._name for c in ref_class.mro() if hasattr(c, '_name')]
-
-            # ESPECIAL PARA ACTUALIZACIÓN: Tolerancia extendida durante -u
-            # Si estamos en modo actualización, silenciamos campos faltantes en modelos críticos
-            if not is_poly and m_name in ['account.move.line', 'account.move', 'account.analytic.line', 'project.task']:
-                is_poly = True # Treat as poly-related to survive update
-
-            if is_poly:
-                _logger.debug("[poly] _validate_view: ignoring unknown field/method error in model %s (poly-related): %s", model_name, error_msg)
-                
-                # INJECTION REACTIVA: If field or method is missing, try to find it in MRO and inject it NOW
-                if f_name and m_name in self.env.registry:
-                    m_class = self.env.registry[m_name]
-                    # Scan MRO for this field/method
-                    from odoo.models import MetaModel
-                    for parent in m_class.mro():
-                        if parent in (m_class, object): continue
-                        if not isinstance(parent, MetaModel): continue
-                        
-                        # Recovery of methods
-                        if is_missing_method:
-                             if f_name in parent.__dict__:
-                                  m_meth = parent.__dict__[f_name]
-                                  if callable(m_meth) and not isinstance(m_meth, (property, fields.Field)):
-                                       _logger.debug("[poly] _validate_view: EMERGENCY RECOVERY of method %s for %s from %s", f_name, m_name, parent.__name__)
-                                       setattr(m_class, f_name, m_meth)
-                                       # Also ensure it's in the proxy if any
-                                       proxy_instance = self.env.registry[m_name]
-                                       if proxy_instance is not m_class:
-                                            setattr(type(proxy_instance), f_name, m_meth)
-                                       
-                                       # Retry validation once
-                                       try:
-                                           return _original_validate_view(self, node, model_name, view_type=view_type, editable=editable, node_info=node_info)
-                                       except:
-                                           pass
-                                       break
-
-                        # Recovery of fields
-                        if is_missing_field and hasattr(parent, '_field_definitions'):
-                            for f_def in parent._field_definitions:
-                                if getattr(f_def, 'name', None) == f_name:
-                                    _logger.debug("[poly] _validate_view: EMERGENCY RECOVERY of field %s for %s from %s", f_name, m_name, parent.__name__)
-                                    if f_name not in m_class._fields:
-                                        m_class._fields[f_name] = f_def
-                                    setattr(m_class, f_name, f_def)
-                                    
-                                    # Also ensure it's in the proxy if any
-                                    proxy_instance = self.env.registry[m_name]
-                                    if proxy_instance is not m_class:
-                                        setattr(type(proxy_instance), f_name, f_def)
-
-                                    # Retry validation once
-                                    try:
-                                        return _original_validate_view(self, node, model_name, view_type=view_type, editable=editable, node_info=node_info)
-                                    except:
-                                        pass
-                                    break
-                
-                return True # Assume valid for now, will be checked later in final setup
-        raise e
+        if is_poly:
+            # Defer validation
+            _logger.debug("[poly] Deferring validation for polymorphic view %s (%s)", view.xml_id, model_name)
+            db_name = self.env.cr.dbname
+            if view.id not in [v.id for v in PENDING_POLY_VIEWS[db_name]]:
+                PENDING_POLY_VIEWS[db_name].append(view)
+        else:
+            # Standard validation
+            view._check_xml()
 
 def _patch_ir_ui_view():
-    global _original_validate_view, _original_NameManager_must_have_fields
+    global _original_validate_view, _original_NameManager_must_have_fields, _original_validate_module_views
     if _original_validate_view is not None:
         return
     
@@ -3633,6 +3539,9 @@ def _patch_ir_ui_view():
             _original_validate_view = ir_ui_view_mod.View._validate_view
             ir_ui_view_mod.View._validate_view = poly_validate_view
             
+            _original_validate_module_views = ir_ui_view_mod.View._validate_module_views
+            ir_ui_view_mod.View._validate_module_views = poly_validate_module_views
+
             _original_NameManager_must_have_fields = ir_ui_view_mod.NameManager.must_have_fields
             ir_ui_view_mod.NameManager.must_have_fields = poly_NameManager_must_have_fields
             
@@ -3741,16 +3650,42 @@ def _poly_registry_setup_models(self, cr):
         from odoo import fields as odoo_fields
         _current_mro = model_class.mro()
         
-        # [poly] CRITICAL FIX: Ensure project.task has sale_line_id/sale_order_id in DB
-        if name == 'project.task':
-            for _fname in ('sale_line_id', 'sale_order_id'):
-                try:
-                    cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'project_task' AND column_name = %s", (_fname,))
-                    if not cr.fetchone():
-                        _logger.info("[poly] CRITICAL: Missing SQL column %s on project_task, creating manually (TOP LEVEL)", _fname)
-                        cr.execute(f"ALTER TABLE project_task ADD COLUMN IF NOT EXISTS {_fname} integer")
-                except Exception as _e:
-                    _logger.error("[poly] CRITICAL: Failed to manually create column %s: %s", _fname, _e)
+        # [poly] DEEP SCAN: Scan ALL base classes in the MRO for ANY odoo.fields.Field
+        # instances that were missed during Odoo's incremental setup.
+        # This is generic and will catch extension fields from modules like sale_project.
+        for _base_class in _current_mro:
+            if _base_class is model_class: continue
+            
+            # Determine if this is a polymorphic ancestor
+            _is_poly_ancestor = False
+            _dep_models = _base_class.__dict__.get('_depend_models') or getattr(_base_class, '_depend_models', None)
+            if _dep_models or 'ir.poly_base' in [getattr(c, '_name', None) for c in _base_class.mro() if hasattr(c, '_name')]:
+                _is_poly_ancestor = True
+
+            for _fname, _attr in _base_class.__dict__.items():
+                if isinstance(_attr, odoo_fields.Field):
+                    if _fname not in model_class._fields:
+                        if _is_poly_ancestor:
+                            # Related field injection (handled by _build_dependant_model_attributes later usually,
+                            # but we can force it here if missing)
+                            _logger.debug("[poly] Deep Recovery (Poly): Found missing field %s on %s from %s", _fname, name, _base_class)
+                            # We mark for re-setup to let poly logic handle it
+                            model_class._setup_done = False
+                        else:
+                            # Standard Odoo inheritance (_inherit)
+                            # Do NOT clone. Just mark for re-setup so Odoo's engine processes it.
+                            _logger.debug("[poly] Deep Recovery (Standard): Marking %s for re-setup due to missing field %s from %s", name, _fname, _base_class)
+                            model_class._setup_done = False
+                    
+                    # Ensure metadata is correct if already present
+                    if _fname in model_class._fields:
+                        _fobj = model_class._fields[_fname]
+                        # Correct _module and _modules if missing or generic
+                        _base_mod = getattr(_base_class, '_module', None)
+                        if not getattr(_fobj, '_module', None) or _fobj._module == 'numa_poly':
+                            _fobj._module = _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
+                        if not getattr(_fobj, '_modules', None) or 'numa_poly' in _fobj._modules:
+                            _fobj._modules = {_fobj._module}
 
         _fields_before = set(model_class._fields.keys())
         for _base_class in _current_mro:
@@ -3965,16 +3900,17 @@ def _poly_registry_setup_models(self, cr):
                                 except Exception: pass
 
                     # [poly] FIX: Ensure _modules and _module is NEVER empty or containing None for relational fields
-                    if _fobj.relational or True:
+                    if _fobj.relational:
                         # Odoo 18: Many2many fields use self._module in update_db -> post_init(_reflect_relation, ...)
                         # [poly] FIX: Use base class module (source of the extension) if available
                         _base_mod = getattr(_base_class, '_module', None)
-                        if not getattr(_fobj, '_module', None) or (_base_mod and _fobj._module == 'numa_poly' and _base_mod != 'numa_poly'):
+                        # Only set when missing or set to numa_poly (placeholder). NEVER override a valid non-numa_poly value.
+                        if not getattr(_fobj, '_module', None) or _fobj._module == 'numa_poly':
                             _mod_name = _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
                             _fobj._module = _mod_name
                             _logger.debug("[poly] Recovery field %s on %s: set/correct _module to %s", _fname, name, _fobj._module)
                         
-                        if not getattr(_fobj, '_modules', None) or (_base_mod and 'numa_poly' in _fobj._modules and _base_mod != 'numa_poly'):
+                        if not getattr(_fobj, '_modules', None) or 'numa_poly' in _fobj._modules:
                             _mod_name = getattr(_fobj, '_module', None) or _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
                             _fobj._modules = {_mod_name}
                             _logger.debug("[poly] Recovery field %s on %s: set/correct _modules to %s", _fname, name, _fobj._modules)
@@ -3990,22 +3926,24 @@ def _poly_registry_setup_models(self, cr):
                         if getattr(_fobj, 'column', None) and not model_class._setup_done:
                              _logger.debug("[poly] Recovery field %s on %s has column, ensuring setup is not done", _fname, name)
                              model_class._setup_done = False
-                        
-                        # [poly] CRITICAL FIX: Direct SQL injection for sale_project fields on project_task
-                        # Odoo 18 incremental loading may skip these columns in project_task table
-                        # if the registry setup is not fully re-evaluated.
-                        if name == 'project.task' and _fname in ('sale_line_id', 'sale_order_id'):
-                            _logger.info("[poly] CRITICAL: Ensuring SQL column %s exists on project_task", _fname)
+
+                        # [poly] GENERIC COLUMN RECOVERY: If a field is recovered and it should be a stored column,
+                        # ensure it exists in the database. Odoo 18 incremental loading may skip columns if
+                        # registry setup is not fully re-evaluated at the right time.
+                        if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None):
+                            _table = model_class._table
                             try:
-                                cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'project_task' AND column_name = %s", (_fname,))
-                                if not cr.fetchone():
-                                    _logger.info("[poly] CRITICAL: Missing SQL column %s on project_task, creating manually", _fname)
-                                    cr.execute(f"ALTER TABLE project_task ADD COLUMN IF NOT EXISTS {_fname} integer")
-                                    # Ensure Odoo knows it is stored
-                                    _fobj.store = True
-                                    _fobj.column = True
+                                # [poly] FIX: ensure we have a valid table name
+                                if _table:
+                                    cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
+                                    if not cr.fetchone():
+                                        _col_type = _fobj.column_type[1]
+                                        _logger.info("[poly] GENERIC (RECOVERY): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
+                                        cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
+                                        # Ensure Odoo knows it's a column
+                                        _fobj.column = True
                             except Exception as _e:
-                                _logger.error("[poly] CRITICAL: Failed to manually create column %s: %s", _fname, _e)
+                                _logger.error("[poly] GENERIC (RECOVERY): Failed to manually create column %s on %s: %s", _fname, _table, _e)
 
             # 3. Method propagation (Odoo 18 MRO might miss methods if classes are skipped)
             # We already use MRO, so methods should be found by Python. 
@@ -4026,7 +3964,89 @@ def _poly_registry_setup_models(self, cr):
             if hasattr(Environment, '_classes') and Environment._classes is not None:
                 if self in Environment._classes:
                     Environment._classes[self].pop(name, None)
-                
+
+    # [poly] GENERIC SAFETY CHECK: Ensure ALL models in the registry have their SQL columns.
+    # This is critical for Odoo 18 incremental loading where some modules are loaded
+    # but NOT updated, skipping _auto_init and thus missing new columns.
+    # We do this at the pool level to catch fields added to existing models by extensions.
+    from odoo.tools.sql import table_exists, table_kind
+    for model_name, model_class in self.items():
+        _table = getattr(model_class, '_table', None)
+        # Skip transient models and ir.* models to avoid issues with non-standard tables.
+        # CRITICAL: Skip views (auto=False) as they don't support ADD COLUMN.
+        if _table and not model_name.startswith('ir.') and not model_class._transient and getattr(model_class, '_auto', True):
+            try:
+                # table_kind(cr, _table) returns 'r' for base tables, 'v' for views, etc.
+                if table_exists(cr, _table) and table_kind(cr, _table) == 'r':
+                    for _fname, _fobj in model_class._fields.items():
+                        if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None):
+                            cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
+                            if not cr.fetchone():
+                                _col_type = _fobj.column_type[1]
+                                _logger.info("[poly] GENERIC (POOL): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
+                                cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
+                                _fobj.column = True
+            except Exception as _e:
+                _logger.error("[poly] GENERIC (POOL): Failed to manually create column on %s: %s", _table, _e)
+                # If we hit an error (like aborted transaction), we MUST stop to avoid flooding logs
+                if "aborted" in str(_e).lower():
+                    break
+    # [poly] DEFERRED VIEW VALIDATION: Now that the registry is fully stabilized, 
+    # validate any views that were skipped during the module loading process.
+    # We use a copy of the pending views to avoid issues with pop while iterating
+    db_name = self.env.cr.dbname
+    pending_views = PENDING_POLY_VIEWS.pop(db_name, [])
+    if pending_views:
+        # Deduplicate views by ID
+        unique_views = {v.id: v for v in pending_views}.values()
+        _logger.info("[poly] Validating %d deferred polymorphic views", len(unique_views))
+        # Ensure we have an environment to work with
+        _env = api.Environment(cr, SUPERUSER_ID, {})
+        for view in unique_views:
+            try:
+                # Run strict validation with poly_validated=True
+                # We use sudo() to ensure we have rights to check XML
+                view.with_env(_env).sudo().with_context(poly_validated=True)._check_xml()
+            except Exception as _e:
+                _logger.error("[poly] Strict validation failed for deferred view %s: %s", view.xml_id or view.id, _e)
+
     return res
 
+_original_registry_init_models = odoo.modules.registry.Registry.init_models
+def _poly_registry_init_models(self, cr, model_names, context, install=True):
+    """
+    [poly] Professional Initialization Hook.
+    Ensures that any model gaining fields from the modules being initialized
+    is included in the initialization process, so Odoo's _auto_init creates
+    the necessary SQL columns.
+    """
+    if not getattr(cr, '_poly_in_init_models', False):
+        try:
+            cr._poly_in_init_models = True
+            # Identify the modules being initialized (from context or by inference)
+            # In Odoo 18 incremental loading, context usually contains {'module': ...}
+            current_module = (context or {}).get('module')
+            if current_module:
+                extra_models = set()
+                for mname, mclass in self.items():
+                    if mname in model_names: continue
+                    # Check if this model has any stored field owned by the current module
+                    # We check both _module and _modules (Odoo 18 style)
+                    for f in mclass._fields.values():
+                        if f.store and (getattr(f, '_module', None) == current_module or (getattr(f, '_modules', None) and current_module in f._modules)):
+                            extra_models.add(mname)
+                            break
+                if extra_models:
+                    _logger.info("[poly] Adding %d models to initialization due to extensions from %s: %s", len(extra_models), current_module, sorted(extra_models))
+                    # Update model_names to include these models
+                    if isinstance(model_names, set):
+                        model_names.update(extra_models)
+                    else:
+                        model_names = list(set(model_names) | extra_models)
+        finally:
+            cr._poly_in_init_models = False
+
+    return _original_registry_init_models(self, cr, model_names, context, install=install)
+
+odoo.modules.registry.Registry.init_models = _poly_registry_init_models
 odoo.modules.registry.Registry.setup_models = _poly_registry_setup_models
