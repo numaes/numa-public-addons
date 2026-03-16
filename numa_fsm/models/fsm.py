@@ -56,12 +56,14 @@ class FSMDefinition(models.Model):
         'fsm.wf.page_template', 
         'wf_page_templates_rel', 
         column1='fsm_definition_id', 
+        column2='wf_page_template_id',
         string='Pages'
     )
     mail_templates = fields.Many2many(
         'fsm.wf.mail_template', 
         'wf_mail_templates_rel', 
         column1='fsm_definition_id', 
+        column2='wf_mail_template_id',
         string='Mail templates'
     )
     type = fields.Char('Type')
