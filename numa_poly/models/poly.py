@@ -1201,6 +1201,19 @@ class PolyBase(_original_BaseModel):
                            import ctypes as _ctypes
                            if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
                                _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(cls_to_check))
+                           
+                           # Exhaustive method recovery for Odoo 18
+                           from odoo.models import MetaModel
+                           for base in cls_to_check.mro():
+                                if base in (cls_to_check, object): continue
+                                # If it's a MetaModel but not a standard model with pool (so it's a "raw" class from a module)
+                                if isinstance(base, MetaModel):
+                                     for m_name, m_meth in base.__dict__.items():
+                                          # Use __dict__ check to see if it's REALLY missing from cls_to_check and not just found via MRO
+                                          if not m_name.startswith('__') and m_name not in cls_to_check.__dict__:
+                                               if not isinstance(m_meth, (property, fields.Field)):
+                                                    setattr(cls_to_check, m_name, m_meth)
+
                        except TypeError as e:
                            _logger.error("Failed to re-apply cached bases to class %s: %s", self._name, e)
 
@@ -1352,7 +1365,19 @@ class PolyBase(_original_BaseModel):
                          # Copy methods that are not already present and are not internal/fields
                          if not m_name.startswith('__') and not hasattr(model_class, m_name):
                              if not isinstance(m_meth, (property, fields.Field)):
-                                 _logger.debug("Fail-safe: Copying method %s from %s to %s", m_name, parent.__name__, self._name)
+                                 _logger.info("[poly] Fail-safe: Copying method %s from %s to %s", m_name, parent.__name__, self._name)
+                                 setattr(model_class, m_name, m_meth)
+
+             # Odoo 18: Discovery of methods added by standard inheritance in model_class.mro()
+             # to ensure they are propagated to the registry proxy class.
+             from odoo.models import MetaModel
+             for cls in model_class.mro():
+                 if (getattr(cls, 'pool', None) is None
+                         and isinstance(cls, MetaModel)
+                         and cls is not model_class):
+                     for m_name, m_meth in cls.__dict__.items():
+                         if not m_name.startswith('__') and not hasattr(model_class, m_name):
+                             if not isinstance(m_meth, (property, fields.Field)):
                                  setattr(model_class, m_name, m_meth)
 
              # Force synchronization with pool.models if it's a proxy
@@ -3467,8 +3492,10 @@ def poly_validate_view(self, node, model_name, view_type=None, editable=True, no
         error_msg = str(e)
         # Check if it's a field missing error
         is_missing_field = "Unknown field" in error_msg or "does not exist" in error_msg
+        # Odoo 18: Method missing in view validation
+        is_missing_method = "not a valid action on" in error_msg or "is not a valid action" in error_msg
         
-        if is_missing_field:
+        if is_missing_field or is_missing_method:
             # Check if the model is polymorphic OR if the error references a polymorphic model
             is_poly = False
             if model_name in self.env.registry:
@@ -3477,47 +3504,81 @@ def poly_validate_view(self, node, model_name, view_type=None, editable=True, no
             
             # The error might be in a domain referencing a poly model (e.g. project.task)
             import re
-            match = re.search(r'(Unknown field|Field) "([^"]+)\.([^"]+)"', error_msg)
-            f_name, m_name = None, None
-            if match:
-                m_name, f_name = match.group(2), match.group(3)
-            else:
-                match = re.search(r'(Unknown field|Field) "([^"]+)"', error_msg)
+            m_name, f_name = None, None
+            if is_missing_field:
+                match = re.search(r'(Unknown field|Field) "([^"]+)\.([^"]+)"', error_msg)
                 if match:
-                    f_name = match.group(2)
-                    m_name = model_name
-
+                    m_name, f_name = match.group(2), match.group(3)
+                else:
+                    match = re.search(r'(Unknown field|Field) "([^"]+)"', error_msg)
+                    if match:
+                        f_name = match.group(2)
+                        m_name = model_name
+            elif is_missing_method:
+                # Format: "action_view_so is not a valid action on project.task"
+                match = re.search(r'([^ ]+) is not a valid action on ([^ ]+)', error_msg)
+                if match:
+                    f_name, m_name = match.group(1), match.group(2)
+                else:
+                    # Alternative format
+                    match = re.search(r'is not a valid action on ([^ ]+)', error_msg)
+                    if match:
+                         m_name = match.group(1)
+                         # We don't have the method name easily from this regex, but we know the model
+            
             if m_name and m_name in self.env.registry:
                 ref_class = self.env.registry[m_name]
                 is_poly = is_poly or hasattr(ref_class, '_depend_models') or 'ir.poly_base' in [c._name for c in ref_class.mro() if hasattr(c, '_name')]
 
             # ESPECIAL PARA ACTUALIZACIÓN: Tolerancia extendida durante -u
             # Si estamos en modo actualización, silenciamos campos faltantes en modelos críticos
-            if not is_poly and m_name in ['account.move.line', 'account.move', 'account.analytic.line']:
+            if not is_poly and m_name in ['account.move.line', 'account.move', 'account.analytic.line', 'project.task']:
                 is_poly = True # Treat as poly-related to survive update
 
             if is_poly:
-                _logger.warning("[poly] _validate_view: ignoring unknown field error in model %s (poly-related): %s", model_name, error_msg)
+                _logger.warning("[poly] _validate_view: ignoring unknown field/method error in model %s (poly-related): %s", model_name, error_msg)
                 
-                # INJECTION REACTIVA: If field is missing, try to find it in MRO and inject it NOW
+                # INJECTION REACTIVA: If field or method is missing, try to find it in MRO and inject it NOW
                 if f_name and m_name in self.env.registry:
                     m_class = self.env.registry[m_name]
-                    # Scan MRO for this field
+                    # Scan MRO for this field/method
+                    from odoo.models import MetaModel
                     for parent in m_class.mro():
-                        # Standard Odoo builds fields from _field_definitions in MRO order
-                        if hasattr(parent, '_field_definitions'):
+                        if parent in (m_class, object): continue
+                        if not isinstance(parent, MetaModel): continue
+                        
+                        # Recovery of methods
+                        if is_missing_method:
+                             if f_name in parent.__dict__:
+                                  m_meth = parent.__dict__[f_name]
+                                  if callable(m_meth) and not isinstance(m_meth, (property, fields.Field)):
+                                       _logger.debug("[poly] _validate_view: EMERGENCY RECOVERY of method %s for %s from %s", f_name, m_name, parent.__name__)
+                                       setattr(m_class, f_name, m_meth)
+                                       # Also ensure it's in the proxy if any
+                                       proxy_instance = self.env.registry[m_name]
+                                       if proxy_instance is not m_class:
+                                            setattr(type(proxy_instance), f_name, m_meth)
+                                       
+                                       # Retry validation once
+                                       try:
+                                           return _original_validate_view(self, node, model_name, view_type=view_type, editable=editable, node_info=node_info)
+                                       except:
+                                           pass
+                                       break
+
+                        # Recovery of fields
+                        if is_missing_field and hasattr(parent, '_field_definitions'):
                             for f_def in parent._field_definitions:
                                 if getattr(f_def, 'name', None) == f_name:
-                                    _logger.info("[poly] _validate_view: EMERGENCY RECOVERY of %s for %s", f_name, m_name)
+                                    _logger.debug("[poly] _validate_view: EMERGENCY RECOVERY of field %s for %s from %s", f_name, m_name, parent.__name__)
                                     if f_name not in m_class._fields:
                                         m_class._fields[f_name] = f_def
                                     setattr(m_class, f_name, f_def)
                                     
                                     # Also ensure it's in the proxy if any
-                                    if m_name in self.env.registry:
-                                        proxy_class = type(self.env.registry[m_name])
-                                        if proxy_class is not m_class:
-                                            setattr(proxy_class, f_name, f_def)
+                                    proxy_instance = self.env.registry[m_name]
+                                    if proxy_instance is not m_class:
+                                        setattr(type(proxy_instance), f_name, f_def)
 
                                     # Retry validation once
                                     try:
