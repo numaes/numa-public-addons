@@ -4016,6 +4016,7 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
             current_module = (context or {}).get('module')
             if current_module:
                 _logger.info("[poly] _poly_registry_init_models: analyzing extensions for module %s", current_module)
+                _logger.debug("[poly] _poly_registry_init_models: model_names ON START: %s", model_names)
                 extra_models = set()
                 for mname, mclass in self.items():
                     if mname in model_names: continue
@@ -4025,33 +4026,61 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
                         if f.store and (getattr(f, '_module', None) == current_module or (getattr(f, '_modules', None) and current_module in f._modules)):
                              extra_models.add(mname)
                              break
+
+                # [poly] Re-order model_names to ensure _auto=True models come first
+                # Odoo's init_models processes them in the provided order.
+                # We use self[mname]._auto to determine if it's a table or a view.
+                def model_init_priority(mname):
+                    mclass = self.get(mname)
+                    if mclass and not getattr(mclass, '_auto', True):
+                        return 1 # Lower priority (views)
+                    return 0 # Higher priority (tables)
+
                 if extra_models:
                     _logger.info("[poly] Adding %d models to initialization due to extensions from %s: %s", len(extra_models), current_module, sorted(extra_models))
                     # [poly] Ensure we maintain order and prioritize table models (_auto=True) before view models (_auto=False)
                     # This prevents UndefinedColumn errors when views are created before their base tables are updated.
                     if isinstance(model_names, set):
                         model_names.update(extra_models)
+                        model_names = sorted(list(model_names), key=model_init_priority)
                     else:
                         for m in sorted(extra_models):
                             if m not in model_names:
                                 model_names.append(m)
-
-                    # [poly] Re-order model_names to ensure _auto=True models come first
-                    # Odoo's init_models processes them in the provided order.
-                    # We use self[mname]._auto to determine if it's a table or a view.
-                    def model_init_priority(mname):
-                        mclass = self.get(mname)
-                        if mclass and not getattr(mclass, '_auto', True):
-                            return 1 # Lower priority (views)
-                        return 0 # Higher priority (tables)
-
-                    if isinstance(model_names, list):
                         model_names.sort(key=model_init_priority)
-                    elif isinstance(model_names, set):
-                        # If it's a set, we can't sort it, but init_models will convert it to a list
-                        # using [env[model_name] for model_name in model_names]
-                        # Actually, we should probably return a sorted list instead of a set if possible.
+                else:
+                    # Even if no extra models, we should sort the existing ones to be safe
+                    if isinstance(model_names, set):
                         model_names = sorted(list(model_names), key=model_init_priority)
+                    elif isinstance(model_names, list):
+                        model_names.sort(key=model_init_priority)
+
+                _logger.debug("[poly] _poly_registry_init_models: model_names FINAL: %s", model_names)
+
+                # [poly] DEBT: If we have views in model_names, we MUST ensure their tables
+                # are also in model_names and come FIRST. Odoo might not include them if they were
+                # already processed but without the new columns.
+                # Since we don't have a reliable way to know which tables a view depends on,
+                # we include all models from current_module that are tables.
+                tables_to_add = set()
+                for mname, mclass in self.items():
+                    if mname in model_names: continue
+                    if not getattr(mclass, '_auto', True): continue
+                    if getattr(mclass, '_module', None) == current_module or (getattr(mclass, '_modules', None) and current_module in mclass._modules):
+                         tables_to_add.add(mname)
+
+                if tables_to_add:
+                    _logger.info("[poly] Adding module base tables to initialization to support views: %s", tables_to_add)
+                    if isinstance(model_names, set):
+                         # Should not happen as it was converted to list above
+                         model_names.update(tables_to_add)
+                         model_names = sorted(list(model_names), key=model_init_priority)
+                    else:
+                        for m in tables_to_add:
+                            if m not in model_names:
+                                model_names.append(m)
+                        model_names.sort(key=model_init_priority)
+                    _logger.debug("[poly] _poly_registry_init_models: model_names FINAL (WITH TABLES): %s", model_names)
         finally:
             cr._poly_in_init_models = False
 
