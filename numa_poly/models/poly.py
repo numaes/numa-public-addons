@@ -4027,11 +4027,31 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
                              break
                 if extra_models:
                     _logger.info("[poly] Adding %d models to initialization due to extensions from %s: %s", len(extra_models), current_module, sorted(extra_models))
-                    # Update model_names to include these models
+                    # [poly] Ensure we maintain order and prioritize table models (_auto=True) before view models (_auto=False)
+                    # This prevents UndefinedColumn errors when views are created before their base tables are updated.
                     if isinstance(model_names, set):
                         model_names.update(extra_models)
                     else:
-                        model_names = list(set(model_names) | extra_models)
+                        for m in sorted(extra_models):
+                            if m not in model_names:
+                                model_names.append(m)
+
+                    # [poly] Re-order model_names to ensure _auto=True models come first
+                    # Odoo's init_models processes them in the provided order.
+                    # We use self[mname]._auto to determine if it's a table or a view.
+                    def model_init_priority(mname):
+                        mclass = self.get(mname)
+                        if mclass and not getattr(mclass, '_auto', True):
+                            return 1 # Lower priority (views)
+                        return 0 # Higher priority (tables)
+
+                    if isinstance(model_names, list):
+                        model_names.sort(key=model_init_priority)
+                    elif isinstance(model_names, set):
+                        # If it's a set, we can't sort it, but init_models will convert it to a list
+                        # using [env[model_name] for model_name in model_names]
+                        # Actually, we should probably return a sorted list instead of a set if possible.
+                        model_names = sorted(list(model_names), key=model_init_priority)
         finally:
             cr._poly_in_init_models = False
 
