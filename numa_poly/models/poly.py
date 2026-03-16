@@ -1445,22 +1445,27 @@ class PolyBase(_original_BaseModel):
                                       new_field.column2 = False
                                       new_field._explicit = False
                                  
-                                 # Odoo 18: ensure we are not hitting the framework cache for M2M relations.
-                                 # We force a unique relation name explicitly if automatic naming is failing.
-                                 if not getattr(new_field, 'relation', None):
-                                      new_field.relation = "rel_%s_%s" % (self._name.replace('.', '_'), field_name)
-                                 
-                                 # Odoo 18: ensure column1 and column2 are set from original if present
-                                 for _attr in ['column1', 'column2']:
+                                 # Odoo 18: ensure relation, column1, column2 and ondelete are set from original if present
+                                 for _attr in ['relation', 'column1', 'column2', 'ondelete']:
                                      _base_val = getattr(field, _attr, None)
                                      if _base_val:
                                          setattr(new_field, _attr, _base_val)
 
+                                 if not getattr(new_field, 'relation', None):
+                                      new_field.relation = "rel_%s_%s" % (self._name.replace('.', '_'), field_name)
+                                 
                                  if not getattr(new_field, 'column1', None):
                                       new_field.column1 = "%s_id" % self._name.replace('.', '_')
                                  if not getattr(new_field, 'column2', None):
                                       new_field.column2 = "%s_id" % new_field.comodel_name.replace('.', '_')
-                                 new_field._explicit = True
+                                 
+                                 # FORZADO: Si el campo tiene relación o columnas, marcar como explícito
+                                 # para que Odoo no intente recalcular nombres durante check_foreign_keys.
+                                 if getattr(new_field, 'relation', None):
+                                      new_field._explicit = True
+                                 if getattr(new_field, 'column1', None) or getattr(new_field, 'column2', None):
+                                      new_field._explicit = True
+                                 
                                  if len(new_field.relation) > 63:
                                       new_field.relation = new_field.relation[:63]
                             elif is_depend_model:
@@ -3167,6 +3172,17 @@ class IrModel(models.Model):
 class IrModelFields(models.Model):
     _inherit = 'ir.model.fields'
 
+    def _reflect_field_params(self, field, model_id):
+        """
+        Override _reflect_field_params to ensure that field_description (label)
+        is never None, which avoids NotNullViolation in ir_model_fields.
+        """
+        params = super()._reflect_field_params(field, model_id)
+        if not params.get('field_description'):
+            # Fallback to a label based on the field name
+            params['field_description'] = field.name.replace('_', ' ').capitalize()
+        return params
+
     def _reflect_fields(self, model_names):
         """
         Override _reflect_fields to ensure that all models have been reflected
@@ -3185,6 +3201,21 @@ class IrModelFields(models.Model):
             # Invalidate cache for _get_id as it is ormcache'd
             IrModel.clear_caches()
         
+        # Odoo 18 EXTRA: Before calling super, ensure that fields without string (label)
+        # get one assigned from their name to avoid NotNullViolation in ir_model_fields.field_description
+        # Also ensure _modules is not None.
+        for model_name in model_names:
+            model = self.env.get(model_name)
+            if model is not None:
+                # Patch ALL fields of ANY model if necessary during reflection of a poly-related model
+                for field in model._fields.values():
+                    if not field.string or isinstance(field.string, fields.Sentinel):
+                        field.string = field.name.replace('_', ' ').capitalize()
+                    
+                    # Ensure _modules is NOT None to avoid TypeError in ir_model._reflect_fields
+                    if getattr(field, '_modules', None) is None:
+                        field._modules = []
+
         return super()._reflect_fields(model_names)
 
 
@@ -3587,12 +3618,17 @@ def _poly_registry_setup_models(self, cr):
                                 if _comodel and isinstance(_comodel, odoo_fields.Sentinel):
                                     _comodel = None
 
+                                # EXTRA: Extraer string (field_description) para evitar NotNullViolation en ir_model_fields
+                                _string = getattr(_fobj, 'string', None) or _args.get('string')
+                                if not _string or isinstance(_string, odoo_fields.Sentinel):
+                                    _string = _fname.replace('_', ' ').capitalize()
+
                                 # EXTRA: Extraer inverse_name para campos One2many
                                 _inverse = getattr(_fobj, 'inverse_name', None) or _args.get('inverse_name')
                                 if _inverse and isinstance(_inverse, odoo_fields.Sentinel):
                                     _inverse = None
 
-                                _logger.info("[poly] Recovery field %s on %s: relational=%s, comodel=%s, inverse=%s", _fname, name, _fobj.relational, _comodel, _inverse)
+                                _logger.info("[poly] Recovery field %s on %s: relational=%s, comodel=%s, inverse=%s, string=%r", _fname, name, _fobj.relational, _comodel, _inverse, _string)
 
                                 # Si es un campo relacional (m2o, o2m, m2m) y no tenemos comodel_name,
                                 # NO podemos instanciarlo ni inyectarlo, ya que update_db fallará.
@@ -3608,33 +3644,44 @@ def _poly_registry_setup_models(self, cr):
                                 # Asegurar comodel_name en los argumentos de inicializacion
                                 if _comodel and 'comodel_name' not in _args:
                                     _args['comodel_name'] = _comodel
+                                
+                                # Asegurar string en los argumentos de inicializacion
+                                if _string and 'string' not in _args:
+                                    _args['string'] = _string
 
                                 _new_fobj = type(_fobj)(**_args)
+                                # Forzar string en el objeto nuevo para evitar Sentinels persistentes
+                                if not _new_fobj.string or isinstance(_new_fobj.string, odoo_fields.Sentinel):
+                                    _new_fobj.string = _string
                                 
                                 # Lista de atributos a copiar explícitamente
                                 attrs_to_copy = [
                                     'string', 'help', 'compute', 'search', 'inverse', '_modules', 
                                     'relation', 'column1', 'column2', 'comodel_name', 'inverse_name', 
-                                    'delegate', 'store', 'related', 'selection', 'domain'
+                                    'delegate', 'store', 'related', 'selection', 'domain', 'ondelete'
                                 ]
                                 for attr in attrs_to_copy:
                                     if hasattr(_fobj, attr):
                                         val = getattr(_fobj, attr)
-                                        if val is not None:
+                                        if val is not None and not isinstance(val, odoo_fields.Sentinel):
                                             setattr(_new_fobj, attr, val)
+                                
+                                # Re-asegurar string si se perdió o es Sentinel tras la copia masiva
+                                if not _new_fobj.string or isinstance(_new_fobj.string, odoo_fields.Sentinel):
+                                    _new_fobj.string = _string
                                 
                                 # Forzar explicitud en Many2many para evitar que Odoo recalcule nombres de columnas
                                 if _new_fobj.type == 'many2many':
-                                    if getattr(_new_fobj, 'relation', None):
-                                        _new_fobj._explicit = True
-                                    
-                                    # Odoo 18: Ensure column1 and column2 are explicitly set if present in base
-                                    for _attr in ['column1', 'column2']:
+                                    # Odoo 18: Ensure relation, column1, column2 and ondelete are explicitly set if present in base
+                                    for _attr in ['relation', 'column1', 'column2', 'ondelete']:
                                         _base_val = getattr(_fobj, _attr, None)
                                         if _base_val:
                                             setattr(_new_fobj, _attr, _base_val)
 
-                                    if getattr(_new_fobj, 'column1', None) and getattr(_new_fobj, 'column2', None):
+                                    if getattr(_new_fobj, 'relation', None):
+                                        _new_fobj._explicit = True
+                                    
+                                    if getattr(_new_fobj, 'column1', None) or getattr(_new_fobj, 'column2', None):
                                         _new_fobj._explicit = True
                                     
                             except Exception as e:
@@ -3690,13 +3737,21 @@ def _poly_registry_setup_models(self, cr):
                                 # Even if not missing, ensure critical relational attributes are synced if they differ
                                 # (e.g. Many2many relation/column names)
                                 if _existing_fobj.type == 'many2many':
-                                    for _attr in ['relation', 'column1', 'column2']:
+                                    for _attr in ['relation', 'column1', 'column2', 'ondelete']:
                                         _val = getattr(_existing_fobj, _attr, None)
                                         _base_val = getattr(_fobj, _attr, None)
                                         if _base_val and _val != _base_val:
                                             _logger.info("[poly] Syncing %s for existing Many2many field %s on %s: %s -> %s", _attr, _fname, name, _val, _base_val)
                                             setattr(_existing_fobj, _attr, _base_val)
                                             if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
+                                    
+                                    if getattr(_existing_fobj, 'relation', None):
+                                        _existing_fobj._explicit = True
+                                    if getattr(_existing_fobj, 'column1', None) or getattr(_existing_fobj, 'column2', None):
+                                        _existing_fobj._explicit = True
+                                    
+                                    if _existing_fobj._explicit and hasattr(_existing_fobj, '_setup_done'):
+                                        _existing_fobj._setup_done = False
                     
                     # Ensure descriptor is in model class __dict__
                     if _fname not in model_class.__dict__:
@@ -3736,12 +3791,17 @@ def _poly_registry_setup_models(self, cr):
                                 if _comodel and isinstance(_comodel, odoo_fields.Sentinel):
                                     _comodel = None
 
+                                # EXTRA: Extraer string (field_description) para evitar NotNullViolation en ir_model_fields (dict)
+                                _string = getattr(_fobj, 'string', None) or _args.get('string')
+                                if not _string or isinstance(_string, odoo_fields.Sentinel):
+                                    _string = _fname.replace('_', ' ').capitalize()
+
                                 # EXTRA: Extraer inverse_name para campos One2many
                                 _inverse = getattr(_fobj, 'inverse_name', None) or _args.get('inverse_name')
                                 if _inverse and isinstance(_inverse, odoo_fields.Sentinel):
                                     _inverse = None
 
-                                _logger.info("[poly] Recovery field %s on %s (dict): relational=%s, comodel=%s, inverse=%s", _fname, name, _fobj.relational, _comodel, _inverse)
+                                _logger.info("[poly] Recovery field %s on %s (dict): relational=%s, comodel=%s, inverse=%s, string=%r", _fname, name, _fobj.relational, _comodel, _inverse, _string)
 
                                 # Si es un campo relacional y no tenemos comodel_name, saltar para evitar KeyError: None
                                 if _fobj.relational and not _comodel:
@@ -3756,33 +3816,44 @@ def _poly_registry_setup_models(self, cr):
                                 # Asegurar comodel_name en los argumentos de inicializacion
                                 if _comodel and 'comodel_name' not in _args:
                                     _args['comodel_name'] = _comodel
+                                
+                                # Asegurar string en los argumentos de inicializacion
+                                if _string and 'string' not in _args:
+                                    _args['string'] = _string
 
                                 _new_fobj = type(_fobj)(**_args)
+                                # Forzar string en el objeto nuevo para evitar Sentinels persistentes (dict)
+                                if not _new_fobj.string or isinstance(_new_fobj.string, odoo_fields.Sentinel):
+                                    _new_fobj.string = _string
                                 
                                 # Lista de atributos a copiar explícitamente
                                 attrs_to_copy = [
                                     'string', 'help', 'compute', 'search', 'inverse', '_modules', 
                                     'relation', 'column1', 'column2', 'comodel_name', 'inverse_name', 
-                                    'delegate', 'store', 'related', 'selection', 'domain'
+                                    'delegate', 'store', 'related', 'selection', 'domain', 'ondelete'
                                 ]
                                 for attr in attrs_to_copy:
                                     if hasattr(_fobj, attr):
                                         val = getattr(_fobj, attr)
-                                        if val is not None:
+                                        if val is not None and not isinstance(val, odoo_fields.Sentinel):
                                             setattr(_new_fobj, attr, val)
+                                
+                                # Re-asegurar string si se perdió o es Sentinel tras la copia masiva (dict)
+                                if not _new_fobj.string or isinstance(_new_fobj.string, odoo_fields.Sentinel):
+                                    _new_fobj.string = _string
                                 
                                 # Forzar explicitud en Many2many para evitar que Odoo recalcule nombres de columnas (dict recovery)
                                 if _new_fobj.type == 'many2many':
-                                    if getattr(_new_fobj, 'relation', None):
-                                        _new_fobj._explicit = True
-                                    
-                                    # Odoo 18: Ensure column1 and column2 are explicitly set if present in base
-                                    for _attr in ['column1', 'column2']:
+                                    # Odoo 18: Ensure relation, column1, column2 and ondelete are explicitly set if present in base
+                                    for _attr in ['relation', 'column1', 'column2', 'ondelete']:
                                         _base_val = getattr(_fobj, _attr, None)
                                         if _base_val:
                                             setattr(_new_fobj, _attr, _base_val)
 
-                                    if getattr(_new_fobj, 'column1', None) and getattr(_new_fobj, 'column2', None):
+                                    if getattr(_new_fobj, 'relation', None):
+                                        _new_fobj._explicit = True
+                                    
+                                    if getattr(_new_fobj, 'column1', None) or getattr(_new_fobj, 'column2', None):
                                         _new_fobj._explicit = True
                                     
                             except Exception as e:
@@ -3835,13 +3906,21 @@ def _poly_registry_setup_models(self, cr):
                                 # Even if not missing, ensure critical relational attributes are synced if they differ
                                 # (e.g. Many2many relation/column names)
                                 if _existing_fobj.type == 'many2many':
-                                    for _attr in ['relation', 'column1', 'column2']:
+                                    for _attr in ['relation', 'column1', 'column2', 'ondelete']:
                                         _val = getattr(_existing_fobj, _attr, None)
                                         _base_val = getattr(_fobj, _attr, None)
                                         if _base_val and _val != _base_val:
                                             _logger.info("[poly] Syncing %s for existing Many2many field %s on %s (dict): %s -> %s", _attr, _fname, name, _val, _base_val)
                                             setattr(_existing_fobj, _attr, _base_val)
                                             if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
+                                    
+                                    if getattr(_existing_fobj, 'relation', None):
+                                        _existing_fobj._explicit = True
+                                    if getattr(_existing_fobj, 'column1', None) or getattr(_existing_fobj, 'column2', None):
+                                        _existing_fobj._explicit = True
+                                    
+                                    if _existing_fobj._explicit and hasattr(_existing_fobj, '_setup_done'):
+                                        _existing_fobj._setup_done = False
                     
                     if _fname not in model_class.__dict__:
                         _logger.info("[poly] FORCING descriptor for %s in %s class (from __dict__)", _fname, name)
