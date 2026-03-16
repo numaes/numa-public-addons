@@ -3568,15 +3568,15 @@ def _poly_registry_setup_models(self, cr):
                                 # Usamos _args del objeto original si existen
                                 _args = dict(getattr(_fobj, '_args', {}))
                                 
-                                # Asegurar comodel_name en los argumentos de inicializacion si es un campo relacional
-                                _comodel = getattr(_fobj, 'comodel_name', None) or _args.get('comodel_name')
-                                if _comodel and 'comodel_name' not in _args:
-                                    _args['comodel_name'] = _comodel
-                                
                                 # Si es un campo relacional y no tenemos comodel_name, saltar para evitar KeyError: None
-                                if _fobj.relational and not _args.get('comodel_name'):
+                                _comodel = getattr(_fobj, 'comodel_name', None) or _args.get('comodel_name')
+                                if _fobj.relational and not _comodel:
                                     _logger.warning('[poly] Skipping relational field %s on %s: missing comodel_name', _fname, name)
                                     continue
+                                
+                                # Asegurar comodel_name en los argumentos de inicializacion
+                                if _comodel and 'comodel_name' not in _args:
+                                    _args['comodel_name'] = _comodel
 
                                 _new_fobj = type(_fobj)(**_args)
                                 
@@ -3641,15 +3641,15 @@ def _poly_registry_setup_models(self, cr):
                                 # Usamos _args del objeto original si existen
                                 _args = dict(getattr(_fobj, '_args', {}))
                                 
-                                # Asegurar comodel_name en los argumentos de inicializacion si es un campo relacional
-                                _comodel = getattr(_fobj, 'comodel_name', None) or _args.get('comodel_name')
-                                if _comodel and 'comodel_name' not in _args:
-                                    _args['comodel_name'] = _comodel
-                                
                                 # Si es un campo relacional y no tenemos comodel_name, saltar para evitar KeyError: None
-                                if _fobj.relational and not _args.get('comodel_name'):
+                                _comodel = getattr(_fobj, 'comodel_name', None) or _args.get('comodel_name')
+                                if _fobj.relational and not _comodel:
                                     _logger.warning('[poly] Skipping relational field %s on %s (dict): missing comodel_name', _fname, name)
                                     continue
+                                
+                                # Asegurar comodel_name en los argumentos de inicializacion
+                                if _comodel and 'comodel_name' not in _args:
+                                    _args['comodel_name'] = _comodel
 
                                 _new_fobj = type(_fobj)(**_args)
                                 
