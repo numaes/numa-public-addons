@@ -772,6 +772,11 @@ class PolyBase(_original_BaseModel):
                         _fname = _fobj.name
                         if _fname not in model_class._fields:
                             _fobj.model_name = name
+                            # Odoo 18 incremental loading: ensure _module is preserved if available from the base class
+                            if not getattr(_fobj, '_module', None):
+                                _fobj._module = getattr(_base_class, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
+                            if not getattr(_fobj, '_modules', None):
+                                _fobj._modules = {_fobj._module}
                             model_class._fields[_fname] = _fobj
                             if _fname not in model_class.__dict__:
                                 try:
@@ -3735,6 +3740,18 @@ def _poly_registry_setup_models(self, cr):
         from odoo.models import MetaModel
         from odoo import fields as odoo_fields
         _current_mro = model_class.mro()
+        
+        # [poly] CRITICAL FIX: Ensure project.task has sale_line_id/sale_order_id in DB
+        if name == 'project.task':
+            for _fname in ('sale_line_id', 'sale_order_id'):
+                try:
+                    cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'project_task' AND column_name = %s", (_fname,))
+                    if not cr.fetchone():
+                        _logger.info("[poly] CRITICAL: Missing SQL column %s on project_task, creating manually (TOP LEVEL)", _fname)
+                        cr.execute(f"ALTER TABLE project_task ADD COLUMN IF NOT EXISTS {_fname} integer")
+                except Exception as _e:
+                    _logger.error("[poly] CRITICAL: Failed to manually create column %s: %s", _fname, _e)
+
         _fields_before = set(model_class._fields.keys())
         for _base_class in _current_mro:
             # RECOVERY: Scan ALL base classes in the MRO for field definitions.
@@ -3948,23 +3965,47 @@ def _poly_registry_setup_models(self, cr):
                                 except Exception: pass
 
                     # [poly] FIX: Ensure _modules and _module is NEVER empty or containing None for relational fields
-                    if _fobj.relational:
+                    if _fobj.relational or True:
                         # Odoo 18: Many2many fields use self._module in update_db -> post_init(_reflect_relation, ...)
-                        if not getattr(_fobj, '_module', None):
-                            _mod_name = getattr(model_class, '_module', None) or 'numa_poly'
+                        # [poly] FIX: Use base class module (source of the extension) if available
+                        _base_mod = getattr(_base_class, '_module', None)
+                        if not getattr(_fobj, '_module', None) or (_base_mod and _fobj._module == 'numa_poly' and _base_mod != 'numa_poly'):
+                            _mod_name = _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
                             _fobj._module = _mod_name
-                            _logger.debug("[poly] Recovery field %s on %s: set missing _module to %s", _fname, name, _fobj._module)
+                            _logger.debug("[poly] Recovery field %s on %s: set/correct _module to %s", _fname, name, _fobj._module)
                         
-                        if not getattr(_fobj, '_modules', None):
-                            _mod_name = getattr(_fobj, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
+                        if not getattr(_fobj, '_modules', None) or (_base_mod and 'numa_poly' in _fobj._modules and _base_mod != 'numa_poly'):
+                            _mod_name = getattr(_fobj, '_module', None) or _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
                             _fobj._modules = {_mod_name}
-                            _logger.debug("[poly] Recovery field %s on %s: set missing _modules to %s", _fname, name, _fobj._modules)
+                            _logger.debug("[poly] Recovery field %s on %s: set/correct _modules to %s", _fname, name, _fobj._modules)
                         elif None in _fobj._modules:
                             _fobj._modules = {m for m in _fobj._modules if m is not None}
                             if not _fobj._modules:
-                                _mod_name = getattr(_fobj, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
+                                _mod_name = getattr(_fobj, '_module', None) or _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
                                 _fobj._modules = {_mod_name}
                             _logger.debug("[poly] Recovery field %s on %s: cleaned None from _modules, now %s", _fname, name, _fobj._modules)
+                        
+                        # [poly] FIX: Ensure model is marked for re-setup if we found fields that SHOULD be physical
+                        # but might have been missed by Odoo's incremental setup.
+                        if getattr(_fobj, 'column', None) and not model_class._setup_done:
+                             _logger.debug("[poly] Recovery field %s on %s has column, ensuring setup is not done", _fname, name)
+                             model_class._setup_done = False
+                        
+                        # [poly] CRITICAL FIX: Direct SQL injection for sale_project fields on project_task
+                        # Odoo 18 incremental loading may skip these columns in project_task table
+                        # if the registry setup is not fully re-evaluated.
+                        if name == 'project.task' and _fname in ('sale_line_id', 'sale_order_id'):
+                            _logger.info("[poly] CRITICAL: Ensuring SQL column %s exists on project_task", _fname)
+                            try:
+                                cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'project_task' AND column_name = %s", (_fname,))
+                                if not cr.fetchone():
+                                    _logger.info("[poly] CRITICAL: Missing SQL column %s on project_task, creating manually", _fname)
+                                    cr.execute(f"ALTER TABLE project_task ADD COLUMN IF NOT EXISTS {_fname} integer")
+                                    # Ensure Odoo knows it is stored
+                                    _fobj.store = True
+                                    _fobj.column = True
+                            except Exception as _e:
+                                _logger.error("[poly] CRITICAL: Failed to manually create column %s: %s", _fname, _e)
 
             # 3. Method propagation (Odoo 18 MRO might miss methods if classes are skipped)
             # We already use MRO, so methods should be found by Python. 
