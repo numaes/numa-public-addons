@@ -1436,16 +1436,31 @@ class PolyBase(_original_BaseModel):
                             # For Many2many, force unique naming ONLY if it's NOT a depend_model.
                             if new_field.type == 'many2many' and not is_depend_model:
                                  # Resetting these triggers Odoo's native automatic naming logic.
-                                 new_field.relation = False
-                                 new_field.column1 = False
-                                 new_field.column2 = False
-                                 new_field._explicit = False
+                                 # BUT only if we don't have explicit values yet.
+                                 # Odoo 18: If the original field already has relation/column1/column2, 
+                                 # we MUST use them to avoid creating dynamic column names that don't exist.
+                                 if not getattr(new_field, 'relation', None) or not getattr(new_field, 'column1', None) or not getattr(new_field, 'column2', None):
+                                      new_field.relation = False
+                                      new_field.column1 = False
+                                      new_field.column2 = False
+                                      new_field._explicit = False
                                  
                                  # Odoo 18: ensure we are not hitting the framework cache for M2M relations.
                                  # We force a unique relation name explicitly if automatic naming is failing.
-                                 new_field.relation = "rel_%s_%s" % (self._name.replace('.', '_'), field_name)
-                                 new_field.column1 = "%s_id" % self._name.replace('.', '_')
-                                 new_field.column2 = "%s_id" % new_field.comodel_name.replace('.', '_')
+                                 if not getattr(new_field, 'relation', None):
+                                      new_field.relation = "rel_%s_%s" % (self._name.replace('.', '_'), field_name)
+                                 
+                                 # Odoo 18: ensure column1 and column2 are set from original if present
+                                 for _attr in ['column1', 'column2']:
+                                     if not getattr(new_field, _attr, None):
+                                         _base_val = getattr(field, _attr, None)
+                                         if _base_val:
+                                             setattr(new_field, _attr, _base_val)
+
+                                 if not getattr(new_field, 'column1', None):
+                                      new_field.column1 = "%s_id" % self._name.replace('.', '_')
+                                 if not getattr(new_field, 'column2', None):
+                                      new_field.column2 = "%s_id" % new_field.comodel_name.replace('.', '_')
                                  new_field._explicit = True
                                  if len(new_field.relation) > 63:
                                       new_field.relation = new_field.relation[:63]
@@ -3610,8 +3625,16 @@ def _poly_registry_setup_models(self, cr):
                                             setattr(_new_fobj, attr, val)
                                 
                                 # Forzar explicitud en Many2many para evitar que Odoo recalcule nombres de columnas
-                                if _new_fobj.type == 'many2many' and getattr(_new_fobj, 'relation', None):
-                                    _new_fobj._explicit = True
+                                if _new_fobj.type == 'many2many':
+                                    if getattr(_new_fobj, 'relation', None):
+                                        _new_fobj._explicit = True
+                                    
+                                    # Odoo 18: Ensure column1 and column2 are explicitly set if present in base
+                                    for _attr in ['column1', 'column2']:
+                                        if not getattr(_new_fobj, _attr, None):
+                                            _base_val = getattr(_fobj, _attr, None)
+                                            if _base_val:
+                                                setattr(_new_fobj, _attr, _base_val)
                                     
                             except Exception as e:
                                 _logger.error('[poly] Error cloning field %s: %s', _fname, e)
@@ -3748,8 +3771,16 @@ def _poly_registry_setup_models(self, cr):
                                             setattr(_new_fobj, attr, val)
                                 
                                 # Forzar explicitud en Many2many para evitar que Odoo recalcule nombres de columnas
-                                if _new_fobj.type == 'many2many' and getattr(_new_fobj, 'relation', None):
-                                    _new_fobj._explicit = True
+                                if _new_fobj.type == 'many2many':
+                                    if getattr(_new_fobj, 'relation', None):
+                                        _new_fobj._explicit = True
+                                    
+                                    # Odoo 18: Ensure column1 and column2 are explicitly set if present in base
+                                    for _attr in ['column1', 'column2']:
+                                        if not getattr(_new_fobj, _attr, None):
+                                            _base_val = getattr(_fobj, _attr, None)
+                                            if _base_val:
+                                                setattr(_new_fobj, _attr, _base_val)
                                     
                             except Exception as e:
                                 _logger.error('[poly] Error cloning field %s: %s', _fname, e)
