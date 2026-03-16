@@ -3573,10 +3573,12 @@ def _poly_registry_setup_models(self, cr):
                                 if _comodel and isinstance(_comodel, odoo_fields.Sentinel):
                                     _comodel = None
 
+                                _logger.info("[poly] Recovery field %s on %s: relational=%s, comodel=%s", _fname, name, _fobj.relational, _comodel)
+
                                 # Si es un campo relacional (m2o, o2m, m2m) y no tenemos comodel_name,
                                 # NO podemos instanciarlo ni inyectarlo, ya que update_db fallará.
                                 if _fobj.relational and not _comodel:
-                                    _logger.warning('[poly] Skipping relational field %s on %s: missing comodel_name', _fname, name)
+                                    _logger.warning('[poly] Skipping relational field %s on %s: missing comodel_name (type: %s)', _fname, name, type(_fobj))
                                     continue
                                 
                                 # Asegurar comodel_name en los argumentos de inicializacion
@@ -3611,6 +3613,21 @@ def _poly_registry_setup_models(self, cr):
                         _fobj = _new_fobj
                         if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
                         _recovered_from_this_base.append(_fname)
+                    else:
+                        # Field already in _fields. In Odoo 18 incremental loading, 
+                        # sometimes it's there but incomplete (e.g. comodel_name is Sentinel or None).
+                        _existing_fobj = model_class._fields[_fname]
+                        if _existing_fobj.relational:
+                            _comodel = getattr(_existing_fobj, 'comodel_name', None)
+                            if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
+                                # Try to recover comodel_name from _base_class's version of the field
+                                _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
+                                if _base_comodel and not isinstance(_base_comodel, odoo_fields.Sentinel):
+                                    _logger.info("[poly] Correcting comodel_name for existing field %s on %s: %s -> %s", _fname, name, _comodel, _base_comodel)
+                                    _existing_fobj.comodel_name = _base_comodel
+                                    if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
+                                else:
+                                    _logger.warning("[poly] Field %s on %s already in _fields but has no comodel_name (Sentinel: %s)", _fname, name, isinstance(_comodel, odoo_fields.Sentinel))
                     
                     # Ensure descriptor is in model class __dict__
                     if _fname not in model_class.__dict__:
@@ -3651,9 +3668,11 @@ def _poly_registry_setup_models(self, cr):
                                 if _comodel and isinstance(_comodel, odoo_fields.Sentinel):
                                     _comodel = None
 
+                                _logger.info("[poly] Recovery field %s on %s (dict): relational=%s, comodel=%s", _fname, name, _fobj.relational, _comodel)
+
                                 # Si es un campo relacional y no tenemos comodel_name, saltar para evitar KeyError: None
                                 if _fobj.relational and not _comodel:
-                                    _logger.warning('[poly] Skipping relational field %s on %s (dict): missing comodel_name', _fname, name)
+                                    _logger.warning('[poly] Skipping relational field %s on %s (dict): missing comodel_name (type: %s)', _fname, name, type(_fobj))
                                     continue
                                 
                                 # Asegurar comodel_name en los argumentos de inicializacion
@@ -3688,6 +3707,21 @@ def _poly_registry_setup_models(self, cr):
                         _fobj = _new_fobj
                         if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
                         _recovered_from_this_base.append(_fname)
+                    else:
+                        # Field already in _fields. In Odoo 18 incremental loading, 
+                        # sometimes it's there but incomplete (e.g. comodel_name is Sentinel or None).
+                        _existing_fobj = model_class._fields[_fname]
+                        if _existing_fobj.relational:
+                            _comodel = getattr(_existing_fobj, 'comodel_name', None)
+                            if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
+                                # Try to recover comodel_name from _base_class's version of the field
+                                _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
+                                if _base_comodel and not isinstance(_base_comodel, odoo_fields.Sentinel):
+                                    _logger.info("[poly] Correcting comodel_name for existing field %s on %s (dict): %s -> %s", _fname, name, _comodel, _base_comodel)
+                                    _existing_fobj.comodel_name = _base_comodel
+                                    if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
+                                else:
+                                    _logger.warning("[poly] Field %s on %s (dict) already in _fields but has no comodel_name (Sentinel: %s)", _fname, name, isinstance(_comodel, odoo_fields.Sentinel))
                     
                     if _fname not in model_class.__dict__:
                         _logger.info("[poly] FORCING descriptor for %s in %s class (from __dict__)", _fname, name)
