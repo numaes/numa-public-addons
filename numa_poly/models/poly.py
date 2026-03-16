@@ -3923,27 +3923,9 @@ def _poly_registry_setup_models(self, cr):
                         
                         # [poly] FIX: Ensure model is marked for re-setup if we found fields that SHOULD be physical
                         # but might have been missed by Odoo's incremental setup.
-                        if getattr(_fobj, 'column', None) and not model_class._setup_done:
-                             _logger.debug("[poly] Recovery field %s on %s has column, ensuring setup is not done", _fname, name)
+                        if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None) and not model_class._setup_done:
+                             _logger.debug("[poly] Recovery field %s on %s has column type but not yet setup, ensuring setup is not done", _fname, name)
                              model_class._setup_done = False
-
-                        # [poly] GENERIC COLUMN RECOVERY: If a field is recovered and it should be a stored column,
-                        # ensure it exists in the database. Odoo 18 incremental loading may skip columns if
-                        # registry setup is not fully re-evaluated at the right time.
-                        if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None):
-                            _table = model_class._table
-                            try:
-                                # [poly] FIX: ensure we have a valid table name
-                                if _table:
-                                    cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
-                                    if not cr.fetchone():
-                                        _col_type = _fobj.column_type[1]
-                                        _logger.info("[poly] GENERIC (RECOVERY): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
-                                        cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
-                                        # Ensure Odoo knows it's a column
-                                        _fobj.column = True
-                            except Exception as _e:
-                                _logger.error("[poly] GENERIC (RECOVERY): Failed to manually create column %s on %s: %s", _fname, _table, _e)
 
             # 3. Method propagation (Odoo 18 MRO might miss methods if classes are skipped)
             # We already use MRO, so methods should be found by Python. 
@@ -3965,36 +3947,10 @@ def _poly_registry_setup_models(self, cr):
                 if self in Environment._classes:
                     Environment._classes[self].pop(name, None)
 
-    # [poly] GENERIC SAFETY CHECK: Ensure ALL models in the registry have their SQL columns.
-    # This is critical for Odoo 18 incremental loading where some modules are loaded
-    # but NOT updated, skipping _auto_init and thus missing new columns.
-    # We do this at the pool level to catch fields added to existing models by extensions.
-    from odoo.tools.sql import table_exists, table_kind
-    for model_name, model_class in self.items():
-        _table = getattr(model_class, '_table', None)
-        # Skip transient models and ir.* models to avoid issues with non-standard tables.
-        # CRITICAL: Skip views (auto=False) as they don't support ADD COLUMN.
-        if _table and not model_name.startswith('ir.') and not model_class._transient and getattr(model_class, '_auto', True):
-            try:
-                # table_kind(cr, _table) returns 'r' for base tables, 'v' for views, etc.
-                if table_exists(cr, _table) and table_kind(cr, _table) == 'r':
-                    for _fname, _fobj in model_class._fields.items():
-                        if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None):
-                            cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
-                            if not cr.fetchone():
-                                _col_type = _fobj.column_type[1]
-                                _logger.info("[poly] GENERIC (POOL): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
-                                cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
-                                _fobj.column = True
-            except Exception as _e:
-                _logger.error("[poly] GENERIC (POOL): Failed to manually create column on %s: %s", _table, _e)
-                # If we hit an error (like aborted transaction), we MUST stop to avoid flooding logs
-                if "aborted" in str(_e).lower():
-                    break
     # [poly] DEFERRED VIEW VALIDATION: Now that the registry is fully stabilized, 
     # validate any views that were skipped during the module loading process.
     # We use a copy of the pending views to avoid issues with pop while iterating
-    db_name = self.env.cr.dbname
+    db_name = cr.dbname
     pending_views = PENDING_POLY_VIEWS.pop(db_name, [])
     if pending_views:
         # Deduplicate views by ID
@@ -4009,6 +3965,29 @@ def _poly_registry_setup_models(self, cr):
                 view.with_env(_env).sudo().with_context(poly_validated=True)._check_xml()
             except Exception as _e:
                 _logger.error("[poly] Strict validation failed for deferred view %s: %s", view.xml_id or view.id, _e)
+
+    # [poly] GENERIC COLUMN RECOVERY: If a field is recovered and it should be a stored column,
+    # ensure it exists in the database. Odoo 18 incremental loading may skip columns if
+    # registry setup is not fully re-evaluated at the right time.
+    # Since these are standard Odoo fields from extensions, we ensure their columns exist.
+    from odoo.tools.sql import table_exists, table_kind
+    for model_name, model_class in self.items():
+        _table = getattr(model_class, '_table', None)
+        if _table and not model_name.startswith('ir.') and not model_class._transient and getattr(model_class, '_auto', True):
+            try:
+                if table_exists(cr, _table) and table_kind(cr, _table) == 'r':
+                    for _fname, _fobj in model_class._fields.items():
+                        if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None):
+                            cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
+                            if not cr.fetchone():
+                                _col_type = _fobj.column_type[1]
+                                _logger.info("[poly] GENERIC (POOL): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
+                                cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
+                                _fobj.column = True
+            except Exception as _e:
+                _logger.error("[poly] GENERIC (POOL): Failed to manually create column on %s: %s", _table, _e)
+                if "aborted" in str(_e).lower():
+                    break
 
     return res
 
@@ -4027,6 +4006,7 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
             # In Odoo 18 incremental loading, context usually contains {'module': ...}
             current_module = (context or {}).get('module')
             if current_module:
+                _logger.info("[poly] _poly_registry_init_models: analyzing extensions for module %s", current_module)
                 extra_models = set()
                 for mname, mclass in self.items():
                     if mname in model_names: continue
@@ -4034,8 +4014,8 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
                     # We check both _module and _modules (Odoo 18 style)
                     for f in mclass._fields.values():
                         if f.store and (getattr(f, '_module', None) == current_module or (getattr(f, '_modules', None) and current_module in f._modules)):
-                            extra_models.add(mname)
-                            break
+                             extra_models.add(mname)
+                             break
                 if extra_models:
                     _logger.info("[poly] Adding %d models to initialization due to extensions from %s: %s", len(extra_models), current_module, sorted(extra_models))
                     # Update model_names to include these models
@@ -4049,4 +4029,27 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
     return _original_registry_init_models(self, cr, model_names, context, install=install)
 
 odoo.modules.registry.Registry.init_models = _poly_registry_init_models
+
+_original_registry_load = odoo.modules.registry.Registry.load
+def _poly_registry_load(self, cr, module):
+    """
+    [poly] Load Hook.
+    Forces setup_models after loading a module to ensure extensions are visible
+    before any init_models call that might create views.
+    """
+    res = _original_registry_load(self, cr, module)
+    # If we are in the middle of loading modules (Registry.new -> load_modules)
+    # we want to ensure setup_models is called to integrate the newly loaded module extensions.
+    # Odoo's load_module_graph already calls it if needs_update is True,
+    # but we force it here to be 100% sure for polymorphic consistency.
+    if not getattr(cr, '_poly_in_load', False):
+        try:
+            cr._poly_in_load = True
+            _logger.info("[poly] Forcing setup_models after loading module %s", module.name)
+            self.setup_models(cr)
+        finally:
+            cr._poly_in_load = False
+    return res
+
+odoo.modules.registry.Registry.load = _poly_registry_load
 odoo.modules.registry.Registry.setup_models = _poly_registry_setup_models
