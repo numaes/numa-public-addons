@@ -3542,6 +3542,7 @@ def _poly_registry_setup_models(self, cr):
         # We scan ALL definition classes (pool=None, MetaModel instance) in the
         # current MRO and add any missing fields or descriptors.
         from odoo.models import MetaModel
+        from odoo import fields as odoo_fields
         _current_mro = model_class.mro()
         _fields_before = set(model_class._fields.keys())
         for _base_class in _current_mro:
@@ -3558,7 +3559,6 @@ def _poly_registry_setup_models(self, cr):
                         _base_name = getattr(_base_class, '_name', None)
                         _is_poly_ancestor = (_base_name and (hasattr(_base_class, '_depend_models') or _base_name == 'ir.poly_base' or _base_name in getattr(model_class, '_depend_models', {})))
                         if _is_poly_ancestor and _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
-                            from odoo import fields as odoo_fields
                             _new_fobj = type(_fobj)(related=f'{_base_name}.{_fname}', store=False)
                             _new_fobj.model_name = name
                             _new_fobj.name = _fname
@@ -3653,7 +3653,6 @@ def _poly_registry_setup_models(self, cr):
                         _base_name = getattr(_base_class, '_name', None)
                         _is_poly_ancestor = (_base_name and (hasattr(_base_class, '_depend_models') or _base_name == 'ir.poly_base' or _base_name in getattr(model_class, '_depend_models', {})))
                         if _is_poly_ancestor and _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
-                            from odoo import fields as odoo_fields
                             _new_fobj = type(_fobj)(related=f'{_base_name}.{_fname}', store=False)
                             _new_fobj.model_name = name
                             _new_fobj.name = _fname
