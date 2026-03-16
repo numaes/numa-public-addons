@@ -3568,8 +3568,13 @@ def _poly_registry_setup_models(self, cr):
                                 # Usamos _args del objeto original si existen
                                 _args = dict(getattr(_fobj, '_args', {}))
                                 
-                                # Si es un campo relacional y no tenemos comodel_name, saltar para evitar KeyError: None
+                                # Extraer comodel_name de forma exhaustiva para evitar KeyError: None en Odoo 18
                                 _comodel = getattr(_fobj, 'comodel_name', None) or _args.get('comodel_name')
+                                if _comodel and isinstance(_comodel, odoo_fields.Sentinel):
+                                    _comodel = None
+
+                                # Si es un campo relacional (m2o, o2m, m2m) y no tenemos comodel_name,
+                                # NO podemos instanciarlo ni inyectarlo, ya que update_db fallará.
                                 if _fobj.relational and not _comodel:
                                     _logger.warning('[poly] Skipping relational field %s on %s: missing comodel_name', _fname, name)
                                     continue
@@ -3641,8 +3646,12 @@ def _poly_registry_setup_models(self, cr):
                                 # Usamos _args del objeto original si existen
                                 _args = dict(getattr(_fobj, '_args', {}))
                                 
-                                # Si es un campo relacional y no tenemos comodel_name, saltar para evitar KeyError: None
+                                # Extraer comodel_name de forma exhaustiva para evitar KeyError: None en Odoo 18
                                 _comodel = getattr(_fobj, 'comodel_name', None) or _args.get('comodel_name')
+                                if _comodel and isinstance(_comodel, odoo_fields.Sentinel):
+                                    _comodel = None
+
+                                # Si es un campo relacional y no tenemos comodel_name, saltar para evitar KeyError: None
                                 if _fobj.relational and not _comodel:
                                     _logger.warning('[poly] Skipping relational field %s on %s (dict): missing comodel_name', _fname, name)
                                     continue
