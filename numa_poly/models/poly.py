@@ -64,6 +64,7 @@ from odoo.exceptions import AccessError, MissingError, ValidationError, UserErro
 from odoo.tools import OrderedSet, Query, split_every, SQL, sql
 from odoo.tools.misc import LastOrderedSet, Sentinel, SENTINEL
 from odoo.api import Self, ValuesType, IdType
+from collections import deque
 
 # Local imports
 from . import expression
@@ -773,57 +774,62 @@ class PolyBase(_original_BaseModel):
             # Odoo 18: Immediate field recovery after hierarchy change
             # to prevent stale _fields during incremental module loading
             from odoo.models import MetaModel
+            from odoo import fields as odoo_fields
             _current_mro = model_class.mro()
             for _base_class in _current_mro:
                 if (getattr(_base_class, 'pool', None) is None
-                        and isinstance(_base_class, MetaModel)
-                        and hasattr(_base_class, '_field_definitions')):
-                    for _fobj in _base_class._field_definitions:
-                        _fname = _fobj.name
-                        if _fname not in model_class._fields:
-                            _fobj.model_name = name
-                            # Odoo 18 incremental loading: ensure _module is preserved if available from the base class
-                            if not getattr(_fobj, '_module', None):
-                                _fobj._module = getattr(_base_class, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
-                            if not getattr(_fobj, '_modules', None):
-                                _fobj._modules = {_fobj._module}
-                            model_class._fields[_fname] = _fobj
-                            if _fname not in model_class.__dict__:
-                                try:
-                                    setattr(model_class, _fname, _fobj)
-                                except Exception:
-                                    pass
-                            
-                            # Also ensure the proxy class (if any) has it
-                            if hasattr(pool, 'models') and name in pool.models:
-                                _proxy = pool.models[name]
-                                if _proxy is not model_class:
-                                    _proxy._fields[_fname] = _fobj
-                                    if _fname not in _proxy.__dict__:
-                                        try: setattr(_proxy, _fname, _fobj)
-                                        except Exception: pass
+                        and isinstance(_base_class, MetaModel)):
+                    
+                    # [poly] RECOVER ALL FIELDS FROM MRO:
+                    # In Odoo 18, incremental loading can cause models to have a partial _fields dict
+                    # if the model was converted to polymorphic mid-load. We scan all base classes
+                    # (including non-MetaModel ones just in case) for odoo.fields.Field instances.
+                    for _fname, _attr in _base_class.__dict__.items():
+                        if isinstance(_attr, odoo_fields.Field):
+                            if _fname not in model_class._fields:
+                                # This field exists in a base class but not in our model's _fields.
+                                # It likely came from an extension module like sale_project.
+                                _logger.debug("[poly] Recovering missing field %s from base %s for model %s", _fname, _base_class, name)
+                                _attr.model_name = name
+                                # Ensure _module is preserved if available from the base class
+                                if not getattr(_attr, '_module', None):
+                                    _attr._module = getattr(_base_class, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
+                                if not getattr(_attr, '_modules', None):
+                                    _attr._modules = {_attr._module}
+                                model_class._fields[_fname] = _attr
+                                if _fname not in model_class.__dict__:
+                                    try: setattr(model_class, _fname, _attr)
+                                    except Exception: pass
+                                
+                                # Also ensure the proxy class (if any) has it
+                                if hasattr(pool, 'models') and name in pool.models:
+                                    _proxy = pool.models[name]
+                                    if _proxy is not model_class:
+                                        _proxy._fields[_fname] = _attr
+                                        if _fname not in _proxy.__dict__:
+                                            try: setattr(_proxy, _fname, _attr)
+                                            except Exception: pass
 
-                            if hasattr(_fobj, '_setup_done'):
-                                _fobj._setup_done = False
-                            elif hasattr(_fobj, 'setup_done'):
-                                _fobj.setup_done = False
-                            
-                            # [poly] GENERIC COLUMN RECOVERY: If a field is recovered and it should be a stored column,
-                            # ensure it exists in the database. Odoo 18 incremental loading may skip columns if
-                            # registry setup is not fully re-evaluated at the right time.
-                            if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None):
-                                try:
-                                    _table = getattr(model_class, '_table', None)
-                                    if _table:
-                                        cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
-                                        if not cr.fetchone():
-                                            _col_type = _fobj.column_type[1]
-                                            _logger.info("[poly] GENERIC (HIERARCHY): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
-                                            cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
-                                            # Ensure Odoo knows it's a column
-                                            _fobj.column = True
-                                except Exception as _e:
-                                    _logger.error("[poly] GENERIC (HIERARCHY): Failed to manually create column %s on %s: %s", _fname, getattr(model_class, '_table', 'unknown'), _e)
+                                if hasattr(_attr, '_setup_done'):
+                                    _attr._setup_done = False
+                                elif hasattr(_attr, 'setup_done'):
+                                    _attr.setup_done = False
+                                
+                                # [poly] COLUMN RECOVERY: If a field is recovered and it should be a stored column,
+                                # ensure it exists in the database. 
+                                if getattr(_attr, 'store', False) and getattr(_attr, 'column_type', None):
+                                    try:
+                                        _table = getattr(model_class, '_table', None)
+                                        if _table:
+                                            cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
+                                            if not cr.fetchone():
+                                                _col_type = _attr.column_type[1]
+                                                _logger.info("[poly] Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
+                                                cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
+                                                # Ensure Odoo knows it's a column
+                                                _attr.column = True
+                                    except Exception as _e:
+                                        _logger.error("[poly] Failed to manually create column %s on %s: %s", _fname, getattr(model_class, '_table', 'unknown'), _e)
             
             return True
         except Exception: return False
@@ -3674,17 +3680,20 @@ def _poly_registry_setup_models(self, cr):
             for _fname, _attr in _base_class.__dict__.items():
                 if isinstance(_attr, odoo_fields.Field):
                     if _fname not in model_class._fields:
-                        if _is_poly_ancestor:
-                            # Related field injection (handled by _build_dependant_model_attributes later usually,
-                            # but we can force it here if missing)
-                            _logger.debug("[poly] Deep Recovery (Poly): Found missing field %s on %s from %s", _fname, name, _base_class)
-                            # We mark for re-setup to let poly logic handle it
-                            model_class._setup_done = False
-                        else:
-                            # Standard Odoo inheritance (_inherit)
-                            # Do NOT clone. Just mark for re-setup so Odoo's engine processes it.
-                            _logger.debug("[poly] Deep Recovery (Standard): Marking %s for re-setup due to missing field %s from %s", name, _fname, _base_class)
-                            model_class._setup_done = False
+                        # [poly] RECOVERY: If field is missing from _fields, inject it.
+                        _logger.debug("[poly] Deep Recovery: Found missing field %s on %s from %s", _fname, name, _base_class)
+                        _attr.model_name = name
+                        if not getattr(_attr, '_module', None):
+                            _attr._module = getattr(_base_class, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
+                        if not getattr(_attr, '_modules', None):
+                            _attr._modules = {_attr._module}
+                        model_class._fields[_fname] = _attr
+                        if _fname not in model_class.__dict__:
+                            try: setattr(model_class, _fname, _attr)
+                            except Exception: pass
+                        
+                        # Mark for re-setup to let Odoo/Poly logic process it further
+                        model_class._setup_done = False
                     
                     # Ensure metadata is correct if already present
                     if _fname in model_class._fields:
@@ -4016,47 +4025,8 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
             current_module = (context or {}).get('module')
             if current_module:
                 _logger.info("[poly] _poly_registry_init_models: analyzing extensions for module %s", current_module)
-                _logger.debug("[poly] _poly_registry_init_models: model_names ON START: %s", model_names)
-                extra_models = set()
-                for mname, mclass in self.items():
-                    if mname in model_names: continue
-                    # Check if this model has any stored field owned by the current module
-                    # We check both _module and _modules (Odoo 18 style)
-                    for f in mclass._fields.values():
-                        if f.store and (getattr(f, '_module', None) == current_module or (getattr(f, '_modules', None) and current_module in f._modules)):
-                             extra_models.add(mname)
-                             break
-
-                # [poly] Re-order model_names to ensure _auto=True models come first
-                # Odoo's init_models processes them in the provided order.
-                # We use self[mname]._auto to determine if it's a table or a view.
-                def model_init_priority(mname):
-                    mclass = self.get(mname)
-                    if mclass and not getattr(mclass, '_auto', True):
-                        return 1 # Lower priority (views)
-                    return 0 # Higher priority (tables)
-
-                if extra_models:
-                    _logger.info("[poly] Adding %d models to initialization due to extensions from %s: %s", len(extra_models), current_module, sorted(extra_models))
-                    # [poly] Ensure we maintain order and prioritize table models (_auto=True) before view models (_auto=False)
-                    # This prevents UndefinedColumn errors when views are created before their base tables are updated.
-                    if isinstance(model_names, set):
-                        model_names.update(extra_models)
-                        model_names = sorted(list(model_names), key=model_init_priority)
-                    else:
-                        for m in sorted(extra_models):
-                            if m not in model_names:
-                                model_names.append(m)
-                        model_names.sort(key=model_init_priority)
-                else:
-                    # Even if no extra models, we should sort the existing ones to be safe
-                    if isinstance(model_names, set):
-                        model_names = sorted(list(model_names), key=model_init_priority)
-                    elif isinstance(model_names, list):
-                        model_names.sort(key=model_init_priority)
-
-                _logger.debug("[poly] _poly_registry_init_models: model_names FINAL: %s", model_names)
-
+                _logger.info("[poly] _poly_registry_init_models: model_names ON START: %s", model_names)
+                
                 # [poly] DEBT: If we have views in model_names, we MUST ensure their tables
                 # are also in model_names and come FIRST. Odoo might not include them if they were
                 # already processed but without the new columns.
@@ -4069,18 +4039,82 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
                     if getattr(mclass, '_module', None) == current_module or (getattr(mclass, '_modules', None) and current_module in mclass._modules):
                          tables_to_add.add(mname)
 
-                if tables_to_add:
-                    _logger.info("[poly] Adding module base tables to initialization to support views: %s", tables_to_add)
-                    if isinstance(model_names, set):
-                         # Should not happen as it was converted to list above
-                         model_names.update(tables_to_add)
-                         model_names = sorted(list(model_names), key=model_init_priority)
-                    else:
-                        for m in tables_to_add:
-                            if m not in model_names:
-                                model_names.append(m)
-                        model_names.sort(key=model_init_priority)
-                    _logger.debug("[poly] _poly_registry_init_models: model_names FINAL (WITH TABLES): %s", model_names)
+                extra_models = set()
+                for mname, mclass in self.items():
+                    if mname in model_names: continue
+                    # Check if this model has any stored field owned by the current module
+                    # We check both _module and _modules (Odoo 18 style)
+                    for f in mclass._fields.values():
+                        if f.store and (getattr(f, '_module', None) == current_module or (getattr(f, '_modules', None) and current_module in f._modules)):
+                             _logger.info("[poly] Model %s has stored field %s from %s", mname, f.name, current_module)
+                             extra_models.add(mname)
+                             break
+                
+                # Combine extra_models and tables_to_add
+                all_extra = extra_models | tables_to_add
+                if all_extra:
+                     _logger.info("[poly] Adding %d extra models: %s", len(all_extra), sorted(all_extra))
+                     if isinstance(model_names, set):
+                         model_names.update(all_extra)
+                     else:
+                         # Convert to set for union, then we'll sort anyway
+                         model_names = set(model_names) | all_extra
+
+                # [poly] Re-order model_names to ensure _auto=True models come first
+                # Odoo's init_models processes them in the provided order.
+                # We use self[mname]._auto to determine if it's a table or a view.
+                def model_init_priority(mname):
+                    mclass = self.get(mname)
+                    if mclass and not getattr(mclass, '_auto', True):
+                        return 1 # Lower priority (views)
+                    return 0 # Higher priority (tables)
+
+                _logger.info("[poly] _poly_registry_init_models: debug priority for project.task: %s", model_init_priority('project.task'))
+                _logger.info("[poly] _poly_registry_init_models: debug priority for report.project.task.user: %s", model_init_priority('report.project.task.user'))
+
+                # Always sort and convert to list to be 100% sure of the order
+                model_names = sorted(list(model_names), key=model_init_priority)
+
+                _logger.info("[poly] _poly_registry_init_models: model_names FINAL: %s", model_names)
+                
+                # [poly] CRITICAL: Ensure base tables have their columns updated BEFORE views are initialized.
+                # Odoo's init_models iterates and calls model._auto_init() and model.init().
+                # For tables, _auto_init() creates columns. For views, init() creates the view.
+                # If we have both in the same batch, the sorted order ensures tables go first.
+                # BUT, if project.task was already partially processed by Odoo or if there's any
+                # inconsistency, we MUST ensure the SQL columns exist for stored fields.
+                # Odoo's _auto_init is sometimes too smart or too late; we manually ensure
+                # columns for the current module's stored fields.
+                def table_exists(cr, table):
+                    cr.execute("SELECT 1 FROM pg_catalog.pg_class WHERE relname = %s AND relkind = 'r'", (table,))
+                    return bool(cr.fetchone())
+
+                for mname in model_names:
+                    mclass = self.get(mname)
+                    if mclass and getattr(mclass, '_auto', True) and mname != 'base':
+                        _table = getattr(mclass, '_table', None)
+                        if _table and table_exists(cr, _table):
+                             # [poly] Ensure models are fully set up before analyzing them, especially for extensions
+                             # self is the registry here
+                             mclass = self[mname]
+                             _logger.info("[poly] MANUALLY ensuring columns for model %s (%s). Fields count: %d. MRO: %s. DIR_has_sale: %s", mname, _table, len(mclass._fields), mclass.__mro__, 'sale_line_id' in dir(mclass))
+                             for _fname, _fobj in mclass._fields.items():
+                                 if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None):
+                                     _fmodule = getattr(_fobj, '_module', None)
+                                     _fmodules = getattr(_fobj, '_modules', None)
+                                     _is_extended = _fmodule == current_module or (_fmodules and current_module in _fmodules)
+                                     # [poly] Professional Fix: Odoo 18 Registry initialization batching can lead to views being initialized
+                                     # before the extended columns are in SQL, because _auto_init() might skip them if they are not in the current load context.
+                                     # If the field is stored and has a column type, it MUST be in the database before views are created.
+                                     _logger.info("[poly] Checking field %s on %s (module: %s, modules: %s, current: %s, is_extended: %s)", _fname, mname, _fmodule, _fmodules, current_module, _is_extended)
+                                     if True: # Always check stored fields for models being initialized in the current batch
+                                         cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
+                                         if not cr.fetchone():
+                                             _col_type = _fobj.column_type[1]
+                                             _logger.info("[poly] GENERIC (INIT): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
+                                             cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
+                                             _fobj.column = True
+                
         finally:
             cr._poly_in_init_models = False
 
