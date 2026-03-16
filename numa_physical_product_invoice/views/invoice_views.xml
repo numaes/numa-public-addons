@@ -43,8 +43,8 @@
                 </xpath>
                 <xpath expr="//field[@name='invoice_line_ids']/list/field[@name='price_unit']" position="after">
                     <field name="price_base" invisible="1"/>
-                    <field name="price_qty" attrs="{'invisible': [('price_base', '=', 'normal')]}"/>
-                    <field name="unit_price_uom_id" readonly="1" force_save="1" attrs="{'invisible': [('price_base', '=', 'normal')]}"/>
+                    <field name="price_qty" invisible="price_base == 'normal'"/>
+                    <field name="unit_price_uom_id" readonly="1" force_save="1" invisible="price_base == 'normal'"/>
                 </xpath>
                 <xpath expr="//field[@name='line_ids']/form//field[@name='credit']" position="after">
                     <field name="price_base" invisible="1"/>

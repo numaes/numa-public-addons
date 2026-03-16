@@ -3138,6 +3138,15 @@ class PolyBase(_original_BaseModel):
         
         return values_list
 
+    def _valid_field_parameter(self, field, name):
+        """ Return whether the given parameter name is valid for the field. """
+        if name in ('tracking', 'tracking_visibility'):
+            # Allow tracking parameters for polymorphic models, as they might
+            # inherit from mail.thread via poly mechanism even if not explicitly
+            # in _inherit at the time of field validation.
+            return True
+        return super()._valid_field_parameter(field, name)
+
     def _field_to_sql(self, alias: str, fname: str, query: (Query | None) = None, flush: bool = True) -> SQL:
         """
         Return an :class:`SQL` object that represents the value of the given field.
