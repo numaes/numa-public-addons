@@ -1363,12 +1363,21 @@ class PolyBase(_original_BaseModel):
              # Fail-safe: Recovery of missing fields from MRO after super()._setup_base()
              # to catch fields added by standard Odoo inheritance during incremental loading.
              from odoo.models import MetaModel
+             _depend_model_names_setup = set(getattr(model_class, '_depend_models', {}).keys())
              for cls in model_class.mro():
                  if (getattr(cls, 'pool', None) is None
                          and isinstance(cls, MetaModel)
                          and hasattr(cls, '_field_definitions')):
+                     _cls_name = getattr(cls, '_name', None)
                      for f in cls._field_definitions:
                          if f.name not in self._fields:
+                             # Skip stored Many2many fields from depend_model bases to prevent
+                             # the child model from sharing the parent's relation table with
+                             # wrong FK columns. _build_dependant_model_attributes will add
+                             # a related store=False version instead.
+                             if (f.type == 'many2many' and f.store
+                                     and _cls_name in _depend_model_names_setup):
+                                 continue
                              f.model_name = self._name
                              self._fields[f.name] = f
                              if f.name not in model_class.__dict__:
@@ -1493,12 +1502,19 @@ class PolyBase(_original_BaseModel):
                 # This is a safety for view validation.
                 # In Odoo 18, we search the ENTIRE MRO to recover fields that might
                 # have been lost during incremental registry loading.
+                _depend_model_names = set(getattr(model_class, '_depend_models', {}).keys())
                 for base_class in model_class.mro():
                      if hasattr(base_class, '_name') and base_class._name != self._name:
                           parent_model = self.env.get(base_class._name)
                           if parent_model is not None:
                                for fname, fobj in parent_model._fields.items():
                                     if fname not in self._fields:
+                                         # Skip Many2many fields from depend_model bases:
+                                         # they share a relation table with the parent and injecting
+                                         # them with store=True creates spurious FK constraints
+                                         # (e.g. wf_page_templates_rel.crm_bot_id).
+                                         if fobj.type == 'many2many' and base_class._name in _depend_model_names:
+                                              continue
                                          # _logger.debug("[Poly.Setup] Manually inheriting field %s from %s to %s", fname, base_class._name, self._name)
                                          self._fields[fname] = fobj
                                          # Odoo 18: ensure field metadata is correct
@@ -2166,6 +2182,35 @@ class PolyBase(_original_BaseModel):
                     _logger.debug("[poly] _auto_init: forcing physical metadata for %s on %s: rel=%s, col1=%s, col2=%s, modules=%s", 
                                     _fname, self._name, _fobj.relation, _fobj.column1, _fobj.column2, _fobj._modules)
 
+        # Guard: for polymorphic child models, prevent inherited Many2many fields
+        # from creating/altering the parent's relation tables. If a M2M field's
+        # relation matches a field defined in a depend_model, force store=False so
+        # Odoo's _auto_init skips update_db for it.
+        # This avoids: psycopg2.errors.UndefinedColumn: column "fsm_def_id" referenced
+        # in foreign key constraint does not exist.
+        _depend_models_dict = getattr(self, '_depend_models', None) or {}
+        if _depend_models_dict:
+            _dep_m2m_relations = set()
+            for _dep_model_name in _depend_models_dict:
+                _dep_model = self.env.get(_dep_model_name)
+                if _dep_model is not None:
+                    for _dep_fobj in _dep_model._fields.values():
+                        if _dep_fobj.type == 'many2many':
+                            _rel = getattr(_dep_fobj, 'relation', None)
+                            if _rel:
+                                _dep_m2m_relations.add(_rel)
+            if _dep_m2m_relations:
+                for _fname, _fobj in list(self._fields.items()):
+                    if (_fobj.type == 'many2many' and
+                            getattr(_fobj, 'store', False) and
+                            getattr(_fobj, 'relation', None) in _dep_m2m_relations):
+                        _fobj.store = False
+                        _logger.debug(
+                            "[poly] _auto_init: forcing store=False for inherited M2M %s on %s "
+                            "(relation=%s belongs to depend_model)",
+                            _fname, self._name, _fobj.relation,
+                        )
+
         res = super()._auto_init()
         # Only migrate if _depend_models is defined (is a polymorphic model)
         if getattr(self, '_depend_models', None) is not None:
@@ -2384,9 +2429,16 @@ class PolyBase(_original_BaseModel):
         for new_field_name in related_fields.keys():
             model, field_name, field_type, comodel, description = related_fields[new_field_name]
 
-            # Skip if the field is already defined
+            # Skip if the field is already defined as a related or non-stored field.
+            # BUT: if it's a stored Many2many field from a depend_model base, we must
+            # REPLACE it with a related store=False version to prevent the child model
+            # from creating or altering the parent's relation table (which would cause
+            # psycopg2.errors.UndefinedColumn on FK constraints like "fsm_def_id").
             if field_name in self._fields:
-                continue
+                existing = self._fields[field_name]
+                if field_type != 'many2many' or existing.related or not existing.store:
+                    continue
+                # Fall through: replace the stored M2M with a related store=False version
 
             if model not in related_bases:
                 model_field = f'related_{related_counter}'
@@ -3677,9 +3729,19 @@ def _poly_registry_setup_models(self, cr):
             if _dep_models or 'ir.poly_base' in [getattr(c, '_name', None) for c in _base_class.mro() if hasattr(c, '_name')]:
                 _is_poly_ancestor = True
 
+            _base_cls_name = getattr(_base_class, '_name', None)
             for _fname, _attr in _base_class.__dict__.items():
                 if isinstance(_attr, odoo_fields.Field):
                     if _fname not in model_class._fields:
+                        # Skip stored Many2many fields from depend_model bases.
+                        # These must NOT be injected as shared store=True objects because
+                        # that would cause the child model to create or FK the parent's
+                        # relation table with wrong column names (UndefinedColumn).
+                        # _build_dependant_model_attributes adds a related store=False
+                        # version instead.
+                        if (_attr.type == 'many2many' and getattr(_attr, 'store', True)
+                                and _base_cls_name in all_depend_models):
+                            continue
                         # [poly] RECOVERY: If field is missing from _fields, inject it.
                         _logger.debug("[poly] Deep Recovery: Found missing field %s on %s from %s", _fname, name, _base_class)
                         _attr.model_name = name
