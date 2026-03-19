@@ -1020,9 +1020,37 @@ class PolyBase(_original_BaseModel):
             # would cause MRO conflicts.
             _bm_bases = getattr(model_class, '_BaseModel__base_classes', None)
             if _bm_bases:
-                original_bases = [b for b in _bm_bases if getattr(b, 'pool', None) is None]
+                # Strip any previously poly-injected registry classes (pool is not None)
+                # from definition class bases.  When the registry class IS the definition
+                # class (single-definition models on first load), poly's __bases__ injection
+                # permanently modifies the definition class.  On the next -u, those stale
+                # injected bases create MRO conflicts.  Resetting them here lets poly
+                # re-inject correctly below.
+                for _def_cls in _bm_bases:
+                    if getattr(_def_cls, 'pool', None) is None:
+                        _poly_injected = [
+                            b for b in _def_cls.__bases__
+                            if getattr(b, 'pool', None) is not None
+                        ]
+                        if _poly_injected:
+                            _clean = tuple(b for b in _def_cls.__bases__ if b not in _poly_injected)
+                            if _clean:
+                                try:
+                                    _def_cls.__bases__ = _clean
+                                except TypeError:
+                                    pass  # leave as-is if resetting fails
+                _seen = set()
+                original_bases = [
+                    b for b in _bm_bases
+                    if getattr(b, 'pool', None) is None
+                    and not (id(b) in _seen or _seen.add(id(b)))
+                ]
             else:
-                original_bases = list(model_class.__bases__)
+                _seen = set()
+                original_bases = [
+                    b for b in model_class.__bases__
+                    if not (id(b) in _seen or _seen.add(id(b)))
+                ]
             
             new_bases = []
             missing_parents = False
@@ -1047,7 +1075,21 @@ class PolyBase(_original_BaseModel):
                 if b not in new_bases:
                     new_bases.append(b)
 
-            final_bases = tuple(b for b in new_bases if b is not model_class)
+            # Remove any class that is already an ancestor of another class in new_bases.
+            # This handles cases where two definition classes (e.g. DigitalEvent_v1 and
+            # DigitalEvent_v2) are both in new_bases but one inherits from the other —
+            # Python's C3 linearization rejects bases where a parent appears before its
+            # descendant.  The descendant already pulls in the parent through MRO, so the
+            # parent is redundant and safe to remove.
+            deduplicated = []
+            for b in new_bases:
+                if b is model_class:
+                    continue
+                if any(b is not c and issubclass(c, b) for c in new_bases if c is not model_class):
+                    continue  # b is an ancestor of another class in the list — redundant
+                deduplicated.append(b)
+
+            final_bases = tuple(deduplicated)
 
             # Store the polymorphic bases for setup phases
             model_class.__depends_base_classes = final_bases
@@ -1060,7 +1102,24 @@ class PolyBase(_original_BaseModel):
             model_class.__base_classes = final_bases
 
             # Inject into Python's MRO:
-            model_class.__bases__ = final_bases
+            try:
+                model_class.__bases__ = final_bases
+            except TypeError as _build_mro_err:
+                # If the combined bases create an MRO conflict, fall back to original bases.
+                # This commonly happens when a model has _depend_models={} (no real poly
+                # parents) and ir.poly_base injection conflicts with the existing MRO.
+                _logger.warning(
+                    "[poly] _build_model: MRO conflict for model '%s' with final_bases=%s. "
+                    "Falling back to original bases. Error: %s",
+                    name,
+                    [getattr(b, '__name__', repr(b)) for b in final_bases],
+                    _build_mro_err,
+                )
+                final_bases = tuple(original_bases) if original_bases else model_class.__bases__
+                try:
+                    model_class.__bases__ = final_bases
+                except TypeError:
+                    pass  # leave bases as-is if fallback also fails
 
             # Pin the merged _depend_models onto the registry class itself.
             # After __bases__ is modified, the definition class (e.g. FacebookAccount)
@@ -1226,6 +1285,23 @@ class PolyBase(_original_BaseModel):
         if not cached_bases and hasattr(self.pool, '_poly_mro_cache'):
             cached_bases = self.pool._poly_mro_cache.get(self._name)
 
+        # Validate cached class objects are current (not stale from a previous registry build).
+        # During -u, Odoo creates new class objects; stale POLY_MRO_CACHE references trigger
+        # Python MRO validation errors on subclasses (TypeError: Cannot create consistent MRO).
+        if cached_bases:
+            _stale = any(
+                getattr(_cb, '_name', None) and
+                _cb._name in self.pool and
+                self.pool[_cb._name] is not _cb
+                for _cb in cached_bases
+            )
+            if _stale:
+                _logger.debug("[poly] Discarding stale POLY_MRO_CACHE for '%s'", self._name)
+                POLY_MRO_CACHE.get(db_name, {}).pop(self._name, None)
+                if hasattr(self.pool, '_poly_mro_cache'):
+                    self.pool._poly_mro_cache.pop(self._name, None)
+                cached_bases = None
+
         if cached_bases:
             # Merge cached poly-parent bases with any new definition classes added by
             # _build_model after the cache was set (e.g. a module loaded AFTER the last
@@ -1235,7 +1311,11 @@ class PolyBase(_original_BaseModel):
             _current_build_classes = model_class.__base_classes  # canonical, set by _build_model
             _extra_def_classes = [
                 b for b in _current_build_classes
-                if b not in cached_bases and getattr(b, 'pool', None) is None
+                if b not in cached_bases
+                and getattr(b, 'pool', None) is None
+                # Skip classes that are already ancestors of something in cached_bases:
+                # appending an ancestor AFTER its descendants violates Python's MRO rules.
+                and not any(issubclass(c, b) for c in cached_bases if c is not b)
             ]
             if _extra_def_classes:
                 cached_bases = tuple(list(cached_bases) + _extra_def_classes)
@@ -1275,8 +1355,32 @@ class PolyBase(_original_BaseModel):
                        except TypeError as e:
                            _logger.error("Failed to apply cached bases to proxy class %s: %s", self._name, e)
 
+        # For polymorphic models, ensure __base_classes matches __bases__ before calling
+        # Odoo's _prepare_setup. Odoo's implementation does `cls.__bases__ = cls.__base_classes`,
+        # so if __base_classes still holds Odoo's original value (e.g. (PolyModel, base) where
+        # PolyModel already inherits from base), Python raises a MRO TypeError. Poly already set
+        # __bases__ correctly in _build_model; mirroring that into __base_classes prevents the
+        # conflict. We do this regardless of whether cached_bases was found.
+        _is_poly_model = getattr(model_class, '_depend_models', None) is not None
+        if _is_poly_model:
+            _poly_bases = model_class.__bases__
+            if _poly_bases and model_class.__base_classes != _poly_bases:
+                model_class.__base_classes = _poly_bases
+
         # Use unbound method to avoid MRO lookup issues
-        _original_BaseModel._prepare_setup(self)
+        try:
+            _original_BaseModel._prepare_setup(self)
+        except TypeError as _mro_err:
+            if 'MRO' not in str(_mro_err) and 'resolution' not in str(_mro_err).lower():
+                raise
+            _logger.error(
+                "[poly] MRO conflict in _prepare_setup for model '%s'. "
+                "__base_classes=%s  __bases__=%s",
+                self._name,
+                [getattr(b, '__name__', repr(b)) for b in model_class.__base_classes],
+                [getattr(b, '__name__', repr(b)) for b in model_class.__bases__],
+            )
+            raise
 
         # Ensure bases remain synchronized after super
         if cached_bases:
@@ -1374,7 +1478,9 @@ class PolyBase(_original_BaseModel):
              _current_build_classes = model_class.__base_classes
              _extra_def_classes = [
                  b for b in _current_build_classes
-                 if b not in cached_bases and getattr(b, 'pool', None) is None
+                 if b not in cached_bases
+                 and getattr(b, 'pool', None) is None
+                 and not any(issubclass(c, b) for c in cached_bases if c is not b)
              ]
              if _extra_def_classes:
                  cached_bases = tuple(list(cached_bases) + _extra_def_classes)
@@ -3433,6 +3539,12 @@ class IrModelFields(models.Model):
             # Invalidate cache for _get_id as it is ormcache'd
             IrModel.clear_caches()
         
+        # Deduplicate model_names: if the same model appears twice, Odoo's upsert
+        # generates duplicate (model, name) rows → CardinalityViolation on the
+        # ON CONFLICT DO UPDATE clause.  Using dict.fromkeys preserves order.
+        model_names = list(dict.fromkeys(model_names))
+
+
         # Odoo 18 EXTRA: Before calling super, ensure that fields without string (label)
         # get one assigned from their name to avoid NotNullViolation in ir_model_fields.field_description
         # Also ensure _modules is not None.
@@ -3448,7 +3560,32 @@ class IrModelFields(models.Model):
                     if getattr(field, '_modules', None) is None:
                         field._modules = []
 
-        return super()._reflect_fields(model_names)
+        # Temporarily remove from each model's _fields any field whose model_name
+        # points to a DIFFERENT model.  These are poly-injected shared field objects:
+        # the same field object appears in multiple models' _fields dicts, all with
+        # model_name pointing to the original owner.  When multiple models are in
+        # model_names, Odoo's _reflect_field_params generates duplicate (model, name)
+        # rows → CardinalityViolation.  We restore them after super() returns.
+        _saved_fields = {}  # {model_name: {field_name: field}}
+        for model_name in model_names:
+            model = self.env.get(model_name)
+            if model is not None:
+                cls = type(model)
+                for fname, field in list(cls._fields.items()):
+                    if getattr(field, 'model_name', None) != model_name:
+                        if model_name not in _saved_fields:
+                            _saved_fields[model_name] = {}
+                        _saved_fields[model_name][fname] = field
+                        del cls._fields[fname]
+
+        try:
+            return super()._reflect_fields(model_names)
+        finally:
+            # Restore saved fields
+            for mn, saved in _saved_fields.items():
+                model = self.env.get(mn)
+                if model is not None:
+                    type(model)._fields.update(saved)
 
 
 class PolyModel(PolyBase):
