@@ -1,0 +1,44 @@
+name: 🚀 Commercial Support & Custom Development Request
+description: Request architectural consulting, custom module development, or production support.
+labels: ["support", "enterprise"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for your interest in **NUMA EXTREME SYSTEMS**!
+        
+        Please provide a brief overview of your project requirements, and our engineering team will get in touch with you shortly. 
+        Alternatively, you can email us directly at **[info@numaes.com](mailto:info@numaes.com)**.
+  - type: input
+    id: contact_name
+    attributes:
+      label: Your Name / Company
+      description: Who are we talking to?
+    validations:
+      required: true
+  - type: input
+    id: contact_email
+    attributes:
+      label: Email Address
+      description: How can we reach you?
+    validations:
+      required: true
+  - type: dropdown
+    id: request_type
+    attributes:
+      label: Type of Request
+      options:
+        - Enterprise Support (SLA-backed)
+        - Architectural Consulting / Code Review
+        - Custom Module Development
+        - Performance Optimization / Scalability (e.g., BIGINT conversion)
+        - Synchronization Implementation
+    validations:
+      required: true
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Project Requirements / Details
+      description: Please describe your needs, current infrastructure, or the specific problem you are trying to solve.
+    validations:
+      required: true
