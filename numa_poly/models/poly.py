@@ -459,7 +459,7 @@ class PolyBase(_original_BaseModel):
             
             # Recursively explore _depend_models
             depend_models = getattr(model, '_depend_models', None)
-            if depend_models:
+            if depend_models is not None:
                 for base_name in depend_models.keys():
                     collect(base_name)
             
@@ -878,7 +878,7 @@ class PolyBase(_original_BaseModel):
                     child_all_depends = OrderedDict()
                     for base in waiting_class.mro():
                         if base is waiting_class: continue
-                        if '_depend_models' in base.__dict__ and base._depend_models:
+                        if '_depend_models' in base.__dict__ and base._depend_models is not None:
                             for dep_model, dep_field in base._depend_models.items():
                                 if dep_model not in child_all_depends:
                                     child_all_depends[dep_model] = dep_field
@@ -966,7 +966,7 @@ class PolyBase(_original_BaseModel):
         for base in model_class.mro():
             if base is model_class:
                 continue
-            if '_depend_models' in base.__dict__ and base._depend_models:
+            if '_depend_models' in base.__dict__ and base._depend_models is not None:
                 is_polymorphic = True
                 for dep_model, dep_field in base._depend_models.items():
                     if dep_model not in all_depend_models:
@@ -986,14 +986,20 @@ class PolyBase(_original_BaseModel):
                 parents.append('ir.poly_base')
 
             # Calculate polymorphic bases.
-            # Use __base_classes (updated by Odoo's _build_model to include the
-            # newly added extension class) rather than __bases__ (only updated in
-            # _prepare_setup, so it lags behind and misses the new extension class).
-            # Without this, extension modules like project_timesheet_holidays that
-            # extend a polymorphic model lose their fields (e.g. is_timeoff_task)
-            # because the extension class is never included in final_bases nor in
-            # POLY_MRO_CACHE, so _setup_base never scans its _field_definitions.
-            original_bases = list(getattr(model_class, '__base_classes', None) or model_class.__bases__)
+            # IMPORTANT: Odoo's _original_BaseModel._build_model (compiled inside
+            # 'class BaseModel:') sets ModelClass._BaseModel__base_classes (via name
+            # mangling).  Code in this PolyBase class reads '__base_classes' as
+            # '_PolyBase__base_classes' — a DIFFERENT attribute — so the Odoo-set
+            # value is never seen here.
+            # Fix: read Odoo's accumulated value using the mangled string literal
+            # to bypass Python's name mangling, then filter to definition classes
+            # only (pool is None) to avoid including registry model objects that
+            # would cause MRO conflicts.
+            _bm_bases = getattr(model_class, '_BaseModel__base_classes', None)
+            if _bm_bases:
+                original_bases = [b for b in _bm_bases if getattr(b, 'pool', None) is None]
+            else:
+                original_bases = list(model_class.__bases__)
             
             new_bases = []
             missing_parents = False
@@ -1019,7 +1025,7 @@ class PolyBase(_original_BaseModel):
                     new_bases.append(b)
 
             final_bases = tuple(b for b in new_bases if b is not model_class)
-            
+
             # Store the polymorphic bases for setup phases
             model_class.__depends_base_classes = final_bases
             if not hasattr(pool, '_poly_mro_cache'):
@@ -1032,6 +1038,14 @@ class PolyBase(_original_BaseModel):
 
             # Inject into Python's MRO:
             model_class.__bases__ = final_bases
+
+            # Pin the merged _depend_models onto the registry class itself.
+            # After __bases__ is modified, the definition class (e.g. FacebookAccount)
+            # is no longer in the MRO, so its _depend_models would be shadowed by an
+            # injected parent that might have _depend_models={} (e.g. ConversationDriver).
+            # Setting it explicitly on the registry class ensures runtime attribute
+            # lookup always finds the correct merged value.
+            model_class._depend_models = dict(all_depend_models)
 
             # Force Python to refresh the class MRO cache
             import ctypes as _ctypes
@@ -1109,7 +1123,7 @@ class PolyBase(_original_BaseModel):
         visited.add(name)
         rec_stack.add(name)
 
-        if hasattr(cls, '_depend_models') and cls._depend_models:
+        if hasattr(cls, '_depend_models') and cls._depend_models is not None:
             for parent_name in cls._depend_models.keys():
                 if parent_name in pool:
                     parent_class = pool[parent_name]
@@ -1131,11 +1145,11 @@ class PolyBase(_original_BaseModel):
             all_depend_models = OrderedDict()
             for base in model_class.mro():
                 if base is model_class: continue
-                if '_depend_models' in base.__dict__ and base._depend_models:
+                if '_depend_models' in base.__dict__ and base._depend_models is not None:
                     for dep_model, dep_field in base._depend_models.items():
                         if dep_model not in all_depend_models:
                             all_depend_models[dep_model] = dep_field
-            
+
             if all_depend_models:
                 parents = list(all_depend_models.keys())
                 if name != 'ir.poly_base' and 'ir.poly_base' not in parents:
@@ -1190,6 +1204,21 @@ class PolyBase(_original_BaseModel):
             cached_bases = self.pool._poly_mro_cache.get(self._name)
 
         if cached_bases:
+            # Merge cached poly-parent bases with any new definition classes added by
+            # _build_model after the cache was set (e.g. a module loaded AFTER the last
+            # _apply_polymorphic_hierarchy call that extends this poly model via _inherit).
+            # Without this merge, stale cached_bases would override __base_classes and
+            # drop the new definition classes, making their fields invisible in _setup_base.
+            _current_build_classes = model_class.__base_classes  # canonical, set by _build_model
+            _extra_def_classes = [
+                b for b in _current_build_classes
+                if b not in cached_bases and getattr(b, 'pool', None) is None
+            ]
+            if _extra_def_classes:
+                cached_bases = tuple(list(cached_bases) + _extra_def_classes)
+                POLY_MRO_CACHE[db_name][self._name] = cached_bases
+                if hasattr(self.pool, '_poly_mro_cache'):
+                    self.pool._poly_mro_cache[self._name] = cached_bases
             model_class.__depends_base_classes = cached_bases
             # Force Odoo 18 to use our polymorphic bases as the original ones
             model_class.__base_classes = cached_bases
@@ -1267,11 +1296,11 @@ class PolyBase(_original_BaseModel):
             all_depend_models = OrderedDict()
             for base in model_class.mro():
                 if base is model_class: continue
-                if '_depend_models' in base.__dict__ and base._depend_models:
+                if '_depend_models' in base.__dict__ and base._depend_models is not None:
                     for dep_model, dep_field in base._depend_models.items():
                         if dep_model not in all_depend_models:
                             all_depend_models[dep_model] = dep_field
-            
+
             if all_depend_models:
                 parents = list(all_depend_models.keys())
                 if name != 'ir.poly_base' and 'ir.poly_base' not in parents:
@@ -1317,10 +1346,22 @@ class PolyBase(_original_BaseModel):
             cached_bases = self.pool._poly_mro_cache.get(name)
 
         if cached_bases:
+             # Same merge as in _prepare_setup: add definition classes added by _build_model
+             # after the cache was set, so they are not silently dropped from the MRO.
+             _current_build_classes = model_class.__base_classes
+             _extra_def_classes = [
+                 b for b in _current_build_classes
+                 if b not in cached_bases and getattr(b, 'pool', None) is None
+             ]
+             if _extra_def_classes:
+                 cached_bases = tuple(list(cached_bases) + _extra_def_classes)
+                 POLY_MRO_CACHE[db_name][name] = cached_bases
+                 if hasattr(self.pool, '_poly_mro_cache'):
+                     self.pool._poly_mro_cache[name] = cached_bases
              model_class.__base_classes = cached_bases
              model_class.__bases__ = cached_bases
              model_class.__depends_base_classes = cached_bases
-             
+
              import ctypes as _ctypes
              if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
                  _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
@@ -2674,16 +2715,35 @@ class PolyBase(_original_BaseModel):
                 if 'id' in data:
                     new_id = data['id']
                 else:
-                    # Create a new ir.poly_base record to get a new ID
-                    # Ensure ID doesn't clash with existing ones in the hierarchy
-                    # Using SUDO to ensure we have access and can set the ID
-                    max_id = self._get_max_poly_id()
-                    new_poly = self.env['ir.poly_base'].sudo().create(dict(
-                        id=max_id + 1,
-                        concrete_model_id=self.env['ir.model']._get_id(self._name)
-                    ))
-                    _logger.debug(f'Creating poly base for {self._name}, id = {new_poly.id} (max_id was {max_id})')
+                    # Sync the sequence to be above any manually-inserted IDs
+                    # (records inserted with explicit IDs do not advance the sequence).
+                    # setval(..., max_id, true) → next nextval() returns max_id + 1.
+                    self.env.cr.execute(
+                        "SELECT setval('ir_poly_base_id_seq',"
+                        " (SELECT COALESCE(MAX(id), 0) FROM ir_poly_base), true)"
+                    )
+                    new_poly = self.env['ir.poly_base'].sudo().create({
+                        'concrete_model_id': self.env['ir.model']._get_id(self._name)
+                    })
+                    _logger.debug('Creating poly base for %s, id = %s', self._name, new_poly.id)
                     new_id = new_poly.id
+
+                # Enrich data with main model defaults for fields not yet present.
+                # This ensures that fields like `provider` (which have a default on
+                # the main model but are also required on a base model) are propagated
+                # to base_data even when the main model's create() override is bypassed
+                # by the poly MRO.
+                _model_defaults = self.default_get(list(self._fields.keys()))
+                for _dk, _dv in _model_defaults.items():
+                    if _dk not in data:
+                        data[_dk] = _dv
+
+                # Tracks the actual DB id of each created/found dependent record.
+                # For PolyBase dependents the id equals new_id (id-sharing).
+                # For plain models.Model dependents Odoo strips the explicit id and
+                # assigns a new sequence value, so we must capture the real id and use
+                # it for the link field instead of blindly using new_id.
+                dep_record_ids = {}
 
                 # Create or update records in all dependent models
                 for base, field_set in bases_to_create.items():
@@ -2701,28 +2761,34 @@ class PolyBase(_original_BaseModel):
                         if field_plain_name in data:
                             base_data[field_name] = data[field_plain_name]
 
-                    # Set the ID to match the polymorphic record
-                    base_data['id'] = new_id
+                    # PolyBase subclasses override _prepare_create_values to preserve
+                    # an explicit 'id', so id-sharing works. Plain models.Model strips
+                    # 'id' (it's in bad_names), so we skip setting it and let the
+                    # sequence assign a new id, which we then capture.
+                    base_is_poly = isinstance(base_model, PolyBase)
+                    if base_is_poly:
+                        base_data['id'] = new_id
 
                     # Create or update the base record
                     existing_base = base_model.search([('id', '=', new_id)], limit=1)
                     if not existing_base:
-                        _logger.debug(f'Creating {base} with {base_data} for id {new_id}')
-                        
+                        _logger.debug(f'Creating {base} (poly={base_is_poly}) with {base_data} for new_id {new_id}')
+
                         # Handle potential field collisions in base models
                         if 'state' in base_data:
                             field = base_model._fields.get('state')
                             if field and field.type == 'selection':
                                 selection_values = [v[0] for v in field._description_selection(self.env)]
                                 if base_data['state'] not in selection_values:
-                                    _logger.debug("Collision detected for 'state' field in base model %s. Value '%s' is invalid. Resetting to default.", 
+                                    _logger.debug("Collision detected for 'state' field in base model %s. Value '%s' is invalid. Resetting to default.",
                                                     base, base_data['state'])
                                     base_data.pop('state')
 
-                        base_model.create([base_data])
+                        created_base = base_model.create([base_data])
+                        dep_record_ids[base] = created_base.id
                     else:
                         _logger.debug(f'Updating {base} with {base_data} for id {new_id}')
-                        
+
                         # Handle potential field collisions in base models during update
                         if 'state' in base_data:
                             field = base_model._fields.get('state')
@@ -2732,18 +2798,33 @@ class PolyBase(_original_BaseModel):
                                     base_data.pop('state')
 
                         existing_base.write(base_data)
+                        dep_record_ids[base] = existing_base.id
 
                 # Finally, create the record in this model
                 base_data = {}
                 for full_field_name, field_definition in self._fields.items():
-                    # Only include non-related, stored fields
-                    if not field_definition.related and field_definition.store:
+                    # Include any stored field whose value is explicitly present in data.
+                    # This covers both non-related stored fields and stored related fields
+                    # whose value was pre-set by the caller (e.g. provider on facebook.account
+                    # is a stored-related pointing to driver.provider, but FacebookAccount.create
+                    # sets it via vals.setdefault so it must be included in the INSERT).
+                    if field_definition.store:
                         field_name = full_field_name.split('.')[-1]
                         if field_name in data:
                             base_data[field_name] = data[field_name]
 
                 base_data['id'] = new_id
-                
+
+                # If concrete_model_id ended up as a stored field on this model
+                # (can happen when IrPolyBase is injected into the MRO before
+                # _setup_poly_fields overrides it to a computed field), ensure
+                # it is populated to avoid a NOT NULL constraint violation.
+                _concrete_field = self._fields.get('concrete_model_id')
+                if _concrete_field and _concrete_field.store and 'concrete_model_id' not in base_data:
+                    _cid = self.env['ir.model']._get_id(self._name)
+                    if _cid:
+                        base_data['concrete_model_id'] = _cid
+
                 # Handle potential field collisions (e.g., 'state' in digital.event vs fsm.instance)
                 # If we are in Level 3, and Level 1/2 also have 'state', we must ensure 
                 # we don't pass an invalid value for this specific model's 'state' field.
@@ -2755,6 +2836,13 @@ class PolyBase(_original_BaseModel):
                             _logger.debug("Collision detected for 'state' field in %s. Value '%s' is invalid. Resetting to default.", 
                                             self._name, base_data['state'])
                             base_data.pop('state')
+
+                # Ensure _depend_models link fields point to the just-created base
+                # records. For PolyBase dependents the id equals new_id; for plain
+                # models.Model dependents the actual id is captured in dep_record_ids.
+                for _dep_model, _link_field in (self._depend_models or {}).items():
+                    if not base_data.get(_link_field):
+                        base_data[_link_field] = dep_record_ids.get(_dep_model, new_id)
 
                 _logger.debug(f'Creating {self._name} with {base_data} for id {new_id}')
                 new_record = super().create([base_data])
@@ -2830,13 +2918,37 @@ class PolyBase(_original_BaseModel):
         if not self:
             return True
 
-        # For polymorphic models, delete records in base models
+        # Capture IDs and dependent record IDs BEFORE any deletion.
+        # We use the link field (e.g. driver_id) instead of self.ids because the
+        # dependent record may have a different id (plain models.Model dependents get
+        # an auto-generated id, not the poly id). Reading now also avoids FK violations:
+        # deleting the dependent first would break the FK from the main record.
+        original_ids = list(self.ids)
+        dep_ids = {}
         if getattr(self, '_depend_models', None) is not None:
-            for base_model_name in self._depend_models:
-                self.env[base_model_name].browse(self.ids).unlink()
+            for base_model_name, link_field in self._depend_models.items():
+                try:
+                    linked_ids = self.mapped(link_field).ids
+                except Exception:
+                    linked_ids = original_ids  # fallback: assume id-sharing
+                if linked_ids:
+                    dep_ids[base_model_name] = linked_ids
 
-        # Standard unlink for the current concrete model
-        return super().unlink()
+        # Delete the main (concrete) model record first so FK references to
+        # dependent records are removed before those records are deleted.
+        result = super().unlink()
+
+        # Now delete the dependent records using their actual IDs.
+        for base_model_name, ids_to_delete in dep_ids.items():
+            self.env[base_model_name].browse(ids_to_delete).unlink()
+
+        # Clean up ir.poly_base rows (not in _depend_models but poly always creates one).
+        # Guard: skip when already unlinking ir.poly_base to prevent infinite recursion
+        # (ir.poly_base itself has _depend_models={}, so it would enter this path too).
+        if original_ids and self._name != 'ir.poly_base':
+            self.env['ir.poly_base'].sudo().browse(original_ids).unlink()
+
+        return result
 
 
     def read(self, fields=None, load='_classic_read'):
@@ -3643,7 +3755,7 @@ def _poly_registry_setup_models(self, cr):
     """
     _patch_ir_ui_view()
     res = _original_Registry_setup_models(self, cr)
-    
+
     # Identify models that participate in polymorphic inheritance
     poly_models = []
     for name, model_class in self.items():
@@ -4192,17 +4304,12 @@ def _poly_registry_load(self, cr, module):
     before any init_models call that might create views.
     """
     res = _original_registry_load(self, cr, module)
-    # If we are in the middle of loading modules (Registry.new -> load_modules)
-    # we want to ensure setup_models is called to integrate the newly loaded module extensions.
-    # Odoo's load_module_graph already calls it if needs_update is True,
-    # but we force it here to be 100% sure for polymorphic consistency.
-    if not getattr(cr, '_poly_in_load', False):
-        try:
-            cr._poly_in_load = True
-            _logger.debug("[poly] Forcing setup_models after loading module %s", module.name)
-            self.setup_models(cr)
-        finally:
-            cr._poly_in_load = False
+    # NOTE: setup_models is NOT called here per-module.
+    # loading.py:205 already calls it for every needs_update=True module (install/upgrade),
+    # and loading.py:511 calls it unconditionally after all modules finish loading (normal
+    # startup included). Calling it here mid-loading causes KeyError failures when a module
+    # adds a One2many on model A and its inverse Many2one on model B in the same batch,
+    # because model B's _setup_base hasn't picked up the new field yet.
     return res
 
 odoo.modules.registry.Registry.load = _poly_registry_load
