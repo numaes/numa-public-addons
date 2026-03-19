@@ -436,46 +436,42 @@ class PolyBase(_original_BaseModel):
 
     def _get_all_poly_bases(self):
         """
-        Returns a set of all base models (polymorphic or not) in the hierarchy.
-        This exploration is recursive.
+        Retorna un conjunto de todos los modelos base (polimórficos o no) en la jerarquía.
+        Esta exploración es recursiva y abarca todos los módulos cargados al utilizar
+        el registro (env) de Odoo.
         """
-        bases = set()
+        bases = {'ir.poly_base'}
         visited = set()
 
         def collect(model_name):
-            if model_name in visited:
+            if model_name in visited or model_name not in self.env:
                 return
             visited.add(model_name)
-            
-            # ir.poly_base is always a base
-            bases.add('ir.poly_base')
-            
-            model = self.env.get(model_name)
-            if model is None:
-                return
-
-            # Add current model if it's not the starting one (or always add it)
             bases.add(model_name)
             
-            # Recursively explore _depend_models
+            model = self.env[model_name]
+            
+            # Explorar bases polimórficas definidas en _depend_models de cualquier módulo
             depend_models = getattr(model, '_depend_models', None)
-            if depend_models is not None:
+            if depend_models:
                 for base_name in depend_models.keys():
                     collect(base_name)
             
-            # Also explore standard Odoo inheritance (_inherit)
-            # though usually _depend_models should cover what we need for poly
-            # but the task says "polimórficas o no"
-            for inherit in (model._inherit if isinstance(model._inherit, (list, tuple)) else [model._inherit] if model._inherit else []):
-                if inherit in self.env and inherit != 'base':
-                    collect(inherit)
+            # Explorar herencia estándar de Odoo (_inherit) para cubrir todos los módulos
+            inherits = model._inherit
+            if inherits:
+                if isinstance(inherits, str):
+                    inherits = [inherits]
+                for inherit in inherits:
+                    if inherit not in ('base', 'ir.poly_base'):
+                        collect(inherit)
 
         collect(self._name)
         return bases
 
     def _get_max_poly_id(self):
         """
-        Calculates the maximum ID among all participating tables in the polymorphic hierarchy.
+        Calcula el ID máximo entre todas las tablas participantes en la jerarquía polimórfica.
         """
         all_bases = self._get_all_poly_bases()
         max_id = 0
@@ -500,6 +496,33 @@ class PolyBase(_original_BaseModel):
                 except Exception:
                     continue
         return max_id
+
+    def _sync_poly_sequence(self):
+        """
+        Sincroniza ir_poly_base_id_seq con el ID máximo real de la jerarquía.
+        Usa un bloqueo consultivo para evitar contención en las tablas de datos.
+        """
+        # Lock consultivo basado en el hash del nombre de la secuencia (1347374169)
+        # Solo bloquea a otros procesos que intenten sincronizar la misma secuencia.
+        self.env.cr.execute("SELECT pg_advisory_xact_lock(1347374169)")
+        
+        max_id = self._get_max_poly_id()
+        
+        # Obtenemos el valor actual de la secuencia para evitar setval innecesarios
+        try:
+            self.env.cr.execute("SELECT last_value FROM ir_poly_base_id_seq")
+            res = self.env.cr.fetchone()
+            current_seq_val = res[0] if res else 0
+        except Exception:
+            # Si la secuencia no existe aún o hay problemas de acceso
+            current_seq_val = 0
+        
+        if max_id >= current_seq_val:
+            _logger.info("Sincronizando secuencia ir_poly_base_id_seq a %s para evitar colisiones", max_id + 1)
+            self.env.cr.execute(SQL(
+                "SELECT setval('ir_poly_base_id_seq', %s, true)",
+                max_id
+            ))
 
     def check_access(self, operation: str) -> None:
         if getattr(self, '_depend_models', None) is None:
@@ -722,7 +745,7 @@ class PolyBase(_original_BaseModel):
                 Environment._classes[pool].pop(model_name, None)
 
     @classmethod
-    def _apply_polymorphic_hierarchy(cls, pool, name, model_class, parents):
+    def _apply_polymorphic_hierarchy(cls, pool, cr, name, model_class, parents):
         """ The core logic to inject polymorphic parents into a model's hierarchy. """
         if not parents: return False
         
@@ -2274,48 +2297,13 @@ class PolyBase(_original_BaseModel):
 
         # Only perform actions for polymorphic models
         if getattr(self, '_depend_models', None) is not None:
-            # 1. Sincronizar secuencias
-            def get_max_id(base_name) -> int:
-                """
-                Get the maximum ID currently used in a model's table.
-                """
-                base_model = self.env[base_name]
-                if base_model._table:
-                    # Direct SQL to get the actual MAX ID, regardless of sequence state
-                    try:
-                        self.env.cr.execute(SQL(
-                            "SELECT MAX(id) FROM %s",
-                            SQL.identifier(base_model._table)
-                        ))
-                        res = self.env.cr.fetchone()
-                        return res[0] or 0
-                    except Exception:
-                        return 0
-                return 0
-
             # Ensure ir.poly_base sequence starts AFTER the max ID of any participant table
             try:
-                max_id = self._get_max_poly_id()
+                self._sync_poly_sequence()
             except Exception:
                 # Si falla algo en la transacción, no podemos continuar con el reajuste
                 # de la secuencia aquí.
                 return
-
-            if max_id > 0:
-                # Update ir.poly_base sequence to avoid clashing with existing records
-                self.env.cr.execute(SQL(
-                    "SELECT last_value FROM %s",
-                    SQL.identifier("ir_poly_base_id_seq")
-                ))
-                current_seq = self.env.cr.fetchone()[0]
-                
-                if max_id >= current_seq:
-                    _logger.info("Synchronizing ir.poly_base sequence to %s (max detected ID: %s)", max_id + 1, max_id)
-                    self.env.cr.execute(SQL(
-                        "ALTER SEQUENCE IF EXISTS %s RESTART WITH %s",
-                        SQL.identifier("ir_poly_base_id_seq"),
-                        max_id + 1
-                    ))
 
     @classmethod
     def _build_dependant_model_attributes(self):
@@ -2709,19 +2697,21 @@ class PolyBase(_original_BaseModel):
                             (self._name, data['id'])
                         )
 
+            # SINCRONIZACIÓN PREVENTIVA:
+            # Si hay registros en el lote que requieren generación de ID, sincronizamos
+            # la secuencia una sola vez para todo el lote usando el bloqueo consultivo.
+            if any('id' not in data for data in data_list):
+                self._sync_poly_sequence()
+
             # Process each record to create
             for data in data_list:
                 # Handle explicit ID or create a new one via ir.poly_base
                 if 'id' in data:
                     new_id = data['id']
                 else:
-                    # Sync the sequence to be above any manually-inserted IDs
-                    # (records inserted with explicit IDs do not advance the sequence).
-                    # setval(..., max_id, true) → next nextval() returns max_id + 1.
-                    self.env.cr.execute(
-                        "SELECT setval('ir_poly_base_id_seq',"
-                        " (SELECT COALESCE(MAX(id), 0) FROM ir_poly_base), true)"
-                    )
+                    # Ahora creamos en ir.poly_base confiando en la secuencia ya sincronizada.
+                    # Si aun así falla por un ID insertado justo después del cálculo del max_id,
+                    # Odoo lanzará la excepción de integridad (comportamiento optimista).
                     new_poly = self.env['ir.poly_base'].sudo().create({
                         'concrete_model_id': self.env['ir.model']._get_id(self._name)
                     })
@@ -3791,7 +3781,7 @@ def _poly_registry_setup_models(self, cr):
         poly_applied = False
         if any(p_name not in current_mro_names for p_name in parents):
             # We use the PolyBase class which is fully defined at this point
-            poly_applied = PolyBase._apply_polymorphic_hierarchy(self, name, model_class, parents)
+            poly_applied = PolyBase._apply_polymorphic_hierarchy(self, cr, name, model_class, parents)
 
         if poly_applied:
             # _apply_polymorphic_hierarchy changed MRO but does NOT set _setup_done=False
