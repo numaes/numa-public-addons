@@ -483,7 +483,7 @@ class PolyBase(_original_BaseModel):
             if model is not None and getattr(model, "_table", None) and getattr(model, "_storage", True):
                 try:
                     # Double-check table existence in Odoo's registry/DB before querying
-                    if not self.env.cr.has_table(model._table):
+                    if not sql.table_exists(self.env.cr, model._table):
                         continue
                         
                     self.env.cr.execute(SQL(
