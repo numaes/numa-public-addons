@@ -91,6 +91,7 @@ _original_AbstractModel = odoo.models.AbstractModel
 _original_Model = odoo.models.Model
 _original_TransientModel = odoo.models.TransientModel
 _original_Many2many_setup_nonrelated = odoo.fields.Many2many.setup_nonrelated
+_original_Many2many_read = odoo.fields.Many2many.read
 
 class IrPolyBase(models.Model):
     """
@@ -182,6 +183,18 @@ def poly_many2one_convert_to_read(self, value, record, use_display_name=True):
             return value.id
         else:
             return False
+
+
+def poly_many2many_read(self, records):
+    """
+    Monkey-patch for Many2many.read to allow reading related many2many fields.
+    In Odoo 18, Many2many.read assumes the field is always stored in a relation
+    table and directly joins it. If the field is related (as often in polymorphic
+    models), it should traverse the relation instead.
+    """
+    if self.related:
+        return self._compute_related(records)
+    return _original_Many2many_read(self, records)
 
 
 def poly_many2many_setup_nonrelated(self, model):
@@ -3874,6 +3887,8 @@ def poly_convert_xml_import(env, module, fp, idref, mode, noupdate):
         raise e
 
 odoo.tools.convert.convert_xml_import = poly_convert_xml_import
+odoo.fields.Many2many.read = poly_many2many_read
+odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
 
 _original_Registry_setup_models = odoo.modules.registry.Registry.setup_models
