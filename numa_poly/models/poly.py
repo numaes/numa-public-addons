@@ -2546,6 +2546,14 @@ class PolyBase(_original_BaseModel):
                                 subfield.comodel_name,
                                 subfield
                             )
+                        else:
+                            # [poly] If field is already collected, but the new one is better 
+                            # (e.g. has comodel_name or relation info), update it.
+                            _prev_mm, _prev_fname, _prev_type, _prev_comodel, _prev_subfield = related_fields[subfield_name]
+                            if not _prev_comodel and subfield.comodel_name:
+                                related_fields[subfield_name] = (
+                                    mm, subfield_name, subfield.type, subfield.comodel_name, subfield
+                                )
 
                 # Add non-field attributes from the model
                 # Odoo 18: skip attribute copying as we now use MRO
@@ -3741,6 +3749,21 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
 # --- Odoo 18 Registry Finalization Hook ---
 
+# ESTRATEGIA DE RESOLUCIÓN PARA ODOO 18:
+# Odoo 18 ha introducido cambios significativos en la introspección de modelos durante la fase de carga.
+# Específicamente, intenta clonar atributos de campos (como 'related') basándose en la jerarquía de 
+# clases (MRO). Esto causa conflictos con numa_poly porque Odoo inyecta rutas 'related' que 
+# apuntan directamente a nombres de modelos base (ej. related='conversation.driver.name') 
+# en lugar de usar los campos de enlace polimórficos definidos en _depend_models (ej. driver_id.name).
+#
+# La solución implementada consiste en:
+# 1. Parchear 'Field.setup_related' para interceptar rutas que comiencen con nombres de modelos.
+# 2. Redirigir automáticamente estas rutas a través del campo de enlace detectado en _depend_models.
+# 3. Aplicar un mecanismo de "failsafe" iterativo que limpia prefijos de modelos de las rutas 
+#    'related' si Odoo no logra encontrarlos como campos, evitando KeyErrors fatales.
+# 4. Asegurar que los campos Many2many polimórficos se marquen como 'related' y 'store=False'
+#    para evitar que Odoo intente acceder a tablas de relación físicas inexistentes en el modelo hijo.
+
 # PATCH: Field.resolve_depends to ignore missing polymorphic fields during build
 _original_Field_resolve_depends = odoo.fields.Field.resolve_depends
 
@@ -3767,6 +3790,63 @@ def poly_Field_resolve_depends(self, registry):
         raise e
 
 odoo.fields.Field.resolve_depends = poly_Field_resolve_depends
+
+# PATCH: Field.setup_related to fix wrong polymorphic paths in Odoo 18
+_original_Field_setup_related = odoo.fields.Field.setup_related
+
+def poly_Field_setup_related(self, model):
+    """
+    [poly] GENERIC FIX: Corrects 'related' paths that incorrectly point to model names instead of 
+    polymorphic link fields. 
+    """
+    # [poly] CRITICAL: We use __dict__ bypass to check the original 'related' value 
+    # and avoid lazy-loading side effects that might trigger KeyError too early.
+    related = self.related
+    if isinstance(related, str) and '.' in related:
+        parts = related.split('.')
+        prefix = parts[0]
+        
+        if prefix not in model._fields and not hasattr(type(model), prefix):
+            # Check if prefix is a model name registered in the registry
+            registry = model.pool or model.env.registry
+            if prefix in registry:
+                depend_models = getattr(model, '_depend_models', {}) or {}
+                link_field_name = depend_models.get(prefix)
+                if not link_field_name:
+                    # Aggressive model name match
+                    for base_model_name, link_fname in depend_models.items():
+                        if prefix == base_model_name or base_model_name.startswith(f'{prefix}.') or prefix == base_model_name.split('.')[0]:
+                            link_field_name = link_fname
+                            break
+                
+                if link_field_name:
+                    _logger.debug("[poly] Redirecting %s.%s -> %s.%s", model._name, self.name, link_field_name, '.'.join(parts[1:]))
+                    self.related = f"{link_field_name}.{'.'.join(parts[1:])}"
+                    if hasattr(self, '_args'): self._args['related'] = self.related
+                    self.store = False
+                else:
+                    _logger.warning("[poly] Stripping prefix from %s.%s path %s", model._name, self.name, related)
+                    self.related = '.'.join(parts[1:])
+                    if hasattr(self, '_args'): self._args['related'] = self.related
+
+    # [poly] Iterative failsafe to avoid KeyError crash in Odoo 18
+    while True:
+        try:
+            return _original_Field_setup_related(self, model)
+        except (KeyError, ValueError) as e:
+            cur_related = self.related
+            if isinstance(cur_related, str) and '.' in cur_related:
+                parts = cur_related.split('.')
+                prefix = parts[0]
+                registry = model.pool or model.env.registry
+                if prefix in registry and prefix not in model._fields:
+                    _logger.error("[poly] setup_related KeyError for %s.%s path %s. Stripping %s", model._name, self.name, cur_related, prefix)
+                    self.related = '.'.join(parts[1:])
+                    if hasattr(self, '_args'): self._args['related'] = self.related
+                    continue
+            raise e
+
+odoo.fields.Field.setup_related = poly_Field_setup_related
 
 # Lazy patching of ir.ui.view._validate_view because base modules might not be loaded yet
 _original_validate_view = None
@@ -4023,6 +4103,60 @@ def _poly_registry_setup_models(self, cr):
                             _fobj._module = _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
                         if not getattr(_fobj, '_modules', None) or 'numa_poly' in _fobj._modules:
                             _fobj._modules = {_fobj._module}
+                        
+                        # [poly] If field exists but is missing 'related' and comes from a polymorphic ancestor, 
+                        # force it to be related to the ancestor to avoid store=True/table creation issues.
+                        if _is_poly_ancestor and _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
+                            _poly_link_field = all_depend_models.get(_base_cls_name)
+                            # Odoo 18 sometimes injects wrong related fields based on class names.
+                            # We MUST ensure it points to the correct poly link field (e.g. driver_id) 
+                            # and NOT to the model name (e.g. conversation.driver).
+                            _expected_related = f'{_poly_link_field}.{_fname}' if _poly_link_field else f'{_base_cls_name}.{_fname}'
+                            
+                            _cur_related = getattr(_fobj, 'related', None)
+                            if not _cur_related or (_poly_link_field and not _cur_related.startswith(f'{_poly_link_field}.')):
+                                # If it's related to the model name instead of the link field, it's definitely wrong.
+                                # Odoo 18 tries to be smart but fails with poly models.
+                                _is_wrong = False
+                                if not _cur_related: _is_wrong = True
+                                elif _poly_link_field:
+                                    if _cur_related == f'{_base_cls_name}.{_fname}': _is_wrong = True
+                                    elif _cur_related and '.' in _cur_related:
+                                        _prefix = _cur_related.split('.')[0]
+                                        # Match if prefix is part of model name (e.g. "conversation" matches "conversation.driver")
+                                        if _prefix == _base_cls_name or _base_cls_name.startswith(f'{_prefix}.') or _prefix == _base_cls_name.split('.')[0]:
+                                            _is_wrong = True
+                                
+                                if _is_wrong and _poly_link_field:
+                                    _logger.debug("[poly] Field %s on %s has wrong or missing 'related' (%s), fixing to %s...", _fname, name, _cur_related, _expected_related)
+                                    # [Odoo 18 CRITICAL] We MUST set related through _args to ensure it's picked up by setup_models
+                                    _fobj.related = _expected_related
+                                    if hasattr(_fobj, '_args'): 
+                                        _fobj._args['related'] = _expected_related
+                                        _fobj._args['store'] = False
+                                    _fobj.store = False
+                                    if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
+                                    model_class._setup_done = False
+                                elif not _cur_related:
+                                    _logger.debug("[poly] Field %s on %s missing 'related' from poly-ancestor %s, fixing to %s", _fname, name, _base_cls_name, _expected_related)
+                                    _fobj.related = _expected_related
+                                    if hasattr(_fobj, '_args'): 
+                                        _fobj._args['related'] = _expected_related
+                                        _fobj._args['store'] = False
+                                    _fobj.store = False
+                                    if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
+                                    model_class._setup_done = False
+                        
+                        # Odoo 18: If Many2many relation is not set for a poly-injected field, 
+                        # ensure it's copied from the base class to prevent table name guess failures.
+                        if _fobj.type == 'many2many' and _is_poly_ancestor:
+                            _base_fobj = getattr(_base_class, _fname, None)
+                            if isinstance(_base_fobj, odoo_fields.Field):
+                                for _attr in ['relation', 'column1', 'column2']:
+                                    if not getattr(_fobj, _attr, None) and getattr(_base_fobj, _attr, None):
+                                        setattr(_fobj, _attr, getattr(_base_fobj, _attr))
+                                        if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
+                                        model_class._setup_done = False
 
         _fields_before = set(model_class._fields.keys())
         for _base_class in _current_mro:

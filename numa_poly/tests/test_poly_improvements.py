@@ -10,7 +10,7 @@ These tests validate the improvements made to the module:
 """
 
 from odoo import models, fields
-from odoo.exceptions import ValidationError, AccessError, ValueError
+from odoo.exceptions import ValidationError, AccessError
 from odoo.tests import tagged, TransactionCase
 from collections import OrderedDict
 
