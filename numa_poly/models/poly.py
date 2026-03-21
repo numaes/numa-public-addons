@@ -2451,7 +2451,10 @@ class PolyBase(_original_BaseModel):
                 compute='_compute_concrete_model_id',
                 compute_sudo=True,
                 automatic=True,
-                readonly=True
+                readonly=True,
+                store=False,
+                required=False,
+                export_string_translation=False
              )
         )
 
