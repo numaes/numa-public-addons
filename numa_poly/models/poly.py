@@ -276,91 +276,78 @@ def poly_many2many_setup_nonrelated(self, model):
     Monkey-patch for Many2many.setup_nonrelated to allow sharing the same
     relation table and columns between models that are polymorphic counterparts.
     """
-    # [poly] Aggressive Odoo 18 Fix: If this is a Many2many from a polymorphic model
-    # and it should have been related, we force it to be related now.
-    # [poly] PROTECTION: ONLY run for polymorphic models
-    if not hasattr(model, '__depends_base_classes'):
-         return _original_Many2many_setup_nonrelated(self, model)
-
-    if not self.related:
-         # [poly] Aggressive Odoo 18 Fix: Check if this field name exists in any polymorphic ancestor.
-         # This handles fields that are NOT explicitly converted to related yet.
-         mro_bases = getattr(model, '__depends_base_classes', ())
-         for base_class in mro_bases:
-              if base_class._name != model._name and self.name in base_class._fields:
-                   # This field exists in a polymorphic ancestor!
-                   # It should have been converted to related in _build_dependant_model_attributes.
-                   # If it's not, we attempt to fix it here before setup_nonrelated fails or creates columns.
-                   depend_models = getattr(model, '_depend_models', {})
-                   link_fname = depend_models.get(base_class._name)
-                   if link_fname:
-                        _logger.debug("[poly] Force converting %s.%s to related (path: %s.%s)", model._name, self.name, link_fname, self.name)
-                        self.related = f"{link_fname}.{self.name}"
-                        self.store = False
-                        # We must clear some internal flags of the field to allow Odoo to re-evaluate it
-                        if hasattr(self, '_setup_done'): self._setup_done = False
-                        # Since it's now related, we skip setup_nonrelated
-                        return
-
     try:
         return _original_Many2many_setup_nonrelated(self, model)
     except TypeError as e:
         # Check if the error is about shared table/columns
-        if "Many2many fields" in str(e) and "use the same table and columns" in str(e):
-            # [poly] Aggressive Odoo 18 Fix: if this is a polymorphic model, we ignore the error
-            # especially if one of the fields is related and non-stored.
-            if self.related and not self.store:
-                _logger.debug("[poly] Ignoring M2M shared table error for related field %s.%s", model._name, self.name)
-                # We need to manually register the field in the pool's m2m structure
-                # to allow Odoo to continue.
-                m2m = model.pool._m2m
-                fields = m2m.setdefault((self.relation, self.column1, self.column2), [])
-                if self not in fields:
-                    fields.append(self)
-                
-                # Re-implement the inverse fields logic that follows the TypeError raise in original
-                for field in m2m.get((self.relation, self.column2, self.column1), []):
-                    model.pool.field_inverses.add(self, field)
-                    model.pool.field_inverses.add(field, self)
-                return
-
-            # Attempt to find the conflicting field in the error message or pool
+        if "Many2many fields" not in str(e) or "use the same table and columns" not in str(e):
+            raise e
+        
+        # [poly] Aggressive Odoo 18 Fix: if this is a polymorphic model, we ignore the error
+        # especially if one of the fields is related and non-stored.
+        if self.related and not self.store:
+            _logger.debug("[poly] Ignoring M2M shared table error for related field %s.%s", model._name, self.name)
+            # We need to manually register the field in the pool's m2m structure
+            # to allow Odoo to continue.
             m2m = model.pool._m2m
-            fields = m2m.get((self.relation, self.column1, self.column2))
-            if not fields:
-                 raise e
+            fields = m2m.setdefault((self.relation, self.column1, self.column2), [])
+            if self not in fields:
+                fields.append(self)
             
-            is_poly_counterpart = False
+            # Re-implement the inverse fields logic that follows the TypeError raise in original
+            for field in m2m.get((self.relation, self.column2, self.column1), []):
+                model.pool.field_inverses.add(self, field)
+                model.pool.field_inverses.add(field, self)
+            return
+
+        # Fallback to broader polymorphic check if not explicitly related/store=False yet
+        m2m = model.pool._m2m
+        fields = m2m.get((self.relation, self.column1, self.column2))
+        if not fields:
+             raise e
+        
+        is_poly_counterpart = False
+        model_class = model if isinstance(model, type) else type(model)
+        
+        # Check if current model is polymorphic
+        is_self_poly = False
+        for base in model_class.mro():
+            if '_depend_models' in base.__dict__:
+                is_self_poly = True
+                break
+        
+        if is_self_poly:
             for other in fields:
-                # If they are different models, check if they are in each other's polymorphic hierarchy
                 if self.model_name != other.model_name:
-                    # Check if one is a polymorphic base of the other
-                    model_class = model.pool.get(self.model_name)
-                    other_class = model.pool.get(other.model_name)
+                    other_model = model.pool.get(other.model_name)
+                    if not other_model: continue
+                    other_class = other_model if isinstance(other_model, type) else type(other_model)
                     
-                    if not model_class or not other_class:
-                         continue
-
-                    # Check __depends_base_classes for polymorphic relationship
-                    poly_bases_self = [c._name for c in getattr(model_class, '__depends_base_classes', ())]
-                    poly_bases_other = [c._name for c in getattr(other_class, '__depends_base_classes', ())]
-
-                    if other.model_name in poly_bases_self or self.model_name in poly_bases_other:
+                    # Check for polymorphic relationship (any shared polymorphic ancestor)
+                    self_poly_bases = set()
+                    for base in model_class.mro():
+                        if '_depend_models' in base.__dict__: self_poly_bases.add(base._name)
+                    
+                    other_poly_bases = set()
+                    for base in other_class.mro():
+                        if '_depend_models' in base.__dict__: other_poly_bases.add(base._name)
+                    
+                    if self_poly_bases & other_poly_bases or \
+                       other.model_name in self_poly_bases or \
+                       self.model_name in other_poly_bases:
                         is_poly_counterpart = True
                         break
+        
+        if is_poly_counterpart:
+            _logger.debug("Allowing shared Many2many table %s for polymorphic counterparts %s and %s", 
+                          self.relation, self.model_name, [f.model_name for f in fields])
+            if self not in fields:
+                fields.append(self)
             
-            if is_poly_counterpart:
-                _logger.debug("Allowing shared Many2many table %s for polymorphic counterparts %s and %s", 
-                              self.relation, self.model_name, [f.model_name for f in fields])
-                # Silently allow sharing by ignoring the TypeError and appending to the list
-                if self not in fields:
-                    fields.append(self)
-                
-                # Re-implement the inverse fields logic that follows the TypeError raise in original
-                for field in m2m.get((self.relation, self.column2, self.column1), []):
-                    model.pool.field_inverses.add(self, field)
-                    model.pool.field_inverses.add(field, self)
-                return
+            for field in m2m.get((self.relation, self.column2, self.column1), []):
+                model.pool.field_inverses.add(self, field)
+                model.pool.field_inverses.add(field, self)
+            return
         
         # If not handled, re-raise original exception
         raise e
@@ -3834,8 +3821,14 @@ def _poly_registry_setup_models(self, cr):
                 try:
                     _logger.debug("[poly] Forcing final setup for %s", name)
                     model_instance = self[name]
-                    model_instance._setup_base()
-                    model_instance._setup_fields()
+                    # We must pass 'model_instance' as 'self' to the method if it's not a bound method
+                    # In Odoo 18, self[name] is an instance of the model.
+                    # We ensure it's properly bound by using the instance method if available.
+                    # [poly] FIX: Use the class methods from BaseModel to ensure they are properly called on the instance
+                    if hasattr(model_instance, '_setup_base'):
+                        BaseModel._setup_base(model_instance)
+                    if hasattr(model_instance, '_setup_fields'):
+                        BaseModel._setup_fields(model_instance)
                 except Exception as e:
                     _logger.warning("[poly] Setup failed for %s after MRO injection: %s", name, e)
 
@@ -4000,7 +3993,7 @@ def _poly_registry_setup_models(self, cr):
                                         model_class._setup_done = False
 
         _fields_before = set(model_class._fields.keys())
-        for _base_class in _current_mro:
+        for _base_class in mro:
             # RECOVERY: Scan ALL base classes in the MRO for field definitions.
             # Odoo 18's incremental loading often misses fields from extension modules
             # if they inherit from a model that was already partially built.
@@ -4263,20 +4256,10 @@ def _poly_registry_setup_models(self, cr):
     # validate any views that were skipped during the module loading process.
     # We use a copy of the pending views to avoid issues with pop while iterating
     db_name = cr.dbname
-    pending_views = PENDING_POLY_VIEWS.pop(db_name, [])
-    if pending_views:
-        # Deduplicate views by ID
-        unique_views = {v.id: v for v in pending_views}.values()
-        _logger.info("[poly] Validating %d deferred polymorphic views", len(unique_views))
-        # Ensure we have an environment to work with
-        _env = api.Environment(cr, SUPERUSER_ID, {})
-        for view in unique_views:
-            try:
-                # Run strict validation with poly_validated=True
-                # We use sudo() to ensure we have rights to check XML
-                view.with_env(_env).sudo().with_context(poly_validated=True)._check_xml()
-            except Exception as _e:
-                _logger.error("[poly] Strict validation failed for deferred view %s: %s", view.xml_id or view.id, _e)
+    pending_ids = list(getattr(self, '_pending_poly_views', set()))
+    if pending_ids:
+        _logger.info("[poly] Validating %d deferred polymorphic views", len(pending_ids))
+        _poly_finalize_view_validation(self, cr)
 
     # [poly] GENERIC COLUMN RECOVERY: If a field is recovered and it should be a stored column,
     # ensure it exists in the database. Odoo 18 incremental loading may skip columns if
