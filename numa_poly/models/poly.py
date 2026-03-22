@@ -3663,25 +3663,34 @@ def poly_Field_get(self, record, owner):
     if isinstance(record, type):
         return self
 
-    # 2. Si no es un BaseModel, abortamos (podría ser un mock u objeto de introspección)
-    # IMPORTANTE: No usar isinstance(record, odoo.models.BaseModel) porque a veces
-    # las clases no están totalmente inicializadas y fallan. 
-    # Usamos presencia de '_ids' Y que no sea un descriptor.
+    # 2. Si no es un BaseModel (Recordset), abortamos.
+    # OJO: Usamos type(record) para ver si hereda de la clase base del ORM.
+    if not hasattr(record, '_ids'):
+         return self
+
+    # 3. Verificación de seguridad para _ids
+    # SI record._ids es un descriptor (member_descriptor), len() fallará.
     try:
-         # object.__getattribute__ evita disparar descriptores de la clase
-         # pero si record es la clase misma (type), getattr fallará o devolverá el descriptor.
-         # Aquí ya sabemos que record NO es un type.
-         _ids_val = object.__getattribute__(record, '_ids')
+         # Acceso de bajo nivel para detectar descriptores sin ejecutarlos
+         _cls = type(record)
+         _ids_attr = getattr(_cls, '_ids', None)
          
-         # Si _ids_val no es una secuencia (lista, tupla, etc), es probablemente un descriptor 
-         # de clase que no ha sido instanciado o un member_descriptor.
+         # En Odoo 18, Recordset._ids es un member_descriptor en la clase.
+         # Si record no es una INSTANCIA real, getattr(record, '_ids') 
+         # podría estar devolviendo algo no iterable si el objeto está roto.
+         if isinstance(_ids_attr, property) or str(type(_ids_attr)) == "<class 'member_descriptor'>":
+              # Verificamos si record es una instancia real comparando con la clase
+              if record is _cls:
+                   return self
+         
+         _ids_val = record._ids
+         # Si _ids_val no es una secuencia (lista, tupla, etc), len() fallará.
          if not isinstance(_ids_val, (list, tuple, bytes)):
               return self
               
     except (AttributeError, TypeError):
          return self
     except:
-         # En Odoo 18, a veces el ORM lanza excepciones raras en el init
          return self
 
     try:
