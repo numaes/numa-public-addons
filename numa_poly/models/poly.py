@@ -3651,46 +3651,32 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 _original_Field_get = odoo.fields.Field.__get__
 def poly_Field_get(self, record, owner):
     # [poly] Odoo 18: Protecciones contra introspección prematura
-    # Este parche DEBE ser ultra-seguro porque se llama millones de veces
     if record is None:
         return self
 
-    # [poly] CRITICAL: En Odoo 18, inspect.getmembers y el registro de onchange_methods
-    # disparan descriptores sobre la CLASE. Field.__get__ intenta hacer len(record._ids).
+    # [poly] CRITICAL: En Odoo 18, inspect.getmembers (en _onchange_methods) dispara
+    # descriptores sobre la CLASE. Field.__get__ intenta hacer len(record._ids).
     # Si record es una clase, record._ids es un member_descriptor, y len() falla.
     
     # 1. Si record es una CLASE, devolvemos self
     if isinstance(record, type):
         return self
 
-    # 2. Si no es un BaseModel (Recordset), abortamos.
-    # OJO: Usamos type(record) para ver si hereda de la clase base del ORM.
-    if not hasattr(record, '_ids'):
+    # 2. Si no es un Recordset (BaseModel), abortamos.
+    if not isinstance(record, odoo.models.BaseModel):
          return self
 
     # 3. Verificación de seguridad para _ids
     # SI record._ids es un descriptor (member_descriptor), len() fallará.
     try:
-         # Acceso de bajo nivel para detectar descriptores sin ejecutarlos
-         _cls = type(record)
-         _ids_attr = getattr(_cls, '_ids', None)
-         
-         # En Odoo 18, Recordset._ids es un member_descriptor en la clase.
-         # Si record no es una INSTANCIA real, getattr(record, '_ids') 
-         # podría estar devolviendo algo no iterable si el objeto está roto.
-         if isinstance(_ids_attr, property) or str(type(_ids_attr)) == "<class 'member_descriptor'>":
-              # Verificamos si record es una instancia real comparando con la clase
-              if record is _cls:
-                   return self
-         
+         # [poly] AGGRESSIVE: Odoo 18 Recordset._ids es un member_descriptor.
+         # En una instancia real, record._ids DEBE ser una secuencia.
+         # Si no lo es, es que estamos en un estado de introspección inválido.
          _ids_val = record._ids
-         # Si _ids_val no es una secuencia (lista, tupla, etc), len() fallará.
          if not isinstance(_ids_val, (list, tuple, bytes)):
               return self
               
-    except (AttributeError, TypeError):
-         return self
-    except:
+    except (AttributeError, TypeError, Exception):
          return self
 
     try:
