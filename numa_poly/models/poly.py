@@ -51,6 +51,7 @@ Architecture & Design Decisions:
 
 import logging
 import ctypes
+import warnings
 from collections import OrderedDict, defaultdict
 import typing
 import json
@@ -3615,26 +3616,31 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 _original_Field_resolve_depends = odoo.fields.Field.resolve_depends
 
 def poly_Field_resolve_depends(self, registry):
-    try:
-        yield from _original_Field_resolve_depends(self, registry)
-    except ValueError as e:
-        error_msg = str(e)
-        if "not found in model" in error_msg:
-            # We only ignore if the model is potentially polymorphic (has ir.poly_base or _depend_models)
-            model_name = error_msg.split("found in model ")[-1].strip('.')
-            if model_name in registry:
-                model_class = registry[model_name]
-                is_poly = hasattr(model_class, '_depend_models')
-                if not is_poly:
-                    # Check MRO for ir.poly_base
-                    for parent in model_class.mro():
-                        if hasattr(parent, '_name') and parent._name == 'ir.poly_base':
-                            is_poly = True
-                            break
-                if is_poly:
-                    _logger.debug("[poly] resolve_depends: ignoring missing field error in polymorphic model %s: %s", model_name, error_msg)
-                    return
-        raise e
+    # [poly] Odoo 18: Silence searchable warnings during registry load for polymorphic models.
+    # These warnings are noisy because dependencies are often incomplete during incremental load.
+    with warnings.catch_warnings():
+        if registry.pool._init:
+            warnings.filterwarnings("ignore", message=".*should be searchable.*")
+        try:
+            yield from _original_Field_resolve_depends(self, registry)
+        except ValueError as e:
+            error_msg = str(e)
+            if "not found in model" in error_msg:
+                # We only ignore if the model is potentially polymorphic (has ir.poly_base or _depend_models)
+                model_name = error_msg.split("found in model ")[-1].strip('.')
+                if model_name in registry:
+                    model_class = registry[model_name]
+                    is_poly = hasattr(model_class, '_depend_models')
+                    if not is_poly:
+                        # Check MRO for ir.poly_base
+                        for parent in model_class.mro():
+                            if hasattr(parent, '_name') and parent._name == 'ir.poly_base':
+                                is_poly = True
+                                break
+                    if is_poly:
+                        _logger.debug("[poly] resolve_depends: ignoring missing field error in polymorphic model %s: %s", model_name, error_msg)
+                        return
+            raise e
 
 odoo.fields.Field.resolve_depends = poly_Field_resolve_depends
 
