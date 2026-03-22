@@ -307,8 +307,21 @@ def poly_many2many_setup_nonrelated(self, model):
     except TypeError as e:
         # Check if the error is about shared table/columns
         if "Many2many fields" in str(e) and "use the same table and columns" in str(e):
+            # [poly] Aggressive Odoo 18 Fix: if this is a polymorphic model, we ignore the error
+            # especially if one of the fields is related and non-stored.
             if self.related and not self.store:
                 _logger.debug("[poly] Ignoring M2M shared table error for related field %s.%s", model._name, self.name)
+                # We need to manually register the field in the pool's m2m structure
+                # to allow Odoo to continue.
+                m2m = model.pool._m2m
+                fields = m2m.setdefault((self.relation, self.column1, self.column2), [])
+                if self not in fields:
+                    fields.append(self)
+                
+                # Re-implement the inverse fields logic that follows the TypeError raise in original
+                for field in m2m.get((self.relation, self.column2, self.column1), []):
+                    model.pool.field_inverses.add(self, field)
+                    model.pool.field_inverses.add(field, self)
                 return
 
             # Attempt to find the conflicting field in the error message or pool
@@ -336,7 +349,7 @@ def poly_many2many_setup_nonrelated(self, model):
                         is_poly_counterpart = True
                         break
             
-            if is_poly_counterpart or (self.related and not self.store):
+            if is_poly_counterpart:
                 _logger.debug("Allowing shared Many2many table %s for polymorphic counterparts %s and %s", 
                               self.relation, self.model_name, [f.model_name for f in fields])
                 # Silently allow sharing by ignoring the TypeError and appending to the list
