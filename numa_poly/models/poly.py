@@ -2261,8 +2261,8 @@ class PolyBase(_original_BaseModel):
                 Args:
                     mm: The name of the model to add fields from
                 """
-                if mm == 'ir.poly_base':
-                    return  # Skip ir.poly_base as its fields are already handled
+                if mm == 'ir.poly_base' or mm == self._name:
+                    return  # Skip ir.poly_base as its fields are already handled, and skip self
 
                 if mm not in self.pool:
                     return
@@ -2271,8 +2271,13 @@ class PolyBase(_original_BaseModel):
 
                 # Add fields from the model
                 for subfield_name, subfield in base_model._fields.items():
+                    if subfield_name == 'id':
+                        continue
+                    # [poly] If we are adding fields from a model to itself (should not happen, but safeguard)
+                    if mm == self._name:
+                        continue
                     # Only add fields that aren't already defined, aren't PolyReferences,
-                    # and aren't related fields (to avoid duplication)
+                    # and aren't related fields (to avoid duplication/self-reference)
                     if not isinstance(subfield, PolyReference) and \
                        not subfield.related:
                         if subfield_name not in related_fields:
@@ -2313,6 +2318,8 @@ class PolyBase(_original_BaseModel):
         explicit_depend_models = getattr(type(self), '_depend_models', {}) or {}
         
         for base_model_name, base_field_name in explicit_depend_models.items():
+            if base_model_name == self._name:
+                continue # Skip self to avoid circular/invalid related paths
             related_bases[base_model_name] = base_field_name
             set(base_field_name,
                 PolyReference(comodel_name=base_model_name,
@@ -2334,6 +2341,8 @@ class PolyBase(_original_BaseModel):
                      delattr(type(self), field_name)
 
             if model not in related_bases:
+                if model == self._name:
+                    continue # NEVER create related fields pointing to the model itself
                 model_field = f'related_{related_counter}'
                 related_counter += 1
                 related_bases[model] = model_field
@@ -3033,7 +3042,40 @@ class PolyBase(_original_BaseModel):
         if not hasattr(type(self), '__depends_base_classes'):
             return super().fields_get(allfields=allfields, attributes=attributes)
 
-        result = super().fields_get(allfields=allfields, attributes=attributes)
+        try:
+            result = super().fields_get(allfields=allfields, attributes=attributes)
+        except Exception as e:
+            if 'conversation' in str(e) or 'KeyError' in str(e):
+                # [poly] EMERGENCY RUNTIME SANITIZATION
+                # To avoid infinite recursion, we use a simple flag in the environment context
+                if self.env.context.get('_poly_sanitizing_fields'):
+                    _logger.error("[poly] Recursive fields_get error on %s: %s", self._name, e)
+                    raise e
+                
+                new_self = self.with_context(_poly_sanitizing_fields=True)
+                try:
+                    _logger.error("[poly] fields_get KeyError detected on %s: %s. Sanitizing fields...", self._name, e)
+                    for f_name, field in self._fields.items():
+                        rel = getattr(field, 'related', None)
+                        if isinstance(rel, str) and '.' in rel:
+                            parts = rel.split('.')
+                            prefix = parts[0]
+                            if prefix == self._name or ('.' in self._name and prefix == self._name.split('.')[0]):
+                                new_rel = '.'.join(parts[1:])
+                                _logger.warning("[poly] Runtime sanitization for %s.%s: %s -> %s", self._name, f_name, rel, new_rel)
+                                field.related = new_rel
+                                if hasattr(field, '_args'): field._args['related'] = new_rel
+                                try:
+                                    field.setup_related(self)
+                                except:
+                                    pass
+                    # Retry
+                    return super(PolyBase, new_self).fields_get(allfields=allfields, attributes=attributes)
+                except Exception as inner_e:
+                    _logger.error("[poly] Retry fields_get failed for %s: %s", self._name, inner_e)
+                    raise e
+            else:
+                raise e
         
         all_bases = getattr(type(self), '__depends_base_classes', ())
         dependent_model_names = [cls._name for cls in all_bases if cls._name not in (self._name, 'ir.poly_base')]
@@ -3612,8 +3654,24 @@ def poly_Field_setup_related(self, model):
         prefix = parts[0]
         
         if prefix not in model._fields and not hasattr(type(model), prefix):
-            # Check if prefix is a model name registered in the registry
+            # [poly] Aggressive stripping: if prefix matches the model name, it's definitely invalid
+            # We also check if the whole prefix matches any known model name in the registry.
+            # Odoo 18 sometimes prepends model names to related fields from parents in MRO.
             registry = model.pool or model.env.registry
+            
+            if prefix == model._name or ('.' in model._name and prefix == model._name.split('.')[0]) or prefix in registry:
+                _logger.warning("[poly] Stripping model-name prefix '%s' from %s.%s path %s", prefix, model._name, self.name, related)
+                self.related = '.'.join(parts[1:])
+                if hasattr(self, '_args'): self._args['related'] = self.related
+                # Recalculate prefix for further processing
+                related = self.related
+                if isinstance(related, str) and '.' in related:
+                    parts = related.split('.')
+                    prefix = parts[0]
+                else:
+                    return # No more parts to process
+
+            # Check if prefix is a model name registered in the registry
             if prefix in registry:
                 depend_models = getattr(model, '_depend_models', {}) or {}
                 link_field_name = depend_models.get(prefix)
@@ -3947,6 +4005,25 @@ def _poly_registry_setup_models(self, cr):
                             odoo.models.BaseModel._setup_fields(model_instance)
                         except (TypeError, AttributeError, Exception) as e:
                             _logger.debug("[poly] _setup_fields failed for %s: %s", name, e)
+
+                    # [poly] SANITIZATION PASS: Remove invalid model-name prefixes from related fields
+                    # These are often injected by Odoo 18's field inheritance during MRO setup.
+                    for f_name, field in model_class._fields.items():
+                        rel = getattr(field, 'related', None)
+                        if isinstance(rel, str) and '.' in rel:
+                            parts = rel.split('.')
+                            prefix = parts[0]
+                            if prefix == name or ('.' in name and prefix == name.split('.')[0]):
+                                new_rel = '.'.join(parts[1:])
+                                _logger.warning("[poly] Post-setup sanitization for %s.%s: stripping prefix '%s' from %s -> %s", 
+                                                name, f_name, prefix, rel, new_rel)
+                                field.related = new_rel
+                                if hasattr(field, '_args'): field._args['related'] = new_rel
+                                # Re-setup the field after modifying its related path
+                                try:
+                                    field.setup_related(model_instance)
+                                except Exception as e:
+                                    _logger.debug("[poly] Re-setup_related failed for %s.%s: %s", name, f_name, e)
                 except Exception as e:
                     _logger.warning("[poly] Setup failed for %s after MRO injection: %s", name, e)
 
