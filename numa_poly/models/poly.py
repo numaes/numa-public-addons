@@ -194,6 +194,26 @@ def poly_many2many_read(self, records):
     """
     if self.related:
         return self._compute_related(records)
+    
+    # [poly] AGGRESSIVE FIX: If the field is Many2many but has NO relation table,
+    # and we are in a polymorphic model, it might be a broken field from Odoo 18
+    # setup. We attempt to find the field in our polymorphic bases and use it.
+    if not getattr(self, 'relation', None):
+        model_class = records.pool[self.model_name]
+        if hasattr(model_class, '__depends_base_classes'):
+             for base_class in getattr(model_class, '__depends_base_classes', ()):
+                  if self.name in base_class._fields:
+                       base_field = base_class._fields[self.name]
+                       if base_field.type == 'many2many' and getattr(base_field, 'relation', None):
+                            _logger.debug("[poly] Redirecting M2M read for %s.%s to base %s", self.model_name, self.name, base_class._name)
+                            # Find the link field to this base
+                            depend_models = getattr(model_class, '_depend_models', {})
+                            link_fname = depend_models.get(base_class._name)
+                            if link_fname:
+                                 # We traverse the relation via the link field
+                                 target_records = records.mapped(link_fname)
+                                 return base_field.read(target_records)
+
     return _original_Many2many_read(self, records)
 
 
@@ -202,6 +222,25 @@ def poly_many2many_setup_nonrelated(self, model):
     Monkey-patch for Many2many.setup_nonrelated to allow sharing the same
     relation table and columns between models that are polymorphic counterparts.
     """
+    # [poly] Aggressive Odoo 18 Fix: If this is a Many2many from a polymorphic model
+    # and it should have been related, we force it to be related now.
+    if not self.related and hasattr(model, '__depends_base_classes'):
+         for base_class in getattr(model, '__depends_base_classes', ()):
+              if base_class._name != model._name and self.name in base_class._fields:
+                   # This field exists in a polymorphic ancestor!
+                   # It should have been converted to related in _build_dependant_model_attributes.
+                   # If it's not, we attempt to fix it here before setup_nonrelated fails or creates columns.
+                   depend_models = getattr(model, '_depend_models', {})
+                   link_fname = depend_models.get(base_class._name)
+                   if link_fname:
+                        _logger.debug("[poly] Force converting %s.%s to related (path: %s.%s)", model._name, self.name, link_fname, self.name)
+                        self.related = f"{link_fname}.{self.name}"
+                        self.store = False
+                        # We must clear some internal flags of the field to allow Odoo to re-evaluate it
+                        if hasattr(self, '_setup_done'): self._setup_done = False
+                        # Since it's now related, we skip setup_nonrelated
+                        return
+
     try:
         return _original_Many2many_setup_nonrelated(self, model)
     except TypeError as e:
@@ -1539,7 +1578,7 @@ class PolyBase(_original_BaseModel):
                   if self.pool in Environment._classes:
                        Environment._classes[self.pool].pop(self._name, None)
 
-        _original_BaseModel._setup_base(self)
+             _original_BaseModel._setup_base(self)
 
         # Odoo 18: ensure polymorphic attributes are built after base setup
         if hasattr(model_class, '__depends_base_classes'):
@@ -1669,12 +1708,16 @@ class PolyBase(_original_BaseModel):
                 # Odoo 18: ensure we are NOT shadowing base model fields with stale stored versions
                 # that might have been injected during incremental loading.
                 _depend_model_names = set(getattr(model_class, '_depend_models', {}).keys())
+                
                 for fname in list(self._fields.keys()):
                     fobj = self._fields[fname]
+                    
                     # IF field is stored and NOT related, but it exists in any of our dependent base models,
                     # it MUST be removed from this model's _fields and class __dict__ to allow
                     # _build_dependant_model_attributes to recreate it as a proper related field.
-                    if fobj.store and not fobj.related:
+                    # [poly] Also catch broken M2M fields without relation table.
+                    is_broken_m2m = (fobj.type == 'many2many' and not getattr(fobj, 'relation', None) and not fobj.related)
+                    if (fobj.store and not fobj.related) or is_broken_m2m:
                         for base_class in model_class.mro():
                             base_name = getattr(base_class, '_name', None)
                             if base_name in _depend_model_names:
@@ -1686,6 +1729,26 @@ class PolyBase(_original_BaseModel):
                                     if fname in model_class.__dict__:
                                         delattr(model_class, fname)
                                     break
+                    
+                # [poly] Odoo 18: ensure we didn't miss anything that stayed in __dict__
+                for base_class in getattr(model_class, '__depends_base_classes', ()):
+                     if base_class is model_class: continue
+                     # [poly] SAFE CHECK: only look at MetaModel/Definition class dict
+                     # to avoid triggering descriptors on proxy classes.
+                     for fname, fobj in base_class.__dict__.items():
+                          if isinstance(fobj, fields.Field):
+                               if fname in model_class.__dict__ and model_class.__dict__[fname] is not fobj:
+                                    shadow = model_class.__dict__[fname]
+                                    if isinstance(shadow, fields.Field) and not shadow.related:
+                                         # [poly] Check if it's a polymorphic field candidate
+                                         if not any(fname in b.__dict__ for b in getattr(model_class, '__depends_base_classes', ())):
+                                              continue
+                                         _logger.debug("[poly] Final Cleanup: Removing shadowing field %s on %s", fname, self._name)
+                                         if fname in self._fields: del self._fields[fname]
+                                         try:
+                                              delattr(model_class, fname)
+                                         except (AttributeError, KeyError):
+                                              pass
 
                 self._build_dependant_model_attributes()
                 
@@ -1694,7 +1757,10 @@ class PolyBase(_original_BaseModel):
                     # Protection: only inject if it's not already in __dict__
                     # This avoids overwriting methods (now available via MRO) with field descriptors
                     # Odoo 18: Injected fields from bases should NOT shadow actual methods.
-                    if field_name not in model_class.__dict__:
+                    # [poly] BUT if it's a field that MUST be polymorphic, we force injection.
+                    is_poly_field = any(field_name in base.__dict__ for base in getattr(model_class, '__depends_base_classes', ()))
+                    
+                    if field_name not in model_class.__dict__ or (is_poly_field and not getattr(model_class.__dict__[field_name], 'related', None)):
                         # In Odoo 18, we must inject descriptors for polymorphic fields.
                         setattr(model_class, field_name, field)
                     elif field_name in self._fields and hasattr(model_class.__dict__[field_name], 'fget'):
@@ -2622,6 +2688,9 @@ class PolyBase(_original_BaseModel):
                     continue
                 # Fall through: replace the stored field with a related store=False version
                 _logger.debug("[poly] Overriding existing stored field %s.%s with related version", self._name, field_name)
+                # [poly] Aggressive descriptor removal to ensure Python uses the new field object
+                if field_name in type(self).__dict__:
+                     delattr(type(self), field_name)
 
             if model not in related_bases:
                 model_field = f'related_{related_counter}'
@@ -4098,13 +4167,14 @@ def _poly_registry_setup_models(self, cr):
         for _base_class in _current_mro:
             if _base_class is model_class: continue
             
+            _base_cls_name = getattr(_base_class, '_name', None)
+            
             # Determine if this is a polymorphic ancestor
             _is_poly_ancestor = False
             _dep_models = _base_class.__dict__.get('_depend_models') or getattr(_base_class, '_depend_models', None)
             if _dep_models or 'ir.poly_base' in [getattr(c, '_name', None) for c in _base_class.mro() if hasattr(c, '_name')]:
                 _is_poly_ancestor = True
 
-            _base_cls_name = getattr(_base_class, '_name', None)
             for _fname, _attr in _base_class.__dict__.items():
                 if isinstance(_attr, odoo_fields.Field):
                     # [poly] CRITICAL: Even if the field exists in _fields, if it's a stored field
@@ -4115,6 +4185,16 @@ def _poly_registry_setup_models(self, cr):
                          _existing = model_class._fields[_fname]
                          if _existing.store and not _existing.related:
                               _logger.debug("[poly] Deep Recovery: Found stale stored field %s on %s from ancestor %s, removing to allow poly redirection", _fname, name, _base_cls_name)
+                              del model_class._fields[_fname]
+                              if _fname in model_class.__dict__:
+                                   delattr(model_class, _fname)
+                    
+                    # [poly] Aggressive M2M cleanup: if the field is Many2many and comes from a poly ancestor
+                    # but doesn't have a relation table set, it's definitely broken.
+                    if _fname in model_class._fields and _is_poly_ancestor and _base_cls_name in all_depend_models:
+                         _existing = model_class._fields[_fname]
+                         if _existing.type == 'many2many' and not _existing.relation:
+                              _logger.debug("[poly] Deep Recovery: Found broken M2M %s on %s from ancestor %s (no relation), removing", _fname, name, _base_cls_name)
                               del model_class._fields[_fname]
                               if _fname in model_class.__dict__:
                                    delattr(model_class, _fname)
@@ -4129,8 +4209,19 @@ def _poly_registry_setup_models(self, cr):
                         if (_attr.type == 'many2many' and getattr(_attr, 'store', True)
                                 and _base_cls_name in all_depend_models):
                             continue
+                        
                         # [poly] RECOVERY: If field is missing from _fields, inject it.
                         _logger.debug("[poly] Deep Recovery: Found missing field %s on %s from %s", _fname, name, _base_class)
+                        
+                        if _is_poly_ancestor and _base_cls_name in all_depend_models:
+                            # Re-run _build_dependant_model_attributes to ensure the related field is created
+                            # instead of just copying the base field instance.
+                            # We use a temporary environment since 'self' here is the registry.
+                            _env = api.Environment(cr, SUPERUSER_ID, {})
+                            model_instance = _env[name]
+                            model_instance._build_dependant_model_attributes()
+                            if _fname in model_class._fields:
+                                continue
                         _attr.model_name = name
                         if not getattr(_attr, '_module', None):
                             _attr._module = getattr(_base_class, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
