@@ -703,17 +703,27 @@ class PolyBase(_original_BaseModel):
                 try:
                     fields_dict = getattr(self, '_fields', {})
                     from odoo import fields
-                    # We inject a broad list of fields for res.lang and other technical models
-                    all_possible_fnames = (
-                        'id', 'name', 'code', 'iso_code', 'url_code', 'active', 'direction', 
-                        'date_format', 'time_format', 'week_start', 'grouping', 
-                        'decimal_point', 'thousands_sep'
-                    )
-                    for fname in all_possible_fnames:
-                        if fname not in fields_dict:
-                            if fname == 'id': fields_dict[fname] = fields.Id()
-                            else: fields_dict[fname] = fields.Char()
-                            fields_dict[fname].name = fname
+                    # We inject a broad list of fields ONLY for res.lang to avoid KeyError
+                    if mname == 'res.lang':
+                        all_possible_fnames = (
+                            'id', 'name', 'code', 'iso_code', 'url_code', 'active', 'direction', 
+                            'date_format', 'time_format', 'week_start', 'grouping', 
+                            'decimal_point', 'thousands_sep'
+                        )
+                        for fname in all_possible_fnames:
+                            if fname not in fields_dict:
+                                if fname == 'id': fields_dict[fname] = fields.Id()
+                                else: fields_dict[fname] = fields.Char()
+                                fields_dict[fname].name = fname
+                                fields_dict[fname].model_name = mname
+                    elif mname == 'ir.model.data':
+                        # For ir.model.data, only common fields
+                        for fname in ('id', 'module', 'name', 'model', 'res_id', 'noupdate'):
+                            if fname not in fields_dict and isinstance(fname, str):
+                                if fname == 'id': fields_dict[fname] = fields.Id()
+                                else: fields_dict[fname] = fields.Char()
+                                fields_dict[fname].name = fname
+                                fields_dict[fname].model_name = mname
                 except Exception: pass
 
                 if key == 'id':
@@ -751,7 +761,7 @@ class PolyBase(_original_BaseModel):
             # [poly] Final attempt to avoid KeyError by checking _fields again
             try:
                 fields_dict = getattr(self, '_fields', {})
-                if key not in fields_dict:
+                if isinstance(key, str) and key not in fields_dict:
                     from odoo import fields
                     if key == 'id': fields_dict['id'] = fields.Id()
                     else: fields_dict[key] = fields.Char()
@@ -3213,6 +3223,12 @@ class PolyBase(_original_BaseModel):
             For PolyReference fields, this method converts them to use the record's ID
             directly from ir.poly_base, as these fields are not stored as foreign keys.
         """
+        if not isinstance(fname, str):
+            from odoo.tools import SQL
+            if isinstance(fname, int):
+                return SQL("%s", fname)
+            return SQL.identifier(str(fname))
+
         property_name = None
         if '.' in fname:
             fname, property_name = fname.split('.', 1)
@@ -3226,6 +3242,23 @@ class PolyBase(_original_BaseModel):
                     from odoo.tools import SQL
                     return SQL.identifier(fname)
             raise ValueError(f"Invalid field {fname!r} on model {self._name!r}")
+
+        if not field.store and not self.pool.ready:
+            # [poly] RECOVERY: If a non-stored field is used in order/search during boot
+            # (e.g. stock.picking.type.is_favorite), we skip it by returning a NULL cast to type
+            # to avoid SyntaxError and DatatypeMismatch in ORDER BY / COALESCE.
+            _logger.warning("[poly] Skipping non-stored field %s.%s in _field_to_sql during boot", self._name, fname)
+            from odoo.tools import SQL
+            from odoo import fields
+            if isinstance(field, fields.Boolean):
+                return SQL("NULL::boolean")
+            elif isinstance(field, (fields.Integer, fields.Many2one)):
+                return SQL("NULL::integer")
+            elif isinstance(field, (fields.Float, fields.Monetary)):
+                return SQL("NULL::numeric")
+            elif isinstance(field, (fields.Date, fields.Datetime)):
+                return SQL("NULL::timestamp")
+            return SQL("NULL::text")
 
         if isinstance(field, PolyReference):
             model = self.env['ir.poly_base']
@@ -3590,39 +3623,110 @@ def poly_Field_setup_related(self, model):
                     if hasattr(self, '_args'): self._args['related'] = self.related
 
     # [poly] Iterative failsafe to avoid KeyError crash in Odoo 18
-    while True:
-        try:
-            return _original_Field_setup_related(self, model)
-        except (KeyError, ValueError) as e:
-            cur_related = self.related
-            if isinstance(cur_related, str) and '.' in cur_related:
-                parts = cur_related.split('.')
-                prefix = parts[0]
-                registry = model.pool or model.env.registry
-                # [poly] Aggressive KeyError handling: if the prefix is a known model name 
-                # but NOT in current model's fields, or if it's part of a known broken path
-                # like 'conversation.driver.notes.name' (reported case in Odoo 18),
-                # we strip the first part and continue.
-                if prefix in registry and prefix not in model._fields:
-                    _logger.error("[poly] setup_related KeyError for %s.%s path %s. Stripping %s", model._name, self.name, cur_related, prefix)
-                    self.related = '.'.join(parts[1:])
-                    if hasattr(self, '_args'): self._args['related'] = self.related
-                    continue
-                
-                # Special case for 'conversation.driver.notes.name' and similar long paths
-                if prefix in ('conversation', 'driver', 'notes') and len(parts) > 1:
+    # Global recursion prevention: track fields being setup in the current call stack
+    if not hasattr(odoo.fields.Field, '_poly_setup_stack'):
+        odoo.fields.Field._poly_setup_stack = set()
+    
+    stack_key = (id(self), model._name)
+    if stack_key in odoo.fields.Field._poly_setup_stack:
+        return # Skip to avoid RecursionError
+    
+    odoo.fields.Field._poly_setup_stack.add(stack_key)
+    try:
+        while True:
+            try:
+                return _original_Field_setup_related(self, model)
+            except (KeyError, ValueError, RecursionError) as e:
+                cur_related = self.related
+                if isinstance(cur_related, str) and '.' in cur_related:
+                    parts = cur_related.split('.')
+                    prefix = parts[0]
+                    registry = model.pool or model.env.registry
+                    
+                    # [poly] RECOVERY: During module load, if setup_related fails on a polymorphic
+                    # model, we allow it to pass. The field will be correctly initialized 
+                    # during the final _poly_registry_setup_models pass.
+                    if model.pool._init:
+                        is_poly = hasattr(model, '_depend_models') or 'ir.poly_base' in [c._name for c in model.mro() if hasattr(c, '_name')]
+                        if is_poly:
+                            _logger.debug("[poly] Deferring setup_related error for %s.%s: %s", model._name, self.name, str(e))
+                            return
+
+                    # [poly] Special recovery for missing fields in related paths during boot
+                    if prefix not in model._fields and not hasattr(type(model), prefix):
+                        # Check if prefix is a model name (registered in the registry)
+                        if prefix in registry:
+                            depend_models = getattr(model, '_depend_models', {}) or {}
+                            link_field_name = depend_models.get(prefix)
+                            if not link_field_name:
+                                # Search in all link fields
+                                for _, link_fname in depend_models.items():
+                                    link_field_name = link_fname
+                                    break
+                            
+                            if link_field_name:
+                                _logger.error("[poly] Redirecting broken path %s.%s: %s -> %s.%s", model._name, self.name, cur_related, link_field_name, '.'.join(parts[1:]))
+                                self.related = f"{link_field_name}.{'.'.join(parts[1:])}"
+                                if hasattr(self, '_args'): self._args['related'] = self.related
+                                continue
+                        
+                        # [poly] SECONDARY REDIRECTION: If prefix is NOT in model fields 
+                        # but we have a polymorphic parent, try to redirect to IT.
+                        # This handles paths like 'project_id.privacy_visibility' where 'project_id' 
+                        # might be temporarily missing from 'project.task' during boot.
+                        depend_models = getattr(model, '_depend_models', {}) or {}
+                        if depend_models:
+                            # Use the first available polymorphic parent as gateway
+                            link_field_name = next(iter(depend_models.values()))
+                            _logger.error("[poly] Gateway redirection for %s.%s: %s -> %s.%s", model._name, self.name, cur_related, link_field_name, cur_related)
+                            self.related = f"{link_field_name}.{cur_related}"
+                            if hasattr(self, '_args'): self._args['related'] = self.related
+                            continue
+
+                    # [poly] Aggressive KeyError handling: strip the first part and continue.
+                    _logger.error("[poly] setup_related error for %s.%s path %s. Stripping %s", model._name, self.name, cur_related, prefix)
                     new_related = '.'.join(parts[1:])
-                    if new_related == cur_related: # Prevent infinite loop
+                    if new_related == cur_related or not new_related: # Prevent infinite loop or empty path
                         break
-                    _logger.error("[poly] setup_related Potential polymorphic path issue for %s.%s path %s. Stripping %s", model._name, self.name, cur_related, prefix)
                     self.related = new_related
                     if hasattr(self, '_args'): self._args['related'] = self.related
                     continue
-            raise e
+                raise e
+    finally:
+        odoo.fields.Field._poly_setup_stack.discard(stack_key)
 
 odoo.fields.Field.setup_related = poly_Field_setup_related
 
-# Lazy patching of ir.ui.view._validate_view because base modules might not be loaded yet
+# PATCH: Field.get_depends to handle incomplete related fields during boot
+_original_Field_get_depends = odoo.fields.Field.get_depends
+
+def poly_Field_get_depends(self, model):
+    try:
+        return _original_Field_get_depends(self, model)
+    except (AttributeError, KeyError, TypeError) as e:
+        if model.pool._init:
+            is_poly = hasattr(model, '_depend_models') or 'ir.poly_base' in [c._name for c in model.mro() if hasattr(c, '_name')]
+            if is_poly:
+                _logger.debug("[poly] Field: ignoring get_depends error for %s.%s: %s", model._name, self.name, str(e))
+                return [], set()
+        raise e
+
+odoo.fields.Field.get_depends = poly_Field_get_depends
+_original_One2many_setup_nonrelated = odoo.fields.One2many.setup_nonrelated
+
+def poly_one2many_setup_nonrelated(self, model):
+    try:
+        return _original_One2many_setup_nonrelated(self, model)
+    except KeyError as e:
+        if model.pool._init:
+            comodel = model.env[self.comodel_name]
+            is_poly = hasattr(comodel, '_depend_models') or 'ir.poly_base' in [c._name for c in comodel.mro() if hasattr(c, '_name')]
+            if is_poly:
+                _logger.debug("[poly] One2many: ignoring missing inverse field %s in polymorphic comodel %s", self.inverse_name, self.comodel_name)
+                return
+        raise e
+
+odoo.fields.One2many.setup_nonrelated = poly_one2many_setup_nonrelated
 _original_validate_view = None
 _original_NameManager_must_have_fields = None
 

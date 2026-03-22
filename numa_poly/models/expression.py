@@ -89,12 +89,14 @@ class PolyExpression(expression):
         # Note: We must patch it on the base class or the proxy class to be effective
         # because type(model) might be a proxy or a registry class.
         from odoo.models import BaseModel
-        _original_order_field_to_sql = BaseModel._order_field_to_sql
+        _original_order_field_to_sql = getattr(BaseModel, '_poly_original_order_field_to_sql', BaseModel._order_field_to_sql)
+        if not hasattr(BaseModel, '_poly_original_order_field_to_sql'):
+            BaseModel._poly_original_order_field_to_sql = _original_order_field_to_sql
         
         def _poly_order_field_to_sql(self, alias, field_name, direction, nulls, query):
             try:
                 return _original_order_field_to_sql(self, alias, field_name, direction, nulls, query)
-            except ValueError as e:
+            except ValueError:
                 # [poly] AGGRESSIVE RECOVERY: If any field resolution fails during boot,
                 # use a raw SQL identifier as fallback if it's likely a standard column.
                 # This handles 'id', 'sequence', etc. on models like 'website' or 'base.automation'.
@@ -289,7 +291,12 @@ class PolyExpression(expression):
             stack.append((leaf, model, alias))
 
         def pop_result():
-            return result_stack.pop()
+            if result_stack:
+                return result_stack.pop()
+            # [poly] RECOVERY: Return a neutral SQL if stack is empty to avoid IndexError
+            _logger.warning("[poly] pop_result from empty stack in %s. Using TRUE.", model._name)
+            from odoo.tools import SQL
+            return SQL("TRUE")
 
         def push_result(sql):
             result_stack.append(sql)
