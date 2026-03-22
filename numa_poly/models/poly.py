@@ -3720,7 +3720,7 @@ odoo.models.BaseModel._add_field = poly_BaseModel_add_field
 # PATCH: Field.setup Interceptor to force polymorphic fields to be related/non-stored
 _original_Field_setup = odoo.fields.Field.setup
 def poly_Field_setup(self, model):
-    if not model.pool._init:
+    if not hasattr(model, 'pool') or not model.pool or not model.pool._init:
         return _original_Field_setup(self, model)
     
     # Check if this field should be a polymorphic related field
@@ -4059,6 +4059,10 @@ def _poly_deep_fix_field(registry, model_name, field_name, target_related):
     if model_name not in registry: return
     model = registry[model_name]
     
+    # [poly] Protecciones contra setup prematuro
+    if not hasattr(model, '_fields') or model._fields is None:
+        return
+
     # IMPORTANTE: No usar getattr(model, field_name) para no disparar descriptores
     old_f = model._fields.get(field_name)
     if old_f and old_f.related == target_related and not old_f.store:
@@ -4127,7 +4131,8 @@ def _poly_deep_fix_field(registry, model_name, field_name, target_related):
                 del registry.field_inverses[old_f]
                 
         # 6. Forzar el setup del nuevo campo de forma controlada
-        new_f.setup(model)
+        if hasattr(new_f, 'setup'):
+             new_f.setup(model)
         
     except Exception as e:
         pass # Silencioso para evitar recursión/introspección
@@ -4158,7 +4163,7 @@ def _poly_registry_setup_models(self, cr):
     _logger.info("[poly] Entering Phase 1: MRO Injection and attribute building")
     
     # Sort names by MRO length using type.mro
-    sorted_poly_names = sorted(list(poly_models_names_to_process), key=lambda n: len(type.mro(self[n])))
+    sorted_poly_names = sorted(list(poly_models_names_to_process), key=lambda n: len(type.mro(type(self[n]))))
     for model_name in sorted_poly_names:
         if model_name not in self: continue
         model_instance = self[model_name]
@@ -4259,13 +4264,17 @@ def _poly_registry_setup_models(self, cr):
     _logger.info("[poly] Entering Phase 2: Final field stabilization and sanitization")
     
     # [poly] ESCANEO SEGURO: Usar __dict__ para evitar disparar descriptores (evita ensure_one error)
-    all_models_to_check = sorted([n for n, m in self.items() if isinstance(m, type)], key=lambda n: len(type.mro(self[n])))
+    all_models_to_check = sorted([n for n, m in self.items() if isinstance(m, type) or hasattr(m, '_name')], key=lambda n: len(type.mro(type(self[n]))))
     
     # [poly] DEEP FIX for all models
     for name in all_models_to_check:
         if name not in self: continue
         model_instance = self[name]
-        model_class = self.models.get(name, type(model_instance))
+        
+        # OJO: No usar self.models.get(name) si no existe, usar type(model_instance)
+        model_class = type(model_instance)
+        if hasattr(self, 'models') and name in self.models:
+             model_class = self.models[name]
         
         # [poly] RECOLECCIÓN EXHAUSTIVA DE PADRES POLIMÓRFICOS
         _poly_bases_to_sync = []
@@ -4289,8 +4298,11 @@ def _poly_registry_setup_models(self, cr):
                 target_model_name = f_obj.comodel_name
                 # ¿Es el destino un modelo polimórfico?
                 is_poly = False
-                target_cls = self.models.get(target_model_name, self[target_model_name])
-                for target_base in type.mro(type(target_cls) if not isinstance(target_cls, type) else target_cls):
+                target_cls = type(self[target_model_name])
+                if hasattr(self, 'models') and target_model_name in self.models:
+                    target_cls = self.models[target_model_name]
+                
+                for target_base in type.mro(target_cls):
                     if '_depend_models' in target_base.__dict__:
                         is_poly = True
                         break
