@@ -921,6 +921,15 @@ class PolyBase(_original_BaseModel):
         This method is responsible for constructing the Python class for the model,
         ensuring that it inherits from all dependent models specified in _depend_models.
         """
+        # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
+        is_poly_enabled = (
+             hasattr(cls, '_depend_models') or
+             any(hasattr(base, '_depend_models') for base in cls.mro()) or
+             'ir.poly_base' in [getattr(c, '_name', None) for c in cls.mro() if hasattr(c, '_name')]
+        )
+        if not is_poly_enabled:
+             return _original_BaseModel._build_model(cls, pool, cr)
+
         name = cls._name
         # First build the model using the standard Odoo mechanism.
         if name is None:
@@ -1275,6 +1284,15 @@ class PolyBase(_original_BaseModel):
         model_class = type(self)
         name = self._name
         
+        # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
+        is_poly_enabled = (
+             hasattr(model_class, '_depend_models') or
+             any(hasattr(base, '_depend_models') for base in model_class.mro()) or
+             'ir.poly_base' in [getattr(c, '_name', None) for c in model_class.mro() if hasattr(c, '_name')]
+        )
+        if not is_poly_enabled:
+             return _original_BaseModel._prepare_setup(self)
+
         # --- REFRESH CHECK ---
         # If this model was built before its polymorphic parents were available, 
         # we try to refresh its bases now.
@@ -1472,6 +1490,18 @@ class PolyBase(_original_BaseModel):
         model_class = type(self)
         name = self._name
         
+        # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
+        # or inherits from a polymorphic model. Models like ir.module.module
+        # should NOT be touched by this logic unless they are poly-enabled.
+        is_poly_enabled = (
+             hasattr(model_class, '_depend_models') or
+             any(hasattr(base, '_depend_models') for base in model_class.mro()) or
+             'ir.poly_base' in [getattr(c, '_name', None) for c in model_class.mro() if hasattr(c, '_name')]
+        )
+        
+        if not is_poly_enabled:
+             return _original_BaseModel._setup_base(self)
+
         # --- REFRESH CHECK ---
         # If this model was built before its polymorphic parents were available, 
         # we try to refresh its bases now.
