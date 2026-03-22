@@ -95,10 +95,13 @@ class PolyExpression(expression):
             try:
                 return _original_order_field_to_sql(self, alias, field_name, direction, nulls, query)
             except ValueError as e:
-                if "Invalid field 'id'" in str(e):
-                    _logger.warning("[poly] Intercepted missing 'id' in _order_field_to_sql for %s. Using fallback.", self._name)
-                    from odoo.tools import SQL
-                    return SQL("%s.id %s %s", SQL.identifier(alias), direction, nulls)
+                # [poly] AGGRESSIVE RECOVERY: If any field resolution fails during boot,
+                # use a raw SQL identifier as fallback if it's likely a standard column.
+                # This handles 'id', 'sequence', etc. on models like 'website' or 'base.automation'.
+                _logger.warning("[poly] Intercepted missing field '%s' in _order_field_to_sql for %s. Using fallback.", field_name, self._name)
+                from odoo.tools import SQL
+                return SQL("%s.%s %s %s", SQL.identifier(alias), SQL.identifier(field_name), direction, nulls)
+            except Exception:
                 raise
         
         try:

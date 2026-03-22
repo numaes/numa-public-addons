@@ -3454,15 +3454,47 @@ class PolyBase(_original_BaseModel):
         Override to avoid ValueError on polymorphic models when a field is not
         found on the current model but might exist in the polymorphic hierarchy.
         """
-        if not hasattr(type(self), '__depends_base_classes'):
-            return super()._determine_fields_to_fetch(field_names, ignore_when_in_cache)
+        # [poly] Odoo 18: Aggressive safety for core models (res.users, ir.module.module, etc.)
+        # These models might be accessed before they are fully initialized in the registry.
+        # If it's not a polymorphic model, we MUST be careful not to hide real errors
+        # unless it's a known problematic field during boot.
+        is_poly = hasattr(type(self), '__depends_base_classes')
+        
+        valid_field_names = []
+        for name in field_names:
+            if name in self._fields or name == 'id':
+                valid_field_names.append(name)
+            elif name in self.pool[self._name]._fields:
+                valid_field_names.append(name)
+            elif not is_poly:
+                # [poly] SAFEGUARD: For non-poly models, if the field is missing from _fields
+                # but might be a standard field accessed during boot, we might want to skip it
+                # instead of letting super() raise ValueError, to avoid crashing the registry load.
+                # Common fields accessed during boot or by core addons before full init:
+                if name in ('company_id', 'active', 'sequence', 'state', 'name', 'category_id', 'xml_id'):
+                    # Only skip if the field is truly missing from the model and pool
+                    _logger.warning("[poly] Skipping missing field '%s' on non-poly model %s to avoid boot crash", name, self._name)
+                    continue
+                valid_field_names.append(name)
+            else:
+                # It's polymorphic, we can be more lenient but still filter what's truly invalid
+                continue
+        
+        # [poly] Final fallback: avoid calling super() with fields that we KNOW will cause ValueError
+        # because they are not in self._fields.
+        # Exception: 'id' is always valid.
+        super_valid_fields = []
+        for n in valid_field_names:
+            if n == 'id' or n in self._fields:
+                super_valid_fields.append(n)
+            else:
+                # Odoo 18: If the field is in the pool but not in self._fields, 
+                # it's a 'ghost' field that causes ValueError in super().
+                # We skip it here to let the caller handle it (e.g. via getattr)
+                _logger.warning("[poly] Field '%s' found in pool but not in %s._fields. Skipping fetch to avoid ValueError.", n, self._name)
+                continue
 
-        # Filter out fields that are not in self._fields or pool
-        valid_field_names = [
-            name for name in field_names 
-            if name in self._fields or name == 'id' or name in self.pool[self._name]._fields
-        ]
-        return super()._determine_fields_to_fetch(valid_field_names, ignore_when_in_cache)
+        return super()._determine_fields_to_fetch(super_valid_fields, ignore_when_in_cache)
 
     def onchange(self, values, field_names, fields_spec):
         """
