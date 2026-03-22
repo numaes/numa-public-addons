@@ -3670,9 +3670,13 @@ def poly_Field_get(self, record, owner):
             return self
             
         # 3. Verificación de seguridad para _ids
-        _ids = getattr(record, '_ids', None)
-        if _ids is not None and not isinstance(_ids, (list, tuple, bytes)):
-             # Si _ids existe pero no es una secuencia (ej. es un descriptor), abortamos
+        # [poly] AGGRESSIVE FIX: inspect.getattr_static o similares pueden causar que
+        # getattr(record, '_ids') devuelva el descriptor en lugar de ejecutarlo.
+        try:
+             _ids = record._ids
+             if _ids is not None and not isinstance(_ids, (list, tuple, bytes)):
+                  return self
+        except:
              return self
 
         # Detectar si estamos en un contexto de setup/boot
