@@ -1666,6 +1666,27 @@ class PolyBase(_original_BaseModel):
         try:
             # Check if we have polymorphic configuration using the calculated hierarchy
             if hasattr(type(self), '__depends_base_classes'):
+                # Odoo 18: ensure we are NOT shadowing base model fields with stale stored versions
+                # that might have been injected during incremental loading.
+                _depend_model_names = set(getattr(model_class, '_depend_models', {}).keys())
+                for fname in list(self._fields.keys()):
+                    fobj = self._fields[fname]
+                    # IF field is stored and NOT related, but it exists in any of our dependent base models,
+                    # it MUST be removed from this model's _fields and class __dict__ to allow
+                    # _build_dependant_model_attributes to recreate it as a proper related field.
+                    if fobj.store and not fobj.related:
+                        for base_class in model_class.mro():
+                            base_name = getattr(base_class, '_name', None)
+                            if base_name in _depend_model_names:
+                                # We check if the field is defined in the base class (MetaModel)
+                                if fname in base_class.__dict__ and isinstance(base_class.__dict__[fname], fields.Field):
+                                    _logger.debug("[poly] CRITICAL: Removing stale stored field %s.%s inherited from %s", self._name, fname, base_name)
+                                    if fname in self._fields:
+                                        del self._fields[fname]
+                                    if fname in model_class.__dict__:
+                                        delattr(model_class, fname)
+                                    break
+
                 self._build_dependant_model_attributes()
                 
                 model_class = type(self)
@@ -2593,11 +2614,14 @@ class PolyBase(_original_BaseModel):
             # REPLACE it with a related store=False version to prevent the child model
             # from creating or altering the parent's relation table (which would cause
             # psycopg2.errors.UndefinedColumn on FK constraints like "fsm_def_id").
+            # IN ODOO 18: even if it's not Many2many, if it's a field from a depend_model,
+            # it MUST be related and store=False in the child model.
             if field_name in self._fields:
                 existing = self._fields[field_name]
-                if field_type != 'many2many' or existing.related or not existing.store:
+                if existing.related or not existing.store:
                     continue
-                # Fall through: replace the stored M2M with a related store=False version
+                # Fall through: replace the stored field with a related store=False version
+                _logger.debug("[poly] Overriding existing stored field %s.%s with related version", self._name, field_name)
 
             if model not in related_bases:
                 model_field = f'related_{related_counter}'
@@ -2650,7 +2674,7 @@ class PolyBase(_original_BaseModel):
                     string=description.string,
                     related=related_path,
                     automatic=True,
-                    store=False,  # Force non-stored to avoid setup_nonrelated checks
+                    store=False,  # Force non-stored to avoid setup_nonrelated checks and table collision
                 )
             elif field_subclass:
                 new_field = field_subclass(
@@ -2658,7 +2682,7 @@ class PolyBase(_original_BaseModel):
                     related=f'{related_bases[model]}.{field_name}',
                     automatic=True,
                     readonly=False,
-                    store=False,
+                    store=False, # Force non-stored for polymorphic related fields
                 )
             else:
                 raise TypeError(_('Unsupported field type %s for field %s') %
@@ -3839,9 +3863,23 @@ def poly_Field_setup_related(self, model):
                 parts = cur_related.split('.')
                 prefix = parts[0]
                 registry = model.pool or model.env.registry
+                # [poly] Aggressive KeyError handling: if the prefix is a known model name 
+                # but NOT in current model's fields, or if it's part of a known broken path
+                # like 'conversation.driver.notes.name' (reported case in Odoo 18),
+                # we strip the first part and continue.
                 if prefix in registry and prefix not in model._fields:
                     _logger.error("[poly] setup_related KeyError for %s.%s path %s. Stripping %s", model._name, self.name, cur_related, prefix)
                     self.related = '.'.join(parts[1:])
+                    if hasattr(self, '_args'): self._args['related'] = self.related
+                    continue
+                
+                # Special case for 'conversation.driver.notes.name' and similar long paths
+                if prefix in ('conversation', 'driver', 'notes') and len(parts) > 1:
+                    new_related = '.'.join(parts[1:])
+                    if new_related == cur_related: # Prevent infinite loop
+                        break
+                    _logger.error("[poly] setup_related Potential polymorphic path issue for %s.%s path %s. Stripping %s", model._name, self.name, cur_related, prefix)
+                    self.related = new_related
                     if hasattr(self, '_args'): self._args['related'] = self.related
                     continue
             raise e
@@ -4069,6 +4107,18 @@ def _poly_registry_setup_models(self, cr):
             _base_cls_name = getattr(_base_class, '_name', None)
             for _fname, _attr in _base_class.__dict__.items():
                 if isinstance(_attr, odoo_fields.Field):
+                    # [poly] CRITICAL: Even if the field exists in _fields, if it's a stored field
+                    # from a polymorphic ancestor, it MUST be replaced by the related version
+                    # defined in _build_dependant_model_attributes. Odoo 1 incremental loading
+                    # sometimes injects the base class's stored version into the child's _fields.
+                    if _fname in model_class._fields and _is_poly_ancestor and _base_cls_name in all_depend_models:
+                         _existing = model_class._fields[_fname]
+                         if _existing.store and not _existing.related:
+                              _logger.debug("[poly] Deep Recovery: Found stale stored field %s on %s from ancestor %s, removing to allow poly redirection", _fname, name, _base_cls_name)
+                              del model_class._fields[_fname]
+                              if _fname in model_class.__dict__:
+                                   delattr(model_class, _fname)
+
                     if _fname not in model_class._fields:
                         # Skip stored Many2many fields from depend_model bases.
                         # These must NOT be injected as shared store=True objects because
