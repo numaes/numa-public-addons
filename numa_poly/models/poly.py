@@ -3655,9 +3655,11 @@ def poly_Field_get(self, record, owner):
     
     # [poly] Odoo 18: Protecciones contra introspección prematura
     try:
-        # Si record es una CLASE (owner es la misma clase o None), devolvemos self
-        # Esto sucede durante inspect.getmembers o similares en el setup
-        if isinstance(record, type):
+        # [poly] CRITICAL: inspect.getmembers and other introspection tools trigger __get__
+        # with 'record' being the class (type) or some other non-record object.
+        # In Odoo 18, Field.__get__ assumes 'record' is a Recordset and calls len(record._ids).
+        # We MUST avoid this for anything that isn't a proper recordset.
+        if isinstance(record, type) or not hasattr(record, '_ids'):
             return self
 
         # Detectar si estamos en un contexto de setup/boot
