@@ -3655,29 +3655,32 @@ def poly_Field_get(self, record, owner):
     if record is None:
         return self
 
+    # [poly] CRITICAL: En Odoo 18, inspect.getmembers y el registro de onchange_methods
+    # disparan descriptores sobre la CLASE. Field.__get__ intenta hacer len(record._ids).
+    # Si record es una clase, record._ids es un member_descriptor, y len() falla.
+    
+    # 1. Si record es una CLASE, devolvemos self
+    if isinstance(record, type):
+        return self
+
+    # 2. Si no es un BaseModel, abortamos (podría ser un mock u objeto de introspección)
+    if not isinstance(record, odoo.models.BaseModel):
+         return self
+
+    # 3. Verificación de seguridad para _ids
+    # SI record._ids es un descriptor (member_descriptor), len() fallará.
+    # Usamos getattr_static para ver qué hay en el objeto sin ejecutarlo
     try:
-        # [poly] CRITICAL: inspect.getmembers (en _onchange_methods) dispara descriptores sobre la CLASE.
-        # En Odoo 18, Field.__get__ intenta hacer len(record._ids).
-        # Si record es una clase, record._ids es un member_descriptor, y len() falla.
-        if isinstance(record, type):
-            return self
+         _ids_val = object.__getattribute__(record, '_ids')
+         if not isinstance(_ids_val, (list, tuple, bytes)):
+              return self
+    except AttributeError:
+         return self
+    except:
+         pass
 
-        # Si record no es un Recordset (BaseModel), no ejecutamos la lógica del ORM
-        if not hasattr(record, '_ids'):
-             return self
-             
-        # Verificación extra: si _ids no es una secuencia, abortamos antes de que Odoo llame a len()
-        # Nota: Usamos __dict__ si es posible para evitar disparar descriptores de _ids
-        _rec_type = type(record)
-        _ids_desc = getattr(_rec_type, '_ids', None)
-        if isinstance(_ids_desc, property): # o member_descriptor
-             # Si es un descriptor en la clase, no podemos confiar en record._ids sin ejecutarlo
-             # Pero si record no es una instancia real de Odoo, mejor no ejecutarlo.
-             if not isinstance(record, odoo.models.BaseModel):
-                  return self
-
+    try:
         return _original_Field_get(self, record, owner)
-
     except (TypeError, AttributeError):
         return self
 
