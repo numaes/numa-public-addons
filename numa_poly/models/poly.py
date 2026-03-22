@@ -844,11 +844,19 @@ class PolyBase(_original_BaseModel):
                     
                     _logger.warning("[poly] Intercepted MissingError/AccessError on %s%s.%s. Returning fallback.", mname, mids, name)
                     
-                    # [poly] AGGRESSIVE DOTTED PATH SAFETY: 
-                    # If we are res.groups(28,) and accessing category_id, we MUST return an object
-                    # that has an 'xml_id' attribute to satisfy group_account_user.category_id.xml_id.
+                    # [poly] CRITICAL DOTTED PATH AND SECURITY SAFETY: 
+                    # We MUST return sensible objects for relational fields to avoid 'bool' object errors.
+                    if name == 'groups_id':
+                        return self.env['res.groups'].sudo().browse()
+                    if name == 'company_id':
+                        return self.env['res.company'].sudo().browse()
+                    if name == 'company_ids':
+                        return self.env['res.company'].sudo().browse()
+                    if name == 'partner_id':
+                        return self.env['res.partner'].sudo().browse()
+                    
                     if name == 'category_id':
-                        return self.env['ir.module.category'].sudo()
+                        return self.env['ir.module.category'].sudo().browse()
                     if name == 'xml_id': 
                         return "__poly_missing__"
                     
@@ -862,10 +870,15 @@ class PolyBase(_original_BaseModel):
                         return False
 
                     try:
-                        fields_dict = self.pool[mname]._fields
-                        field = fields_dict.get(name)
+                        # [poly] Robust field lookup for relational fallback
+                        field = None
+                        if hasattr(self, '_fields') and name in self._fields:
+                            field = self._fields[name]
+                        elif mname in self.pool and name in self.pool[mname]._fields:
+                            field = self.pool[mname]._fields[name]
+                            
                         if field and field.type in ('many2one', 'one2many', 'many2many'):
-                            return self.env[field.comodel_name].sudo()
+                            return self.env[field.comodel_name].sudo().browse()
                     except Exception:
                         pass
                     
@@ -3658,13 +3671,14 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 try:
     _original_res_users_fetch_query = odoo.addons.base.models.res_users.Users._fetch_query
     def poly_res_users_fetch_query(self, query, fields=None):
-        if fields and 'new_password' in fields:
+        if fields and any(getattr(f, 'name', f) == 'new_password' for f in fields):
             try:
                 # Check if column exists in DB
                 self.env.cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name='res_users' AND column_name='new_password'")
                 if not self.env.cr.fetchone():
                     _logger.warning("[poly] Removing non-existent column 'new_password' from res.users query during boot.")
-                    fields = [f for f in fields if f != 'new_password']
+                    # fields might contain field objects or strings
+                    fields = [f for f in fields if getattr(f, 'name', f) != 'new_password']
             except Exception:
                 # If information_schema check fails, we just continue
                 pass
