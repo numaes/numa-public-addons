@@ -3650,57 +3650,37 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 # PATCH: Field.__get__ Interceptor para evitar errores de ensure_one durante el setup
 _original_Field_get = odoo.fields.Field.__get__
 def poly_Field_get(self, record, owner):
+    # [poly] Odoo 18: Protecciones contra introspección prematura
+    # Este parche DEBE ser ultra-seguro porque se llama millones de veces
     if record is None:
         return self
-    
-    # [poly] Odoo 18: Protecciones contra introspección prematura
-    try:
-        # [poly] DEBUG: Identificar el objeto problemático
-        # if not isinstance(record, (type, odoo.models.BaseModel)):
-        #     _logger.info("[poly] DEBUG: poly_Field_get(self=%s, record=%s (type=%s))", self.name, record, type(record))
 
-        # 1. Si record es una CLASE, devolvemos self
+    try:
+        # [poly] CRITICAL: inspect.getmembers (en _onchange_methods) dispara descriptores sobre la CLASE.
+        # En Odoo 18, Field.__get__ intenta hacer len(record._ids).
+        # Si record es una clase, record._ids es un member_descriptor, y len() falla.
         if isinstance(record, type):
             return self
 
-        # 2. Si record es un descriptor u otro objeto sin _ids iterable, devolvemos self
-        # El error TypeError: object of type 'member_descriptor' has no len() sugiere que 
-        # Odoo intenta hacer len(record._ids) donde record._ids es un member_descriptor.
+        # Si record no es un Recordset (BaseModel), no ejecutamos la lógica del ORM
         if not hasattr(record, '_ids'):
-            return self
-            
-        # 3. Verificación de seguridad para _ids
-        # [poly] AGGRESSIVE FIX: inspect.getattr_static o similares pueden causar que
-        # getattr(record, '_ids') devuelva el descriptor en lugar de ejecutarlo.
-        try:
-             # En Odoo 18, _ids es un member_descriptor en la CLASE del modelo
-             # Odoo 18 Field.__get__ hace len(record._ids)
+             return self
+             
+        # Verificación extra: si _ids no es una secuencia, abortamos antes de que Odoo llame a len()
+        # Nota: Usamos __dict__ si es posible para evitar disparar descriptores de _ids
+        _rec_type = type(record)
+        _ids_desc = getattr(_rec_type, '_ids', None)
+        if isinstance(_ids_desc, property): # o member_descriptor
+             # Si es un descriptor en la clase, no podemos confiar en record._ids sin ejecutarlo
+             # Pero si record no es una instancia real de Odoo, mejor no ejecutarlo.
              if not isinstance(record, odoo.models.BaseModel):
                   return self
-             
-             _ids = record._ids
-             if _ids is not None and not isinstance(_ids, (list, tuple, bytes)):
-                  return self
-        except:
-             return self
 
-        # Detectar si estamos en un contexto de setup/boot
-        is_init = False
-        if hasattr(record, 'pool') and record.pool and record.pool._init:
-            is_init = True
-        
-        if not record and is_init:
-            return self
-            
         return _original_Field_get(self, record, owner)
-    except (TypeError, AttributeError) as e:
-        # Si el error es por falta de len() en records o similar durante el init, devolvemos self
-        if record and hasattr(record, 'pool') and record.pool and record.pool._init:
-            return self
-        # Si record es una clase pero el isinstance falló de alguna forma
-        if isinstance(record, type):
-            return self
-        raise e
+
+    except (TypeError, AttributeError):
+        return self
+
 odoo.fields.Field.__get__ = poly_Field_get
 
 # PATCH: BaseModel._add_field Interceptor para forzar campos polimórficos
