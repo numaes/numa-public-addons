@@ -283,7 +283,10 @@ def poly_many2many_setup_nonrelated(self, model):
          return _original_Many2many_setup_nonrelated(self, model)
 
     if not self.related:
-         for base_class in getattr(model, '__depends_base_classes', ()):
+         # [poly] Aggressive Odoo 18 Fix: Check if this field name exists in any polymorphic ancestor.
+         # This handles fields that are NOT explicitly converted to related yet.
+         mro_bases = getattr(model, '__depends_base_classes', ())
+         for base_class in mro_bases:
               if base_class._name != model._name and self.name in base_class._fields:
                    # This field exists in a polymorphic ancestor!
                    # It should have been converted to related in _build_dependant_model_attributes.
@@ -304,21 +307,32 @@ def poly_many2many_setup_nonrelated(self, model):
     except TypeError as e:
         # Check if the error is about shared table/columns
         if "Many2many fields" in str(e) and "use the same table and columns" in str(e):
+            if self.related and not self.store:
+                _logger.debug("[poly] Ignoring M2M shared table error for related field %s.%s", model._name, self.name)
+                return
+
             # Attempt to find the conflicting field in the error message or pool
             m2m = model.pool._m2m
-            fields = m2m[(self.relation, self.column1, self.column2)]
+            fields = m2m.get((self.relation, self.column1, self.column2))
+            if not fields:
+                 raise e
             
             is_poly_counterpart = False
             for other in fields:
                 # If they are different models, check if they are in each other's polymorphic hierarchy
                 if self.model_name != other.model_name:
                     # Check if one is a polymorphic base of the other
-                    model_class = model.pool[self.model_name]
-                    other_class = model.pool[other.model_name]
+                    model_class = model.pool.get(self.model_name)
+                    other_class = model.pool.get(other.model_name)
                     
-                    # Check MRO for polymorphic relationship
-                    if other.model_name in [getattr(c, '_name', None) for c in model_class.mro()] or \
-                       self.model_name in [getattr(c, '_name', None) for c in other_class.mro()]:
+                    if not model_class or not other_class:
+                         continue
+
+                    # Check __depends_base_classes for polymorphic relationship
+                    poly_bases_self = [c._name for c in getattr(model_class, '__depends_base_classes', ())]
+                    poly_bases_other = [c._name for c in getattr(other_class, '__depends_base_classes', ())]
+
+                    if other.model_name in poly_bases_self or self.model_name in poly_bases_other:
                         is_poly_counterpart = True
                         break
             
@@ -330,7 +344,7 @@ def poly_many2many_setup_nonrelated(self, model):
                     fields.append(self)
                 
                 # Re-implement the inverse fields logic that follows the TypeError raise in original
-                for field in m2m[(self.relation, self.column2, self.column1)]:
+                for field in m2m.get((self.relation, self.column2, self.column1), []):
                     model.pool.field_inverses.add(self, field)
                     model.pool.field_inverses.add(field, self)
                 return
@@ -2352,6 +2366,14 @@ class PolyBase(_original_BaseModel):
             }
             if field_type in ['many2one', 'many2many', 'one2many']:
                 field_kwargs['comodel_name'] = comodel
+                
+            if field_type == 'many2many':
+                # [poly] For Many2many related fields, Odoo 18 tries to validate the table.
+                # We copy relation details if they exist in the original field to help Odoo
+                # understand it's the same table.
+                for attr in ('relation', 'column1', 'column2'):
+                    if getattr(description, attr, None):
+                        field_kwargs[attr] = getattr(description, attr)
 
             new_field = field_subclass(**field_kwargs)
 
