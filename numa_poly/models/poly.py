@@ -3651,44 +3651,73 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 _original_Field_get = odoo.fields.Field.__get__
 def poly_Field_get(self, record, owner):
     # [poly] Odoo 18: Protecciones contra introspección prematura
-    if record is None:
-        return self
-
-    # [poly] CRITICAL: En Odoo 18, inspect.getmembers dispara descriptores sobre la CLASE.
-    # Field.__get__ intenta hacer len(record._ids).
-    # Si record es una clase, record._ids es un member_descriptor, y len() falla.
     
-    # 1. Si record es una CLASE (type), devolvemos self.
-    if isinstance(record, type):
+    # [poly] REFUERZO EXTREMO: Si el acceso es sobre la CLASE o record es None,
+    # CORTAMOS inmediatamente para evitar que Odoo ejecute su lógica interna.
+    if record is None or isinstance(record, type):
         return self
 
-    # [poly] REFUERZO RADICAL: Si no es una instancia real de BaseModel, devolvemos self.
-    # Usamos __class__ y verificamos que no sea el mismo objeto (clase).
+    # [poly] Verificación de instancia segura
     try:
-         if record is type(record):
+         if not isinstance(record, odoo.models.BaseModel):
               return self
-              
-         # [poly] Si estamos en modo INIT, somos extremadamente restrictivos
-         # con ganchos de introspección como inspect.getmembers.
-         if hasattr(record, 'pool') and record.pool and record.pool._init:
-              # Si _ids no está instanciado como una secuencia física, abortamos.
-              # Usamos object.__getattribute__ para saltar descriptores de la clase.
-              try:
-                   _ids_raw = object.__getattribute__(record, '_ids')
-                   if not isinstance(_ids_raw, (list, tuple, bytes)):
-                        return self
-              except (AttributeError, TypeError):
-                   return self
     except:
          return self
 
+    # [poly] BLOQUE DE SEGURIDAD ABSOLUTA PARA ODOO 18
+    # Si detectamos que Odoo 18 va a intentar llamar a len(record._ids) y _ids no es válido, CORTAMOS.
     try:
-        # Llamamos al original con un bloque try-except final
-        return _original_Field_get(self, record, owner)
-    except (TypeError, AttributeError, Exception):
-        return self
+         # Acceso ultra-bajo nivel para evitar disparar descriptores.
+         _rec_cls = type(record)
+         
+         # Verificamos si '_ids' en la clase es un member_descriptor.
+         _ids_desc = getattr(_rec_cls, '_ids', None)
+         if str(type(_ids_desc)) == "<class 'member_descriptor'>":
+              # Es un descriptor. Comprobamos si la instancia tiene el valor real.
+              try:
+                   # Usamos object.__getattribute__ para saltar descriptores de Odoo en la instancia
+                   _ids_raw = object.__getattribute__(record, '_ids')
+                   if not isinstance(_ids_raw, (list, tuple, bytes)):
+                        return self
+              except:
+                   # Si no está en la instancia, el acceso a record._ids disparará el descriptor.
+                   return self
+    except:
+         pass
 
+    try:
+        # Llamamos al original.
+        return _original_Field_get(self, record, owner)
+    except TypeError as te:
+        if 'member_descriptor' in str(te):
+             return self
+        raise te
+    except:
+        # Silenciamos errores durante el boot para campos polimórficos.
+        if getattr(record, 'pool', None) and record.pool._init:
+             return self
+        raise
+
+# [poly] INYECCIÓN FORZADA DEL PARCHE
 odoo.fields.Field.__get__ = poly_Field_get
+
+# También parcheamos subclases comunes por si acaso
+if hasattr(odoo.fields, 'Many2one'):
+    odoo.fields.Many2one.__get__ = poly_Field_get
+if hasattr(odoo.fields, 'One2many'):
+    odoo.fields.One2many.__get__ = poly_Field_get
+if hasattr(odoo.fields, 'Many2many'):
+    odoo.fields.Many2many.__get__ = poly_Field_get
+if hasattr(odoo.fields, 'Char'):
+    odoo.fields.Char.__get__ = poly_Field_get
+if hasattr(odoo.fields, 'Boolean'):
+    odoo.fields.Boolean.__get__ = poly_Field_get
+if hasattr(odoo.fields, 'Integer'):
+    odoo.fields.Integer.__get__ = poly_Field_get
+if hasattr(odoo.fields, 'Float'):
+    odoo.fields.Float.__get__ = poly_Field_get
+if hasattr(odoo.fields, 'Selection'):
+    odoo.fields.Selection.__get__ = poly_Field_get
 
 # PATCH: BaseModel._add_field Interceptor para forzar campos polimórficos
 _original_BaseModel_add_field = odoo.models.BaseModel._add_field
