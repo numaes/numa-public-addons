@@ -3647,9 +3647,31 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 # 4. Asegurar que los campos Many2many polimórficos se marquen como 'related' y 'store=False'
 #    para evitar que Odoo intente acceder a tablas de relación físicas inexistentes en el modelo hijo.
 
+# [poly] PATCH: IrModel.new_password column error workaround
+# This is a specific fix for res.users.new_password which seems to be causing
+# psycopg2.errors.UndefinedColumn: column res_users.new_password does not exist
+# during early boot when some queries are executed before the column is added.
+try:
+    _original_res_users_fetch_query = odoo.addons.base.models.res_users.Users._fetch_query
+    def poly_res_users_fetch_query(self, query, fields=None):
+        if fields and 'new_password' in fields:
+            try:
+                # Check if column exists in DB
+                self.env.cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name='res_users' AND column_name='new_password'")
+                if not self.env.cr.fetchone():
+                    _logger.warning("[poly] Removing non-existent column 'new_password' from res.users query during boot.")
+                    fields = [f for f in fields if f != 'new_password']
+            except Exception:
+                # If information_schema check fails, we just continue
+                pass
+        return _original_res_users_fetch_query(self, query, fields)
+    odoo.addons.base.models.res_users.Users._fetch_query = poly_res_users_fetch_query
+except (AttributeError, ImportError):
+    pass
+
 # PATCH: Field.__get__ Interceptor para evitar errores de ensure_one durante el setup
 _original_Field_get = odoo.fields.Field.__get__
-def poly_Field_get(self, record, owner):
+def poly_Field_get(self, record, owner=None):
     # [poly] Odoo 18: Protecciones contra introspección prematura
     
     # [poly] REFUERZO EXTREMO: Si el acceso es sobre la CLASE o record es None,
