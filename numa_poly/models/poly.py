@@ -3655,6 +3655,11 @@ def poly_Field_get(self, record, owner):
     
     # [poly] Odoo 18: Protecciones contra introspección prematura
     try:
+        # Si record es una CLASE (owner es la misma clase o None), devolvemos self
+        # Esto sucede durante inspect.getmembers o similares en el setup
+        if isinstance(record, type):
+            return self
+
         # Detectar si estamos en un contexto de setup/boot
         is_init = False
         if hasattr(record, 'pool') and record.pool and record.pool._init:
@@ -3667,6 +3672,9 @@ def poly_Field_get(self, record, owner):
     except (TypeError, AttributeError) as e:
         # Si el error es por falta de len() en records o similar durante el init, devolvemos self
         if record and hasattr(record, 'pool') and record.pool and record.pool._init:
+            return self
+        # Si record es una clase pero el isinstance falló de alguna forma
+        if isinstance(record, type):
             return self
         raise e
 odoo.fields.Field.__get__ = poly_Field_get
