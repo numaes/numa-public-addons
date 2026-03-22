@@ -4634,7 +4634,10 @@ def _poly_registry_setup_models(self, cr):
                         # Odoo 18: If Many2many relation is not set for a poly-injected field, 
                         # ensure it's copied from the base class to prevent table name guess failures.
                         if _fobj.type == 'many2many' and _is_poly_ancestor:
-                            _base_fobj = getattr(_base_class, _fname, None)
+                            # [poly] EVITAR descriptor access (TypeError: member_descriptor object has no len)
+                            # Buscamos el descriptor en __dict__ de la base
+                            _base_fobj = _base_class.__dict__.get(_fname)
+                            
                             if isinstance(_base_fobj, odoo_fields.Field):
                                 for _attr in ['relation', 'column1', 'column2']:
                                     if not getattr(_fobj, _attr, None) and getattr(_base_fobj, _attr, None):
