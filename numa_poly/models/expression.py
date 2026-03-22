@@ -294,7 +294,8 @@ class PolyExpression(expression):
             if result_stack:
                 return result_stack.pop()
             # [poly] RECOVERY: Return a neutral SQL if stack is empty to avoid IndexError
-            _logger.warning("[poly] pop_result from empty stack in %s. Using TRUE.", model._name)
+            if not model.pool._init:
+                _logger.warning("[poly] pop_result from empty stack in %s. Using TRUE.", model._name)
             from odoo.tools import SQL
             return SQL("TRUE")
 
@@ -528,13 +529,14 @@ class PolyExpression(expression):
                 # Non-stored field should provide an implementation of search.
                 if not field.search:
                     # field does not support search!
-                    _logger.warning(
-                        "Non-stored field %s.%s cannot be searched. "
-                        "Search condition will be ignored.",
-                        model._name, field.name, exc_info=True
-                    )
-                    if _logger.isEnabledFor(logging.DEBUG):
-                        _logger.debug(''.join(traceback.format_stack()))
+                    if not model.pool._init:
+                        _logger.warning(
+                            "Non-stored field %s.%s cannot be searched. "
+                            "Search condition will be ignored.",
+                            model._name, field.name, exc_info=True
+                        )
+                        if _logger.isEnabledFor(logging.DEBUG):
+                            _logger.debug(''.join(traceback.format_stack()))
                     # Generate a domain that matches nothing instead of empty domain
                     domain = [('id', '=', False)]
                 else:
@@ -561,13 +563,14 @@ class PolyExpression(expression):
                 # Odoo 18: no todos los modelos definen _depend_models (ej: res.users)
                 if not field.search:
                     # field does not support search!
-                    _logger.warning(
-                        "Non-stored field %s.%s cannot be searched. "
-                        "Search condition will be ignored.",
-                        model._name, field.name, exc_info=True
-                    )
-                    if _logger.isEnabledFor(logging.DEBUG):
-                        _logger.debug(''.join(traceback.format_stack()))
+                    if not model.pool._init:
+                        _logger.warning(
+                            "Non-stored field %s.%s cannot be searched. "
+                            "Search condition will be ignored.",
+                            model._name, field.name, exc_info=True
+                        )
+                        if _logger.isEnabledFor(logging.DEBUG):
+                            _logger.debug(''.join(traceback.format_stack()))
                     # Generate a domain that matches nothing instead of empty domain
                     domain = [('id', '=', False)]
                 else:

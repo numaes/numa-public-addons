@@ -1550,10 +1550,21 @@ class PolyBase(_original_BaseModel):
                     ], limit=1)
                     
                     if not poly_base_rec:
-                        poly_base_rec = PolyBase.create({
-                            'concrete_model_id': concrete_model_id,
-                            'old_id': old_id,
-                        })
+                        try:
+                            poly_base_rec = PolyBase.create({
+                                'concrete_model_id': concrete_model_id,
+                                'old_id': old_id,
+                            })
+                        except Exception as e:
+                            # [poly] RECOVERY: Handle duplicate old_id gracefully
+                            if "already exists" in str(e) or "duplicate key" in str(e):
+                                poly_base_rec = PolyBase.search([
+                                    ('concrete_model_id', '=', concrete_model_id),
+                                    ('old_id', '=', old_id)
+                                ], limit=1)
+                            
+                            if not poly_base_rec:
+                                raise e
                     
                     new_id = poly_base_rec.id
 
@@ -3247,7 +3258,8 @@ class PolyBase(_original_BaseModel):
             # [poly] RECOVERY: If a non-stored field is used in order/search during boot
             # (e.g. stock.picking.type.is_favorite), we skip it by returning a NULL cast to type
             # to avoid SyntaxError and DatatypeMismatch in ORDER BY / COALESCE.
-            _logger.warning("[poly] Skipping non-stored field %s.%s in _field_to_sql during boot", self._name, fname)
+            if not self.pool._init:
+                _logger.warning("[poly] Skipping non-stored field %s.%s in _field_to_sql during boot", self._name, fname)
             from odoo.tools import SQL
             from odoo import fields
             if isinstance(field, fields.Boolean):
@@ -3707,7 +3719,6 @@ def poly_Field_get_depends(self, model):
         if model.pool._init:
             is_poly = hasattr(model, '_depend_models') or 'ir.poly_base' in [c._name for c in model.mro() if hasattr(c, '_name')]
             if is_poly:
-                _logger.debug("[poly] Field: ignoring get_depends error for %s.%s: %s", model._name, self.name, str(e))
                 return [], set()
         raise e
 
@@ -3722,7 +3733,6 @@ def poly_one2many_setup_nonrelated(self, model):
             comodel = model.env[self.comodel_name]
             is_poly = hasattr(comodel, '_depend_models') or 'ir.poly_base' in [c._name for c in comodel.mro() if hasattr(c, '_name')]
             if is_poly:
-                _logger.debug("[poly] One2many: ignoring missing inverse field %s in polymorphic comodel %s", self.inverse_name, self.comodel_name)
                 return
         raise e
 
@@ -3739,7 +3749,6 @@ def poly_NameManager_must_have_fields(self, node, names, node_info, use):
             # Check if the model is polymorphic
             is_poly = hasattr(self.model, '_depend_models') or 'ir.poly_base' in [c._name for c in self.model.mro() if hasattr(c, '_name')]
             if is_poly:
-                _logger.debug("[poly] NameManager: ignoring unknown field error in polymorphic model %s: %s", self.model._name, error_msg)
                 return
         raise e
 
@@ -3925,14 +3934,19 @@ def _poly_registry_setup_models(self, cr):
                 try:
                     _logger.debug("[poly] Forcing final setup for %s", name)
                     model_instance = self[name]
-                    # We must pass 'model_instance' as 'self' to the method if it's not a bound method
-                    # In Odoo 18, self[name] is an instance of the model.
-                    # We ensure it's properly bound by using the instance method if available.
-                    # [poly] FIX: Use the class methods from BaseModel to ensure they are properly called on the instance
-                    if hasattr(model_instance, '_setup_base'):
-                        BaseModel._setup_base(model_instance)
-                    if hasattr(model_instance, '_setup_fields'):
-                        BaseModel._setup_fields(model_instance)
+                    # We must use the instance to call these methods, which are @api.model
+                    if hasattr(model_class, '_setup_base'):
+                        try:
+                            # Use Odoo's method directly with the instance
+                            odoo.models.BaseModel._setup_base(model_instance)
+                        except (TypeError, AttributeError, Exception) as e:
+                            _logger.debug("[poly] _setup_base failed for %s: %s", name, e)
+                            
+                    if hasattr(model_class, '_setup_fields'):
+                        try:
+                            odoo.models.BaseModel._setup_fields(model_instance)
+                        except (TypeError, AttributeError, Exception) as e:
+                            _logger.debug("[poly] _setup_fields failed for %s: %s", name, e)
                 except Exception as e:
                     _logger.warning("[poly] Setup failed for %s after MRO injection: %s", name, e)
 
