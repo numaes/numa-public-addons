@@ -3662,21 +3662,24 @@ def poly_Field_get(self, record, owner):
     if isinstance(record, type):
         return self
 
-    # 2. Si no es un Recordset (BaseModel), abortamos.
-    if not isinstance(record, odoo.models.BaseModel):
-         return self
-
-    # 3. Verificación de seguridad para _ids
-    # SI record._ids es un descriptor (member_descriptor), len() fallará.
+    # [poly] REFUERZO EXTREMO: Si record._ids no es una lista/tupla, Odoo 18 fallará.
+    # Intentamos detectarlo de la forma más segura posible.
     try:
-         # [poly] AGGRESSIVE: Odoo 18 Recordset._ids es un member_descriptor.
-         # En una instancia real, record._ids DEBE ser una secuencia.
-         # Si no lo es, es que estamos en un estado de introspección inválido.
+         # Accedemos a _ids. Si es un member_descriptor, esto NO lanza error pero
+         # devuelve el descriptor mismo si no se ejecuta sobre una instancia real.
+         # O si se ejecuta sobre una instancia "rota" durante el setup.
          _ids_val = record._ids
+         
+         # Si no es una secuencia, abortamos para que Odoo 18 no llame a len()
          if not isinstance(_ids_val, (list, tuple, bytes)):
               return self
               
-    except (AttributeError, TypeError, Exception):
+    except:
+         # Cualquier error accediendo a _ids indica que no es un Recordset listo
+         return self
+
+    # 2. Si no es un Recordset (BaseModel), abortamos.
+    if not isinstance(record, odoo.models.BaseModel):
          return self
 
     try:
