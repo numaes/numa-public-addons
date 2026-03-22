@@ -3654,37 +3654,38 @@ def poly_Field_get(self, record, owner):
     if record is None:
         return self
 
-    # [poly] CRITICAL: En Odoo 18, inspect.getmembers (en _onchange_methods) dispara
-    # descriptores sobre la CLASE. Field.__get__ intenta hacer len(record._ids).
+    # [poly] CRITICAL: En Odoo 18, inspect.getmembers dispara descriptores sobre la CLASE.
+    # Field.__get__ intenta hacer len(record._ids).
     # Si record es una clase, record._ids es un member_descriptor, y len() falla.
     
-    # 1. Si record es una CLASE, devolvemos self
+    # 1. Si record es una CLASE (type), devolvemos self.
     if isinstance(record, type):
         return self
 
-    # [poly] REFUERZO EXTREMO: Si record._ids no es una lista/tupla, Odoo 18 fallará.
-    # Intentamos detectarlo de la forma más segura posible.
+    # [poly] REFUERZO RADICAL: Si no es una instancia real de BaseModel, devolvemos self.
+    # Usamos __class__ y verificamos que no sea el mismo objeto (clase).
     try:
-         # Accedemos a _ids. Si es un member_descriptor, esto NO lanza error pero
-         # devuelve el descriptor mismo si no se ejecuta sobre una instancia real.
-         # O si se ejecuta sobre una instancia "rota" durante el setup.
-         _ids_val = record._ids
-         
-         # Si no es una secuencia, abortamos para que Odoo 18 no llame a len()
-         if not isinstance(_ids_val, (list, tuple, bytes)):
+         if record is type(record):
               return self
               
+         # [poly] Si estamos en modo INIT, somos extremadamente restrictivos
+         # con ganchos de introspección como inspect.getmembers.
+         if hasattr(record, 'pool') and record.pool and record.pool._init:
+              # Si _ids no está instanciado como una secuencia física, abortamos.
+              # Usamos object.__getattribute__ para saltar descriptores de la clase.
+              try:
+                   _ids_raw = object.__getattribute__(record, '_ids')
+                   if not isinstance(_ids_raw, (list, tuple, bytes)):
+                        return self
+              except (AttributeError, TypeError):
+                   return self
     except:
-         # Cualquier error accediendo a _ids indica que no es un Recordset listo
-         return self
-
-    # 2. Si no es un Recordset (BaseModel), abortamos.
-    if not isinstance(record, odoo.models.BaseModel):
          return self
 
     try:
+        # Llamamos al original con un bloque try-except final
         return _original_Field_get(self, record, owner)
-    except (TypeError, AttributeError):
+    except (TypeError, AttributeError, Exception):
         return self
 
 odoo.fields.Field.__get__ = poly_Field_get
