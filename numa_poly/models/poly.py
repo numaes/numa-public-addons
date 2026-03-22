@@ -336,7 +336,7 @@ def poly_many2many_setup_nonrelated(self, model):
                         is_poly_counterpart = True
                         break
             
-            if is_poly_counterpart:
+            if is_poly_counterpart or (self.related and not self.store):
                 _logger.debug("Allowing shared Many2many table %s for polymorphic counterparts %s and %s", 
                               self.relation, self.model_name, [f.model_name for f in fields])
                 # Silently allow sharing by ignoring the TypeError and appending to the list
