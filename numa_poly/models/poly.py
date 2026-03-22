@@ -2816,42 +2816,22 @@ class PolyBase(_original_BaseModel):
     def create(self, data_list: list[ValuesType]) -> Self:
         """
         Create records from the stored field values in data_list.
-
-        For polymorphic models, this method:
-        1. Creates a record in ir.poly_base
-        2. Creates records in all dependent models with the same ID
-        3. Creates the record in this model with the same ID
-
-        This ensures that all parts of the polymorphic record are created
-        with the same ID, allowing the polymorphic inheritance to work.
-
-        In case the data_list contains a 'concrete_model_id' key, the create will be handled by the concrete model.
-        This is useful for polymorphic creates of subclasses.
-        ATTENTION: all returned records will be of only one concrete model, the first one found in the data_list.
-                   Odoo does no support different models as part of the returned recordset.
-                   This is a limitation of Odoo's ORM.
-                   It is caller responsibility to ensure that the concrete_model_id is set to a subclass of 
-                   the polymorphic model. No validation is done on the concrete_model_id.
-
-        Args:
-            data_list: List of dictionaries containing field values. Each dictionary
-                can contain fields from this model and from all dependent models.
-                Optionally, an 'id' key can be provided to use a specific ID.
-
-        Returns:
-            Self: Recordset containing the newly created records. All records in the
-                polymorphic hierarchy (base models and dependent models) will share
-                the same ID.
-
-        Raises:
-            ValidationError: If trying to create a record with an ID that already exists,
-                or if a dependent model does not exist.
-            AccessError: If the current user does not have permission to create records
-                in one or more of the dependent models.
-
-        TODO: Investigate if access rules should be applied base by base also
         """
-        if self._depend_models is None:
+        # SAFEGUARD: if we are in early boot and it's not a polymorphic model,
+        # filter out any invalid fields that might have been passed (e.g. by new Odoo 18 features)
+        if not self.pool.ready:
+            is_poly = getattr(self, '_depend_models', None) is not None
+            if not is_poly:
+                new_data_list = []
+                for vals in data_list:
+                    new_vals = {k: v for k, v in vals.items() if k in self._fields}
+                    if new_vals:
+                        new_data_list.append(new_vals)
+                if not new_data_list:
+                    return self.browse()
+                data_list = new_data_list
+
+        if getattr(self, '_depend_models', None) is None:
             # Normal Odoo ORM model, just process it the normal way
             return super().create(data_list)
         else:
@@ -3638,11 +3618,20 @@ class PolyBase(_original_BaseModel):
 
         field = self._fields.get(fname)
         if not field:
+            if not self.pool.ready:
+                # During boot, some fields might not be registered yet.
+                # If the field looks like a core field, try to return its name as SQL identifier.
+                if fname in ('id', 'name', 'state', 'sequence', 'company_id'):
+                    from odoo.tools import SQL
+                    return SQL.identifier(fname)
             raise ValueError(f"Invalid field {fname!r} on model {self._name!r}")
 
         if isinstance(field, PolyReference):
             model = self.env['ir.poly_base']
-            field = model._fields['id']
+            field = model._fields.get('id')
+            if not field:
+                from odoo.tools import SQL
+                return SQL.identifier('id')
             return model._field_to_sql(alias, field.name, query)
 
         return super()._field_to_sql(alias, fname, query, flush)
