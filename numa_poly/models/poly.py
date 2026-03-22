@@ -3655,12 +3655,25 @@ def poly_Field_get(self, record, owner):
     
     # [poly] Odoo 18: Protecciones contra introspección prematura
     try:
-        # [poly] CRITICAL: inspect.getmembers and other introspection tools trigger __get__
-        # with 'record' being the class (type) or some other non-record object.
-        # In Odoo 18, Field.__get__ assumes 'record' is a Recordset and calls len(record._ids).
-        # We MUST avoid this for anything that isn't a proper recordset.
-        if isinstance(record, type) or not hasattr(record, '_ids'):
+        # [poly] CRITICAL: En Odoo 18, inspect.getmembers y el registro de onchange_methods
+        # pueden disparar descriptores con objetos de tipo 'member_descriptor' o clases.
+        # Field.__get__ asume que 'record' es un Recordset y falla al llamar len(record._ids).
+        
+        # 1. Si record es una CLASE, devolvemos self
+        if isinstance(record, type):
             return self
+
+        # 2. Si record es un descriptor u otro objeto sin _ids iterable, devolvemos self
+        # El error TypeError: object of type 'member_descriptor' has no len() sugiere que 
+        # Odoo intenta hacer len(record._ids) donde record._ids es un member_descriptor.
+        if not hasattr(record, '_ids'):
+            return self
+            
+        # 3. Verificación de seguridad para _ids
+        _ids = getattr(record, '_ids', None)
+        if _ids is not None and not isinstance(_ids, (list, tuple, bytes)):
+             # Si _ids existe pero no es una secuencia (ej. es un descriptor), abortamos
+             return self
 
         # Detectar si estamos en un contexto de setup/boot
         is_init = False
