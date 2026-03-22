@@ -3655,10 +3655,10 @@ def poly_Field_get(self, record, owner):
     
     # [poly] Odoo 18: Protecciones contra introspección prematura
     try:
-        # [poly] CRITICAL: En Odoo 18, inspect.getmembers y el registro de onchange_methods
-        # pueden disparar descriptores con objetos de tipo 'member_descriptor' o clases.
-        # Field.__get__ asume que 'record' es un Recordset y falla al llamar len(record._ids).
-        
+        # [poly] DEBUG: Identificar el objeto problemático
+        # if not isinstance(record, (type, odoo.models.BaseModel)):
+        #     _logger.info("[poly] DEBUG: poly_Field_get(self=%s, record=%s (type=%s))", self.name, record, type(record))
+
         # 1. Si record es una CLASE, devolvemos self
         if isinstance(record, type):
             return self
@@ -3673,6 +3673,11 @@ def poly_Field_get(self, record, owner):
         # [poly] AGGRESSIVE FIX: inspect.getattr_static o similares pueden causar que
         # getattr(record, '_ids') devuelva el descriptor en lugar de ejecutarlo.
         try:
+             # En Odoo 18, _ids es un member_descriptor en la CLASE del modelo
+             # Odoo 18 Field.__get__ hace len(record._ids)
+             if not isinstance(record, odoo.models.BaseModel):
+                  return self
+             
              _ids = record._ids
              if _ids is not None and not isinstance(_ids, (list, tuple, bytes)):
                   return self
