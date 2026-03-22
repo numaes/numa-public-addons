@@ -255,19 +255,23 @@ def poly_many2many_read(self, records):
     # setup. We attempt to find the field in our polymorphic bases and use it.
     if not getattr(self, 'relation', None):
         model_class = records.pool[self.model_name]
-        if hasattr(model_class, '__depends_base_classes'):
-             for base_class in getattr(model_class, '__depends_base_classes', ()):
-                  if self.name in base_class._fields:
-                       base_field = base_class._fields[self.name]
-                       if base_field.type == 'many2many' and getattr(base_field, 'relation', None):
-                            _logger.debug("[poly] Redirecting M2M read for %s.%s to base %s", self.model_name, self.name, base_class._name)
-                            # Find the link field to this base
-                            depend_models = getattr(model_class, '_depend_models', {})
-                            link_fname = depend_models.get(base_class._name)
-                            if link_fname:
-                                 # We traverse the relation via the link field
-                                 target_records = records.mapped(link_fname)
-                                 return base_field.read(target_records)
+        # [poly] Safe check for polymorphic bases
+        poly_bases = getattr(model_class, '__depends_base_classes', ())
+        for base_class in poly_bases:
+             # Check if base_class is an Odoo model class with _fields
+             if not hasattr(base_class, '_fields'):
+                  continue
+             if self.name in base_class._fields:
+                  base_field = base_class._fields[self.name]
+                  if base_field.type == 'many2many' and getattr(base_field, 'relation', None):
+                       _logger.debug("[poly] Redirecting M2M read for %s.%s to base %s", self.model_name, self.name, base_class._name)
+                       # Find the link field to this base
+                       depend_models = getattr(model_class, '_depend_models', {})
+                       link_fname = depend_models.get(base_class._name)
+                       if link_fname:
+                            # We traverse the relation via the link field
+                            target_records = records.mapped(link_fname)
+                            return base_field.read(target_records)
 
     return _original_Many2many_read(self, records)
 
