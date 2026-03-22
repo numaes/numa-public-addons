@@ -3664,20 +3664,25 @@ def poly_Field_get(self, record, owner):
         return self
 
     # 2. Si no es un BaseModel, abortamos (podría ser un mock u objeto de introspección)
-    if not isinstance(record, odoo.models.BaseModel):
-         return self
-
-    # 3. Verificación de seguridad para _ids
-    # SI record._ids es un descriptor (member_descriptor), len() fallará.
-    # Usamos getattr_static para ver qué hay en el objeto sin ejecutarlo
+    # IMPORTANTE: No usar isinstance(record, odoo.models.BaseModel) porque a veces
+    # las clases no están totalmente inicializadas y fallan. 
+    # Usamos presencia de '_ids' Y que no sea un descriptor.
     try:
+         # object.__getattribute__ evita disparar descriptores de la clase
+         # pero si record es la clase misma (type), getattr fallará o devolverá el descriptor.
+         # Aquí ya sabemos que record NO es un type.
          _ids_val = object.__getattribute__(record, '_ids')
+         
+         # Si _ids_val no es una secuencia (lista, tupla, etc), es probablemente un descriptor 
+         # de clase que no ha sido instanciado o un member_descriptor.
          if not isinstance(_ids_val, (list, tuple, bytes)):
               return self
-    except AttributeError:
+              
+    except (AttributeError, TypeError):
          return self
     except:
-         pass
+         # En Odoo 18, a veces el ORM lanza excepciones raras en el init
+         return self
 
     try:
         return _original_Field_get(self, record, owner)
