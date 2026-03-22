@@ -2259,6 +2259,7 @@ class PolyBase(_original_BaseModel):
         dependent_model_names = [cls._name for cls in reversed(all_bases) if cls._name not in (self._name, 'ir.poly_base')]
 
         for model_name in dependent_model_names:
+            # print(f"[poly] DEBUG: Adding subfields for model {model_name} to {self._name}")
             def add_subfields(mm):
                 """
                 Recursively add fields from a dependent model and its dependencies.
@@ -2276,6 +2277,8 @@ class PolyBase(_original_BaseModel):
 
                 # Add fields from the model
                 for subfield_name, subfield in base_model._fields.items():
+                    # if subfield_name == 'pln_required_resource_ids':
+                    #     print(f"[poly] DEBUG: Processing pln_required_resource_ids from {mm} in {self._name}. Related: {subfield.related}")
                     if subfield_name == 'id':
                         continue
                     # [poly] If we are adding fields from a model to itself (should not happen, but safeguard)
@@ -2284,8 +2287,18 @@ class PolyBase(_original_BaseModel):
                     # Only add fields that aren't already defined, aren't PolyReferences,
                     # and aren't related fields (to avoid duplication/self-reference)
                     if not isinstance(subfield, PolyReference) and \
-                       not subfield.related:
-                        if subfield_name not in related_fields:
+                       (not subfield.related or (isinstance(subfield.related, str) and (subfield.related.startswith(f'{mm}.') or subfield.related == f'{mm}.{subfield_name}'))):
+                        # [poly] Aggressive takeover: if the field is already in the model but is a stored field
+                        # and it also exists in the polymorphic base, it MUST be converted to related.
+                        _force_related = False
+                        _existing = None
+                        if subfield_name in type(self).__dict__ or subfield_name in self._fields:
+                            _existing = self._fields.get(subfield_name) or type(self).__dict__.get(subfield_name)
+                            if _existing and getattr(_existing, 'store', True) and not getattr(_existing, 'related', None):
+                                # print(f"[poly] DEBUG: Forcing related for {self._name}.{subfield_name} (found stored field in dict)")
+                                _force_related = True
+
+                        if subfield_name not in related_fields or _force_related:
                             related_fields[subfield_name] = (
                                 mm,
                                 subfield_name,
@@ -2293,6 +2306,24 @@ class PolyBase(_original_BaseModel):
                                 subfield.comodel_name,
                                 subfield
                             )
+                            # [poly] FORCE RELATED: ensure the field is NOT in type(self).__dict__
+                            # so Odoo's setup_models is forced to use the one we inject in _fields
+                            if subfield_name in type(self).__dict__:
+                                try:
+                                    delattr(type(self), subfield_name)
+                                except (AttributeError, TypeError):
+                                    pass
+                            
+                            # Also check the Odoo 18 Proxy class if it exists
+                            if hasattr(self.pool, 'models') and self._name in self.pool.models:
+                                proxy_class = self.pool.models[self._name]
+                                if proxy_class is not type(self) and subfield_name in proxy_class.__dict__:
+                                    try:
+                                        delattr(proxy_class, subfield_name)
+                                    except (AttributeError, TypeError):
+                                        pass
+                            if subfield_name in self._fields:
+                                del self._fields[subfield_name]
                         else:
                             # [poly] If field is already collected, but the new one is better 
                             # (e.g. has comodel_name or relation info), update it.
@@ -3907,7 +3938,115 @@ def _poly_registry_setup_models(self, cr):
     This is now the only place where __bases__ is modified for polymorphic models,
     ensuring that all models are already present in the registry.
     """
+    # print(f"[poly] DEBUG: Entering _poly_registry_setup_models")
     _patch_ir_ui_view()
+    
+    # [poly] Phase 0: Collect all models that have _depend_models
+    poly_models_names_to_process = set()
+    for name, model_class in self.items():
+        if not isinstance(model_class, type): continue
+        if any('_depend_models' in base.__dict__ for base in model_class.mro()):
+            poly_models_names_to_process.add(name)
+
+    # [poly] Phase 1: MRO Injection BEFORE Odoo's setup_models
+    # This ensures Odoo 18 sees the correct class hierarchy from the start
+    # [poly] CRITICAL: Sort by MRO depth to ensure parents are processed before children
+    sorted_poly_names = sorted(poly_models_names_to_process, key=lambda n: len(self[n].mro()))
+    for model_name in sorted_poly_names:
+        if model_name not in self: continue
+        model_class = self[model_name]
+        
+        # [poly] Aggressively check if we should be calling _build_dependant_model_attributes here
+        if hasattr(model_class, '_build_dependant_model_attributes'):
+             try:
+                 model_class._build_dependant_model_attributes()
+                 # Ensure _fields is updated immediately for the next model to see it
+                 if hasattr(model_class, '_setup_base'):
+                     odoo.models.BaseModel._setup_base(model_class)
+                 
+                 # [poly] Aggressive takeover for Odoo 18: ensure all fields that should be related ARE in _fields
+                 # and correctly configured, especially if they were missed during _build_dependant_model_attributes
+                 for _f_name, _f_obj in list(model_class._fields.items()):
+                     if _f_name in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']: continue
+                     # Check if it comes from a polymorphic base
+                     for base in model_class.mro():
+                         if base is model_class: continue
+                         dep_models = getattr(base, '_depend_models', None)
+                         if not dep_models: continue
+                         for dep_model, dep_field in dep_models.items():
+                             if dep_model not in self: continue
+                             if _f_name in self[dep_model]._fields:
+                                 # This field exists in a polymorphic parent base
+                                 if not getattr(_f_obj, 'related', None) or not _f_obj.related.startswith(f'{dep_field}.'):
+                                     # Force it to be related
+                                     _new_related = f'{dep_field}.{_f_name}'
+                                     _f_obj.related = _new_related
+                                     if hasattr(_f_obj, '_args'):
+                                         _f_obj._args['related'] = _new_related
+                                         _f_obj._args['store'] = False
+                                     _f_obj.store = False
+                                     if _f_name in model_class.__dict__:
+                                         try: delattr(model_class, _f_name)
+                                         except: pass
+                                     # Instantiate a fresh related field to be sure Odoo sees the change
+                                     if hasattr(_f_obj, 'new'):
+                                         try:
+                                             _new_f = _f_obj.new(related=_new_related, store=False, automatic=True)
+                                             model_class._fields[_f_name] = _new_f
+                                             setattr(model_class, _f_name, _new_f)
+                                         except: pass
+             except Exception as e:
+                 pass
+
+        all_depend_models = OrderedDict()
+        for base in model_class.mro():
+            if base is model_class: continue
+            dep_models = base.__dict__.get('_depend_models') or getattr(base, '_depend_models', None)
+            if dep_models:
+                for dep_model, dep_field in dep_models.items():
+                    if dep_model not in all_depend_models:
+                        all_depend_models[dep_model] = dep_field
+        
+        if not all_depend_models: continue
+
+        parents = list(all_depend_models.keys())
+        if model_name != 'ir.poly_base' and 'ir.poly_base' not in parents:
+            parents.append('ir.poly_base')
+
+        parents_cls = []
+        for p_name in parents:
+            if p_name in self:
+                parents_cls.append(self[p_name])
+
+        _bm_bases = getattr(model_class, '_BaseModel__base_classes', None)
+        if _bm_bases:
+             original_bases = [b for b in _bm_bases if getattr(b, 'pool', None) is None]
+        else:
+             original_bases = [b for b in model_class.__bases__ if getattr(b, 'pool', None) is None]
+        
+        new_bases = parents_cls + [b for b in original_bases if b not in parents_cls]
+        
+        # Deduplication and linearization
+        deduplicated = []
+        for b in new_bases:
+            if b is model_class: continue
+            if any(b is not c and issubclass(c, b) for c in new_bases if c is not model_class):
+                continue
+            if b not in deduplicated:
+                deduplicated.append(b)
+        final_bases = tuple(deduplicated)
+        
+        if final_bases != tuple(model_class.__bases__):
+            _logger.debug("[poly] Pre-setup Injecting MRO for %s: %s", model_name, [getattr(b, '_name', b.__name__) for b in final_bases])
+            try:
+                model_class.__bases__ = final_bases
+                model_class.__base_classes = final_bases
+                model_class.__depends_base_classes = final_bases
+                if hasattr(ctypes.pythonapi, 'PyType_Modified'):
+                    ctypes.pythonapi.PyType_Modified(ctypes.py_object(model_class))
+            except Exception as e:
+                _logger.error("[poly] Pre-setup MRO Injection failed for %s: %s", model_name, e)
+
     res = _original_Registry_setup_models(self, cr)
 
     # 1. Identify all models that are polymorphic or depend on polymorphic models
@@ -3918,7 +4057,6 @@ def _poly_registry_setup_models(self, cr):
         if any('_depend_models' in base.__dict__ for base in model_class.mro()):
             poly_models_names.add(name)
 
-        # 2. Centralized MRO Injection
     for name in poly_models_names:
         if name not in self: continue
         model_class = self[name]
@@ -3954,16 +4092,49 @@ def _poly_registry_setup_models(self, cr):
         
         new_bases = parents_cls + [b for b in original_bases if b not in parents_cls]
         
-        # Deduplicate and handle ancestors (C3 linearization safety)
-        deduplicated = []
-        for b in new_bases:
-            if b is model_class: continue
-            if any(b is not c and issubclass(c, b) for c in new_bases if c is not model_class):
-                continue
-            if b not in deduplicated:
-                deduplicated.append(b)
-        
-        final_bases = tuple(deduplicated)
+        # [poly] C3 Linearization safety: use a more robust approach to avoid "Cannot create a consistent MRO"
+        def merge(seqs):
+            res = []
+            while True:
+                non_empty = [s for s in seqs if s]
+                if not non_empty:
+                    return res
+                for s in non_empty:
+                    candidate = s[0]
+                    # Check if candidate is in the tail of any other sequence
+                    if any(candidate in s2[1:] for s2 in non_empty):
+                        continue
+                    # Found a candidate!
+                    res.append(candidate)
+                    for s2 in non_empty:
+                        if s2[0] == candidate:
+                            del s2[0]
+                    break
+                else:
+                    raise TypeError("Cannot create a consistent MRO")
+
+        try:
+            mro_seqs = [list(b.mro()) for b in new_bases]
+            mro_seqs.append(list(new_bases))
+            final_bases_mro = merge(mro_seqs)
+            # Extract immediate bases from the merged MRO
+            # They are those in final_bases_mro that are NOT subclasses of any other in new_bases
+            deduplicated = []
+            for b in new_bases:
+                if b is model_class: continue
+                if any(b is not c and issubclass(c, b) for c in new_bases if c is not model_class):
+                    continue
+                if b not in deduplicated:
+                    deduplicated.append(b)
+            final_bases = tuple(deduplicated)
+        except Exception as e:
+            _logger.debug("[poly] Linearization failed for %s, falling back to deduplication: %s", name, e)
+            deduplicated = []
+            for b in new_bases:
+                if b is model_class: continue
+                if b not in deduplicated:
+                    deduplicated.append(b)
+            final_bases = tuple(deduplicated)
         
         # Inject!
         if final_bases != tuple(model_class.__bases__):
