@@ -250,6 +250,10 @@ def poly_many2many_read(self, records):
     if self.related:
         return self._compute_related(records)
     
+    # [poly] Technical Check: ensure comodel_name is present to avoid KeyError: None
+    if not self.comodel_name:
+        return records.env.cache.insert_missing(records, self, [()] * len(records))
+
     # [poly] AGGRESSIVE FIX: If the field is Many2many but has NO relation table,
     # and we are in a polymorphic model, it might be a broken field from Odoo 18
     # setup. We attempt to find the field in our polymorphic bases and use it.
@@ -808,8 +812,8 @@ class PolyBase(_original_BaseModel):
         their polymorphic link is fully established, especially for core
         models like res.groups or res.users in a dirty database.
         """
-        # [poly] CRITICAL: Early exit for _fields to avoid recursion in handle_missing
-        if name == '_fields':
+        # [poly] CRITICAL: Early exit for technical attributes to avoid recursion
+        if name in ('_fields', 'env', 'id', '_name', 'pool', '_context', 'with_context'):
             return super().__getattribute__(name)
 
         try:
