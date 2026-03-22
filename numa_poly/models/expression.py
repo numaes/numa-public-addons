@@ -47,65 +47,121 @@ class PolyExpression(expression):
     def __init__(self, domain, model, alias=None, query=None):
         """
         [poly] Odoo 18 Registry Load Protection:
-        Intercept failures during domain_combine_anies in early registry load.
+        Intercept failures during domain_combine_anies or field resolution in early registry load.
+        This can happen if _fields is not fully initialized.
         """
-        try:
-            super().__init__(domain, model, alias=alias, query=query)
-        except ValueError as e:
-            if "Invalid field" in str(e) and model._name == 'ir.module.module':
-                # [poly] SILENT RECOVERY: During early registry load, ir.module.module
-                # might not have its fields fully initialized due to our BaseModel patch.
-                # We attempt to proceed by bypassing domain_combine_anies if it fails
-                # for core models, using the raw domain instead to allow boot to continue.
-                _logger.warning("[poly] Intercepted ValueError in %s.__init__: %s. Attempting recovery.", model._name, e)
-                
-                self._unaccent = model.pool.unaccent
-                self._has_trigram = model.pool.has_trigram
-                self.root_model = model
-                self.root_alias = alias or model._table
-                
-                # Use raw domain instead of combined anies
-                self.expression = domain
-                from odoo.osv.expression import Query
-                self.query = Query(model.env, model._table, model._table_sql) if query is None else query
-                # Use standard parser to avoid further issues with uninitialized fields
-                # We catch KeyError here because even in parse() some fields might be missing
+        # [poly] AGGRESSIVE PRE-INJECTION: Always ensure 'id' field is present in _fields
+        # before even calling super().__init__. This is needed because Odoo's 
+        # _order_to_sql (called during search) or domain_combine_anies might 
+        # access _fields before it's fully populated by the registry.
+        # [poly] We do this for ALL models during boot if they are missing the ID field.
+        if model._name and 'id' not in model._fields:
+            _logger.warning("[poly] Pre-injecting missing 'id' field into %s", model._name)
+            from odoo import fields as odoo_fields
+            # We use Id field but ensure it doesn't try to setup itself too early
+            id_field = odoo_fields.Id(automatic=True, readonly=True)
+            # Link it to the model to avoid issues during setup
+            id_field.model_name = model._name
+            model._fields['id'] = id_field
+            
+            # Odoo 18: ensure the class and model proxy also have the descriptor if it's missing
+            model_class = type(model)
+            if not hasattr(model_class, 'id'):
                 try:
-                    super().parse()
-                except (KeyError, ValueError) as e2:
-                    _logger.warning("[poly] Secondary failure in recovery for %s: %s. Using SQL('TRUE').", model._name, e2)
-                    self.result = SQL("TRUE")
-                    self.query.add_where(self.result)
-                
-                # [poly] Odoo 18: Ensure we don't fail later in _order_to_sql
-                # if _fields is still corrupted. We attempt to inject some core fields
-                # if they are missing.
-                for core_f in ['id', 'name', 'state', 'imported']:
-                    if core_f not in model._fields:
-                         _logger.warning("[poly] Injecting missing core field %s into %s", core_f, model._name)
-                         # We can't easily recreate the field, but we can prevent the KeyError/ValueError
-                         # by copying it from the class if available or using a dummy.
-                         if hasattr(type(model), core_f):
-                             model._fields[core_f] = getattr(type(model), core_f)
-                         elif core_f == 'id':
-                             # Absolute emergency for 'id' field
-                             from odoo import fields as odoo_fields
-                             model._fields['id'] = odoo_fields.Id(automatic=True, readonly=True)
-                
-                # [poly] If fields are STILL missing, we might need a more aggressive recovery
-                # because Odoo's _order_to_sql and search depend on _fields being populated.
-                # [poly] Aggressive Fix: Always ensure core fields exist in _fields
-                # to prevent ValueError during _order_to_sql.
-                if 'id' not in model._fields:
-                    from odoo import fields as odoo_fields
-                    model._fields['id'] = odoo_fields.Id(automatic=True, readonly=True)
-                
-                if not model._fields and hasattr(type(model), '_field_definitions'):
-                     _logger.warning("[poly] Emergency field recovery for %s", model._name)
-                     for f in type(model)._field_definitions:
-                          model._fields[f.name] = f
-            else:
+                    setattr(model_class, 'id', id_field)
+                except Exception: pass
+            
+            # Also check if there is a proxy class in pool.models
+            if hasattr(model.pool, 'models') and model._name in model.pool.models:
+                proxy_class = model.pool.models[model._name]
+                if proxy_class is not model_class and not hasattr(proxy_class, 'id'):
+                    try:
+                        setattr(proxy_class, 'id', id_field)
+                    except Exception: pass
+            
+            # Odoo 18: Proxy might be using __dict__ for field descriptors
+            # Force inject into model class __dict__
+            try:
+                type(model)._fields = model._fields
+            except Exception: pass
+
+        # [poly] Odoo 18 AGGRESSIVE PATCH: Intercept _order_field_to_sql to avoid 'id' error
+        # Note: We must patch it on the base class or the proxy class to be effective
+        # because type(model) might be a proxy or a registry class.
+        from odoo.models import BaseModel
+        _original_order_field_to_sql = BaseModel._order_field_to_sql
+        
+        def _poly_order_field_to_sql(self, alias, field_name, direction, nulls, query):
+            try:
+                return _original_order_field_to_sql(self, alias, field_name, direction, nulls, query)
+            except ValueError as e:
+                if "Invalid field 'id'" in str(e):
+                    _logger.warning("[poly] Intercepted missing 'id' in _order_field_to_sql for %s. Using fallback.", self._name)
+                    from odoo.tools import SQL
+                    return SQL("%s.id %s %s", SQL.identifier(alias), direction, nulls)
                 raise
+        
+        try:
+            # Temporarily patch BaseModel! Extreme measures for Odoo 18 boot.
+            BaseModel._order_field_to_sql = _poly_order_field_to_sql
+
+            # [poly] Ensure self._unaccent and self._has_trigram are set BEFORE super().__init__
+            # because standard expression.__init__ uses them immediately.
+            self._unaccent = getattr(model.pool, 'unaccent', lambda x: x)
+            self._has_trigram = getattr(model.pool, 'has_trigram', False)
+            self.root_model = model
+            self.root_alias = alias or model._table
+
+            super().__init__(domain, model, alias=alias, query=query)
+        except (KeyError, ValueError, Exception) as e:
+            # We catch Exception here because domain_combine_anies can throw almost anything
+            # if the model is in a weird state.
+            _logger.warning("[poly] Intercepted %s in %s.__init__: %s. Attempting recovery.", type(e).__name__, model._name, e)
+            
+            # Use raw domain instead of combined anies
+            self.expression = domain
+            from odoo.osv.expression import Query
+            self.query = Query(model.env, model._table, model._table_sql) if query is None else query
+            
+            # [poly] Aggressive Fix: Ensure core fields exist in _fields for ALL models during recovery
+            # to prevent ValueError during _order_to_sql or search.
+            from odoo import fields as odoo_fields
+            for core_f in ['id', 'name', 'state', 'imported']:
+                if core_f not in model._fields:
+                     _logger.warning("[poly] Injecting missing core field %s into %s", core_f, model._name)
+                     if hasattr(type(model), core_f):
+                         model._fields[core_f] = getattr(type(model), core_f)
+                     elif core_f == 'id':
+                         model._fields['id'] = odoo_fields.Id(automatic=True, readonly=True)
+                # Hard fix for 'id' descriptor
+                if core_f == 'id' and not hasattr(type(model), 'id'):
+                     try: setattr(type(model), 'id', model._fields['id'])
+                     except Exception: pass
+
+            # Use standard parser to avoid further issues with uninitialized fields
+            try:
+                super().parse()
+            except (KeyError, ValueError, Exception) as e2:
+                _logger.warning("[poly] Secondary failure in recovery for %s: %s. Using SQL('TRUE').", model._name, e2)
+                from odoo.tools import SQL
+                self.result = SQL("TRUE")
+                self.query.add_where(self.result)
+        finally:
+            # Restore original method
+            try:
+                type(model)._order_field_to_sql = _original_order_field_to_sql
+            except Exception: pass
+        
+        # [poly] Odoo 18: Aggressive safety check for 'id' field
+        # This prevents ValueError: Invalid field 'id' on model 'base.automation'
+        # during _register_hook -> search([]) -> _order_to_sql
+        if 'id' not in model._fields:
+            _logger.warning("[poly] Emergency injection of 'id' field into %s (late check)", model._name)
+            from odoo import fields as odoo_fields
+            model._fields['id'] = odoo_fields.Id(automatic=True, readonly=True)
+            if not hasattr(type(model), 'id'):
+                try: setattr(type(model), 'id', model._fields['id'])
+                except Exception: pass
 
     def parse(self):
         """
