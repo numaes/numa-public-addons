@@ -224,7 +224,11 @@ def poly_many2many_setup_nonrelated(self, model):
     """
     # [poly] Aggressive Odoo 18 Fix: If this is a Many2many from a polymorphic model
     # and it should have been related, we force it to be related now.
-    if not self.related and hasattr(model, '__depends_base_classes'):
+    # [poly] PROTECTION: ONLY run for polymorphic models
+    if not hasattr(model, '__depends_base_classes'):
+         return _original_Many2many_setup_nonrelated(self, model)
+
+    if not self.related:
          for base_class in getattr(model, '__depends_base_classes', ()):
               if base_class._name != model._name and self.name in base_class._fields:
                    # This field exists in a polymorphic ancestor!
@@ -1573,10 +1577,13 @@ class PolyBase(_original_BaseModel):
              if hasattr(self.pool, 'model_methods'):
                  self.pool.model_methods.pop(self._name, None)
              
-             from odoo.api import Environment
-             if hasattr(Environment, '_classes') and Environment._classes is not None:
-                  if self.pool in Environment._classes:
-                       Environment._classes[self.pool].pop(self._name, None)
+             # [poly] PROTECTION: Only clear proxy classes if it's a polymorphic model
+             # [poly] DISABLED PERMANENTLY IN THIS VERSION DUE TO REGISTRY CORRUPTION
+             if False and hasattr(model_class, '__depends_base_classes'):
+                  from odoo.api import Environment
+                  if hasattr(Environment, '_classes') and Environment._classes is not None:
+                       if self.pool in Environment._classes:
+                            Environment._classes[self.pool].pop(self._name, None)
 
              _original_BaseModel._setup_base(self)
 
@@ -1703,8 +1710,16 @@ class PolyBase(_original_BaseModel):
         # any model that participates in the polymorphic hierarchy.
         
         try:
-            # Check if we have polymorphic configuration using the calculated hierarchy
-            if hasattr(type(self), '__depends_base_classes'):
+            # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
+            # or inherits from a polymorphic model. Models like ir.module.module
+            # should NOT be touched by this logic unless they are poly-enabled.
+            is_poly_enabled = (
+                 hasattr(model_class, '_depend_models') or
+                 any(hasattr(base, '_depend_models') for base in model_class.mro()) or
+                 'ir.poly_base' in [getattr(c, '_name', None) for c in model_class.mro() if hasattr(c, '_name')]
+            )
+            
+            if is_poly_enabled and hasattr(model_class, '__depends_base_classes'):
                 # Odoo 18: ensure we are NOT shadowing base model fields with stale stored versions
                 # that might have been injected during incremental loading.
                 _depend_model_names = set(getattr(model_class, '_depend_models', {}).keys())
@@ -1774,7 +1789,7 @@ class PolyBase(_original_BaseModel):
                 # have been lost during incremental registry loading.
                 _depend_model_names = set(getattr(model_class, '_depend_models', {}).keys())
                 for base_class in model_class.mro():
-                     if hasattr(base_class, '_name') and base_class._name != self._name:
+                     if hasattr(base_class, '_name') and base_class._name != self._name and base_class._name in _depend_model_names:
                           parent_model = self.env.get(base_class._name)
                           if parent_model is not None:
                                for fname, fobj in parent_model._fields.items():
@@ -4164,6 +4179,11 @@ def _poly_registry_setup_models(self, cr):
         # [poly] DEEP SCAN: Scan ALL base classes in the MRO for ANY odoo.fields.Field
         # instances that were missed during Odoo's incremental setup.
         # This is generic and will catch extension fields from modules like sale_project.
+        # [poly] PROTECTION: ONLY run deep recovery if the model is EXPLICITLY polymorphic
+        # or inherits from a known polymorphic base. This prevents touching Odoo core models.
+        if not is_polymorphic and not any(getattr(base, '_depend_models', None) for base in mro):
+             continue
+
         for _base_class in _current_mro:
             if _base_class is model_class: continue
             
