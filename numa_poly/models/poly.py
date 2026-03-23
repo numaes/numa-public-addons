@@ -2252,10 +2252,10 @@ class PolyBase(_original_BaseModel):
         # We also need to map model names to field names for related bases.
         # We can extract this from the explicit _depend_models if present, 
         # or generate them for others in __depends_base_classes.
-        explicit_depend_models = getattr(type(self), '_depend_models', {}) or {}
+        explicit_depend_models = getattr(cls, '_depend_models', {}) or {}
         
         for base_model_name, base_field_name in explicit_depend_models.items():
-            if base_model_name == self._name:
+            if base_model_name == cls._name:
                 continue # Skip self to avoid circular/invalid related paths
             related_bases[base_model_name] = base_field_name
             # [poly] Inject PolyReference link field with explicit search method
@@ -2270,16 +2270,16 @@ class PolyBase(_original_BaseModel):
         for new_field_name in related_fields.keys():
             model, field_name, field_type, comodel, description = related_fields[new_field_name]
 
-            if field_name in self._fields:
-                existing = self._fields[field_name]
+            if field_name in cls._fields:
+                existing = cls._fields[field_name]
                 if existing.related or not existing.store:
                     continue
-                _logger.debug("[poly] Overriding existing stored field %s.%s with related version", self._name, field_name)
-                if field_name in type(self).__dict__:
-                     delattr(type(self), field_name)
+                _logger.debug("[poly] Overriding existing stored field %s.%s with related version", cls._name, field_name)
+                if field_name in cls.__dict__:
+                     delattr(cls, field_name)
 
             if model not in related_bases:
-                if model == self._name:
+                if model == cls._name:
                     continue # NEVER create related fields pointing to the model itself
                 model_field = f'related_{related_counter}'
                 related_counter += 1
@@ -2290,7 +2290,7 @@ class PolyBase(_original_BaseModel):
                 )
             else:
                 model_field = related_bases[model]
-                if model_field not in self._fields:
+                if model_field not in cls._fields:
                     set(model_field,
                         PolyReference(comodel_name=model, string=model,
                                       automatic=True, readonly=True)
