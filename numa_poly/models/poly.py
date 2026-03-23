@@ -4110,6 +4110,11 @@ def poly_Field_get_depends(self, model):
     if stack_key in odoo.fields.Field._poly_depends_stack:
         return [], set()
     
+    # [poly] Proteccion extra para campos related no inicializados durante el boot
+    if self.related and (not hasattr(self, 'related_field') or self.related_field is None):
+        if model.pool._init:
+            return [self.related], set()
+
     odoo.fields.Field._poly_depends_stack.add(stack_key)
     try:
         return _original_Field_get_depends(self, model)
