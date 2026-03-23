@@ -101,8 +101,8 @@ class PolyExpression(expression):
                 # use a raw SQL identifier as fallback if it's likely a standard column.
                 # This handles 'id', 'sequence', etc. on models like 'website' or 'base.automation'.
                 _logger.warning("[poly] Intercepted missing field '%s' in _order_field_to_sql for %s. Using fallback.", field_name, self._name)
-                from odoo.tools import SQL
-                return SQL("%s.%s %s %s", SQL.identifier(alias), SQL.identifier(field_name), direction, nulls)
+                from odoo.tools import SQL as _SQL_ORDER
+                return _SQL_ORDER("%s.%s %s %s", _SQL_ORDER.identifier(alias), _SQL_ORDER.identifier(field_name), direction, nulls)
             except Exception:
                 raise
         
@@ -132,7 +132,7 @@ class PolyExpression(expression):
             # [poly] Aggressive Fix: Ensure core fields exist in _fields for ALL models during recovery
             # to prevent ValueError during _order_to_sql or search.
             from odoo import fields as odoo_fields
-            for core_f in ['id', 'name', 'state', 'imported']:
+            for core_f in ['id', 'name']:
                 if core_f not in model._fields:
                      _logger.warning("[poly] Injecting missing core field %s into %s", core_f, model._name)
                      if hasattr(type(model), core_f):
@@ -148,8 +148,9 @@ class PolyExpression(expression):
             try:
                 super().parse()
             except (KeyError, ValueError, Exception) as e2:
+                from odoo.tools import SQL as _SQL_RECOVERY
                 _logger.warning("[poly] Secondary failure in recovery for %s: %s. Using SQL('TRUE').", model._name, e2)
-                self.result = _SQL("TRUE")
+                self.result = _SQL_RECOVERY("TRUE")
                 if not self.query:
                     from odoo.osv.expression import Query
                     self.query = Query(model.env, model._table, model._table_sql)
@@ -294,13 +295,13 @@ class PolyExpression(expression):
             stack.append((leaf, model, alias))
 
         def pop_result():
+            from odoo.tools import SQL as _SQL_POP
             if result_stack:
                 return result_stack.pop()
             # [poly] RECOVERY: Return a neutral SQL if stack is empty to avoid IndexError
             if not model.pool._init:
                 _logger.warning("[poly] pop_result from empty stack in %s. Using TRUE.", model._name)
-            from odoo.tools import SQL
-            return SQL("TRUE")
+            return _SQL_POP("TRUE")
 
         def push_result(sql):
             result_stack.append(sql)
@@ -326,19 +327,22 @@ class PolyExpression(expression):
             # ----------------------------------------
 
             if is_operator(leaf):
+                from odoo.tools import SQL as _SQL_OP
                 if leaf == NOT_OPERATOR:
-                    push_result(SQL("(NOT (%s))", pop_result()))
+                    push_result(_SQL_OP("(NOT (%s))", pop_result()))
                 elif leaf == AND_OPERATOR:
-                    push_result(SQL("(%s AND %s)", pop_result(), pop_result()))
+                    push_result(_SQL_OP("(%s AND %s)", pop_result(), pop_result()))
                 else:
-                    push_result(SQL("(%s OR %s)", pop_result(), pop_result()))
+                    push_result(_SQL_OP("(%s OR %s)", pop_result(), pop_result()))
                 continue
 
             if leaf == TRUE_LEAF:
-                push_result(SQL("TRUE"))
+                from odoo.tools import SQL as _SQL_TRUE
+                push_result(_SQL_TRUE("TRUE"))
                 continue
             if leaf == FALSE_LEAF:
-                push_result(SQL("FALSE"))
+                from odoo.tools import SQL as _SQL_FALSE
+                push_result(_SQL_FALSE("FALSE"))
                 continue
 
             # Get working variables
@@ -852,8 +856,12 @@ class PolyExpression(expression):
         # -> put result in self.result and self.query
         # ----------------------------------------
 
-        if result_stack:
+        if len(result_stack) == 1:
             [self.result] = result_stack
+        elif len(result_stack) > 1:
+            from odoo.tools import SQL
+            _logger.warning("[poly] Unbalanced result_stack in %s: %d elements. Combining with AND.", model._name, len(result_stack))
+            self.result = SQL(" AND ").join(result_stack)
         else:
             from odoo.tools import SQL
             self.result = SQL("TRUE")
