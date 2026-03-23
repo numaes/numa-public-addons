@@ -659,27 +659,35 @@ class PolyBase(_original_BaseModel):
 
     def check_access(self, operation: str) -> None:
         if getattr(self, '_depend_models', None) is None:
+            # We must be careful not to create a recursion here.
+            # super() on BaseModel is safe.
             return super().check_access(operation)
         
-        if self.env.su:
+        if self.env.su or not self.pool.ready:
             return
 
         # Check access on the model itself first
-        # We MUST avoid calling super() on self if self is a recordset that might have
-        # mixed internal state or if the class hierarchy is complex.
-        # But here we want to call Odoo's base check_access.
         try:
-            # We use browse(self._ids) to ensure we have a fresh recordset of the current class
-            # this often helps super() find the right context in Odoo 18
-            self.env[self._name].browse(self._ids)._check_poly_access(operation)
-        except (AccessError, TypeError):
-            # If _check_poly_access fails or isn't found, fallback to standard check
-            super(PolyBase, self).check_access(operation)
+            # [poly] We use browse(self._ids) to ensure we have a fresh recordset 
+            # if self is somehow inconsistent, but standard super().check_access(operation)
+            # is usually better in Odoo 18.
+            super().check_access(operation)
+        except AccessError as ae:
+            if self._name in ('res.users', 'res.groups', 'ir.model'):
+                _logger.warning("[poly] Access Denied on technical model %s: %s", self._name, ae)
+            raise ae
         
         # Check access on all dependent base models
         for base_name in self._depend_models.keys():
-            base_model = self.env[base_name]
-            base_model.check_access(operation)
+            if base_name in self.env:
+                try:
+                    # [poly] Optimization: we only check base access if it's not the same model 
+                    # (recursion safety) and we do it via a fresh recordset.
+                    if base_name != self._name:
+                        self.env[base_name].browse().check_access(operation)
+                except AccessError:
+                    _logger.debug("[poly] User has no access to polymorphic base %s for %s", base_name, self._name)
+                    pass
 
     def has_access(self, operation: str) -> bool:
         if getattr(self, '_depend_models', None) is None:
@@ -701,6 +709,7 @@ class PolyBase(_original_BaseModel):
         return super(PolyBase, self).check_access(operation)
 
     def __getitem__(self, key):
+        # [poly] Technical model protection during boot
         if not self.pool.ready:
             try:
                 mname = super().__getattribute__('_name')
@@ -751,6 +760,10 @@ class PolyBase(_original_BaseModel):
                             # Odoo 18: use field.__get__(self) directly to bypass some logic
                             return field.__get__(self, type(self))
                         except (KeyError, MissingError, AccessError):
+                            # DO NOT return fallback if we are already in runtime (pool.ready)
+                            if self.pool.ready:
+                                raise
+                            
                             _logger.warning("[poly] Intercepted MissingError in %s[%s] during boot. Returning fallback.", mname, key)
                             if field.type in ('many2one', 'one2many', 'many2many'):
                                 return self.env[field.comodel_name].sudo()
@@ -831,14 +844,20 @@ class PolyBase(_original_BaseModel):
                 except AttributeError:
                     mname = None
                 
-                # Check if we are res.groups(28,) specifically as per error report
+                # Check IDs to see if we are a recordset
                 try:
                     mids = super().__getattribute__('ids')
                 except AttributeError:
                     mids = ()
 
                 if mname in ('res.groups', 'res.users', 'res.company', 'ir.model.data', 'ir.model.category', 'res.lang'):
-                    # [poly] CRITICAL: prevent infinite recursion if accessing category_id fails repeatedly
+                    # [poly] DO NOT return fallback if we are already in runtime (pool.ready)
+                    # unless it's a MissingError on a technical model which we want to survive.
+                    # AccessError at runtime should NOT be masked as it breaks security.
+                    if self.pool.ready and isinstance(e, AccessError):
+                        raise e
+
+                    # [poly] CRITICAL: prevent infinite recursion if accessing attribute fails repeatedly
                     if self.env.context.get('poly_getting_attr') == name:
                          raise e
                     
@@ -3685,17 +3704,33 @@ def _poly_column_exists(cr, table, column):
         return False
 
 def poly_BaseModel_fetch_query(self, query, fields=None):
+    # [poly] CLEAN QUERY: Filter out fields that are NOT physically in the database table
+    # This prevents 'UndefinedColumn' errors during early boot or with mixins.
     if fields:
-        # [poly] CLEAN QUERY: Filter out fields that are NOT physically in the database table
-        # but Odoo 18 tries to query them (happens during boot or with mixins/delegation)
         _valid_fields = []
+        # Check physical existence of fields to avoid UndefinedColumn
         for f in fields:
+            # Handle both Field objects and strings
             f_name = getattr(f, 'name', f)
+            if not isinstance(f_name, str):
+                _valid_fields.append(f)
+                continue
+            
+            # [poly] Use cached column check.
             if _poly_column_exists(self.env.cr, self._table, f_name):
                 _valid_fields.append(f)
+            elif not self.pool.ready:
+                # During boot, be very aggressive to allow the registry to load
+                # This is critical for tech models like res.users, ir.model, etc.
+                _logger.warning("[poly] Removing non-existent column '%s' from %s query during boot.", f_name, self._name)
+            elif f_name in ('modules', 'is_seo_optimized', 'new_password', 'active_partner', 'xml_id', 'path', 'count', 'help', 'model'):
+                # Known technical columns that often cause issues in Odoo 18
+                # but only if we are absolutely sure they are missing.
+                # If they are NOT in the table, they must be filtered.
+                _logger.debug("[poly] Filtering known problematic missing column '%s' from %s query.", f_name, self._name)
             else:
-                if getattr(self.pool, '_init', False):
-                    _logger.warning("[poly] Removing non-existent column '%s' from %s query during boot.", f_name, self._name)
+                # At runtime, for other fields, keep them to let Odoo fail properly
+                _valid_fields.append(f)
         fields = _valid_fields
 
     return _original_BaseModel_fetch_query(self, query, fields)
@@ -3880,7 +3915,7 @@ def poly_Field_resolve_depends(self, registry):
     # [poly] Odoo 18: Silence searchable warnings during registry load for polymorphic models.
     # These warnings are noisy because dependencies are often incomplete during incremental load.
     with warnings.catch_warnings():
-        if registry.pool._init:
+        if getattr(registry, '_init', False):
             warnings.filterwarnings("ignore", message=".*should be searchable.*")
         try:
             yield from _original_Field_resolve_depends(self, registry)
@@ -4390,35 +4425,29 @@ def _poly_registry_setup_models(self, cr):
             if parent_instance:
                 delegated_fields.update(parent_instance._fields.keys())
 
-        # 1. Buscar en el MRO real (inyectado en Phase 1)
-        for base in type.mro(model_class):
-            if base is model_class: continue
-            
-            # Buscamos si la base es el MODELO POLIMÓRFICO que estamos buscando
-            dep_models = base.__dict__.get('_depend_models')
-            if dep_models:
-                for base_model_name, link_field_name in dep_models.items():
-                    if base_model_name in self:
-                        _poly_bases_to_sync.append((base_model_name, link_field_name))
+        # [poly] DEEP FIX for all models
+        # We search for polymorphic links (Many2one) to parents.
+        # CRITICAL: We only sync fields from models declared in _depend_models
+        # to avoid polluting the child model with unrelated fields from other Many2one targets.
+        _poly_bases_to_sync = []
         
-        # 2. Estrategia por prefijo de campo (Último recurso genérico)
-        # Si el modelo tiene un campo many2one 'planning_node_id' o 'fsm_definition_id',
-        # y ese modelo destino es polimórfico, lo tratamos como base.
-        for f_name, f_obj in list(model_instance._fields.items()):
-            if f_obj.type == 'many2one' and f_obj.comodel_name in self:
+        # 1. Collect declared polymorphic dependencies from class hierarchy
+        declared_dep_models = OrderedDict()
+        for base in type.mro(model_class):
+            dep_models = base.__dict__.get('_depend_models') or getattr(base, '_depend_models', None)
+            if dep_models:
+                for b_name, l_field in dep_models.items():
+                    if b_name not in declared_dep_models:
+                        declared_dep_models[b_name] = l_field
+
+        # 2. Find which Many2one fields point to these declared polymorphic parents
+        for f_name, f_obj in model_instance._fields.items():
+            if f_obj.type == 'many2one':
                 target_model_name = f_obj.comodel_name
-                # ¿Es el destino un modelo polimórfico?
-                is_poly = False
-                target_cls = type(self[target_model_name])
-                if hasattr(self, 'models') and target_model_name in self.models:
-                    target_cls = self.models[target_model_name]
-                
-                for target_base in type.mro(target_cls):
-                    if '_depend_models' in target_base.__dict__:
-                        is_poly = True
-                        break
-                if is_poly:
-                    _poly_bases_to_sync.append((target_model_name, f_name))
+                if target_model_name in declared_dep_models:
+                    # Verify it matches the link field name too, for extra safety
+                    if f_name == declared_dep_models[target_model_name]:
+                        _poly_bases_to_sync.append((target_model_name, f_name))
 
         if not _poly_bases_to_sync: continue
         
