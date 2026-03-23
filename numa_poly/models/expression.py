@@ -121,6 +121,7 @@ class PolyExpression(expression):
         except (KeyError, ValueError, Exception) as e:
             # We catch Exception here because domain_combine_anies can throw almost anything
             # if the model is in a weird state.
+            from odoo.tools import SQL as _SQL
             _logger.warning("[poly] Intercepted %s in %s.__init__: %s. Attempting recovery.", type(e).__name__, model._name, e)
             
             # Use raw domain instead of combined anies
@@ -142,14 +143,16 @@ class PolyExpression(expression):
                 if core_f == 'id' and not hasattr(type(model), 'id'):
                      try: setattr(type(model), 'id', model._fields['id'])
                      except Exception: pass
-
+            
             # Use standard parser to avoid further issues with uninitialized fields
             try:
                 super().parse()
             except (KeyError, ValueError, Exception) as e2:
                 _logger.warning("[poly] Secondary failure in recovery for %s: %s. Using SQL('TRUE').", model._name, e2)
-                from odoo.tools import SQL
-                self.result = SQL("TRUE")
+                self.result = _SQL("TRUE")
+                if not self.query:
+                    from odoo.osv.expression import Query
+                    self.query = Query(model.env, model._table, model._table_sql)
                 self.query.add_where(self.result)
         finally:
             # Restore original method
@@ -538,7 +541,8 @@ class PolyExpression(expression):
                         if _logger.isEnabledFor(logging.DEBUG):
                             _logger.debug(''.join(traceback.format_stack()))
                     # Generate a domain that matches nothing instead of empty domain
-                    domain = [('id', '=', False)]
+                    # [poly] Fix: push TRUE_LEAF instead of assigning empty list to domain
+                    push(TRUE_LEAF, model, alias)
                 else:
                     # Let the field generate a domain.
                     if len(path) > 1:
@@ -572,7 +576,8 @@ class PolyExpression(expression):
                         if _logger.isEnabledFor(logging.DEBUG):
                             _logger.debug(''.join(traceback.format_stack()))
                     # Generate a domain that matches nothing instead of empty domain
-                    domain = [('id', '=', False)]
+                    # [poly] Fix: push TRUE_LEAF instead of assigning empty list to domain
+                    push(TRUE_LEAF, model, alias)
                 else:
                     right = comodel._search([(path[1], operator, right)])
                     domain = [('id', 'in', right)]
@@ -847,7 +852,11 @@ class PolyExpression(expression):
         # -> put result in self.result and self.query
         # ----------------------------------------
 
-        [self.result] = result_stack
+        if result_stack:
+            [self.result] = result_stack
+        else:
+            from odoo.tools import SQL
+            self.result = SQL("TRUE")
         self.query.add_where(self.result)
 
 
