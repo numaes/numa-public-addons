@@ -3667,52 +3667,41 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 # [poly] PATCH: Technical models column error workaround (res.users, ir.model, ir.ui.view)
 # This fixes psycopg2.errors.UndefinedColumn for technical columns added by mixins (website, etc.)
 # that might be missing during early boot when security or routing checks occur.
-@odoo.tools.ormcache('table', 'column')
+# [poly] ormcache helper for column existence
+# Note: we don't use ormcache here because cr is a raw cursor during boot 
+# and doesn't have .pool which ormcache expects
+_POLY_COLUMN_CACHE = {}
+
 def _poly_column_exists(cr, table, column):
+    key = (cr.dbname, table, column)
+    if key in _POLY_COLUMN_CACHE:
+        return _POLY_COLUMN_CACHE[key]
     try:
         cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s AND column_name=%s", (table, column))
-        return bool(cr.fetchone())
+        res = bool(cr.fetchone())
+        _POLY_COLUMN_CACHE[key] = res
+        return res
     except Exception:
         return False
 
 def poly_BaseModel_fetch_query(self, query, fields=None):
-    if fields and self.pool._init:
-        # Technical models and their potentially missing columns during boot
-        missing_candidates = {
-            'res.users': ['new_password', 'active_partner'],
-            'ir.model': ['modules'],
-            'ir.ui.view': ['is_seo_optimized'],
-        }
-        if self._name in missing_candidates:
-            candidates = missing_candidates[self._name]
-            to_remove = []
-            for candidate in candidates:
-                if any(getattr(f, 'name', f) == candidate for f in fields):
-                    if not _poly_column_exists(self.env.cr, self._table, candidate):
-                        _logger.warning("[poly] Removing non-existent column '%s' from %s query during boot.", candidate, self._name)
-                        to_remove.append(candidate)
-            
-            if to_remove:
-                fields = [f for f in fields if getattr(f, 'name', f) not in to_remove]
+    if fields:
+        # [poly] CLEAN QUERY: Filter out fields that are NOT physically in the database table
+        # but Odoo 18 tries to query them (happens during boot or with mixins/delegation)
+        _valid_fields = []
+        for f in fields:
+            f_name = getattr(f, 'name', f)
+            if _poly_column_exists(self.env.cr, self._table, f_name):
+                _valid_fields.append(f)
+            else:
+                if getattr(self.pool, '_init', False):
+                    _logger.warning("[poly] Removing non-existent column '%s' from %s query during boot.", f_name, self._name)
+        fields = _valid_fields
 
-    # Use original _fetch_query logic
-    # Important: we need to find the right original method because we might have multiple patches
-    # For res.users we had a specific one, now we generalize.
-    if self._name == 'res.users' and hasattr(odoo.addons.base.models.res_users.Users, '_poly_original_fetch_query'):
-        return odoo.addons.base.models.res_users.Users._poly_original_fetch_query(self, query, fields)
-    
     return _original_BaseModel_fetch_query(self, query, fields)
 
 _original_BaseModel_fetch_query = odoo.models.BaseModel._fetch_query
 odoo.models.BaseModel._fetch_query = poly_BaseModel_fetch_query
-
-# We keep the res.users specific one if it was already patched to avoid breaking its chain
-try:
-    if not hasattr(odoo.addons.base.models.res_users.Users, '_poly_original_fetch_query'):
-        odoo.addons.base.models.res_users.Users._poly_original_fetch_query = odoo.addons.base.models.res_users.Users._fetch_query
-    odoo.addons.base.models.res_users.Users._fetch_query = poly_BaseModel_fetch_query
-except:
-    pass
 
 # PATCH: Field.__get__ Interceptor para evitar errores de ensure_one durante el setup
 _original_Field_get = odoo.fields.Field.__get__
@@ -4394,6 +4383,13 @@ def _poly_registry_setup_models(self, cr):
         # [poly] RECOLECCIÓN EXHAUSTIVA DE PADRES POLIMÓRFICOS
         _poly_bases_to_sync = []
         
+        # [poly] DELEGATED FIELDS PROTECTION: Keep track of delegated fields to avoid touching them
+        delegated_fields = set()
+        for parent_model, link_field in getattr(model_class, '_inherits', {}).items():
+            parent_instance = self.get(parent_model)
+            if parent_instance:
+                delegated_fields.update(parent_instance._fields.keys())
+
         # 1. Buscar en el MRO real (inyectado en Phase 1)
         for base in type.mro(model_class):
             if base is model_class: continue
@@ -4443,6 +4439,9 @@ def _poly_registry_setup_models(self, cr):
             for base_f_name, base_f_obj in base_poly_model._fields.items():
                 if base_f_name in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']: continue
                 
+                # [poly] PROTECCIÓN: No tocar campos que ya son delegados por _inherits estándar
+                if base_f_name in delegated_fields: continue
+
                 # Construir la ruta 'related' genérica
                 _target_related = f'{link_field_name}.{base_f_name}'
                 
