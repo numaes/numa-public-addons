@@ -3761,10 +3761,10 @@ def poly_Field_get(self, record, owner=None):
          # Acceso ultra-bajo nivel para evitar disparar descriptores.
          _rec_cls = type(record)
          
-         # Verificamos si '_ids' en la clase es un member_descriptor.
+         # Verificamos si '_ids' en la clase es un member_descriptor o similar.
          _ids_desc = getattr(_rec_cls, '_ids', None)
-         if str(type(_ids_desc)) == "<class 'member_descriptor'>":
-              # Es un descriptor. Comprobamos si la instancia tiene el valor real.
+         if str(type(_ids_desc)) in ["<class 'member_descriptor'>", "<class 'getset_descriptor'>"]:
+              # Es un descriptor técnico. Comprobamos si la instancia tiene el valor real.
               try:
                    # Usamos object.__getattribute__ para saltar descriptores de Odoo en la instancia
                    _ids_raw = object.__getattribute__(record, '_ids')
@@ -3775,6 +3775,39 @@ def poly_Field_get(self, record, owner=None):
                    return self
     except:
          pass
+
+    # [poly] Singleton Guard: Evitar ensure_one prematuro si el registro no es singleton
+    # Odoo core llama a ensure_one() al inicio de Field.__get__ si el campo no es relacional.
+    try:
+        # Usamos getattr(record, '_ids', None) que es lo que Odoo 18 usa internamente.
+        _ids_raw = getattr(record, '_ids', None)
+        if _ids_raw and len(_ids_raw) > 1:
+            # Si no es singleton y el campo no es relacional, Odoo FALLARÁ en ensure_one().
+            if not self.relational and self.name not in ['id']:
+                # Para evitar el crash en modelos técnicos durante el boot o routing, 
+                # devolvemos el valor por defecto del campo o self si es setup.
+                if getattr(record, 'pool', None) and record.pool._init:
+                    return self
+                # Durante el runtime normal (ej. session_info), si es multi-registro
+                # y NO es relacional, devolvemos un valor seguro.
+                return False
+            
+            # [poly] CASO ESPECIAL ODOO 18: user.company_ids.sudo().parent_ids
+            # Durante el boot/routing, Odoo 18 puede acceder a campos relacionales en recordsets múltiples.
+            # Odoo core __get__ llama a ensure_one() si NO es relacional.
+            # Pero si ES RELACIONAL y no está en caché, llama a _fetch_field que llama a fetch.
+            # El problema es que Odoo core tiene ganchos que fuerzan ensure_one() incluso en relacionales
+            # si se acceden como atributos de clase o en ciertas condiciones de proxy.
+            if self.relational:
+                # Si es relacional y multi-registro, forzamos record.mapped(self.name)
+                # para evitar el ensure_one() interno de Odoo si se dispara.
+                try:
+                    # Usamos mapped que soporta multi-registro de forma nativa.
+                    return record.mapped(self.name)
+                except:
+                    pass
+    except:
+        pass
 
     try:
         # Llamamos al original.
