@@ -3909,12 +3909,21 @@ def poly_Field_setup_related(self, model):
     
     odoo.fields.Field._poly_setup_stack.add(stack_key)
     try:
+        # Track seen related paths within this call to avoid oscillations like
+        # fsm_instance_id.session.fsm_instance_id <-> session.fsm_instance_id
+        seen_related = set()
         while True:
             try:
                 return _original_Field_setup_related(self, model)
             except (KeyError, ValueError, RecursionError) as e:
                 cur_related = self.related
                 if isinstance(cur_related, str) and '.' in cur_related:
+                    # Break cycles if we keep bouncing between the same few values
+                    if cur_related in seen_related:
+                        _logger.error("[poly] Detected related path oscillation for %s.%s: %s; aborting rewrite", model._name, self.name, cur_related)
+                        break
+                    seen_related.add(cur_related)
+
                     parts = cur_related.split('.')
                     prefix = parts[0]
                     registry = model.pool or model.env.registry
@@ -3954,10 +3963,14 @@ def poly_Field_setup_related(self, model):
                         if depend_models:
                             # Use the first available polymorphic parent as gateway
                             link_field_name = next(iter(depend_models.values()))
-                            _logger.error("[poly] Gateway redirection for %s.%s: %s -> %s.%s", model._name, self.name, cur_related, link_field_name, cur_related)
-                            self.related = f"{link_field_name}.{cur_related}"
-                            if hasattr(self, '_args'): self._args['related'] = self.related
-                            continue
+                            # Guard against self-referential or already-prefixed paths
+                            if link_field_name == self.name or cur_related.startswith(f"{link_field_name}."):
+                                _logger.debug("[poly] Skipping gateway redirection for %s.%s: link '%s' already applied or equals field name", model._name, self.name, link_field_name)
+                            else:
+                                _logger.error("[poly] Gateway redirection for %s.%s: %s -> %s.%s", model._name, self.name, cur_related, link_field_name, cur_related)
+                                self.related = f"{link_field_name}.{cur_related}"
+                                if hasattr(self, '_args'): self._args['related'] = self.related
+                                continue
 
                     # [poly] Aggressive KeyError handling: strip the first part and continue.
                     _logger.error("[poly] setup_related error for %s.%s path %s. Stripping %s", model._name, self.name, cur_related, prefix)
