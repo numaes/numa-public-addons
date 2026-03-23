@@ -1235,7 +1235,7 @@ class PolyBase(_original_BaseModel):
 
         # Odoo 18: ensure polymorphic attributes are built after base setup
         if hasattr(model_class, '__depends_base_classes') or referenced_as_base:
-             self._setup_poly_fields()
+             self._setup_poly_fields(self)
              
              # Clear registry caches to force method re-discovery
              if hasattr(self.pool, 'model_methods'):
@@ -1286,9 +1286,9 @@ class PolyBase(_original_BaseModel):
                                       except (AttributeError, KeyError):
                                           pass
 
-    def _setup_poly_fields(self):
+    @classmethod
+    def _setup_poly_fields(cls, self):
         """ Inject polymorphic field definitions from parent models. """
-        cls = type(self)
         model_class = cls
         
         try:
@@ -4307,7 +4307,7 @@ def _poly_registry_setup_models(self, cr):
                     _logger.debug("[poly] Force injecting infrastructure fields for base: %s", name)
                     # Check if it's our patched PolyBase method
                     if hasattr(model_instance, '_setup_poly_fields'):
-                        model_instance._setup_poly_fields()
+                        model_instance._setup_poly_fields(model_instance)
                     else:
                         # Fallback for models that might not have the patch yet
                         _logger.warning("[poly] Model %s missing _setup_poly_fields, trying _build_dependant_model_attributes", name)
