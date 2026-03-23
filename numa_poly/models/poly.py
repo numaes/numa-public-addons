@@ -160,13 +160,7 @@ def _poly_Field_get(self, record, owner=None):
     if not hasattr(record, '_ids'):
         return self
 
-    try:
-        return _original_Field_get(self, record, owner=owner)
-    except TypeError as e:
-        # This specifically handles "BaseModel.ensure_one() missing 1 required positional argument: 'self'"
-        if "ensure_one" in str(e):
-            return self
-        raise e
+    return _original_Field_get(self, record, owner=owner)
 
 def _poly_Field_set(self, records, value):
     """
