@@ -520,11 +520,11 @@ class PolyReference(fields.Many2one):
             return self
 
         # Odoo 18 specific: Check if the field is set in _fields of the model
-        if self.name not in records._fields:
+        if not hasattr(records, '_fields') or self.name not in records._fields:
             return self
 
         # Single record case
-        if len(records._ids) <= 1:
+        if not hasattr(records, '_ids') or len(records._ids) <= 1:
             try:
                 return self.convert_to_record(None, records)
             except Exception:
