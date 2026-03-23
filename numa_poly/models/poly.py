@@ -167,7 +167,28 @@ def _poly_Field_get(self, record, owner=None):
             return self
         return _original_Field_get(self, record, owner=owner)
 
-    return _original_Field_get(self, record, owner=owner)
+    try:
+        return _original_Field_get(self, record, owner=owner)
+    except KeyError as e:
+        # [poly] Odoo 18: Protect against KeyError in field_computed during boot or technical operations.
+        # This specifically handles 'res.users.tz' and other computed fields that might be 
+        # missing from the lazy Registry.field_computed dictionary due to stale state.
+        if isinstance(e.args[0], str) and ('.tz' in e.args[0] or self.name in e.args[0]):
+            if hasattr(record, 'pool') and record.pool and not record.pool.ready:
+                _logger.debug("[poly] Recovering from KeyError in field_computed for %s", self)
+                # Force a recompute of the value if we can
+                if self.compute and hasattr(self, 'compute_value'):
+                    self.compute_value(record)
+                    return _original_Field_get(self, record, owner=owner)
+        
+        # [poly] Technical recovery for res.users.tz during crons or other post-load operations
+        if self.model_name == 'res.users' and self.name == 'tz':
+             _logger.warning("[poly] Forced recovery for res.users.tz in field_computed")
+             if 'field_computed' in record.pool.__dict__:
+                 del record.pool.__dict__['field_computed']
+             return _original_Field_get(self, record, owner=owner)
+             
+        raise e
 
 def _poly_Field_set(self, records, value):
     """
@@ -4313,6 +4334,11 @@ def _poly_deep_fix_field(registry, model_name, field_name, target_related):
         if hasattr(registry, 'field_inverses'):
             if old_f in registry.field_inverses:
                 del registry.field_inverses[old_f]
+
+        # [poly] INVALIDATE field_computed: Odoo 18 uses lazy_property for this.
+        # Removing it from __dict__ forces re-computation on next access.
+        if 'field_computed' in registry.__dict__:
+            del registry.__dict__['field_computed']
                 
         # 6. Forzar el setup del nuevo campo de forma controlada
         if hasattr(new_f, 'setup'):
@@ -4356,6 +4382,11 @@ def _poly_registry_setup_models(self, cr):
     
     # Sort names by MRO length using type.mro
     sorted_poly_names = sorted(list(poly_models_names_to_process), key=lambda n: len(type.mro(type(self[n]))))
+    
+    # [poly] Invalidate field_computed at the beginning of synchronization
+    if 'field_computed' in self.__dict__:
+        del self.__dict__['field_computed']
+
     for model_name in sorted_poly_names:
         if model_name not in self: continue
         model_instance = self[model_name]
@@ -4443,6 +4474,10 @@ def _poly_registry_setup_models(self, cr):
                 _logger.error("[poly] Pre-setup MRO Injection failed for %s: %s", model_name, e)
 
     res = _original_Registry_setup_models(self, cr)
+
+    # [poly] Invalidate field_computed after Odoo's setup_models
+    if 'field_computed' in self.__dict__:
+        del self.__dict__['field_computed']
 
     # 1. Identify all models that are polymorphic or depend on polymorphic models
     poly_models_names = getattr(self, '_poly_models_to_setup', set())
@@ -4547,6 +4582,10 @@ def _poly_registry_setup_models(self, cr):
                 
                 # Aplicar fijación profunda atómica (Registry + Clase + Proxy Odoo 18)
                 _poly_deep_fix_field(self, name, base_f_name, _target_related)
+
+        # [poly] Final invalidation of field_computed after all deep fixes
+        if 'field_computed' in self.__dict__:
+            del self.__dict__['field_computed']
 
         # Original MRO logic continues...
         # Collect merged _depend_models
