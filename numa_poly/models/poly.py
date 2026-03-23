@@ -198,6 +198,7 @@ def _poly_Relational_get(self, records, owner=None):
     """
     [poly] Monkey patch for _Relational.__get__ to avoid TypeError: object of type 'member_descriptor' has no len()
     This happens during inspect.getmembers(cls) when Odoo 18 processes views.
+    Also handles KeyError: 'res_id' (inverse field not yet setup) during setup_models.
     """
     if records is None or isinstance(records, type):
         return self
@@ -208,8 +209,21 @@ def _poly_Relational_get(self, records, owner=None):
         # If it's not a recordset (e.g. member_descriptor), 
         # fall back to the base Field.__get__ logic which handles non-recordsets
         return _poly_Field_get(self, records, owner)
-            
-    return _original_Relational_get(self, records, owner)
+    
+    try:
+        return _original_Relational_get(self, records, owner)
+    except (KeyError, TypeError) as e:
+        # Odoo 18 One2many.__get__ (at line 4672 of fields.py) attempts to access 
+        # records.pool[self.comodel_name]._fields[self.inverse_name]
+        # This fails if the inverse field hasn't been added to the comodel's _fields yet,
+        # which happens during early setup_models.
+        if isinstance(e, KeyError) and records.pool and not records.pool.ready:
+            _logger.debug("[poly] Relational access failure during setup for %s: %s", self.name, e)
+            return self
+        # Handle the len(records._ids) failure on member_descriptor if it leaked here
+        if isinstance(e, TypeError) and "object of type 'member_descriptor' has no len()" in str(e):
+             return _poly_Field_get(self, records, owner)
+        raise e
 
 odoo.fields.Field.__get__ = _poly_Field_get
 odoo.fields.Field.__set__ = _poly_Field_set
