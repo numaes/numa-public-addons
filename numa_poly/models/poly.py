@@ -1166,12 +1166,26 @@ class PolyBase(_original_BaseModel):
         model_class = type(self)
         name = self._name
         
+        # Detect if this model is referenced as a base by any other model's _depend_models
+        referenced_as_base = False
+        try:
+            for other_name, other_model in self.pool.items():
+                if not isinstance(other_model, type):
+                    continue
+                dep_map = getattr(other_model, '_depend_models', None)
+                if dep_map and name in dep_map.keys():
+                    referenced_as_base = True
+                    break
+        except Exception:
+            referenced_as_base = False
+
         # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
         # or inherits from a polymorphic model.
         is_poly_enabled = (
              hasattr(model_class, '_depend_models') or
              any(hasattr(base, '_depend_models') for base in model_class.mro()) or
-             'ir.poly_base' in [getattr(c, '_name', None) for c in model_class.mro() if hasattr(c, '_name')]
+             'ir.poly_base' in [getattr(c, '_name', None) for c in model_class.mro() if hasattr(c, '_name')] or
+             referenced_as_base
         )
         
         if not is_poly_enabled:
@@ -1206,7 +1220,7 @@ class PolyBase(_original_BaseModel):
         _original_BaseModel._setup_base(self)
 
         # Odoo 18: ensure polymorphic attributes are built after base setup
-        if hasattr(model_class, '__depends_base_classes'):
+        if hasattr(model_class, '__depends_base_classes') or referenced_as_base:
              self._setup_poly_fields()
              
              # Clear registry caches to force method re-discovery
@@ -1260,50 +1274,67 @@ class PolyBase(_original_BaseModel):
 
     def _setup_poly_fields(self):
         """ Inject polymorphic field definitions from parent models. """
-        model_class = type(self)
+        cls = type(self)
+        model_class = cls
         
         try:
             # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
             # or inherits from a polymorphic model.
+            # Base models like conversation.driver MUST also be processed.
+            # Detect if this model is referenced as a base by any other model's _depend_models
+            referenced_as_base = False
+            try:
+                for other_name, other_model in self.pool.items():
+                    if not isinstance(other_model, type):
+                        continue
+                    dep_map = getattr(other_model, '_depend_models', None)
+                    if dep_map and self._name in dep_map.keys():
+                        referenced_as_base = True
+                        break
+            except Exception:
+                referenced_as_base = False
+
             is_poly_enabled = (
-                 hasattr(model_class, '_depend_models') or
-                 any(hasattr(base, '_depend_models') for base in model_class.mro()) or
-                 'ir.poly_base' in [getattr(c, '_name', None) for c in model_class.mro() if hasattr(c, '_name')]
+                 hasattr(cls, '_depend_models') or
+                 any(hasattr(base, '_depend_models') for base in cls.mro()) or
+                 'ir.poly_base' in [getattr(c, '_name', None) for c in cls.mro() if hasattr(c, '_name')] or
+                 referenced_as_base
             )
             
-            if is_poly_enabled and hasattr(model_class, '__depends_base_classes'):
+            if is_poly_enabled:
                 # 1. Clean up "stale" fields that might have been injected during incremental load
                 # and are actually polymorphic (belong to a base).
-                poly_bases = getattr(model_class, '__depends_base_classes', ())
+                poly_bases = getattr(cls, '__depends_base_classes', ())
                 for base_class in poly_bases:
-                     if base_class is model_class: continue
+                     if base_class is cls: continue
                      base_name = getattr(base_class, '_name', None)
                      
                      for fname, fobj in base_class.__dict__.items():
                           if isinstance(fobj, fields.Field):
                                # If it exists in the current model but is NOT a related field,
                                # it's likely a stale stored field or an accidental shadow.
-                               if fname in model_class.__dict__:
-                                    current_fobj = model_class.__dict__[fname]
+                               if fname in cls.__dict__:
+                                    current_fobj = cls.__dict__[fname]
                                     if isinstance(current_fobj, fields.Field) and not current_fobj.related:
                                          _logger.debug("[poly] Cleanup: Removing stale/shadow field %s on %s (from %s)", fname, self._name, base_name)
                                          if fname in self._fields: del self._fields[fname]
-                                         try: delattr(model_class, fname)
+                                         try: delattr(cls, fname)
                                          except (AttributeError, KeyError): pass
 
-                # 2. Systematic injection of related fields
-                self._build_dependant_model_attributes()
+                # 2. Systematic injection of related fields and core infrastructure fields
+                # Use class method call
+                cls._build_dependant_model_attributes()
                 
                 # 3. Final descriptor installation
-                model_class = type(self)
+                poly_bases = getattr(cls, '__depends_base_classes', ())
                 for field_name, field in self._fields.items():
                     # If it's a polymorphic field (belongs to a base), we force the descriptor
                     is_poly_field = any(field_name in base.__dict__ for base in poly_bases)
                     
-                    if field_name not in model_class.__dict__ or is_poly_field:
+                    if field_name not in cls.__dict__ or is_poly_field:
                         # Safety: don't shadow actual methods with field descriptors unless it's a field
-                        if not callable(getattr(model_class, field_name, None)) or isinstance(getattr(model_class, field_name, None), fields.Field):
-                            setattr(model_class, field_name, field)
+                        if not callable(getattr(cls, field_name, None)) or isinstance(getattr(cls, field_name, None), fields.Field):
+                            setattr(cls, field_name, field)
 
                 # Update _fields of the model in the pool
                 if self._name in self.pool.models:
@@ -2015,7 +2046,7 @@ class PolyBase(_original_BaseModel):
                 return
 
     @classmethod
-    def _build_dependant_model_attributes(self):
+    def _build_dependant_model_attributes(cls):
         """
         Initialize and build the attributes of a polymorphic model.
         """
@@ -2028,13 +2059,21 @@ class PolyBase(_original_BaseModel):
                 field: The field object
                 related_base: The name of the related base model (if any)
             """
-            _logger.debug(f'Adding field {name} to {self._name}'
+            _logger.debug(f'Adding field {name} to {cls._name}'
                           f' (base: {related_base or "N/A"})')
-            setattr(self, name, field)
-            self._fields[name] = field
+            setattr(cls, name, field)
+            cls._fields[name] = field
             field._direct = True
             field.prepare_setup()
-            field.__set_name__(self, name)
+            field.__set_name__(cls, name)
+
+            # Odoo 18: Ensure field is in the registry class (proxy) if it exists
+            if hasattr(cls.pool, 'models') and cls._name in cls.pool.models:
+                proxy = cls.pool.models[cls._name]
+                if proxy is not cls:
+                    setattr(proxy, name, field)
+                    if name not in proxy._fields:
+                        proxy._fields[name] = field
 
         # Create a poly_base_id many2one - the core link to ir.poly_base
         set('poly_base_id',
@@ -2102,12 +2141,12 @@ class PolyBase(_original_BaseModel):
         # Collect all fields from dependent models
         related_fields = {}
         
-        all_bases = getattr(type(self), '__depends_base_classes', ())
+        all_bases = getattr(cls, '__depends_base_classes', ())
         # IMPORTANT: ensure we use the same order as in __depends_base_classes (already reversed in _build_model)
-        dependent_model_names = [cls._name for cls in reversed(all_bases) if cls._name not in (self._name, 'ir.poly_base')]
+        dependent_model_names = [c._name for c in reversed(all_bases) if hasattr(c, '_name') and c._name not in (cls._name, 'ir.poly_base')]
 
         for model_name in dependent_model_names:
-            # print(f"[poly] DEBUG: Adding subfields for model {model_name} to {self._name}")
+            # print(f"[poly] DEBUG: Adding subfields for model {model_name} to {cls._name}")
             def add_subfields(mm):
                 """
                 Recursively add fields from a dependent model and its dependencies.
@@ -2115,13 +2154,13 @@ class PolyBase(_original_BaseModel):
                 Args:
                     mm: The name of the model to add fields from
                 """
-                if mm == 'ir.poly_base' or mm == self._name:
+                if mm == 'ir.poly_base' or mm == cls._name:
                     return  # Skip ir.poly_base as its fields are already handled, and skip self
 
-                if mm not in self.pool:
+                if mm not in cls.pool:
                     return
 
-                base_model = self.pool[mm]
+                base_model = cls.pool[mm]
 
                 # Add fields from the model
                 for subfield_name, subfield in base_model._fields.items():
@@ -4111,12 +4150,20 @@ def _poly_registry_setup_models(self, cr):
     _patch_ir_ui_view()
     
     # [poly] Phase 0: Collect all models that have _depend_models
+    # and also collect their declared base models (targets) so that root bases get infrastructure fields too
     poly_models_names_to_process = set()
     for name, model_class in self.items():
-        if not isinstance(model_class, type): continue
+        if not isinstance(model_class, type):
+            continue
         # Use type.mro to avoid unbound method errors
         if any('_depend_models' in base.__dict__ for base in type.mro(model_class)):
             poly_models_names_to_process.add(name)
+        # Additionally, if this model declares _depend_models, ensure target base models are processed
+        dep_map = getattr(model_class, '_depend_models', None)
+        if dep_map:
+            for dep_model in dep_map.keys():
+                if dep_model in self:
+                    poly_models_names_to_process.add(dep_model)
 
     # [poly] Phase 1: MRO Injection BEFORE Odoo's setup_models
     # This ensures Odoo 18 sees the correct class hierarchy from the start
@@ -4228,6 +4275,7 @@ def _poly_registry_setup_models(self, cr):
     all_models_to_check = sorted([n for n, m in self.items() if isinstance(m, type) or hasattr(m, '_name')], key=lambda n: len(type.mro(type(self[n]))))
     
     # [poly] DEEP FIX for all models
+    # Includes root bases that might not have _depend_models but are targets of them
     for name in all_models_to_check:
         if name not in self: continue
         model_instance = self[name]
@@ -4237,6 +4285,23 @@ def _poly_registry_setup_models(self, cr):
         if hasattr(self, 'models') and name in self.models:
              model_class = self.models[name]
         
+        # [poly] Force infrastructure fields injection for all involved models
+        if name in poly_models_names_to_process:
+            try:
+                # Use standard BaseModel logic but through our poly instance
+                if not hasattr(model_class, 'concrete_model_id'):
+                    _logger.debug("[poly] Force injecting infrastructure fields for base: %s", name)
+                    # Check if it's our patched PolyBase method
+                    if hasattr(model_instance, '_setup_poly_fields'):
+                        model_instance._setup_poly_fields()
+                    else:
+                        # Fallback for models that might not have the patch yet
+                        _logger.warning("[poly] Model %s missing _setup_poly_fields, trying _build_dependant_model_attributes", name)
+                        if hasattr(model_class, '_build_dependant_model_attributes'):
+                            model_class._build_dependant_model_attributes()
+            except Exception as e:
+                _logger.error("[poly] Failed force injection for %s: %s", name, e)
+
         # [poly] RECOLECCIÓN EXHAUSTIVA DE PADRES POLIMÓRFICOS
         _poly_bases_to_sync = []
         
