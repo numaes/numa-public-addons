@@ -3058,86 +3058,111 @@ class PolyBase(_original_BaseModel):
         try:
             result = super().fields_get(allfields=allfields, attributes=attributes)
         except Exception as e:
-            # Check if it's a KeyError for a model name
-            faulty_key = None
+            # [poly] GENERIC EMERGENCY RUNTIME SANITIZATION
+            # Detects if a KeyError occurs because Odoo 18 ORM is attempting to resolve 
+            # a model-name prefix as if it were a field name in a related path.
+            
             e_str = str(e)
-            
-            # [poly] Aggressive detection of model names in error strings
             registry = self.pool or self.env.registry
+            faulty_key = None
             
+            # 1. Extract the missing key from the exception
             if isinstance(e, KeyError):
-                faulty_key = e_str.strip("'")
-            elif 'KeyError' in e_str:
-                # Attempt to extract key from message like "'key'"
+                faulty_key = str(e).strip("'")
+            else:
                 import re
                 match = re.search(r"'([^']+)'", e_str)
                 if match:
                     faulty_key = match.group(1)
-
-            if not faulty_key:
-                # [poly] Check if any model name is present in the traceback or error message
+            
+            # 2. Check if the faulty key is a model name or looks like a model prefix
+            is_model_related_error = False
+            if faulty_key:
+                # If faulty_key IS exactly a model in the registry
+                if faulty_key in registry:
+                    is_model_related_error = True
+                # If faulty_key IS exactly a prefix of a model in the registry (e.g. 'account' for 'account.move')
+                elif any(mname.split('.')[0] == faulty_key for mname in registry):
+                    is_model_related_error = True
+                # If it's a known polymorphic base suffix (e.g. 'poly_base' for 'ir.poly_base')
+                elif any(mname.endswith('.' + faulty_key) for mname in registry):
+                    is_model_related_error = True
+                # If faulty_key IS exactly a prefix of the current model
+                elif faulty_key in self._name.split('.'):
+                    is_model_related_error = True
+                # Startswith check (BROAD) - keep but as last resort
+                elif any(mname.startswith(faulty_key + '.') for mname in registry):
+                    is_model_related_error = True
+            
+            if not is_model_related_error:
+                # Fallback: check if any model name is mentioned in the error string
                 for mname in registry:
                     if f"'{mname}'" in e_str or f"KeyError: {mname}" in e_str:
-                        faulty_key = mname
+                        is_model_related_error = True
                         break
-
-            # If still no faulty_key but the error seems to be about a model prefix
-            if not faulty_key and ('.account.' in e_str or '.session.' in e_str):
-                # Try to extract the first part before .account or .session
-                import re
-                match = re.search(r"(['\"]?)([a-zA-Z0-9_]+)\.(account|session|task|lead|partner|move|order)\.", e_str)
-                if match:
-                    faulty_key = match.group(2)
-
-            # [poly] CRITICAL: Added 'email' check to handle 'email.account' prefix issues
-            if faulty_key and (faulty_key in registry or 'conversation' in e_str or 'email' in e_str or 'crm' in e_str):
-                # [poly] EMERGENCY RUNTIME SANITIZATION
+            
+            if is_model_related_error:
                 if self.env.context.get('_poly_sanitizing_fields'):
-                    _logger.error("[poly] Recursive fields_get error on %s: %s", self._name, e)
+                    _logger.error("[poly] Recursive fields_get error on %s: %s", self._name, e, exc_info=True)
                     raise e
                 
-                # Check if we should sanitize this model
-                _logger.error("[poly] fields_get KeyError Detected on %s: %s. Sanitizing fields for key '%s'...", self._name, e, faulty_key)
+                _logger.warning("[poly] fields_get KeyError Detected on %s: %s (Key: %s). Sanitizing polymorphic fields...", self._name, e, faulty_key)
                 sanitized_count = 0
-                for f_name, field in list(self._fields.items()):
+                all_fields_to_check = []
+                # Check both instance fields and class fields
+                if hasattr(self, '_fields'):
+                    all_fields_to_check.extend(list(self._fields.items()))
+                if hasattr(type(self), '_fields'):
+                    all_fields_to_check.extend(list(type(self)._fields.items()))
+                
+                checked_fnames = set()
+                for f_name, field in all_fields_to_check:
+                    if f_name in checked_fnames: continue
+                    checked_fnames.add(f_name)
+                    
                     rel = getattr(field, 'related', None)
-                    if isinstance(rel, str) and '.' in rel:
-                        parts = rel.split('.')
-                        # [poly] Aggressive model-name prefix stripping
-                        changed = False
-                        # We strip any prefix that looks like a model name or its prefix but is not a field
-                        while parts and len(parts) > 1 and parts[0] not in self._fields:
-                            is_invalid = False
-                            if parts[0] in registry:
-                                is_invalid = True
-                            elif self._name.startswith(parts[0] + '.'):
-                                is_invalid = True
-                            
-                            if is_invalid:
-                                # _logger.warning("[poly] Runtime stripping prefix '%s' from %s.%s: %s", parts[0], self._name, f_name, rel)
-                                parts = parts[1:]
-                                changed = True
-                            else:
-                                break
-                        
-                        if changed and parts:
-                            new_rel = '.'.join(parts)
+                    if not rel and hasattr(field, '_args'):
+                        rel = field._args.get('related')
+                    
+                    if rel:
+                        new_rel = _poly_sanitize_path(self, rel)
+                        if new_rel != rel:
+                            _logger.info("[poly] fields_get: Sanitizing %s.%s: %s -> %s", self._name, f_name, rel, new_rel)
                             field.related = new_rel
                             if hasattr(field, '_args'): field._args['related'] = new_rel
                             sanitized_count += 1
+                            # Force re-triggering setup_related but carefully
                             try:
-                                # Re-trigger setup_related with the new path
-                                field.setup_related(self)
-                            except:
-                                pass
+                                # We MUST use the original setup_related to ensure it runs
+                                # but with our recursive protection
+                                if hasattr(field, 'setup_related'):
+                                    _logger.info("[poly] Manually re-triggering setup_related for %s.%s", self._name, f_name)
+                                    field.setup_related(self)
+                            except Exception as setup_e:
+                                _logger.error("[poly] setup_related failed during fields_get sanitization for %s.%s: %s", self._name, f_name, setup_e, exc_info=True)
+                    
+                    # If the faulty key is the model itself, and we couldn't find ANY related field to sanitize,
+                    # it might be that Odoo is trying to resolve the model name from a field that IS NOT a related field
+                    # but maybe a Many2one or similar that was incorrectly built.
+                    # Or maybe we just need to force re-setup the field.
+                
+                if sanitized_count == 0 and faulty_key in self._name.split('.'):
+                    try:
+                        # self.pool.setup_models(self._cr)
+                        # This is too heavy. Let's try to just re-trigger setup for all fields.
+                        for f_name, field in list(self._fields.items()):
+                            if hasattr(field, 'setup_full'):
+                                field.setup_full(self)
+                        sanitized_count = 1 # Fake count to trigger retry
+                    except Exception as setup_full_e:
+                        _logger.debug("[poly] Global field setup failed: %s", setup_full_e)
                 
                 if sanitized_count > 0:
-                    # Retry operation with sanitized fields
                     return self.with_context(_poly_sanitizing_fields=True).fields_get(allfields=allfields, attributes=attributes)
                 else:
-                    raise e
-            else:
-                raise e
+                    pass
+            
+            raise e
         
         all_bases = getattr(type(self), '__depends_base_classes', ())
         dependent_model_names = [cls._name for cls in all_bases if cls._name not in (self._name, 'ir.poly_base')]
@@ -3329,16 +3354,10 @@ class PolyBase(_original_BaseModel):
         # [poly] Saneamiento de rutas relacionadas en SQL para Odoo 18
         # Odoo 18 a veces inyecta el nombre del modelo como prefijo en la ruta del campo
         if '.' in fname:
-            parts = fname.split('.')
-            registry = self.pool or self.env.registry
-            # Si el primer componente es un nombre de modelo conocido y no es un campo del modelo actual
-            if parts[0] in registry and parts[0] not in self._fields and not hasattr(type(self), parts[0]):
-                _logger.warning("[poly] Saneando prefijo de modelo '%s' en _field_to_sql para %s.%s", parts[0], self._name, fname)
-                return self._field_to_sql(alias, '.'.join(parts[1:]), query, flush)
-            
-            # [poly] Prevención rápida para auto-referencias
-            if len(parts) > 1 and parts[0] == self._name:
-                 return self._field_to_sql(alias, '.'.join(parts[1:]), query, flush)
+            new_fname = _poly_sanitize_path(self, fname)
+            if new_fname != fname:
+                _logger.debug("[poly] Saneando prefijo en _field_to_sql para %s.%s -> %s", self._name, fname, new_fname)
+                return self._field_to_sql(alias, new_fname, query, flush)
 
         # [poly] Prevención de recursión infinita mediante stack en el Environment
         # Odoo 18 llama a _field_to_sql recursivamente para campos relacionados.
@@ -3391,7 +3410,53 @@ class PolyBase(_original_BaseModel):
                     return SQL.identifier('id')
                 return model._field_to_sql(alias, field.name, query)
 
-            return super()._field_to_sql(alias, fname, query, flush)
+            try:
+                return super()._field_to_sql(alias, fname, query, flush)
+            except KeyError as e:
+                e_str = str(e)
+                # _logger.info("[poly] _field_to_sql: Caught KeyError %s for %s.%s. Related: %s", e_str, self._name, fname, getattr(field, 'related', 'N/A'))
+                if self._name.split('.')[0] in e_str or any(m.split('.')[0] in e_str for m in (self.pool or self.env.registry)) or any(m.endswith('.' + e_str.strip("'")) for m in (self.pool or self.env.registry)):
+                    _logger.debug("[poly] _field_to_sql KeyError caught for %s.%s: %s. Sanitizing...", self._name, fname, e)
+                    
+                    # Search for the problematic field in the path
+                    parts = []
+                    if field and getattr(field, 'related', None):
+                        parts = field.related.split('.')
+                    
+                    # Try to sanitize the related field itself
+                    if field and getattr(field, 'related', None):
+                        old_rel = field.related
+                        new_rel = _poly_sanitize_path(self, old_rel)
+                        if new_rel != old_rel:
+                            # _logger.info("[poly] _field_to_sql: Sanitizing %s.%s: %s -> %s", self._name, fname, old_rel, new_rel)
+                            field.related = new_rel
+                            if hasattr(field, '_args'): field._args['related'] = new_rel
+                            try:
+                                if hasattr(field, 'setup_related'):
+                                    field.setup_related(self)
+                            except: pass
+                            return super()._field_to_sql(alias, fname, query, flush)
+                    
+                    # If the above didn't help, it might be a field in the MIDDLE of the path
+                    # we should probably sanitize all fields of current model.
+                    sanitized_count = 0
+                    for f_n, f_o in list(self._fields.items()):
+                        rel = getattr(f_o, 'related', None)
+                        if rel:
+                            new_rel = _poly_sanitize_path(self, rel)
+                            if new_rel != rel:
+                                # _logger.info("[poly] _field_to_sql: Sanitizing brother field %s.%s: %s -> %s", self._name, f_n, rel, new_rel)
+                                f_o.related = new_rel
+                                if hasattr(f_o, '_args'): f_o._args['related'] = new_rel
+                                try:
+                                    if hasattr(f_o, 'setup_related'): f_o.setup_related(self)
+                                except: pass
+                                sanitized_count += 1
+                    
+                    if sanitized_count > 0:
+                        return super()._field_to_sql(alias, fname, query, flush)
+                        
+                raise e
         finally:
             self.env._poly_field_sql_stack.discard(stack_key)
 
@@ -3958,78 +4023,122 @@ def poly_Field_setup_related(self, model):
     """
     # [poly] CRITICAL: We use __dict__ bypass to check the original 'related' value 
     # and avoid lazy-loading side effects that might trigger KeyError too early.
-    related = self.related
+    related = getattr(self, 'related', None)
+    if not related:
+        return _original_Field_setup_related(self, model)
     
-    # [poly] Saneamiento de rutas: si el prefijo es un nombre de modelo,
-    # puede ser un auto-prefijo de Odoo 18 o una ruta polimórfica rota.
-    registry = model.pool or model.env.registry
-    
-        # [poly] Normalización agresiva de la ruta relacionada
-    if isinstance(related, str) and '.' in related:
+    if '.' in related:
         parts = related.split('.')
-        # Eliminamos todos los prefijos que coincidan con nombres de modelos
-        # O que sean prefijos del nombre del modelo actual (ej. 'email' para 'email.account')
-        # SIEMPRE QUE no sean un campo real en el modelo actual.
-        # Esto soluciona KeyError: 'conversation', 'email', 'crm', etc.
+        prefix = parts[0]
+        registry = model.pool or model.env.registry
+        
+        # [poly] Saneamiento Genérico: si hay prefijos que son nombres de modelos, limpiarlos
+        # e.g. 'facebook.account.name' -> 'name' (if facebook.account is model and not field)
+        # e.g. 'account.name' -> 'name' (if account is prefix of facebook.account and not field)
         changed = False
-        while parts and len(parts) > 1 and parts[0] not in model._fields and not hasattr(type(model), parts[0]):
-            should_strip = False
-            if parts[0] in registry:
-                should_strip = True
-            elif model._name.startswith(parts[0] + '.'):
-                should_strip = True
+        while parts and len(parts) > 1:
+            segment = parts[0]
+            # OJO: No podemos usar hasattr(type(model), segment) porque dispararía descriptores técnicos
+            if segment in model._fields:
+                break
+                
+            is_invalid_prefix = False
+            if segment in registry:
+                is_invalid_prefix = True
+            elif model._name.startswith(segment + '.') or ('.' in model._name and segment in model._name.split('.')):
+                is_invalid_prefix = True
+            elif segment == 'account' and model._name == 'facebook.account': # Fallback para depurar
+                is_invalid_prefix = True
             
-            if should_strip:
-                _logger.warning("[poly] Saneando prefijo inválido '%s' en %s.%s: %s", parts[0], model._name, self.name, related)
+            if is_invalid_prefix:
+                _logger.info("[poly] Stripping model-name prefix '%s' from %s.%s: %s", segment, model._name, self.name, related)
                 parts = parts[1:]
                 changed = True
             else:
                 break
         
         if changed:
-            if not parts:
-                return # Ruta vacía tras saneamiento
             related = '.'.join(parts)
             self.related = related
             if hasattr(self, '_args'): self._args['related'] = related
+            prefix = parts[0]
+            
+        # [poly] NEW: Aggressive mid-path sanitization to handle Odoo 18 auto-prefixing
+        # e.g., 'driver_id.account.name' -> 'driver_id.name'
+        if parts and len(parts) > 1:
+            new_parts = [parts[0]]
+            # We need the model of the first segment to check the second
+            try:
+                # Usar self.env.get para evitar excepciones si el modelo no existe
+                curr_f = model._fields.get(parts[0])
+                curr_model_for_path = model.env.get(curr_f.comodel_name) if curr_f and curr_f.comodel_name else None
+            except:
+                curr_model_for_path = None
+            
+            mid_changed = False
+            for segment in parts[1:]:
+                if curr_model_for_path and segment in registry and segment not in curr_model_for_path._fields:
+                    _logger.info("[poly] Stripping mid-path model prefix '%s' in %s.%s", segment, model._name, self.name)
+                    mid_changed = True
+                    continue
+                new_parts.append(segment)
+                if curr_model_for_path and segment in curr_model_for_path._fields:
+                    try:
+                        next_f = curr_model_for_path._fields.get(segment)
+                        next_comodel = next_f.comodel_name if next_f else None
+                        curr_model_for_path = model.env.get(next_comodel) if next_comodel else None
+                    except:
+                        curr_model_for_path = None
+                else:
+                    curr_model_for_path = None
+            
+            if mid_changed:
+                related = '.'.join(new_parts)
+                self.related = related
+                if hasattr(self, '_args'): self._args['related'] = related
+                parts = new_parts
+                prefix = parts[0]
 
-    # Si después del saneamiento sigue habiendo un punto, intentamos redirección polimórfica
-    if isinstance(related, str) and '.' in related:
-        parts = related.split('.')
-        prefix = parts[0]
-        
         # Si el prefijo es un padre polimórfico, redirigir a través del campo link
         depend_models = getattr(model, '_depend_models', {}) or {}
         link_fname = None
         
-        if prefix in depend_models:
+        if prefix and prefix in depend_models:
             link_fname = depend_models[prefix]
-        else:
+        elif prefix:
             # Búsqueda agresiva por nombre de modelo
             for mname, lfname in depend_models.items():
-                if prefix == mname or mname.startswith(f"{prefix}."):
+                if prefix == mname:
                     link_fname = lfname
                     break
         
-        # [poly] NUEVO: Si no se encontró el campo link en el modelo actual, 
+        # [poly] Si no se encontró el campo link en el modelo actual, 
         # buscar recursivamente en sus padres polimórficos
-        if not link_fname:
+        if prefix and not link_fname:
             for mname, lfname in depend_models.items():
                 parent_model = registry.get(mname)
                 if parent_model:
                     parent_depends = getattr(parent_model, '_depend_models', {}) or {}
                     if prefix in parent_depends:
-                        # Encontramos el prefijo en un abuelo polimórfico.
-                        # Redirigimos a través del campo link del padre actual.
                         link_fname = lfname
                         break
 
         if link_fname:
+            # REDIRECCIÓN: Usamos el campo link en lugar del nombre del modelo
             new_path = f"{link_fname}.{'.'.join(parts[1:])}"
             _logger.info("[poly] Redirigiendo ruta polimórfica %s.%s: %s -> %s", model._name, self.name, related, new_path)
+            
+            # [poly] NEW: Before setting the new path, sanitize it too!
+            # This prevents cycles like account.state -> driver_id.account.state -> driver_id.state
+            new_path_sanitized = _poly_sanitize_path(model, new_path)
+            if new_path_sanitized != new_path:
+                 _logger.info("[poly] Saneamiento post-redirección para %s.%s: %s -> %s", model._name, self.name, new_path, new_path_sanitized)
+                 new_path = new_path_sanitized
+            
             self.related = new_path
             if hasattr(self, '_args'): self._args['related'] = self.related
             self.store = False
+            related = new_path # Para los siguientes pasos
 
     # [poly] Iterative failsafe to avoid KeyError crash in Odoo 18
     # Global recursion prevention: track fields being setup in the current call stack
@@ -4177,6 +4286,68 @@ def poly_NameManager_must_have_fields(self, node, names, node_info, use):
             if is_poly:
                 return
         raise e
+
+def _poly_sanitize_path(model, path):
+    """
+    [poly] STRUCTURAL PATH SANITIZER
+    Strips segments from any position in a related path that look like model names 
+    but are not actual fields in the current model chain.
+    """
+    if not isinstance(path, str) or '.' not in path:
+        return path
+        
+    registry = model.pool or model.env.registry
+    parts = path.split('.')
+    curr_model = model
+    new_parts = []
+    changed = False
+    
+    # _logger.info("[poly] _poly_sanitize_path: path=%s, model=%s", path, model._name)
+    for i, segment in enumerate(parts):
+        # 1. If it's a valid field in the current model step, keep it
+        if curr_model and segment in curr_model._fields:
+            new_parts.append(segment)
+            f_obj = curr_model._fields.get(segment)
+            if f_obj and f_obj.comodel_name:
+                # Advance to next model in chain if possible
+                try:
+                    curr_model = model.env[f_obj.comodel_name]
+                except:
+                    curr_model = None
+            else:
+                curr_model = None
+            continue
+            
+        # 2. Check if segment is an invalid prefix (model name or model prefix)
+        is_invalid = False
+        if segment in registry:
+            is_invalid = True
+        elif i == 0 and curr_model and segment in curr_model._name.split('.'):
+            # If the segment is part of the model name and it's NOT a field
+            # it's definitely a prefix to strip.
+            is_invalid = True
+        elif i == 0 and any(mname.startswith(segment + '.') for mname in registry):
+            # If it looks like a model prefix (e.g. 'account') but it's NOT a field
+            # we should probably strip it too if it's the first segment
+            is_invalid = True
+        elif i == 0 and any(mname.endswith('.' + segment) for mname in registry):
+            # Handle 'poly_base' in 'ir.poly_base'
+            is_invalid = True
+                
+        if is_invalid:
+            # Skip this segment
+            changed = True
+            _logger.debug("[poly] Stripping invalid path segment '%s' from %s.%s", segment, model._name, path)
+            continue
+        
+        # 3. If we don't know what it is but it's not a field, keep it just in case 
+        # (might be a field added later or a special Odoo segment)
+        new_parts.append(segment)
+        curr_model = None
+            
+    res_path = '.'.join(new_parts) if changed and new_parts else path
+    # _logger.info("[poly] _poly_sanitize_path result: %s", res_path)
+    return res_path
 
 # PATCH: IrUiView._validate_view to tolerate missing polymorphic fields during update
 # In Odoo 18, the class is named 'View' but registered as 'ir.ui.view'
