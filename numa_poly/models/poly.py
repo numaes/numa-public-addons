@@ -500,6 +500,21 @@ class PolyReference(fields.Many2one):
         """
         return True
 
+    @_description_searchable.setter
+    def _description_searchable(self, value):
+        """ Allow setting searchable attribute, but we override it via property. """
+        pass
+
+    @property
+    def search(self):
+        """ [poly] Ensure PolyReference fields have a search attribute for Odoo's resolve_depends. """
+        return self._search_related
+
+    @search.setter
+    def search(self, value):
+        """ Allow setting search, but we maintain our method. """
+        pass
+
     def _search_related(self, records, operator, value):
         """
         Determine the domain to search on this field.
@@ -2161,11 +2176,12 @@ class PolyBase(_original_BaseModel):
             if base_model_name == self._name:
                 continue # Skip self to avoid circular/invalid related paths
             related_bases[base_model_name] = base_field_name
-            set(base_field_name,
-                PolyReference(comodel_name=base_model_name,
+            # [poly] Inject PolyReference link field with explicit search method
+            link_field = PolyReference(comodel_name=base_model_name,
                               string=f'Base for {base_model_name}',
                               automatic=True, readonly=True)
-                )
+            link_field.search = link_field._search_related
+            set(base_field_name, link_field)
 
         # Create related fields for all fields from dependent models
         related_counter = 1
@@ -3474,6 +3490,7 @@ def _poly_column_exists(cr, table, column):
 def poly_BaseModel_fetch_query(self, query, fields=None):
     # [poly] CLEAN QUERY: Filter out fields that are NOT physically in the database table
     # This prevents 'UndefinedColumn' errors during early boot or with mixins.
+    _removed_fields = set()
     if fields:
         _valid_fields = []
         # Check physical existence of fields to avoid UndefinedColumn
@@ -3491,17 +3508,61 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
                 # During boot, be very aggressive to allow the registry to load
                 # This is critical for tech models like res.users, ir.model, etc.
                 _logger.warning("[poly] Removing non-existent column '%s' from %s query during boot.", f_name, self._name)
+                _removed_fields.add(f_name)
             elif f_name in ('modules', 'is_seo_optimized', 'new_password', 'active_partner', 'xml_id', 'path', 'count', 'help', 'model'):
                 # Known technical columns that often cause issues in Odoo 18
                 # but only if we are absolutely sure they are missing.
                 # If they are NOT in the table, they must be filtered.
                 _logger.debug("[poly] Filtering known problematic missing column '%s' from %s query.", f_name, self._name)
+                _removed_fields.add(f_name)
             else:
                 # At runtime, for other fields, keep them to let Odoo fail properly
                 _valid_fields.append(f)
         fields = _valid_fields
 
-    return _original_BaseModel_fetch_query(self, query, fields)
+    res = _original_BaseModel_fetch_query(self, query, fields)
+    
+    # [poly] Odoo 18: If we removed fields during boot, we MUST ensure the records have them 
+    # even if they are False. Otherwise, computed fields depending on them will fail
+    # with "Compute method failed to assign ..." because they can't access their dependencies.
+    if _removed_fields and not self.pool.ready:
+        for f_name in _removed_fields:
+            # We use cache.update_raw to avoid triggering further fetches or compute loops
+            # This is critical for res.lang which accesses flag_image during boot.
+            try:
+                # Odoo 18: ensure records are not just browse(None) or empty
+                if self:
+                    # use update_raw to avoid side effects and handle len mismatch if any
+                    # We process each record individually to avoid 'Expected singleton' if Cache.update/update_raw
+                    # doesn't handle multiple IDs with a single value correctly in some Odoo 18 versions
+                    field = self._fields[f_name]
+                    # Odoo 18.0 cache.update and update_raw expect a list of values of the same length as the recordset
+                    for record in self:
+                         self.env.cache.update_raw(record, field, [False])
+                    
+                    # [poly] EXTRA SAFETY: If we are in res.lang and removed flag_image,
+                    # also set flag_image_url to False to avoid compute failure
+                    if self._name == 'res.lang' and f_name == 'flag_image':
+                        _lang_url_field = self._fields.get('flag_image_url')
+                        if _lang_url_field:
+                            for record in self:
+                                 self.env.cache.update_raw(record, _lang_url_field, [False])
+
+            except Exception as e:
+                _logger.debug("[poly] Failed to update cache for filtered field %s: %s", f_name, e)
+        
+        # [poly] If we are in res.lang, ensure flag_image_url is False during boot
+        # even if _fetch_query was called without fields or with flag_image already missing.
+        if self and self._name == 'res.lang' and not self.pool.ready:
+             _lang_url_field = self._fields.get('flag_image_url')
+             if _lang_url_field:
+                  for record in self:
+                       if not self.env.cache.contains(record, _lang_url_field):
+                            try:
+                                 self.env.cache.update_raw(record, _lang_url_field, [False])
+                            except: pass
+            
+    return res
 
 _original_BaseModel_fetch_query = odoo.models.BaseModel._fetch_query
 odoo.models.BaseModel._fetch_query = poly_BaseModel_fetch_query
@@ -3620,11 +3681,24 @@ odoo.models.BaseModel.__repr__ = poly_BaseModel_repr
 _original_Field_resolve_depends = odoo.fields.Field.resolve_depends
 
 def poly_Field_resolve_depends(self, registry):
-    # [poly] Odoo 18: Silence searchable warnings during registry load for polymorphic models.
-    # These warnings are noisy because dependencies are often incomplete during incremental load.
+    # [poly] Odoo 18: Silence searchable warnings for polymorphic models.
+    # These warnings are noisy because dependencies are often incomplete during incremental load,
+    # or involve polymorphic link fields that Odoo doesn't recognize as searchable.
     with warnings.catch_warnings():
-        if getattr(registry, '_init', False):
+        # [poly] Aggressive silencing: always ignore if it's a polymorphic model
+        # or if we are during registry initialization.
+        _silence = getattr(registry, '_init', False)
+        
+        if not _silence:
+            # Check if self belongs to a polymorphic model
+            if hasattr(self, 'model_name') and self.model_name in registry:
+                model_class = registry[self.model_name]
+                if hasattr(model_class, '_depend_models') or 'ir.poly_base' in [getattr(c, '_name', None) for c in model_class.mro()]:
+                    _silence = True
+        
+        if _silence:
             warnings.filterwarnings("ignore", message=".*should be searchable.*")
+            
         try:
             yield from _original_Field_resolve_depends(self, registry)
         except ValueError as e:
