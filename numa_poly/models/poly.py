@@ -554,7 +554,20 @@ class PolyReference(fields.Many2one):
             return self
 
         # Single record case
-        if not hasattr(records, '_ids') or len(records._ids) <= 1:
+        # Odoo 18 specific: records might be a technical descriptor object (e.g. member_descriptor)
+        # without a __len__ method, or records._ids might not be what we expect.
+        _is_single = True
+        try:
+            if hasattr(records, '_ids') and records._ids is not None:
+                # If it has _ids, check length. descriptors like member_descriptor 
+                # might fail here if they leak into this logic.
+                if len(records._ids) > 1:
+                    _is_single = False
+        except (TypeError, AttributeError):
+            # If len() or access fails, treat as single record/technical object
+            pass
+
+        if _is_single:
             try:
                 return self.convert_to_record(None, records)
             except Exception:
@@ -3992,6 +4005,14 @@ odoo.fields.Field.setup_related = poly_Field_setup_related
 _original_Field_get_depends = odoo.fields.Field.get_depends
 
 def poly_Field_get_depends(self, model):
+    stack_key = (id(self), model._name)
+    if not hasattr(odoo.fields.Field, '_poly_depends_stack'):
+        odoo.fields.Field._poly_depends_stack = set()
+    
+    if stack_key in odoo.fields.Field._poly_depends_stack:
+        return [], set()
+    
+    odoo.fields.Field._poly_depends_stack.add(stack_key)
     try:
         return _original_Field_get_depends(self, model)
     except (AttributeError, KeyError, TypeError) as e:
@@ -4000,6 +4021,8 @@ def poly_Field_get_depends(self, model):
             if is_poly:
                 return [], set()
         raise e
+    finally:
+        odoo.fields.Field._poly_depends_stack.discard(stack_key)
 
 odoo.fields.Field.get_depends = poly_Field_get_depends
 _original_One2many_setup_nonrelated = odoo.fields.One2many.setup_nonrelated
