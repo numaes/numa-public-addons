@@ -2212,7 +2212,7 @@ class PolyBase(_original_BaseModel):
                     if subfield_name == 'id':
                         continue
                     # [poly] If we are adding fields from a model to itself (should not happen, but safeguard)
-                    if mm == self._name:
+                    if mm == cls._name:
                         continue
                     # Only add fields that aren't already defined, aren't PolyReferences,
                     # and aren't related fields (to avoid duplication/self-reference)
@@ -2222,8 +2222,8 @@ class PolyBase(_original_BaseModel):
                         # and it also exists in the polymorphic base, it MUST be converted to related.
                         _force_related = False
                         _existing = None
-                        if subfield_name in type(self).__dict__ or subfield_name in self._fields:
-                            _existing = self._fields.get(subfield_name) or type(self).__dict__.get(subfield_name)
+                        if subfield_name in cls.__dict__ or subfield_name in cls._fields:
+                            _existing = cls._fields.get(subfield_name) or cls.__dict__.get(subfield_name)
                             if _existing and (getattr(_existing, 'store', True) or not getattr(_existing, 'related', None)):
                                 # print(f"[poly] DEBUG: Forcing related for {self._name}.{subfield_name} (found stored/non-related field)")
                                 _force_related = True
@@ -2236,24 +2236,24 @@ class PolyBase(_original_BaseModel):
                                 subfield.comodel_name,
                                 subfield
                             )
-                            # [poly] FORCE RELATED: ensure the field is NOT in type(self).__dict__
+                            # [poly] FORCE RELATED: ensure the field is NOT in cls.__dict__
                             # so Odoo's setup_models is forced to use the one we inject in _fields
-                            if subfield_name in type(self).__dict__:
+                            if subfield_name in cls.__dict__:
                                 try:
-                                    delattr(type(self), subfield_name)
+                                    delattr(cls, subfield_name)
                                 except (AttributeError, TypeError):
                                     pass
                             
                             # Also check the Odoo 18 Proxy class if it exists
-                            if hasattr(self.pool, 'models') and self._name in self.pool.models:
-                                proxy_class = self.pool.models[self._name]
-                                if proxy_class is not type(self) and subfield_name in proxy_class.__dict__:
+                            if hasattr(cls.pool, 'models') and cls._name in cls.pool.models:
+                                proxy_class = cls.pool.models[cls._name]
+                                if proxy_class is not cls and subfield_name in proxy_class.__dict__:
                                     try:
                                         delattr(proxy_class, subfield_name)
                                     except (AttributeError, TypeError):
                                         pass
-                            if subfield_name in self._fields:
-                                del self._fields[subfield_name]
+                            if subfield_name in cls._fields:
+                                del cls._fields[subfield_name]
                         else:
                             # [poly] If field is already collected, but the new one is better 
                             # (e.g. has comodel_name or relation info), update it.
