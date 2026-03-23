@@ -236,12 +236,19 @@ def _poly_One2many_get(self, records, owner=None):
         try:
             # This is the line that fails in Odoo 18 fields.py:4672
             # inverse_field = records.pool[self.comodel_name]._fields[self.inverse_name]
-            _ = records.pool[self.comodel_name]._fields[self.inverse_name]
+            # Odoo 18 uses __get__ which triggers this access.
+            if hasattr(records, 'pool') and records.pool:
+                _comodel = records.pool.get(self.comodel_name)
+                if _comodel is not None:
+                    _fields = getattr(_comodel, '_fields', {})
+                    if self.inverse_name not in _fields:
+                        if not records.pool.ready:
+                            # During boot, if the inverse field is not yet in _fields, 
+                            # we skip the Odoo 18 specific logic and fall back to super().__get__
+                            # which is handled by our _poly_Relational_get patch.
+                            return _poly_Relational_get(self, records, owner)
         except (KeyError, AttributeError):
-            if hasattr(records, 'pool') and records.pool and not records.pool.ready:
-                # During boot, if the inverse field is not yet in _fields, 
-                # we skip the Odoo 18 specific logic and fall back to super().__get__
-                # which is handled by our _poly_Relational_get patch.
+             if hasattr(records, 'pool') and records.pool and not records.pool.ready:
                 return _poly_Relational_get(self, records, owner)
 
     return _original_One2many_get(self, records, owner)
