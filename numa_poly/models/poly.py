@@ -3538,7 +3538,18 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
                     field = self._fields[f_name]
                     # Odoo 18.0 cache.update and update_raw expect a list of values of the same length as the recordset
                     for record in self:
-                         self.env.cache.update_raw(record, field, [False])
+                         # [poly] Determine the correct empty value for the field type
+                         # Relational fields (Many2one, One2many, Many2many) should NOT be False in cache
+                         # as it can lead to returning False instead of an empty recordset, 
+                         # causing TypeError: 'bool' object is not iterable in mapped()
+                         empty_value = False
+                         if field.relational:
+                             if field.type == 'many2one':
+                                 empty_value = None
+                             else:
+                                 empty_value = ()
+                         
+                         self.env.cache.update_raw(record, field, [empty_value])
                     
                     # [poly] EXTRA SAFETY: If we are in res.lang and removed flag_image,
                     # also set flag_image_url to False to avoid compute failure
