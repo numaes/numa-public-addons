@@ -151,21 +151,18 @@ def _poly_Field_get(self, record, owner=None):
     If record is a class (happens during some _add_field calls in Odoo 18), 
     it should also return self instead of calling ensure_one().
     """
-    if record is None:
+    if record is None or isinstance(record, type):
         return self
     
-    # Odoo 18: During _add_field, getattr(model, name) is called where 'model' is a class.
-    # Standard Python getattr(Class, name) calls __get__(None, Class).
-    # But if someone (like numa_poly) manually calls __get__ or if there's 
-    # some other unusual path where record is a class, we handle it here.
-    if isinstance(record, type):
+    # Odoo 18: Protect against recordsets without _ids (e.g. member_descriptor or other weird objects)
+    if not hasattr(record, '_ids'):
         return self
 
     try:
         return _original_Field_get(self, record, owner=owner)
     except TypeError as e:
         # This specifically handles "BaseModel.ensure_one() missing 1 required positional argument: 'self'"
-        if "ensure_one" in str(e) and (not record or not hasattr(record, '_ids')):
+        if "ensure_one" in str(e):
             return self
         raise e
 
@@ -174,13 +171,15 @@ def _poly_Relational_get(self, records, owner=None):
     [poly] Monkey patch for _Relational.__get__ to avoid TypeError: object of type 'member_descriptor' has no len()
     This happens during inspect.getmembers(cls) when Odoo 18 processes views.
     """
-    if records is not None:
-        # Check if records is a valid recordset before calling len(records._ids)
-        # We check for _ids because that's what Odoo base uses at line 3112 of fields.py
-        if not hasattr(records, '_ids'):
-            # If it's not a recordset (e.g. member_descriptor), 
-            # fall back to the base Field.__get__ logic which handles non-recordsets
-            return odoo.fields.Field.__get__(self, records, owner)
+    if records is None or isinstance(records, type):
+        return self
+        
+    # Check if records is a valid recordset before calling len(records._ids)
+    # We check for _ids because that's what Odoo base uses at line 3112 of fields.py
+    if not hasattr(records, '_ids'):
+        # If it's not a recordset (e.g. member_descriptor), 
+        # fall back to the base Field.__get__ logic which handles non-recordsets
+        return _poly_Field_get(self, records, owner)
             
     return _original_Relational_get(self, records, owner)
 
