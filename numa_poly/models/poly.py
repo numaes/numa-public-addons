@@ -549,6 +549,9 @@ class PolyReference(fields.Many2one):
         if records is None:
             return self
 
+        if str(type(records)) == '<class \'member_description\'>':
+            raise MissingError
+
         # Odoo 18 specific: Check if the field is set in _fields of the model
         if not hasattr(records, '_fields') or self.name not in records._fields:
             return self
