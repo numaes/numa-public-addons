@@ -3664,27 +3664,54 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 # 4. Asegurar que los campos Many2many polimórficos se marquen como 'related' y 'store=False'
 #    para evitar que Odoo intente acceder a tablas de relación físicas inexistentes en el modelo hijo.
 
-# [poly] PATCH: IrModel.new_password column error workaround
-# This is a specific fix for res.users.new_password which seems to be causing
-# psycopg2.errors.UndefinedColumn: column res_users.new_password does not exist
-# during early boot when some queries are executed before the column is added.
+# [poly] PATCH: Technical models column error workaround (res.users, ir.model, ir.ui.view)
+# This fixes psycopg2.errors.UndefinedColumn for technical columns added by mixins (website, etc.)
+# that might be missing during early boot when security or routing checks occur.
+@odoo.tools.ormcache('table', 'column')
+def _poly_column_exists(cr, table, column):
+    try:
+        cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s AND column_name=%s", (table, column))
+        return bool(cr.fetchone())
+    except Exception:
+        return False
+
+def poly_BaseModel_fetch_query(self, query, fields=None):
+    if fields and self.pool._init:
+        # Technical models and their potentially missing columns during boot
+        missing_candidates = {
+            'res.users': ['new_password', 'active_partner'],
+            'ir.model': ['modules'],
+            'ir.ui.view': ['is_seo_optimized'],
+        }
+        if self._name in missing_candidates:
+            candidates = missing_candidates[self._name]
+            to_remove = []
+            for candidate in candidates:
+                if any(getattr(f, 'name', f) == candidate for f in fields):
+                    if not _poly_column_exists(self.env.cr, self._table, candidate):
+                        _logger.warning("[poly] Removing non-existent column '%s' from %s query during boot.", candidate, self._name)
+                        to_remove.append(candidate)
+            
+            if to_remove:
+                fields = [f for f in fields if getattr(f, 'name', f) not in to_remove]
+
+    # Use original _fetch_query logic
+    # Important: we need to find the right original method because we might have multiple patches
+    # For res.users we had a specific one, now we generalize.
+    if self._name == 'res.users' and hasattr(odoo.addons.base.models.res_users.Users, '_poly_original_fetch_query'):
+        return odoo.addons.base.models.res_users.Users._poly_original_fetch_query(self, query, fields)
+    
+    return _original_BaseModel_fetch_query(self, query, fields)
+
+_original_BaseModel_fetch_query = odoo.models.BaseModel._fetch_query
+odoo.models.BaseModel._fetch_query = poly_BaseModel_fetch_query
+
+# We keep the res.users specific one if it was already patched to avoid breaking its chain
 try:
-    _original_res_users_fetch_query = odoo.addons.base.models.res_users.Users._fetch_query
-    def poly_res_users_fetch_query(self, query, fields=None):
-        if fields and any(getattr(f, 'name', f) == 'new_password' for f in fields):
-            try:
-                # Check if column exists in DB
-                self.env.cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name='res_users' AND column_name='new_password'")
-                if not self.env.cr.fetchone():
-                    _logger.warning("[poly] Removing non-existent column 'new_password' from res.users query during boot.")
-                    # fields might contain field objects or strings
-                    fields = [f for f in fields if getattr(f, 'name', f) != 'new_password']
-            except Exception:
-                # If information_schema check fails, we just continue
-                pass
-        return _original_res_users_fetch_query(self, query, fields)
-    odoo.addons.base.models.res_users.Users._fetch_query = poly_res_users_fetch_query
-except (AttributeError, ImportError):
+    if not hasattr(odoo.addons.base.models.res_users.Users, '_poly_original_fetch_query'):
+        odoo.addons.base.models.res_users.Users._poly_original_fetch_query = odoo.addons.base.models.res_users.Users._fetch_query
+    odoo.addons.base.models.res_users.Users._fetch_query = poly_BaseModel_fetch_query
+except:
     pass
 
 # PATCH: Field.__get__ Interceptor para evitar errores de ensure_one durante el setup
@@ -4408,7 +4435,7 @@ def _poly_registry_setup_models(self, cr):
                 _unique_syncs.append(sync_key)
                 _seen_syncs.add(sync_key)
 
-        _logger.info("[poly] Syncing %s with polymorphic parents: %s", name, _unique_syncs)
+        _logger.debug("[poly] Syncing %s with polymorphic parents: %s", name, _unique_syncs)
         for base_model_name, link_field_name in _unique_syncs:
             base_poly_model = self[base_model_name]
             
