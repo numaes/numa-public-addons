@@ -140,10 +140,11 @@ def _poly_finalize_view_validation(self, cr):
 odoo.modules.registry.Registry._pending_poly_views = _poly_pending_views
 odoo.modules.registry.Registry._poly_finalize_view_validation = _poly_finalize_view_validation
 
-# Save the original Odoo classes to avoid cyclic inheritance
+# Save the original Odoo methods to avoid cyclic inheritance
 _original_Field_get = odoo.fields.Field.__get__
 _original_Field_set = odoo.fields.Field.__set__
 _original_Relational_get = odoo.fields._Relational.__get__
+_original_One2many_get = odoo.fields.One2many.__get__
 
 def _poly_Field_get(self, record, owner=None):
     """
@@ -225,9 +226,30 @@ def _poly_Relational_get(self, records, owner=None):
              return _poly_Field_get(self, records, owner)
         raise e
 
+def _poly_One2many_get(self, records, owner=None):
+    """
+    [poly] Monkey patch for One2many.__get__ to handle KeyError: 'res_id' during setup_models in Odoo 18.
+    Odoo 18 added an explicit __get__ to One2many that bypasses _Relational.__get__ and directly 
+    accesses the pool's fields.
+    """
+    if records is not None and getattr(self, 'inverse_name', None) is not None:
+        try:
+            # This is the line that fails in Odoo 18 fields.py:4672
+            # inverse_field = records.pool[self.comodel_name]._fields[self.inverse_name]
+            _ = records.pool[self.comodel_name]._fields[self.inverse_name]
+        except (KeyError, AttributeError):
+            if hasattr(records, 'pool') and records.pool and not records.pool.ready:
+                # During boot, if the inverse field is not yet in _fields, 
+                # we skip the Odoo 18 specific logic and fall back to super().__get__
+                # which is handled by our _poly_Relational_get patch.
+                return _poly_Relational_get(self, records, owner)
+
+    return _original_One2many_get(self, records, owner)
+
 odoo.fields.Field.__get__ = _poly_Field_get
 odoo.fields.Field.__set__ = _poly_Field_set
 odoo.fields._Relational.__get__ = _poly_Relational_get
+odoo.fields.One2many.__get__ = _poly_One2many_get
 
 _original_BaseModel = odoo.models.BaseModel
 _original_AbstractModel = odoo.models.AbstractModel
