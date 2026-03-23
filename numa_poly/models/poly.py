@@ -141,6 +141,35 @@ odoo.modules.registry.Registry._pending_poly_views = _poly_pending_views
 odoo.modules.registry.Registry._poly_finalize_view_validation = _poly_finalize_view_validation
 
 # Save the original Odoo classes to avoid cyclic inheritance
+_original_Field_get = odoo.fields.Field.__get__
+
+def _poly_Field_get(self, record, owner=None):
+    """
+    [poly] Monkey patch for Field.__get__ to handle edge cases in Odoo 18.
+    If record is None, it's a class level access, should return self.
+    If record is a class (happens during some _add_field calls in Odoo 18), 
+    it should also return self instead of calling ensure_one().
+    """
+    if record is None:
+        return self
+    
+    # Odoo 18: During _add_field, getattr(model, name) is called where 'model' is a class.
+    # Standard Python getattr(Class, name) calls __get__(None, Class).
+    # But if someone (like numa_poly) manually calls __get__ or if there's 
+    # some other unusual path where record is a class, we handle it here.
+    if isinstance(record, type):
+        return self
+
+    try:
+        return _original_Field_get(self, record, owner=owner)
+    except TypeError as e:
+        # This specifically handles "BaseModel.ensure_one() missing 1 required positional argument: 'self'"
+        if "ensure_one" in str(e) and (not record or not hasattr(record, '_ids')):
+            return self
+        raise e
+
+odoo.fields.Field.__get__ = _poly_Field_get
+
 _original_BaseModel = odoo.models.BaseModel
 _original_AbstractModel = odoo.models.AbstractModel
 _original_Model = odoo.models.Model
