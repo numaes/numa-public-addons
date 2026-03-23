@@ -132,19 +132,21 @@ class PolyExpression(expression):
             # [poly] Aggressive Fix: Ensure core fields exist in _fields for ALL models during recovery
             # to prevent ValueError during _order_to_sql or search.
             from odoo import fields as odoo_fields
-            # [poly] Only inject 'id' if missing, but be cautious with 'name'
-            # as many technical models do not have it.
-            # However, during initialization, some models might fail if they lack 'name'
-            # during certain ORM operations. We only inject it if the class actually HAS it
-            # or if it's a standard model that usually has it.
+            # [poly] Only inject 'id' if missing. 
+            # DANGEROUS: DO NOT inject 'name' unless we are sure it's a real column!
+            # Odoo 18 base classes often have 'name' as a descriptor but NOT a column.
             for core_f in ['id', 'name']:
                 if core_f not in model._fields:
-                     if hasattr(type(model), core_f):
-                         _logger.warning("[poly] Restoring missing core field %s into %s from class", core_f, model._name)
-                         model._fields[core_f] = getattr(type(model), core_f)
-                     elif core_f == 'id':
-                         _logger.warning("[poly] Injecting missing core field %s into %s", core_f, model._name)
-                         model._fields['id'] = odoo_fields.Id(automatic=True, readonly=True)
+                     if core_f == 'id':
+                         if hasattr(type(model), core_f):
+                             _logger.warning("[poly] Restoring missing core field %s into %s from class", core_f, model._name)
+                             model._fields[core_f] = getattr(type(model), core_f)
+                         else:
+                             _logger.warning("[poly] Injecting missing core field %s into %s", core_f, model._name)
+                             model._fields['id'] = odoo_fields.Id(automatic=True, readonly=True)
+                     # We SKIP injecting 'name' if it's missing from _fields, even if it's in the class,
+                     # because it often leads to UndefinedColumn SQL errors.
+                
                 # Hard fix for 'id' descriptor
                 if core_f == 'id' and not hasattr(type(model), 'id'):
                      try: setattr(type(model), 'id', model._fields['id'])
@@ -152,6 +154,20 @@ class PolyExpression(expression):
             
             # Use standard parser to avoid further issues with uninitialized fields
             try:
+                # [poly] Before parsing, identify if 'name' is in the domain but NOT in _fields
+                if isinstance(self.expression, (list, tuple)):
+                    new_expression = []
+                    for leaf in self.expression:
+                        if (isinstance(leaf, (list, tuple)) and len(leaf) == 3 and 
+                            leaf[0] == 'name' and 'name' not in model._fields):
+                            _logger.warning("[poly] Field 'name' not in %s._fields but used in domain %s. Replacing with TRUE.", model._name, leaf)
+                            # TRUE_LEAF is defined in odoo.osv.expression
+                            from odoo.osv.expression import TRUE_LEAF
+                            new_expression.append(TRUE_LEAF)
+                        else:
+                            new_expression.append(leaf)
+                    self.expression = new_expression
+
                 super().parse()
             except (KeyError, ValueError, Exception) as e2:
                 from odoo.tools import SQL as _SQL_RECOVERY

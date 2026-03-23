@@ -142,6 +142,7 @@ odoo.modules.registry.Registry._poly_finalize_view_validation = _poly_finalize_v
 
 # Save the original Odoo classes to avoid cyclic inheritance
 _original_Field_get = odoo.fields.Field.__get__
+_original_Field_set = odoo.fields.Field.__set__
 _original_Relational_get = odoo.fields._Relational.__get__
 
 def _poly_Field_get(self, record, owner=None):
@@ -166,6 +167,33 @@ def _poly_Field_get(self, record, owner=None):
             return self
         raise e
 
+def _poly_Field_set(self, records, value):
+    """
+    [poly] Monkey patch for Field.__set__ to handle edge cases in Odoo 18.
+    If records is a class or a member_descriptor, we must avoid iterating over it.
+    This happens during model._setup_base() when calling setattr(cls, name, field).
+    """
+    if records is None or isinstance(records, type):
+        return
+        
+    # Odoo 18: Protect against recordsets without _ids (e.g. member_descriptor)
+    if not hasattr(records, '_ids'):
+        return
+
+    # Also check if _ids is iterable, because it might be a property object or member_descriptor
+    # when accessed from the class (records is a class) but here we already checked for type.
+    # However, sometimes 'records' might be an object that has _ids as a descriptor but not a recordset.
+    try:
+        # Try to access it. If it's a property it might fail if called on class, 
+        # but we already excluded 'type'.
+        # The reported error is "TypeError: 'member_descriptor' object is not iterable" 
+        # at "for record_id in records._ids"
+        iter(records._ids)
+    except TypeError:
+        return
+
+    return _original_Field_set(self, records, value)
+
 def _poly_Relational_get(self, records, owner=None):
     """
     [poly] Monkey patch for _Relational.__get__ to avoid TypeError: object of type 'member_descriptor' has no len()
@@ -184,6 +212,7 @@ def _poly_Relational_get(self, records, owner=None):
     return _original_Relational_get(self, records, owner)
 
 odoo.fields.Field.__get__ = _poly_Field_get
+odoo.fields.Field.__set__ = _poly_Field_set
 odoo.fields._Relational.__get__ = _poly_Relational_get
 
 _original_BaseModel = odoo.models.BaseModel
