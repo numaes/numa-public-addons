@@ -708,283 +708,6 @@ class PolyBase(_original_BaseModel):
         """ Internal helper to call super().check_access() safely """
         return super(PolyBase, self).check_access(operation)
 
-    def __getitem__(self, key):
-        # [poly] Technical model protection during boot
-        if not self.pool.ready:
-            try:
-                mname = super().__getattribute__('_name')
-            except AttributeError:
-                mname = None
-            
-            if mname in ('res.groups', 'res.users', 'res.company', 'ir.model.data', 'ir.model.category', 'res.lang'):
-                # [poly] Inject missing core fields into _fields to avoid KeyError in Odoo core
-                try:
-                    fields_dict = getattr(self, '_fields', {})
-                    from odoo import fields
-                    # We inject a broad list of fields ONLY for res.lang to avoid KeyError
-                    if mname == 'res.lang':
-                        all_possible_fnames = (
-                            'id', 'name', 'code', 'iso_code', 'url_code', 'active', 'direction', 
-                            'date_format', 'time_format', 'week_start', 'grouping', 
-                            'decimal_point', 'thousands_sep'
-                        )
-                        for fname in all_possible_fnames:
-                            if fname not in fields_dict:
-                                if fname == 'id': fields_dict[fname] = fields.Id()
-                                else: fields_dict[fname] = fields.Char()
-                                fields_dict[fname].name = fname
-                                fields_dict[fname].model_name = mname
-                    elif mname == 'ir.model.data':
-                        # For ir.model.data, only common fields
-                        for fname in ('id', 'module', 'name', 'model', 'res_id', 'noupdate'):
-                            if fname not in fields_dict and isinstance(fname, str):
-                                if fname == 'id': fields_dict[fname] = fields.Id()
-                                else: fields_dict[fname] = fields.Char()
-                                fields_dict[fname].name = fname
-                                fields_dict[fname].model_name = mname
-                except Exception: pass
-
-                if key == 'id':
-                    try:
-                        mids = super().__getattribute__('ids')
-                        if mids: return mids[0]
-                    except Exception: pass
-                
-                # Check if it exists in _fields
-                try:
-                    # [poly] CRITICAL: use getattr to avoid recursion on technical models
-                    fields_dict = getattr(self, '_fields', {})
-                    if key in fields_dict:
-                        field = fields_dict[key]
-                        try:
-                            # Odoo 18: use field.__get__(self) directly to bypass some logic
-                            return field.__get__(self, type(self))
-                        except (KeyError, MissingError, AccessError):
-                            # DO NOT return fallback if we are already in runtime (pool.ready)
-                            if self.pool.ready:
-                                raise
-                            
-                            _logger.warning("[poly] Intercepted MissingError in %s[%s] during boot. Returning fallback.", mname, key)
-                            if field.type in ('many2one', 'one2many', 'many2many'):
-                                return self.env[field.comodel_name].sudo()
-                            if key == 'id': return False
-                            if key == 'code' and mname == 'res.lang': return 'en_US'
-                            return False
-                except Exception: pass
-
-        # [poly] Aggressive KeyError 'id' fix
-        if not self.pool.ready and key == 'id':
-            try:
-                mids = super().__getattribute__('ids')
-                if mids: return mids[0]
-            except Exception: pass
-
-        try:
-            # [poly] Final attempt to avoid KeyError by checking _fields again
-            try:
-                fields_dict = getattr(self, '_fields', {})
-                if isinstance(key, str) and key not in fields_dict:
-                    from odoo import fields
-                    if key == 'id': fields_dict['id'] = fields.Id()
-                    else: fields_dict[key] = fields.Char()
-                    fields_dict[key].name = key
-            except Exception: pass
-            
-            return super().__getitem__(key)
-        except (KeyError, MissingError, AccessError):
-            if not self.pool.ready and isinstance(key, str):
-                try:
-                    mname = super().__getattribute__('_name')
-                except AttributeError:
-                    mname = None
-                
-                if mname in ('res.groups', 'res.users', 'res.company', 'ir.model.data', 'ir.model.category', 'res.lang'):
-                    _logger.warning("[poly] Intercepted MissingError/KeyError in %s[%s] during boot. Returning fallback.", mname, key)
-                    if key == 'id':
-                        try:
-                            mids = super().__getattribute__('ids')
-                            return mids[0] if mids else False
-                        except Exception:
-                            return False
-                    
-                    # [poly] Aggressive relational fallback for __getitem__
-                    try:
-                        fields_dict = self.pool[mname]._fields
-                        field = fields_dict.get(key)
-                        if field and field.type in ('many2one', 'one2many', 'many2many'):
-                            return self.env[field.comodel_name].sudo()
-                    except Exception:
-                        pass
-                    return False
-            raise
-
-    def __getattribute__(self, name):
-        """
-        Global try-except for MissingError on polymorphic models.
-        In Odoo 18, during registry setup, records might be accessed before
-        their polymorphic link is fully established, especially for core
-        models like res.groups or res.users in a dirty database.
-        """
-        # [poly] CRITICAL: Early exit for technical attributes to avoid recursion
-        if name in ('_fields', 'env', 'id', '_name', 'pool', '_context', 'with_context'):
-            return super().__getattribute__(name)
-
-        try:
-            return super().__getattribute__(name)
-        except (MissingError, AccessError) as e:
-            # [poly] Aggressive fallback to avoid boot crash
-            # We use a broad check for boot phase or any inconsistent state during initialization
-            # ALSO: we intercept MissingError even after boot for technical models to avoid
-            # blocking the whole environment if a technical record is missing.
-            is_boot = not self.pool.ready or self.env.context.get('poly_boot_safe')
-            
-            if name not in ('env', 'id', '_name', 'pool'):
-                try:
-                    mname = super().__getattribute__('_name')
-                except AttributeError:
-                    mname = None
-                
-                # Check IDs to see if we are a recordset
-                try:
-                    mids = super().__getattribute__('ids')
-                except AttributeError:
-                    mids = ()
-
-                if mname in ('res.groups', 'res.users', 'res.company', 'ir.model.data', 'ir.model.category', 'res.lang'):
-                    # [poly] DO NOT return fallback if we are already in runtime (pool.ready)
-                    # unless it's a MissingError on a technical model which we want to survive.
-                    # AccessError at runtime should NOT be masked as it breaks security.
-                    if self.pool.ready and isinstance(e, AccessError):
-                        raise e
-
-                    # [poly] CRITICAL: prevent infinite recursion if accessing attribute fails repeatedly
-                    if self.env.context.get('poly_getting_attr') == name:
-                         raise e
-                    
-                    _logger.warning("[poly] Intercepted MissingError/AccessError on %s%s.%s. Returning fallback.", mname, mids, name)
-                    
-                    # [poly] CRITICAL DOTTED PATH AND SECURITY SAFETY: 
-                    # We MUST return sensible objects for relational fields to avoid 'bool' object errors.
-                    if name == 'groups_id':
-                        return self.env['res.groups'].sudo().browse()
-                    if name == 'company_id':
-                        return self.env['res.company'].sudo().browse()
-                    if name == 'company_ids':
-                        return self.env['res.company'].sudo().browse()
-                    if name == 'partner_id':
-                        return self.env['res.partner'].sudo().browse()
-                    
-                    if name == 'category_id':
-                        return self.env['ir.module.category'].sudo().browse()
-                    if name == 'xml_id': 
-                        return "__poly_missing__"
-                    
-                    # Special for res.lang
-                    if mname == 'res.lang':
-                        if name == 'code': return "en_US"
-                        if name == 'active': return False
-                        # id is often in mids, but if __getitem__ is used it might fail
-                        if name == 'id': return mids[0] if mids else False
-                        # Fallback for ANY field in res.lang during boot/MissingError
-                        return False
-
-                    try:
-                        # [poly] Robust field lookup for relational fallback
-                        field = None
-                        if hasattr(self, '_fields') and name in self._fields:
-                            field = self._fields[name]
-                        elif mname in self.pool and name in self.pool[mname]._fields:
-                            field = self.pool[mname]._fields[name]
-                            
-                        if field and field.type in ('many2one', 'one2many', 'many2many'):
-                            return self.env[field.comodel_name].sudo().browse()
-                    except Exception:
-                        pass
-                    
-                    # [poly] If we are an empty recordset (ids is empty) and name is not in fields,
-                    # we might be a 'bool' being proxied or similar.
-                    if not mids:
-                        # Fallback for common technical fields
-                        if name == 'id': return False
-
-                    return False
-
-                if is_boot:
-                    # Handle record-level MissingError even if not in those models
-                    if isinstance(e, MissingError) and mids:
-                        _logger.warning("[poly] Record level MissingError on %s%s.%s during boot. Returning fallback.", mname, mids, name)
-                        try:
-                            fields_dict = super().__getattribute__('_fields')
-                            field = fields_dict.get(name)
-                            if field and field.type in ('many2one', 'one2many', 'many2many'):
-                                 return self.env[field.comodel_name].sudo()
-                        except Exception:
-                            pass
-                        return False
-
-                    if name.startswith('pln_') or name in getattr(self, '_fields', {}):
-                        field = self._fields.get(name)
-                        if field and field.type in ('many2one', 'one2many', 'many2many'):
-                            return self.env[field.comodel_name]
-                        return False
-            raise
-
-    def __getattr__(self, name):
-        """
-        Fallback for polymorphic fields that might not have been correctly
-        injected or resolved as attributes due to late model setup.
-        """
-        # [poly] Odoo 18 SAFEGUARD: avoid recursive calls and handle MissingError/AccessError
-        # during boot for core models.
-        if name == '_fields':
-            return super().__getattribute__(name)
-
-        # CRITICAL: We avoid standard Odoo field attributes to prevent recursion
-        # during field setup. We only intercept pln_* or known polymorphic fields.
-        if name.startswith('pln_') or (name in getattr(self, '_fields', {})):
-            # Check for numa.planning.node specifically
-            node_model = self.env.registry.get('numa.planning.node')
-            if node_model is not None and name in node_model._fields:
-                field = node_model._fields[name]
-                try:
-                    return field.__get__(self, type(self))
-                except (MissingError, AccessError, AttributeError):
-                    # Odoo 18: If the record is missing from ir_poly_base (missing polymorphic link)
-                    # or the user lacks access to the polymorphic base,
-                    # return a sensible default for the field type to avoid AttributeError.
-                    if field.type == 'one2many':
-                        return self.env[field.comodel_name]
-                    if field.type == 'many2many':
-                        return self.env[field.comodel_name]
-                    if field.type == 'many2one':
-                        return self.env[field.comodel_name]
-                    return False
-                except Exception:
-                    pass
-
-            # Check for numa.planning.allocation (another potential polymorphic base)
-            allocation_model = self.env.registry.get('numa.planning.allocation')
-            if allocation_model is not None and name in allocation_model._fields:
-                field = allocation_model._fields[name]
-                try:
-                    return field.__get__(self, type(self))
-                except (MissingError, AccessError):
-                    if field.type == 'one2many' or field.type == 'many2many' or field.type == 'many2one':
-                        return self.env[field.comodel_name]
-                    return False
-                except Exception:
-                    pass
-
-            fields_dict = getattr(self, '_fields', {})
-            field = fields_dict.get(name)
-            if field:
-                try:
-                    return field.__get__(self, type(self))
-                except Exception:
-                    pass
-        
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-
     def as_concrete_model(self):
         """
         Convert this base record to its concrete model representation.
@@ -3738,111 +3461,6 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
 _original_BaseModel_fetch_query = odoo.models.BaseModel._fetch_query
 odoo.models.BaseModel._fetch_query = poly_BaseModel_fetch_query
 
-# PATCH: Field.__get__ Interceptor para evitar errores de ensure_one durante el setup
-_original_Field_get = odoo.fields.Field.__get__
-def poly_Field_get(self, record, owner=None):
-    # [poly] Odoo 18: Protecciones contra introspección prematura
-    
-    # [poly] REFUERZO EXTREMO: Si el acceso es sobre la CLASE o record es None,
-    # CORTAMOS inmediatamente para evitar que Odoo ejecute su lógica interna.
-    if record is None or isinstance(record, type):
-        return self
-
-    # [poly] Verificación de instancia segura
-    try:
-         if not isinstance(record, odoo.models.BaseModel):
-              return self
-    except:
-         return self
-
-    # [poly] BLOQUE DE SEGURIDAD ABSOLUTA PARA ODOO 18
-    # Si detectamos que Odoo 18 va a intentar llamar a len(record._ids) y _ids no es válido, CORTAMOS.
-    try:
-         # Acceso ultra-bajo nivel para evitar disparar descriptores.
-         _rec_cls = type(record)
-         
-         # Verificamos si '_ids' en la clase es un member_descriptor o similar.
-         _ids_desc = getattr(_rec_cls, '_ids', None)
-         if str(type(_ids_desc)) in ["<class 'member_descriptor'>", "<class 'getset_descriptor'>"]:
-              # Es un descriptor técnico. Comprobamos si la instancia tiene el valor real.
-              try:
-                   # Usamos object.__getattribute__ para saltar descriptores de Odoo en la instancia
-                   _ids_raw = object.__getattribute__(record, '_ids')
-                   if not isinstance(_ids_raw, (list, tuple, bytes)):
-                        return self
-              except:
-                   # Si no está en la instancia, el acceso a record._ids disparará el descriptor.
-                   return self
-    except:
-         pass
-
-    # [poly] Singleton Guard: Evitar ensure_one prematuro si el registro no es singleton
-    # Odoo core llama a ensure_one() al inicio de Field.__get__ si el campo no es relacional.
-    try:
-        # Usamos getattr(record, '_ids', None) que es lo que Odoo 18 usa internamente.
-        _ids_raw = getattr(record, '_ids', None)
-        if _ids_raw and len(_ids_raw) > 1:
-            # Si no es singleton y el campo no es relacional, Odoo FALLARÁ en ensure_one().
-            if not self.relational and self.name not in ['id']:
-                # Para evitar el crash en modelos técnicos durante el boot o routing, 
-                # devolvemos el valor por defecto del campo o self si es setup.
-                if getattr(record, 'pool', None) and record.pool._init:
-                    return self
-                # Durante el runtime normal (ej. session_info), si es multi-registro
-                # y NO es relacional, devolvemos un valor seguro.
-                return False
-            
-            # [poly] CASO ESPECIAL ODOO 18: user.company_ids.sudo().parent_ids
-            # Durante el boot/routing, Odoo 18 puede acceder a campos relacionales en recordsets múltiples.
-            # Odoo core __get__ llama a ensure_one() si NO es relacional.
-            # Pero si ES RELACIONAL y no está en caché, llama a _fetch_field que llama a fetch.
-            # El problema es que Odoo core tiene ganchos que fuerzan ensure_one() incluso en relacionales
-            # si se acceden como atributos de clase o en ciertas condiciones de proxy.
-            if self.relational:
-                # Si es relacional y multi-registro, forzamos record.mapped(self.name)
-                # para evitar el ensure_one() interno de Odoo si se dispara.
-                try:
-                    # Usamos mapped que soporta multi-registro de forma nativa.
-                    return record.mapped(self.name)
-                except:
-                    pass
-    except:
-        pass
-
-    try:
-        # Llamamos al original.
-        return _original_Field_get(self, record, owner)
-    except TypeError as te:
-        if 'member_descriptor' in str(te):
-             return self
-        raise te
-    except:
-        # Silenciamos errores durante el boot para campos polimórficos.
-        if getattr(record, 'pool', None) and record.pool._init:
-             return self
-        raise
-
-# [poly] INYECCIÓN FORZADA DEL PARCHE
-odoo.fields.Field.__get__ = poly_Field_get
-
-# También parcheamos subclases comunes por si acaso
-if hasattr(odoo.fields, 'Many2one'):
-    odoo.fields.Many2one.__get__ = poly_Field_get
-if hasattr(odoo.fields, 'One2many'):
-    odoo.fields.One2many.__get__ = poly_Field_get
-if hasattr(odoo.fields, 'Many2many'):
-    odoo.fields.Many2many.__get__ = poly_Field_get
-if hasattr(odoo.fields, 'Char'):
-    odoo.fields.Char.__get__ = poly_Field_get
-if hasattr(odoo.fields, 'Boolean'):
-    odoo.fields.Boolean.__get__ = poly_Field_get
-if hasattr(odoo.fields, 'Integer'):
-    odoo.fields.Integer.__get__ = poly_Field_get
-if hasattr(odoo.fields, 'Float'):
-    odoo.fields.Float.__get__ = poly_Field_get
-if hasattr(odoo.fields, 'Selection'):
-    odoo.fields.Selection.__get__ = poly_Field_get
-
 # PATCH: BaseModel._add_field Interceptor para forzar campos polimórficos
 _original_BaseModel_add_field = odoo.models.BaseModel._add_field
 def poly_BaseModel_add_field(self, name, field):
@@ -3940,6 +3558,18 @@ def poly_Field_setup(self, model):
 
     return _original_Field_setup(self, model)
 odoo.fields.Field.setup = poly_Field_setup
+
+# PATCH: BaseModel.__repr__ para evitar recursión en CacheMiss
+_original_BaseModel_repr = odoo.models.BaseModel.__repr__
+def poly_BaseModel_repr(self):
+    try:
+        # Acceso directo a los datos internos para evitar __getattribute__
+        _name = object.__getattribute__(self, '_name')
+        _ids = object.__getattribute__(self, '_ids')
+        return f"{_name}{_ids}"
+    except:
+        return "BaseModel()"
+odoo.models.BaseModel.__repr__ = poly_BaseModel_repr
 
 # PATCH: Field.resolve_depends to ignore missing polymorphic fields during build
 _original_Field_resolve_depends = odoo.fields.Field.resolve_depends
@@ -5246,6 +4876,50 @@ def _poly_registry_load(self, cr, module):
 
 odoo.modules.registry.Registry.load = _poly_registry_load
 odoo.modules.registry.Registry.setup_models = _poly_registry_setup_models
+
+_original_registry_new = odoo.modules.registry.Registry.new
+
+@classmethod
+def _poly_registry_new(cls, db_name, force_demo=False, status=None, update_module=False):
+    """
+    [poly] Monkey patch for Registry.new to ensure the polymorphic stabilization
+    happens while the Registry class lock is still held.
+    This prevents incoming HTTP requests from accessing an inconsistent registry.
+    """
+    # 1. Execute the standard Odoo creation (held under @locked in Registry.new)
+    registry = _original_registry_new(db_name, force_demo=force_demo, status=status, update_module=update_module)
+
+    # 2. At this point, Odoo has set registry.ready = True, but we are still
+    # inside the @locked method, so any other thread calling Registry(db_name)
+    # is blocked in Registry.__new__ waiting for the lock.
+
+    try:
+        _logger.info("[poly] Starting post-load polymorphic stabilization for %s", db_name)
+        # Ensure we have a clean state for stabilization
+        registry.ready = False 
+        
+        with registry.cursor() as cr:
+            # Force the final polymorphic setup
+            # This includes MRO injection and field synchronization
+            registry.setup_models(cr)
+            
+            # Finalize view validation if there are pending views
+            if hasattr(registry, '_poly_finalize_view_validation'):
+                registry._poly_finalize_view_validation(cr)
+                
+        registry.ready = True
+        _logger.info("[poly] Polymorphic stabilization completed for %s", db_name)
+    except Exception as e:
+        _logger.error("[poly] Critical error during polymorphic stabilization: %s", e, exc_info=True)
+        # If stabilization fails, we might want to keep ready=False or even 
+        # delete the registry from cls.registries, but Odoo's Registry.new 
+        # already has its own cleanup. We re-raise to be safe.
+        raise e
+        
+    return registry
+
+# Apply the patch to Registry.new
+odoo.modules.registry.Registry.new = _poly_registry_new
 
 
 # PATCH: load_module_graph to intercept the end of module loading
