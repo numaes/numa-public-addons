@@ -132,12 +132,18 @@ class PolyExpression(expression):
             # [poly] Aggressive Fix: Ensure core fields exist in _fields for ALL models during recovery
             # to prevent ValueError during _order_to_sql or search.
             from odoo import fields as odoo_fields
+            # [poly] Only inject 'id' if missing, but be cautious with 'name'
+            # as many technical models do not have it.
+            # However, during initialization, some models might fail if they lack 'name'
+            # during certain ORM operations. We only inject it if the class actually HAS it
+            # or if it's a standard model that usually has it.
             for core_f in ['id', 'name']:
                 if core_f not in model._fields:
-                     _logger.warning("[poly] Injecting missing core field %s into %s", core_f, model._name)
                      if hasattr(type(model), core_f):
+                         _logger.warning("[poly] Restoring missing core field %s into %s from class", core_f, model._name)
                          model._fields[core_f] = getattr(type(model), core_f)
                      elif core_f == 'id':
+                         _logger.warning("[poly] Injecting missing core field %s into %s", core_f, model._name)
                          model._fields['id'] = odoo_fields.Id(automatic=True, readonly=True)
                 # Hard fix for 'id' descriptor
                 if core_f == 'id' and not hasattr(type(model), 'id'):
