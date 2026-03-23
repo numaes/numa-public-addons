@@ -173,21 +173,52 @@ def _poly_Field_get(self, record, owner=None):
         # [poly] Odoo 18: Protect against KeyError in field_computed during boot or technical operations.
         # This specifically handles 'res.users.tz' and other computed fields that might be 
         # missing from the lazy Registry.field_computed dictionary due to stale state.
-        if isinstance(e.args[0], str) and ('.tz' in e.args[0] or self.name in e.args[0]):
-            if hasattr(record, 'pool') and record.pool and not record.pool.ready:
-                _logger.debug("[poly] Recovering from KeyError in field_computed for %s", self)
-                # Force a recompute of the value if we can
-                if self.compute and hasattr(self, 'compute_value'):
-                    self.compute_value(record)
-                    return _original_Field_get(self, record, owner=owner)
+        faulty_key = str(e).strip("'")
         
-        # [poly] Technical recovery for res.users.tz during crons or other post-load operations
-        if self.model_name == 'res.users' and self.name == 'tz':
-             _logger.warning("[poly] Forced recovery for res.users.tz in field_computed")
-             if 'field_computed' in record.pool.__dict__:
-                 del record.pool.__dict__['field_computed']
-             return _original_Field_get(self, record, owner=owner)
-             
+        # If the error is exactly about a field name on a model, it's likely a missing field_computed entry
+        is_computed_key_error = False
+        if faulty_key == f"{self.model_name}.{self.name}":
+            is_computed_key_error = True
+        elif faulty_key == self.name:
+            is_computed_key_error = True
+        elif '.tz' in faulty_key:
+            is_computed_key_error = True
+            
+        if is_computed_key_error:
+            if hasattr(record, 'pool') and record.pool:
+                _logger.warning("[poly] field_computed KeyError for %s (Key: %s). Attempting recovery...", self, faulty_key)
+                # 1. Clear the lazy property if it exists to force a rebuild
+                if 'field_computed' in record.pool.__dict__:
+                    del record.pool.__dict__['field_computed']
+                
+                # 2. Check if the field is even in the computed map now
+                if self not in record.pool.field_computed:
+                    _logger.warning("[poly] Field %s still missing from field_computed after reset. Forcing setup.", self)
+                    # Force full setup of this field
+                    if hasattr(self, 'setup_full'):
+                        self.setup_full(record.env[self.model_name])
+                    
+                    # ALSO ensure related_field is setup if it's a related field
+                    if self.related and hasattr(self, 'setup_related'):
+                         self.setup_related(record.env[self.model_name])
+
+                    # And reset map again
+                    if 'field_computed' in record.pool.__dict__:
+                        del record.pool.__dict__['field_computed']
+                
+                # 3. Final attempt to run the original get
+                try:
+                    return _original_Field_get(self, record, owner=owner)
+                except KeyError:
+                    # If it still fails, and it's a computed field, try to manually trigger computation
+                    if self.compute and hasattr(self, 'compute_value'):
+                        _logger.warning("[poly] Emergency manual computation for %s", self)
+                        try:
+                            self.compute_value(record)
+                            return _original_Field_get(self, record, owner=owner)
+                        except Exception as compute_e:
+                            _logger.error("[poly] Emergency computation failed for %s: %s", self, compute_e)
+        
         raise e
 
 def _poly_Field_set(self, records, value):
@@ -3131,6 +3162,13 @@ class PolyBase(_original_BaseModel):
                             field.related = new_rel
                             if hasattr(field, '_args'): field._args['related'] = new_rel
                             sanitized_count += 1
+                            
+                            # [poly] CRITICAL: If we change the related path, we MUST ensure 
+                            # the registry's field_computed is invalidated, otherwise
+                            # Odoo 18 will raise KeyError during compute_value.
+                            if 'field_computed' in self.pool.__dict__:
+                                del self.pool.__dict__['field_computed']
+                            
                             # Force re-triggering setup_related but carefully
                             try:
                                 # We MUST use the original setup_related to ensure it runs
@@ -3431,6 +3469,11 @@ class PolyBase(_original_BaseModel):
                             # _logger.info("[poly] _field_to_sql: Sanitizing %s.%s: %s -> %s", self._name, fname, old_rel, new_rel)
                             field.related = new_rel
                             if hasattr(field, '_args'): field._args['related'] = new_rel
+                            
+                            # [poly] CRITICAL: Invalidate field_computed
+                            if 'field_computed' in self.pool.__dict__:
+                                del self.pool.__dict__['field_computed']
+
                             try:
                                 if hasattr(field, 'setup_related'):
                                     field.setup_related(self)
@@ -3448,6 +3491,11 @@ class PolyBase(_original_BaseModel):
                                 # _logger.info("[poly] _field_to_sql: Sanitizing brother field %s.%s: %s -> %s", self._name, f_n, rel, new_rel)
                                 f_o.related = new_rel
                                 if hasattr(f_o, '_args'): f_o._args['related'] = new_rel
+                                
+                                # [poly] CRITICAL: Invalidate field_computed
+                                if 'field_computed' in self.pool.__dict__:
+                                    del self.pool.__dict__['field_computed']
+
                                 try:
                                     if hasattr(f_o, 'setup_related'): f_o.setup_related(self)
                                 except: pass
