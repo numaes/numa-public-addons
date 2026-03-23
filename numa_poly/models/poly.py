@@ -142,6 +142,7 @@ odoo.modules.registry.Registry._poly_finalize_view_validation = _poly_finalize_v
 
 # Save the original Odoo classes to avoid cyclic inheritance
 _original_Field_get = odoo.fields.Field.__get__
+_original_Relational_get = odoo.fields._Relational.__get__
 
 def _poly_Field_get(self, record, owner=None):
     """
@@ -168,7 +169,23 @@ def _poly_Field_get(self, record, owner=None):
             return self
         raise e
 
+def _poly_Relational_get(self, records, owner=None):
+    """
+    [poly] Monkey patch for _Relational.__get__ to avoid TypeError: object of type 'member_descriptor' has no len()
+    This happens during inspect.getmembers(cls) when Odoo 18 processes views.
+    """
+    if records is not None:
+        # Check if records is a valid recordset before calling len(records._ids)
+        # We check for _ids because that's what Odoo base uses at line 3112 of fields.py
+        if not hasattr(records, '_ids'):
+            # If it's not a recordset (e.g. member_descriptor), 
+            # fall back to the base Field.__get__ logic which handles non-recordsets
+            return odoo.fields.Field.__get__(self, records, owner)
+            
+    return _original_Relational_get(self, records, owner)
+
 odoo.fields.Field.__get__ = _poly_Field_get
+odoo.fields._Relational.__get__ = _poly_Relational_get
 
 _original_BaseModel = odoo.models.BaseModel
 _original_AbstractModel = odoo.models.AbstractModel
