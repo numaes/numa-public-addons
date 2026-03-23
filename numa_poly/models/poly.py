@@ -156,9 +156,16 @@ def _poly_Field_get(self, record, owner=None):
     if record is None or isinstance(record, type):
         return self
     
-    # Odoo 18: Protect against recordsets without _ids (e.g. member_descriptor or other weird objects)
+    # Odoo 18: Protect against objects without _ids (e.g. member_descriptor or other weird technical objects)
+    # Technical descriptors often don't have _ids but might leak into ORM logic during boot.
     if not hasattr(record, '_ids'):
-        return self
+        # If it's a member_descriptor or similar technical attribute, return self to avoid TypeError
+        # when Odoo (or inspect) tries to treat it as a recordset.
+        # Check by type name to be robust across python versions and avoid using ensure_one on class.
+        _type_str = str(type(record))
+        if 'descriptor' in _type_str or 'property' in _type_str or record is owner:
+            return self
+        return _original_Field_get(self, record, owner=owner)
 
     return _original_Field_get(self, record, owner=owner)
 
@@ -3978,6 +3985,7 @@ def poly_Field_setup_related(self, model):
     finally:
         odoo.fields.Field._poly_setup_stack.discard(stack_key)
 
+# odoo.fields.Field.setup_related = poly_Field_setup_related
 odoo.fields.Field.setup_related = poly_Field_setup_related
 
 # PATCH: Field.get_depends to handle incomplete related fields during boot

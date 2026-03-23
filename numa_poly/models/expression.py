@@ -50,6 +50,7 @@ class PolyExpression(expression):
         Intercept failures during domain_combine_anies or field resolution in early registry load.
         This can happen if _fields is not fully initialized.
         """
+        from odoo.tools import SQL
         # [poly] AGGRESSIVE PRE-INJECTION: Always ensure 'id' field is present in _fields
         # before even calling super().__init__. This is needed because Odoo's 
         # _order_to_sql (called during search) or domain_combine_anies might 
@@ -101,8 +102,7 @@ class PolyExpression(expression):
                 # use a raw SQL identifier as fallback if it's likely a standard column.
                 # This handles 'id', 'sequence', etc. on models like 'website' or 'base.automation'.
                 _logger.warning("[poly] Intercepted missing field '%s' in _order_field_to_sql for %s. Using fallback.", field_name, self._name)
-                from odoo.tools import SQL as _SQL_ORDER
-                return _SQL_ORDER("%s.%s %s %s", _SQL_ORDER.identifier(alias), _SQL_ORDER.identifier(field_name), direction, nulls)
+                return SQL("%s.%s %s %s", SQL.identifier(alias), SQL.identifier(field_name), direction, nulls)
             except Exception:
                 raise
         
@@ -121,9 +121,8 @@ class PolyExpression(expression):
         except (KeyError, ValueError, Exception) as e:
             # We catch Exception here because domain_combine_anies can throw almost anything
             # if the model is in a weird state.
-            from odoo.tools import SQL as _SQL
             _logger.warning("[poly] Intercepted %s in %s.__init__: %s. Attempting recovery.", type(e).__name__, model._name, e)
-            
+
             # Use raw domain instead of combined anies
             self.expression = domain
             from odoo.osv.expression import Query
@@ -170,9 +169,8 @@ class PolyExpression(expression):
 
                 super().parse()
             except (KeyError, ValueError, Exception) as e2:
-                from odoo.tools import SQL as _SQL_RECOVERY
                 _logger.warning("[poly] Secondary failure in recovery for %s: %s. Using SQL('TRUE').", model._name, e2)
-                self.result = _SQL_RECOVERY("TRUE")
+                self.result = SQL("TRUE")
                 if not self.query:
                     from odoo.osv.expression import Query
                     self.query = Query(model.env, model._table, model._table_sql)
@@ -198,6 +196,7 @@ class PolyExpression(expression):
         """
         Transform the leaves of the expression into SQL.
         """
+        from odoo.tools import SQL
         # [poly] Performance and Safety Optimization: 
         # For non-polymorphic models, we use the standard Odoo parser.
         model_class = type(self.root_model)
@@ -317,13 +316,10 @@ class PolyExpression(expression):
             stack.append((leaf, model, alias))
 
         def pop_result():
-            from odoo.tools import SQL as _SQL_POP
             if result_stack:
                 return result_stack.pop()
             # [poly] RECOVERY: Return a neutral SQL if stack is empty to avoid IndexError
-            if not model.pool._init:
-                _logger.warning("[poly] pop_result from empty stack in %s. Using TRUE.", model._name)
-            return _SQL_POP("TRUE")
+            return SQL("TRUE")
 
         def push_result(sql):
             result_stack.append(sql)
@@ -349,22 +345,18 @@ class PolyExpression(expression):
             # ----------------------------------------
 
             if is_operator(leaf):
-                from odoo.tools import SQL as _SQL_OP
                 if leaf == NOT_OPERATOR:
-                    push_result(_SQL_OP("(NOT (%s))", pop_result()))
+                    push_result(SQL("(NOT (%s))", pop_result()))
                 elif leaf == AND_OPERATOR:
-                    push_result(_SQL_OP("(%s AND %s)", pop_result(), pop_result()))
+                    push_result(SQL("(%s AND %s)", pop_result(), pop_result()))
                 else:
-                    push_result(_SQL_OP("(%s OR %s)", pop_result(), pop_result()))
+                    push_result(SQL("(%s OR %s)", pop_result(), pop_result()))
                 continue
-
             if leaf == TRUE_LEAF:
-                from odoo.tools import SQL as _SQL_TRUE
-                push_result(_SQL_TRUE("TRUE"))
+                push_result(SQL("TRUE"))
                 continue
             if leaf == FALSE_LEAF:
-                from odoo.tools import SQL as _SQL_FALSE
-                push_result(_SQL_FALSE("FALSE"))
+                push_result(SQL("FALSE"))
                 continue
 
             # Get working variables
@@ -881,11 +873,9 @@ class PolyExpression(expression):
         if len(result_stack) == 1:
             [self.result] = result_stack
         elif len(result_stack) > 1:
-            from odoo.tools import SQL
             _logger.warning("[poly] Unbalanced result_stack in %s: %d elements. Combining with AND.", model._name, len(result_stack))
             self.result = SQL(" AND ").join(result_stack)
         else:
-            from odoo.tools import SQL
             self.result = SQL("TRUE")
         self.query.add_where(self.result)
 
