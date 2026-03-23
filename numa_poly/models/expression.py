@@ -50,7 +50,6 @@ class PolyExpression(expression):
         Intercept failures during domain_combine_anies or field resolution in early registry load.
         This can happen if _fields is not fully initialized.
         """
-        from odoo.tools import SQL
         # [poly] AGGRESSIVE PRE-INJECTION: Always ensure 'id' field is present in _fields
         # before even calling super().__init__. This is needed because Odoo's 
         # _order_to_sql (called during search) or domain_combine_anies might 
@@ -196,7 +195,6 @@ class PolyExpression(expression):
         """
         Transform the leaves of the expression into SQL.
         """
-        from odoo.tools import SQL
         # [poly] Performance and Safety Optimization: 
         # For non-polymorphic models, we use the standard Odoo parser.
         model_class = type(self.root_model)

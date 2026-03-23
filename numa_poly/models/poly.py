@@ -159,11 +159,11 @@ def _poly_Field_get(self, record, owner=None):
     # Odoo 18: Protect against objects without _ids (e.g. member_descriptor or other weird technical objects)
     # Technical descriptors often don't have _ids but might leak into ORM logic during boot.
     if not hasattr(record, '_ids'):
-        # If it's a member_descriptor or similar technical attribute, return self to avoid TypeError
-        # when Odoo (or inspect) tries to treat it as a recordset.
-        # Check by type name to be robust across python versions and avoid using ensure_one on class.
-        _type_str = str(type(record))
-        if 'descriptor' in _type_str or 'property' in _type_str or record is owner:
+        # If it's a technical descriptor or property, return self to avoid TypeError.
+        # Check by type name to be robust across python versions.
+        # We also check if record is owner (class-level access via descriptor).
+        _type_name = type(record).__name__
+        if 'descriptor' in _type_name or 'property' in _type_name or record is owner:
             return self
         return _original_Field_get(self, record, owner=owner)
 
