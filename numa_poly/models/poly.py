@@ -3263,7 +3263,47 @@ class PolyBase(_original_BaseModel):
                 _logger.warning("[poly] Field '%s' found in pool but not in %s._fields. Skipping fetch to avoid ValueError.", n, self._name)
                 continue
 
-        return super()._determine_fields_to_fetch(super_valid_fields, ignore_when_in_cache)
+        try:
+            return super()._determine_fields_to_fetch(super_valid_fields, ignore_when_in_cache)
+        except KeyError as e:
+            # [poly] RECOVERY: Handle KeyError in super()._determine_fields_to_fetch(dep_field)
+            # This happens if a field's dependencies contain a field name missing from self._fields
+            faulty_key = str(e).strip("'")
+            _logger.warning("[poly] _determine_fields_to_fetch KeyError for %s (Key: %s). Attempting recovery...", self._name, faulty_key)
+            
+            # If the faulty key is in the registry or looks like a model/link field, it might be 
+            # a polymorphic dependency that hasn't been correctly injected into _fields.
+            if faulty_key in self.pool or any(v == faulty_key for v in getattr(type(self), '_depend_models', {}).values()):
+                # Filter out the field that caused the issue and retry
+                # We need to find which field in super_valid_fields has this dependency
+                new_valid_fields = []
+                for f_name in super_valid_fields:
+                    field = self._fields.get(f_name)
+                    if field:
+                        depends = self.pool.field_depends.get(field, [])
+                        if any(d.split('.', 1)[0] == faulty_key for d in depends):
+                            _logger.warning("[poly] Field %s depends on missing %s. Skipping field.", f_name, faulty_key)
+                            
+                            # [poly] EMERGENCY: Try to force setup of the missing field if it's on this model
+                            if faulty_key in self.pool[self._name]._fields and faulty_key not in self._fields:
+                                _logger.info("[poly] Attempting emergency field recovery for %s.%s", self._name, faulty_key)
+                                try:
+                                    field_to_recover = self.pool[self._name]._fields[faulty_key]
+                                    if hasattr(field_to_recover, 'setup_full'):
+                                        field_to_recover.setup_full(self)
+                                    # If setup worked, we might want to retry with the same fields
+                                    if faulty_key in self._fields:
+                                         return self._determine_fields_to_fetch(super_valid_fields, ignore_when_in_cache)
+                                except Exception as rec_e:
+                                    _logger.error("[poly] Field recovery failed for %s.%s: %s", self._name, faulty_key, rec_e)
+                            
+                            continue
+                    new_valid_fields.append(f_name)
+                
+                if len(new_valid_fields) < len(super_valid_fields):
+                    return self._determine_fields_to_fetch(new_valid_fields, ignore_when_in_cache)
+
+            raise e
 
     def onchange(self, values, field_names, fields_spec):
         """
