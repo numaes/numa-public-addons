@@ -768,6 +768,19 @@ class PolyBase(_original_BaseModel):
     # Flag to track if ID has been checked
     _checked_id = False
 
+    def _poly_get_depend_models(cls):
+        """
+        Scan MRO to collect all _depend_models in the correct order.
+        Newer declarations (subclasses) have priority.
+        """
+        depend_models = {}
+        # MRO is [Current, Base1, Base2, ..., object]
+        # We iterate in reverse to let newer definitions overwrite older ones.
+        for base in reversed(cls.mro()):
+            if '_depend_models' in base.__dict__:
+                depend_models.update(base.__dict__['_depend_models'])
+        return depend_models
+
     def _get_all_poly_bases(self):
         """
         Retorna un conjunto de todos los modelos base (polimórficos o no) en la jerarquía.
@@ -1134,16 +1147,6 @@ class PolyBase(_original_BaseModel):
 
         rec_stack.remove(name)
 
-    def _prepare_setup(self):
-        """ Prepare the setup of the model. """
-        # [poly] Centralized MRO injection in _poly_registry_setup_models
-        # makes reactive MRO fixes here redundant.
-        return _original_BaseModel._prepare_setup(self)
-
-    def _setup_base(self):
-        """ Setup the base of the model. """
-        return _original_BaseModel._setup_base(self)
-
     # Legacy reactive MRO code below (neutralized)
     def _legacy_setup_base_logic(self):
         model_class = type(self)
@@ -1293,9 +1296,9 @@ class PolyBase(_original_BaseModel):
 
         # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
         # or inherits from a polymorphic model.
+        poly_depend_models = model_class._poly_get_depend_models()
         is_poly_enabled = (
-             hasattr(model_class, '_depend_models') or
-             any(hasattr(base, '_depend_models') for base in model_class.mro()) or
+             poly_depend_models or
              'ir.poly_base' in [getattr(c, '_name', None) for c in model_class.mro() if hasattr(c, '_name')] or
              referenced_as_base
         )
@@ -1332,7 +1335,7 @@ class PolyBase(_original_BaseModel):
         _original_BaseModel._setup_base(self)
 
         # Odoo 18: ensure polymorphic attributes are built after base setup
-        if hasattr(model_class, '__depends_base_classes') or referenced_as_base:
+        if hasattr(model_class, '__depends_base_classes'):
              self._setup_poly_fields(self)
              
              # Clear registry caches to force method re-discovery
@@ -1407,7 +1410,7 @@ class PolyBase(_original_BaseModel):
                 referenced_as_base = False
 
             is_poly_enabled = (
-                 hasattr(cls, '_depend_models') or
+                 cls._poly_get_depend_models() or
                  any(hasattr(base, '_depend_models') for base in cls.mro()) or
                  'ir.poly_base' in [getattr(c, '_name', None) for c in cls.mro() if hasattr(c, '_name')] or
                  referenced_as_base
@@ -1434,6 +1437,16 @@ class PolyBase(_original_BaseModel):
                                          except (AttributeError, KeyError): pass
 
                 # 2. Systematic injection of related fields and core infrastructure fields
+                # Odoo 18: Ensure polymorphic bases are initialized before field injection.
+                poly_bases = getattr(cls, '__depends_base_classes', ())
+                for base_class in poly_bases:
+                    base_name = getattr(base_class, '_name', None)
+                    if base_name and base_name != self._name and base_name in self.pool:
+                        base_instance = self.pool[base_name]
+                        if not base_instance._fields:
+                            _logger.debug("[poly] Forcing setup for base %s before injection into %s", base_name, self._name)
+                            base_instance._setup_base()
+
                 # Use class method call
                 cls._build_dependant_model_attributes()
                 
@@ -2257,6 +2270,35 @@ class PolyBase(_original_BaseModel):
         # IMPORTANT: ensure we use the same order as in __depends_base_classes (already reversed in _build_model)
         dependent_model_names = [c._name for c in reversed(all_bases) if hasattr(c, '_name') and c._name not in (cls._name, 'ir.poly_base')]
 
+        # [poly] Pre-scan models to detect original field locations for flattening
+        # We only care about models that are base models for THIS model
+        base_field_origins = {}
+        for base_cls in all_bases:
+            b_name = getattr(base_cls, '_name', None)
+            if not b_name or b_name in (cls._name, 'ir.poly_base'):
+                continue
+            for fname, fobj in base_cls._fields.items():
+                if fname == 'id': continue
+                # If fobj is a related to another poly base, and NOT an inherits field
+                if fobj.related and not getattr(fobj, 'inherited', False):
+                    # Related path like 'base_link.field_name'
+                    if isinstance(fobj.related, str) and '.' in fobj.related:
+                        rel_base_field, rel_fname = fobj.related.split('.', 1)
+                        # Check if rel_base_field is a link to a poly base in base_cls
+                        rel_base_model = None
+                        # Check if base_cls has _depend_models
+                        b_depend = getattr(base_cls, '_poly_get_depend_models', lambda: {})()
+                        for m_name, m_field in b_depend.items():
+                            if m_field == rel_base_field:
+                                rel_base_model = m_name
+                                break
+                        
+                        if rel_base_model:
+                             # It's a related to another poly base. We should flatten.
+                             # Note: we don't resolve recursively here, add_subfields will handle it
+                             # by seeing if the target also has an origin.
+                             base_field_origins[(b_name, fname)] = (rel_base_model, rel_fname)
+
         for model_name in dependent_model_names:
             # print(f"[poly] DEBUG: Adding subfields for model {model_name} to {cls._name}")
             def add_subfields(mm):
@@ -2276,60 +2318,72 @@ class PolyBase(_original_BaseModel):
 
                 # Add fields from the model
                 for subfield_name, subfield in base_model._fields.items():
-                    # if subfield_name == 'pln_required_resource_ids':
-                    #     print(f"[poly] DEBUG: Processing pln_required_resource_ids from {mm} in {self._name}. Related: {subfield.related}")
                     if subfield_name == 'id':
                         continue
-                    # [poly] If we are adding fields from a model to itself (should not happen, but safeguard)
-                    if mm == cls._name:
-                        continue
+                    
+                    # [poly] FLATTENING LOGIC:
+                    # If this field is already a related to another poly base, 
+                    # use the origin instead of this base.
+                    curr_mm = mm
+                    curr_fname = subfield_name
+                    curr_subfield = subfield
+                    
+                    visited_origins = set()
+                    while (curr_mm, curr_fname) in base_field_origins:
+                        if (curr_mm, curr_fname) in visited_origins: break # cycle protection
+                        visited_origins.add((curr_mm, curr_fname))
+                        
+                        orig_mm, orig_fname = base_field_origins[(curr_mm, curr_fname)]
+                        if orig_mm in cls.pool:
+                            curr_mm = orig_mm
+                            curr_fname = orig_fname
+                            curr_subfield = cls.pool[curr_mm]._fields.get(curr_fname)
+                            if not curr_subfield: break
+                        else:
+                            break
+
                     # Only add fields that aren't already defined, aren't PolyReferences,
-                    # and aren't related fields (to avoid duplication/self-reference)
-                    if not isinstance(subfield, PolyReference) and \
-                       (not subfield.related or (isinstance(subfield.related, str) and (subfield.related.startswith(f'{mm}.') or subfield.related == f'{mm}.{subfield_name}' or (subfield.related.count('.') >= 1 and subfield.related.split('.')[0] in cls.pool)))):
+                    # and aren't related fields (unless they are the flattened target)
+                    if not isinstance(curr_subfield, PolyReference):
                         # [poly] Aggressive takeover: if the field is already in the model but is a stored field
                         # and it also exists in the polymorphic base, it MUST be converted to related.
                         _force_related = False
                         _existing = None
-                        if subfield_name in cls.__dict__ or subfield_name in cls._fields:
-                            _existing = cls._fields.get(subfield_name) or cls.__dict__.get(subfield_name)
+                        if curr_fname in cls.__dict__ or curr_fname in cls._fields:
+                            _existing = cls._fields.get(curr_fname) or cls.__dict__.get(curr_fname)
                             if _existing and (getattr(_existing, 'store', True) or not getattr(_existing, 'related', None)):
-                                # print(f"[poly] DEBUG: Forcing related for {self._name}.{subfield_name} (found stored/non-related field)")
                                 _force_related = True
 
-                        if subfield_name not in related_fields or _force_related:
-                            related_fields[subfield_name] = (
-                                mm,
-                                subfield_name,
-                                subfield.type,
-                                subfield.comodel_name,
-                                subfield
+                        if curr_fname not in related_fields or _force_related:
+                            related_fields[curr_fname] = (
+                                curr_mm,
+                                curr_fname,
+                                curr_subfield.type,
+                                curr_subfield.comodel_name,
+                                curr_subfield
                             )
                             # [poly] FORCE RELATED: ensure the field is NOT in cls.__dict__
-                            # so Odoo's setup_models is forced to use the one we inject in _fields
-                            if subfield_name in cls.__dict__:
+                            if curr_fname in cls.__dict__:
                                 try:
-                                    delattr(cls, subfield_name)
+                                    delattr(cls, curr_fname)
                                 except (AttributeError, TypeError):
                                     pass
                             
-                            # Also check the Odoo 18 Proxy class if it exists
                             if hasattr(cls.pool, 'models') and cls._name in cls.pool.models:
                                 proxy_class = cls.pool.models[cls._name]
-                                if proxy_class is not cls and subfield_name in proxy_class.__dict__:
+                                if proxy_class is not cls and curr_fname in proxy_class.__dict__:
                                     try:
-                                        delattr(proxy_class, subfield_name)
+                                        delattr(proxy_class, curr_fname)
                                     except (AttributeError, TypeError):
                                         pass
-                            if subfield_name in cls._fields:
-                                del cls._fields[subfield_name]
+                            if curr_fname in cls._fields:
+                                del cls._fields[curr_fname]
                         else:
-                            # [poly] If field is already collected, but the new one is better 
-                            # (e.g. has comodel_name or relation info), update it.
-                            _prev_mm, _prev_fname, _prev_type, _prev_comodel, _prev_subfield = related_fields[subfield_name]
-                            if not _prev_comodel and subfield.comodel_name:
-                                related_fields[subfield_name] = (
-                                    mm, subfield_name, subfield.type, subfield.comodel_name, subfield
+                            # [poly] Update if new one is better
+                            _prev_mm, _prev_fname, _prev_type, _prev_comodel, _prev_subfield = related_fields[curr_fname]
+                            if not _prev_comodel and curr_subfield.comodel_name:
+                                related_fields[curr_fname] = (
+                                    curr_mm, curr_fname, curr_subfield.type, curr_subfield.comodel_name, curr_subfield
                                 )
 
                 # Add non-field attributes from the model
@@ -2379,6 +2433,9 @@ class PolyBase(_original_BaseModel):
             if model not in related_bases:
                 if model == cls._name:
                     continue # NEVER create related fields pointing to the model itself
+                
+                # Check if this model is a poly base of the current model
+                is_poly_base = model in cls._poly_get_depend_models()
                 model_field = f'related_{related_counter}'
                 related_counter += 1
                 related_bases[model] = model_field
@@ -2438,6 +2495,11 @@ class PolyBase(_original_BaseModel):
                 'automatic': True,
                 'store': False,  # SYSTEMATIC store=False for polymorphic fields
             }
+            
+            # [poly] auto_join logic: only for poly bases, not for inherits
+            if not getattr(description, 'inherited', False):
+                field_kwargs['auto_join'] = True
+
             if field_type in ['many2one', 'many2many', 'one2many']:
                 field_kwargs['comodel_name'] = comodel
                 
@@ -3997,7 +4059,7 @@ _original_Field_setup = odoo.fields.Field.setup
 def poly_Field_setup(self, model):
     if not hasattr(model, 'pool') or not model.pool or not model.pool._init:
         return _original_Field_setup(self, model)
-    
+
     # Check if this field should be a polymorphic related field
     # (exists in a polymorphic base but is currently being set up as stored/non-related)
     if self.name not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
