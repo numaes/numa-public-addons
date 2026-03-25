@@ -95,13 +95,23 @@ class PolyExpression(expression):
         
         def _poly_order_field_to_sql(self, alias, field_name, direction, nulls, query):
             try:
+                # [poly] Before calling original, check if the field exists in _fields
+                # to avoid loud ValueError and traceback in Odoo 18 log
+                fname = field_name.split('.', 1)[0] if '.' in field_name else field_name
+                if fname not in self._fields:
+                    # Known missing fields in Odoo 18 technical models or early boot
+                    # Log as DEBUG instead of WARNING to avoid noise
+                    _logger.debug("[poly] Intercepted missing field '%s' in _order_field_to_sql for %s. Using fallback.", field_name, self._name)
+                    return SQL("%s.%s %s %s", SQL.identifier(alias), SQL.identifier(fname), direction, nulls)
+                
                 return _original_order_field_to_sql(self, alias, field_name, direction, nulls, query)
-            except ValueError:
+            except (ValueError, KeyError):
                 # [poly] AGGRESSIVE RECOVERY: If any field resolution fails during boot,
                 # use a raw SQL identifier as fallback if it's likely a standard column.
                 # This handles 'id', 'sequence', etc. on models like 'website' or 'base.automation'.
-                _logger.warning("[poly] Intercepted missing field '%s' in _order_field_to_sql for %s. Using fallback.", field_name, self._name)
-                return SQL("%s.%s %s %s", SQL.identifier(alias), SQL.identifier(field_name), direction, nulls)
+                _logger.debug("[poly] Recovery fallback for missing field '%s' in _order_field_to_sql for %s.", field_name, self._name)
+                fname = field_name.split('.', 1)[0] if '.' in field_name else field_name
+                return SQL("%s.%s %s %s", SQL.identifier(alias), SQL.identifier(fname), direction, nulls)
             except Exception:
                 raise
         

@@ -2356,10 +2356,40 @@ class PolyBase(_original_BaseModel):
                     # 2. Relational Metadata (Many2one, One2many, Many2many)
                     if f_type.__name__ in ('Many2one', 'One2many', 'Many2many', 'PolyReference'):
                         if not clean_args.get('comodel_name'):
-                             clean_args['comodel_name'] = getattr(field, 'comodel_name', None)
+                             _val = getattr(field, 'comodel_name', None)
+                             if not _val and hasattr(field, '_args'):
+                                  _val = field._args.get('comodel_name')
+                             
+                             # [poly] ULTIMATE RECOVERY: Search in Odoo Registry if field is degraded
+                             if not _val and hasattr(cls, 'pool'):
+                                  # Try to find a prototype in other models that share this field name
+                                  # if they are likely to be from the same module/mixin.
+                                  for _m_name, _m in cls.pool.items():
+                                       if name in _m._fields:
+                                            _f_proto = _m._fields[name]
+                                            if _f_proto.type == field.type and hasattr(_f_proto, 'comodel_name'):
+                                                 _val = _f_proto.comodel_name
+                                                 _logger.debug("[poly] Recovered comodel_name '%s' for %s from model %s registry", _val, name, _m_name)
+                                                 break
+                             
+                             clean_args['comodel_name'] = _val
                         
                         if f_type.__name__ == 'One2many' and not clean_args.get('inverse_name'):
-                             clean_args['inverse_name'] = getattr(field, 'inverse_name', None)
+                             _val = getattr(field, 'inverse_name', None)
+                             if not _val and hasattr(field, '_args'):
+                                  _val = field._args.get('inverse_name')
+                             
+                             # [poly] ULTIMATE RECOVERY: Search in Odoo Registry for inverse_name
+                             if not _val and hasattr(cls, 'pool'):
+                                  for _m_name, _m in cls.pool.items():
+                                       if name in _m._fields:
+                                            _f_proto = _m._fields[name]
+                                            if _f_proto.type == 'one2many' and hasattr(_f_proto, 'inverse_name'):
+                                                 _val = _f_proto.inverse_name
+                                                 _logger.debug("[poly] Recovered inverse_name '%s' for %s from model %s registry", _val, name, _m_name)
+                                                 break
+                             
+                             clean_args['inverse_name'] = _val
                              
                         if f_type.__name__ == 'Many2many':
                              if not clean_args.get('relation'):
@@ -4394,7 +4424,12 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
                 # If they are NOT in the table, they must be filtered even at runtime.
                 _logger.debug("[poly] Filtering missing audit column '%s' from %s query.", f_name, self._name)
                 _removed_fields.add(f_name)
-            elif f_name in ('modules', 'is_seo_optimized', 'new_password', 'active_partner', 'xml_id', 'path', 'count', 'help', 'model', 'activity_ids', 'activity_state', 'activity_type_id', 'activity_date_deadline', 'activity_summary', 'activity_user_id', 'my_activity_date_deadline'):
+            elif f_name in ('modules', 'is_seo_optimized', 'new_password', 'active_partner', 'xml_id', 'path', 'count', 'help', 'model', 
+                            'activity_ids', 'activity_state', 'activity_type_id', 'activity_date_deadline', 'activity_summary', 'activity_user_id', 'my_activity_date_deadline',
+                            'activity_exception_decoration', 'activity_exception_icon', 'activity_calendar_event_id', 'activity_type_icon',
+                            'message_is_follower', 'message_follower_ids', 'message_partner_ids', 'message_ids', 'has_message', 'message_needaction', 
+                            'message_needaction_counter', 'message_has_error', 'message_has_error_counter', 'message_attachment_count',
+                            'message_has_sms_error', 'website_message_ids', 'rating_ids', 'access_url', 'access_warning'):
                 # Known technical columns that often cause issues in Odoo 18
                 # but only if we are absolutely sure they are missing.
                 # If they are NOT in the table, they must be filtered.
