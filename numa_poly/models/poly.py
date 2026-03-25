@@ -2353,6 +2353,14 @@ class PolyBase(_original_BaseModel):
                          clean_args['inverse_name'] = field.inverse_name
                     if hasattr(field, 'relation') and 'relation' not in clean_args:
                          clean_args['relation'] = field.relation
+                    if hasattr(field, 'column1') and 'column1' not in clean_args:
+                         clean_args['column1'] = field.column1
+                    if hasattr(field, 'column2') and 'column2' not in clean_args:
+                         clean_args['column2'] = field.column2
+                    if hasattr(field, 'domain') and 'domain' not in clean_args:
+                         clean_args['domain'] = field.domain
+                    if hasattr(field, 'context') and 'context' not in clean_args:
+                         clean_args['context'] = field.context
                     
             # [poly] Related fields must have 'related' in clean_args if it's missing
                     if hasattr(field, 'related') and field.related and 'related' not in clean_args:
@@ -2791,6 +2799,9 @@ class PolyBase(_original_BaseModel):
             if field_type in ['many2one', 'many2many', 'one2many']:
                 field_kwargs['comodel_name'] = comodel
                 
+            if field_type == 'selection':
+                field_kwargs['selection'] = description.selection
+            
             if field_type == 'many2many':
                 # [poly] For Many2many related fields, Odoo 18 tries to validate the table.
                 # We copy relation details if they exist in the original field to help Odoo
@@ -2798,6 +2809,9 @@ class PolyBase(_original_BaseModel):
                 for attr in ('relation', 'column1', 'column2'):
                     if getattr(description, attr, None):
                         field_kwargs[attr] = getattr(description, attr)
+
+            if field_type == 'one2many':
+                field_kwargs['inverse_name'] = getattr(description, 'inverse_name', None)
 
             new_field = field_subclass(**field_kwargs)
 
@@ -5702,7 +5716,15 @@ def _poly_registry_setup_models(self, cr):
                                 _kwargs['comodel_name'] = _fobj.comodel_name
                             if hasattr(_fobj, 'inverse_name') and _fobj.inverse_name:
                                 _kwargs['inverse_name'] = _fobj.inverse_name
-                            
+                            if hasattr(_fobj, 'selection') and _fobj.selection:
+                                _kwargs['selection'] = _fobj.selection
+                            if hasattr(_fobj, 'relation') and _fobj.relation:
+                                _kwargs['relation'] = _fobj.relation
+                            if hasattr(_fobj, 'column1') and _fobj.column1:
+                                _kwargs['column1'] = _fobj.column1
+                            if hasattr(_fobj, 'column2') and _fobj.column2:
+                                _kwargs['column2'] = _fobj.column2
+                                
                             _new_fobj = type(_fobj)(**_kwargs)
                             _new_fobj.model_name = name
                             _new_fobj.name = _fname
@@ -5814,7 +5836,15 @@ def _poly_registry_setup_models(self, cr):
                                 _kwargs['comodel_name'] = _fobj.comodel_name
                             if hasattr(_fobj, 'inverse_name') and _fobj.inverse_name:
                                 _kwargs['inverse_name'] = _fobj.inverse_name
-                                
+                            if hasattr(_fobj, 'selection') and _fobj.selection:
+                                _kwargs['selection'] = _fobj.selection
+                            if hasattr(_fobj, 'relation') and _fobj.relation:
+                                _kwargs['relation'] = _fobj.relation
+                            if hasattr(_fobj, 'column1') and _fobj.column1:
+                                _kwargs['column1'] = _fobj.column1
+                            if hasattr(_fobj, 'column2') and _fobj.column2:
+                                _kwargs['column2'] = _fobj.column2
+                                    
                             _new_fobj = type(_fobj)(**_kwargs)
                             _new_fobj.model_name = name
                             _new_fobj.name = _fname
