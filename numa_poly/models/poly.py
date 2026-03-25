@@ -2373,14 +2373,20 @@ class PolyBase(_original_BaseModel):
 
                     try:
                         f_clone = f_type(**clean_args)
+                        f_clone.name = name # [poly] Odoo 18: ensure name is set early
+                        f_clone.model_name = cls._name
                         _logger.debug("[poly] RECREATING field %s from base %s to %s: total isolation achieved", 
                                      name, related_base or "N/A", cls._name)
                     except Exception as e:
                         _logger.warning("[poly] RECREATION failed for %s using f_type(**clean_args): %s. Falling back to copy.", name, e)
                         f_clone = copy.copy(field)
+                        f_clone.name = name
+                        f_clone.model_name = cls._name
                 else:
                     # Fallback to copy if args are gone (should not happen with our setup)
                     f_clone = copy.copy(field)
+                    f_clone.name = name
+                    f_clone.model_name = cls._name
                     _logger.warning("[poly] COPYING field %s from base %s to %s: isolation might be weak", 
                                  name, related_base or "N/A", cls._name)
                 # Restore args to the clone if they were provided or found
@@ -5063,6 +5069,10 @@ def _poly_registry_setup_models(self, cr):
         # [poly] Detect polymorphic models ONLY by existence of _depend_models in MRO
         # and inject PolyModel if missing.
         has_depend_models = False
+        # [poly] AGGRESSIVE: only consider models that are NOT ir.poly_base here
+        if name == 'ir.poly_base':
+            continue
+
         for base in type.mro(model_class):
             if '_depend_models' in base.__dict__:
                 has_depend_models = True
@@ -5082,7 +5092,7 @@ def _poly_registry_setup_models(self, cr):
                 dep_map = PolyBase._poly_get_depend_models.__func__(model_class)
 
             for dep_model in dep_map.keys():
-                if dep_model in self:
+                if dep_model in self and dep_model != 'ir.poly_base':
                     poly_models_names_to_process.add(dep_model)
 
     # [poly] Phase 1: MRO Injection BEFORE Odoo's setup_models
@@ -5168,6 +5178,21 @@ def _poly_registry_setup_models(self, cr):
 
     # [poly] Identify which modules were loaded recently to optimize Deep Fix in Phase 2
     current_init_modules = set(self._init_modules)
+    
+    # [poly] CLEANUP Phase 0: Remove polymorphic fields from non-poly models
+    # This prevents field leakage into standard Odoo models like web_tour.tour
+    for name, model_class in self.items():
+        if not isinstance(model_class, type): continue
+        if name not in poly_models_names_to_process and name != 'ir.poly_base':
+            for technical_fname in ['concrete_model_id', 'old_id', 'poly_payload', 'poly_base_id']:
+                if technical_fname in model_class.__dict__ or (hasattr(model_class, '_fields') and technical_fname in model_class._fields):
+                    _logger.debug("[poly] Emergency Cleanup: Removing %s from non-polymorphic model %s", technical_fname, name)
+                    if hasattr(model_class, '_fields') and technical_fname in model_class._fields:
+                        del model_class._fields[technical_fname]
+                    try:
+                        delattr(model_class, technical_fname)
+                    except (AttributeError, KeyError):
+                        pass
 
     # [poly] ENSURE INCREMENTAL ATTRIBUTES ARE INITIALIZED
     # This prevents AttributeError: 'Registry' object has no attribute '_poly_processed_models'
@@ -5201,9 +5226,9 @@ def _poly_registry_setup_models(self, cr):
                              if dep_model not in all_depend_models:
                                  all_depend_models[dep_model] = dep_field
                  
-                 # Determine parents for MRO
-                 parents = list(all_depend_models.keys())
-                 if model_name != 'ir.poly_base' and 'ir.poly_base' not in parents:
+         # Determine parents for MRO
+                 parents = [p for p in all_depend_models.keys() if p in self]
+                 if model_name != 'ir.poly_base' and 'ir.poly_base' not in parents and 'ir.poly_base' in self:
                      parents.append('ir.poly_base')
 
                  parents_cls = []
@@ -5293,6 +5318,10 @@ def _poly_registry_setup_models(self, cr):
 
         model_instance = self[name]
         model_class = type(model_instance)
+        
+        # [poly] AGGRESSIVE: only process models that are in poly_models_names_to_process
+        if name not in poly_models_names_to_process:
+            continue
         if hasattr(self, 'models') and name in self.models:
              model_class = self.models[name]
 
