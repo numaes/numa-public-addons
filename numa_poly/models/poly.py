@@ -176,6 +176,17 @@ def _poly_Field_get(self, record, owner=None):
         _type_name = type(record).__name__
         if 'descriptor' in _type_name or 'property' in _type_name or record is owner:
             return self
+        
+        # [poly] If it's not a recordset but has some other weird shape, delegate and pray.
+        try:
+            return _original_Field_get(self, record, owner=owner)
+        except Exception:
+            return self
+
+    # [poly] Performance optimization: if the model is not polymorphic, delegate immediately.
+    # We use the cached _referenced_as_poly_base to quickly identify non-polymorphic models.
+    # ir.actions.server and other base models should fall here.
+    if not getattr(record, '_depend_models', None) and not getattr(record, '_referenced_as_poly_base', False):
         return _original_Field_get(self, record, owner=owner)
 
     try:
@@ -244,6 +255,10 @@ def _poly_Field_set(self, records, value):
     # Odoo 18: Protect against recordsets without _ids (e.g. member_descriptor)
     if not hasattr(records, '_ids'):
         return
+
+    # [poly] Optimization: if the model is not polymorphic, delegate immediately.
+    if not getattr(records, '_depend_models', None) and not getattr(records, '_referenced_as_poly_base', False):
+        return _original_Field_set(self, records, value)
 
     # Also check if _ids is iterable, because it might be a property object or member_descriptor
     # when accessed from the class (records is a class) but here we already checked for type.
@@ -4053,7 +4068,7 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
             elif not self.pool.ready:
                 # During boot, be very aggressive to allow the registry to load
                 # This is critical for tech models like res.users, ir.model, etc.
-                _logger.warning("[poly] Removing non-existent column '%s' from %s query during boot.", f_name, self._name)
+                _logger.debug("[poly] Removing non-existent column '%s' from %s query during boot.", f_name, self._name)
                 _removed_fields.add(f_name)
             elif f_name in ('modules', 'is_seo_optimized', 'new_password', 'active_partner', 'xml_id', 'path', 'count', 'help', 'model'):
                 # Known technical columns that often cause issues in Odoo 18
@@ -4839,7 +4854,7 @@ def _poly_registry_setup_models(self, cr):
     # [poly] Phase 1: MRO Injection BEFORE Odoo's setup_models
     # This ensures Odoo 18 sees the correct class hierarchy from the start
     # [poly] CRITICAL: Sort by MRO depth to ensure parents are processed before children
-    _logger.info("[poly] Entering Phase 1: MRO Injection and attribute building")
+    _logger.debug("[poly] Entering Phase 1: MRO Injection and attribute building")
     
     # [poly] RESTORE ir.poly_base integrity: Ensure it uses standard BaseModel setup
     if 'ir.poly_base' in self:
@@ -5040,7 +5055,7 @@ def _poly_registry_setup_models(self, cr):
             poly_models_names.add(name)
 
     # [poly] Sort names to ensure parents are fixed before children
-    _logger.info("[poly] Entering Phase 2: Final field stabilization and sanitization")
+    _logger.debug("[poly] Entering Phase 2: Final field stabilization and sanitization")
     
     # [poly] ESCANEO SEGURO: Usar __dict__ para evitar disparar descriptores (evita ensure_one error)
     all_models_to_check = sorted([n for n, m in self.items() if isinstance(m, type) or hasattr(m, '_name')], key=lambda n: len(type.mro(type(self[n]))))
@@ -5093,7 +5108,7 @@ def _poly_registry_setup_models(self, cr):
         if not is_affected:
             continue
 
-        _logger.info("[poly] Deep fixing %s (Incremental)", name)
+        _logger.debug("[poly] Deep fixing %s (Incremental)", name)
         
         # [poly] Force infrastructure fields injection for all involved models
         if name in poly_models_names_to_process:
