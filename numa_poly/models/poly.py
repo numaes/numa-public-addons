@@ -1521,76 +1521,57 @@ class PolyBase(_original_BaseModel):
                     if not base_instance._fields:
                         _logger.debug("[poly] Forcing setup for base %s before injection into %s", base_name, self._name)
                         base_instance._setup_base()
-                    
-                    # [poly] PROTECT ir.poly_base: it is the master definition and 
-                    # must remain clean. We make a snapshot of its fields.
-                    if base_name == 'ir.poly_base' and not hasattr(base_instance, '_poly_protected_fields'):
-                         # Clone physically the fields map to detect ID changes later
-                         base_instance._poly_protected_fields = dict(base_instance._fields)
 
             # Use class method call
             cls._build_dependant_model_attributes()
             
-            # [poly] PROTECT ir.poly_base AFTER injection
-            for base_class in poly_bases:
-                base_name = getattr(base_class, '_name', None)
-                if base_name == 'ir.poly_base' and hasattr(base_class, '_poly_protected_fields'):
-                    for fn, old_fo in base_class._poly_protected_fields.items():
-                        new_fo = base_class._fields.get(fn)
-                        if new_fo and id(new_fo) != id(old_fo):
-                             _logger.error("[poly] CORRUPTION DETECTED: ir.poly_base field '%s' changed ID from %s to %s during setup of %s!", 
-                                          fn, id(old_fo), id(new_fo), self._name)
-                             # [poly] RESTORE: Critical fix to avoid Registry corruption
-                             base_class._fields[fn] = old_fo
+            # 3. Final descriptor installation
+            # [poly] CRITICAL: ONLY install descriptors on the current class (cls).
+            # NEVER modify base classes or other models in the pool.
+            for field_name, field in self._fields.items():
+                # If it's a polymorphic field (belongs to a base), we force the descriptor
+                is_poly_field = any(field_name in base.__dict__ for base in poly_bases)
                 
-                # 3. Final descriptor installation
-                # [poly] CRITICAL: ONLY install descriptors on the current class (cls).
-                # NEVER modify base classes or other models in the pool.
-                poly_bases = getattr(cls, '__depends_base_classes', ())
-                for field_name, field in self._fields.items():
-                    # If it's a polymorphic field (belongs to a base), we force the descriptor
-                    is_poly_field = any(field_name in base.__dict__ for base in poly_bases)
-                    
-                    if field_name not in cls.__dict__ or is_poly_field:
-                        # Safety: don't shadow actual methods with field descriptors unless it's a field
-                        if not callable(getattr(cls, field_name, None)) or isinstance(getattr(cls, field_name, None), fields.Field):
-                            # Only if it's NOT a method of Odoo
-                            setattr(cls, field_name, field)
+                if field_name not in cls.__dict__ or is_poly_field:
+                    # Safety: don't shadow actual methods with field descriptors unless it's a field
+                    if not callable(getattr(cls, field_name, None)) or isinstance(getattr(cls, field_name, None), fields.Field):
+                        # Only if it's NOT a method of Odoo
+                        setattr(cls, field_name, field)
 
             # Update _fields of the model in the pool
-                if self._name in self.pool.models:
-                    proxy_class = self.pool.models[self._name]
-                    # [poly] CRITICAL: Ensure proxy_class also has all fields and descriptors
-                    proxy_class._fields.update(self._fields)
-                    for fname, fobj in self._fields.items():
-                        # [poly] In Odoo 18, it's essential that descriptors are in the proxy class
-                        # because that's what Odoo uses for most ORM operations.
-                        # We force the descriptor if it's missing or if it's currently a field but from another model
-                        current_attr = proxy_class.__dict__.get(fname)
-                        if fname not in proxy_class.__dict__ or (isinstance(current_attr, fields.Field) and current_attr.model_name != self._name):
-                             try:
-                                  setattr(proxy_class, fname, fobj)
-                                  if fname not in proxy_class._fields:
-                                      proxy_class._fields[fname] = fobj
-                             except Exception:
-                                  pass
-                
-                # --- Odoo 18 View Validation Fix ---
-                # View validation uses getattr(model, method_name) on the registry class.
-                # We explicitly inject the method descriptors into the model class.
-                for base_class in poly_bases:
-                     if hasattr(base_class, '_name') and base_class._name != self._name:
-                          for attr_name, attr_val in base_class.__dict__.items():
-                               if callable(attr_val) and not attr_name.startswith('__') and attr_name not in model_class.__dict__:
-                                    setattr(model_class, attr_name, attr_val)
+            if self._name in self.pool.models:
+                proxy_class = self.pool.models[self._name]
+                # [poly] CRITICAL: Ensure proxy_class also has all fields and descriptors
+                proxy_class._fields.update(self._fields)
+                for fname, fobj in self._fields.items():
+                    # [poly] In Odoo 18, it's essential that descriptors are in the proxy class
+                    # because that's what Odoo uses for most ORM operations.
+                    # We force the descriptor if it's missing or if it's currently a field but from another model
+                    current_attr = proxy_class.__dict__.get(fname)
+                    if fname not in proxy_class.__dict__ or (isinstance(current_attr, fields.Field) and current_attr.model_name != self._name):
+                         try:
+                              setattr(proxy_class, fname, fobj)
+                              if fname not in proxy_class._fields:
+                                  proxy_class._fields[fname] = fobj
+                         except Exception:
+                              pass
+            
+            # --- Odoo 18 View Validation Fix ---
+            # View validation uses getattr(model, method_name) on the registry class.
+            # We explicitly inject the method descriptors into the model class.
+            for base_class in poly_bases:
+                 if hasattr(base_class, '_name') and base_class._name != self._name:
+                      for attr_name, attr_val in base_class.__dict__.items():
+                           if callable(attr_val) and not attr_name.startswith('__') and attr_name not in model_class.__dict__:
+                                setattr(model_class, attr_name, attr_val)
 
-                # Clear computation caches
-                if hasattr(self.pool, 'field_computed'):
-                    if self._name in self.pool.field_computed:
-                        del self.pool.field_computed[self._name]
-                if hasattr(self.pool, 'field_inverses'):
-                    if self._name in self.pool.field_inverses:
-                        del self.pool.field_inverses[self._name]
+            # Clear computation caches
+            if hasattr(self.pool, 'field_computed'):
+                if self._name in self.pool.field_computed:
+                    del self.pool.field_computed[self._name]
+            if hasattr(self.pool, 'field_inverses'):
+                if self._name in self.pool.field_inverses:
+                    del self.pool.field_inverses[self._name]
         except Exception as e:
             _logger.exception(f"[Poly.Setup] CRITICAL ERROR during injection for {self._name}: {e}")
 
@@ -2313,6 +2294,27 @@ class PolyBase(_original_BaseModel):
             # We must clone them preserving their original state.
             import copy
             
+            # [poly] SPECIAL: Odoo 18 Audit fields (create_uid, write_uid, etc.) 
+            # should NOT be recreated/cloned if we are inheriting them from ir.poly_base
+            # because they have special internal handling in Odoo 18.
+            # We also skip 'id', 'display_name', 'old_id', 'concrete_model_id', 'poly_payload' which are better handled by standard Odoo.
+            if name in ('id', 'display_name', 'old_id', 'concrete_model_id', 'poly_payload', 'create_uid', 'create_date', 'write_uid', 'write_date'):
+                # [poly] Aggressive takeover: ensure we use the PHYSICAL field object from ir.poly_base
+                # to satisfy Odoo 18's field resolution during setup_related
+                base_instance = cls.pool.get('ir.poly_base')
+                if base_instance is not None:
+                    base_field = base_instance._fields.get(name)
+                    if base_field:
+                        # [poly] We install the EXACT SAME field object. 
+                        # This avoids "Field X does not exist" errors in Odoo 18 related setup.
+                        setattr(cls, name, base_field)
+                        cls._fields[name] = base_field
+                        return
+
+                setattr(cls, name, field)
+                cls._fields[name] = field
+                return
+
             # Check if field has _args__. If it was already setup, it might be gone.
             # However, in numa_poly we usually clone from the base polymorphic models 
             # during their setup, or from cached definitions.
@@ -2329,15 +2331,6 @@ class PolyBase(_original_BaseModel):
                     if base_field:
                         args = getattr(base_field, '_args', None) or getattr(base_field, '_args__', None)
             
-            # [poly] SPECIAL: Odoo 18 Audit fields (create_uid, write_uid, etc.) 
-            # should NOT be recreated/cloned if we are inheriting them from ir.poly_base
-            # because they have special internal handling in Odoo 18.
-            # We also skip 'id', 'display_name', 'old_id', 'concrete_model_id', 'poly_payload' which are better handled by standard Odoo.
-            if name in ('id', 'display_name', 'old_id', 'concrete_model_id', 'poly_payload', 'create_uid', 'create_date', 'write_uid', 'write_date'):
-                setattr(cls, name, field)
-                cls._fields[name] = field
-                return
-
             try:
                 # [poly] CLONE logic for Odoo 18:
                 # We MUST avoid using the same physical field object across models.
@@ -3323,12 +3316,15 @@ class PolyBase(_original_BaseModel):
         for base_model_name, ids_to_delete in dep_ids.items():
             self.env[base_model_name].browse(ids_to_delete).unlink()
 
-        # Clean up ir.poly_base rows (not in _depend_models but poly always creates one).
-        # Guard: skip when already unlinking ir.poly_base to prevent infinite recursion
-        # (ir.poly_base itself has _depend_models={}, so it would enter this path too).
+        # [poly] Odoo 18 consistent models fix:
+        # Before unlinking ir.poly_base, we must ensure Odoo's protection system
+        # doesn't try to subtract records from different models.
+        # We perform a manual delete to avoid the ORM's inconsistent model checks.
         if original_ids and self._name != 'ir.poly_base':
-            self.env['ir.poly_base'].sudo().browse(original_ids).unlink()
-
+            self.env.cr.execute(SQL("DELETE FROM ir_poly_base WHERE id IN %s", tuple(original_ids)))
+            # Invalidate cache for the deleted records
+            self.env['ir.poly_base'].invalidate_model()
+            
         return result
 
 
