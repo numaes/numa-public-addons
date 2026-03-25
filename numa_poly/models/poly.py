@@ -2441,11 +2441,25 @@ class PolyBase(_original_BaseModel):
                     # 1. Selection
                     if hasattr(field, 'selection') and 'selection' not in clean_args:
                          # [poly] RECURSION GUARD: Avoid calling selection property if it might trigger lambda recursion
+                         # We check if 'selection' is in _args (raw) first.
+                         _raw_sel = None
                          if hasattr(field, '_args') and 'selection' in field._args:
-                              clean_args['selection'] = field._args['selection']
+                              _raw_sel = field._args['selection']
+                         
+                         if _raw_sel:
+                              clean_args['selection'] = _raw_sel
                          else:
+                              # [poly] DANGEROUS: If we must access field.selection, check if it's a lambda/callable
+                              # which is exactly what triggers the RecursionError in Odoo 18 if called during setup.
                               try:
-                                   clean_args['selection'] = field.selection
+                                   _obj_sel = getattr(field, 'selection', None)
+                                   if _obj_sel and not callable(_obj_sel):
+                                        clean_args['selection'] = _obj_sel
+                                   else:
+                                        # It's a callable or None, we better skip it here and let it be recovered 
+                                        # from registry/DB later if possible, or let it stay as a callable if we can clone it.
+                                        if callable(_obj_sel):
+                                             clean_args['selection'] = _obj_sel
                               except Exception: pass
                     
                     # [poly] ULTIMATE SELECTION RECOVERY: If selection is STILL missing, search in Registry
@@ -2454,12 +2468,20 @@ class PolyBase(_original_BaseModel):
                               if name in _m._fields:
                                    _f_proto = _m._fields[name]
                                    if _f_proto.type == 'selection' and hasattr(_f_proto, 'selection'):
-                                        # [poly] RECURSION GUARD: Prefer raw _args selection to avoid triggering lambdas during setup
+                                        # [poly] RECURSION GUARD: Prefer raw _args selection
+                                        _proto_raw_sel = None
                                         if hasattr(_f_proto, '_args') and 'selection' in _f_proto._args:
-                                             clean_args['selection'] = _f_proto._args['selection']
+                                             _proto_raw_sel = _f_proto._args['selection']
+                                        
+                                        if _proto_raw_sel:
+                                             clean_args['selection'] = _proto_raw_sel
                                         else:
                                              try:
-                                                  clean_args['selection'] = _f_proto.selection
+                                                  _psel = _f_proto.selection
+                                                  if _psel and not callable(_psel):
+                                                       clean_args['selection'] = _psel
+                                                  elif callable(_psel):
+                                                       clean_args['selection'] = _psel
                                              except Exception: pass
                                         
                                         if clean_args.get('selection'):
