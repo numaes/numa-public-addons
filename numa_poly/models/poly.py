@@ -88,6 +88,33 @@ POLY_MRO_CACHE = defaultdict(dict)
 def _poly_pending_views(self):
     return set()
 
+def _poly_is_polymorphic(model):
+    """
+    [poly] Global helper to determine if a model belongs to the polymorphic hierarchy.
+    It checks for PolyBase inheritance and _depend_models.
+    """
+    if not model or not hasattr(model, '_name'):
+        return False
+        
+    name = model._name
+    if name == 'ir.poly_base':
+        return False
+        
+    # Check if the model or any of its bases has _depend_models
+    # We use __dict__.get to avoid triggering descriptors
+    model_class = type(model) if not isinstance(model, type) else model
+    for base in model_class.mro():
+        if base.__dict__.get('_depend_models'):
+            return True
+        if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
+            return True
+            
+    # Check if it has the marker attribute from _setup_base
+    if hasattr(model, '_referenced_as_poly_base') and model._referenced_as_poly_base:
+        return True
+        
+    return False
+
 # [poly] Track processed models for incremental Deep Fix
 @odoo.tools.lazy_property
 def _poly_processed_models(self):
@@ -187,14 +214,7 @@ def _poly_Field_get(self, record, owner=None):
     # We use the cached _referenced_as_poly_base to quickly identify non-polymorphic models.
     # ir.actions.server and other base models should fall here.
     try:
-        is_poly_hierarchy = False
-        _mro = getattr(type(record), 'mro', lambda: [])()
-        for base in _mro:
-            if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
-                is_poly_hierarchy = True
-                break
-        
-        if not is_poly_hierarchy and not getattr(record, '_referenced_as_poly_base', False):
+        if not _poly_is_polymorphic(record):
             return _original_Field_get(self, record, owner=owner)
     except (KeyError, AttributeError):
         # [poly] Odoo 18: Protect against errors during boot
@@ -269,14 +289,7 @@ def _poly_Field_set(self, records, value):
 
     # [poly] Optimization: if the model is not polymorphic, delegate immediately.
     try:
-        is_poly_hierarchy = False
-        _mro = getattr(type(records), 'mro', lambda: [])()
-        for base in _mro:
-            if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
-                is_poly_hierarchy = True
-                break
-        
-        if not is_poly_hierarchy and not getattr(records, '_referenced_as_poly_base', False):
+        if not _poly_is_polymorphic(records):
             return _original_Field_set(self, records, value)
     except (KeyError, AttributeError):
         pass
@@ -2996,9 +3009,7 @@ class PolyBase(_original_BaseModel):
         """
         # [poly] ir.poly_base IS NOT polymorphic, it is the common base.
         # Standard Odoo models that ARE NOT polymorphic must also be handled by Odoo.
-        is_poly_model = bool(self._poly_get_depend_models())
-        
-        if self._name == 'ir.poly_base' or not is_poly_model:
+        if self._name == 'ir.poly_base' or not _poly_is_polymorphic(self):
             return super().create(data_list)
             
         # SAFEGUARD: if we are in early boot, filter out any invalid fields
@@ -3431,16 +3442,12 @@ class PolyBase(_original_BaseModel):
     def unlink(self):
         """
         Delete records and their dependent records.
-
-        For polymorphic models, this method ensures that when a record is deleted,
-        all corresponding records in dependent models are also deleted, maintaining
-        the integrity of the polymorphic structure.
-
-        Returns:
-            Result of the standard unlink operation
         """
         if not self:
             return True
+
+        if not _poly_is_polymorphic(self):
+            return super().unlink()
 
         # Capture IDs and dependent record IDs BEFORE any deletion.
         # We use the link field (e.g. driver_id) instead of self.ids because the
@@ -3479,6 +3486,9 @@ class PolyBase(_original_BaseModel):
 
 
     def read(self, fields=None, load='_classic_read'):
+        if not _poly_is_polymorphic(self):
+            return super().read(fields=fields, load=load)
+        
         if not self.pool.ready:
             try:
                 return super().read(fields=fields, load=load)
@@ -3500,12 +3510,12 @@ class PolyBase(_original_BaseModel):
     def write(self, vals):
         """
         Override write to intercept and merge poly_payload data.
-        
-        Similar to create, this allows updating subclass-specific fields
-        through the payload mechanism.
         """
         if not self:
             return True
+
+        if not _poly_is_polymorphic(self):
+            return super().write(vals)
 
         # Make a copy to avoid mutating the original
         processed_vals = vals.copy()
@@ -4064,6 +4074,10 @@ class PolyBase(_original_BaseModel):
                 return SQL("%s", fname)
             return SQL.identifier(str(fname))
 
+        # [poly] STRICT ISOLATION: if not a poly model, delegate immediately.
+        if not _poly_is_polymorphic(self):
+            return super()._field_to_sql(alias, fname, query, flush)
+
         # [poly] Saneamiento de rutas relacionadas en SQL para Odoo 18
         # Odoo 18 a veces inyecta el nombre del modelo como prefijo en la ruta del campo
         if '.' in fname:
@@ -4496,14 +4510,7 @@ def _poly_column_exists(cr, table, column):
 def poly_BaseModel_fetch_query(self, query, fields=None):
     # [poly] STRICT CHECK: Only apply filtering for models in the polymorphic hierarchy
     # or during registry boot (to avoid UndefinedColumn during early stages).
-    is_poly_hierarchy = False
-    _mro = getattr(type(self), 'mro', lambda: [])()
-    for base in _mro:
-        if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
-            is_poly_hierarchy = True
-            break
-    
-    if not is_poly_hierarchy and self.pool.ready:
+    if not _poly_is_polymorphic(self) and self.pool.ready:
         return _original_BaseModel_fetch_query(self, query, fields)
 
     # [poly] CLEAN QUERY: Filter out fields that are NOT physically in the database table
@@ -4548,14 +4555,25 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
                 _valid_fields.append(f)
                 continue
 
+            # [poly] CRITICAL: For standard models during boot, ONLY filter very specific 
+            # technical fields that are known to cause UndefinedColumn during early startup.
+            # NEVER filter out business fields for non-poly models.
+            is_poly = _poly_is_polymorphic(self)
+            
             # [poly] Use cached column check.
             if _poly_column_exists(self.env.cr, self._table, f_name):
                 _valid_fields.append(f)
-            elif not self.pool.ready:
-                # During boot, be very aggressive to allow the registry to load
-                # This is critical for tech models like res.users, ir.model, etc.
+            elif not self.pool.ready and is_poly:
+                # During boot, be very aggressive to allow the registry to load for POLY models
                 _logger.debug("[poly] Removing non-existent column '%s' from %s query during boot.", f_name, self._name)
                 _removed_fields.add(f_name)
+            elif not self.pool.ready and not is_poly:
+                # [poly] For NON-POLY models during boot, only filter Audit fields or res.lang technical fields
+                if f_name in ('create_uid', 'create_date', 'write_uid', 'write_date') or (self._name == 'res.lang' and f_name == 'flag_image_url'):
+                    _logger.debug("[poly] Removing technical column '%s' from non-poly %s query during boot.", f_name, self._name)
+                    _removed_fields.add(f_name)
+                else:
+                    _valid_fields.append(f)
             elif f_name in ('create_uid', 'create_date', 'write_uid', 'write_date'):
                 # [poly] Odoo 18: Audit fields for models that don't have them 
                 # (e.g. mail_followers, mail_notification in some environments/mixins)
@@ -5096,8 +5114,7 @@ def poly_NameManager_must_have_fields(self, node, names, node_info, use):
         error_msg = str(e)
         if "Unknown field" in error_msg:
             # Check if the model is polymorphic
-            is_poly = hasattr(self.model, '_depend_models') or 'ir.poly_base' in [c._name for c in self.model.mro() if hasattr(c, '_name')]
-            if is_poly:
+            if _poly_is_polymorphic(self.model):
                 return
         raise e
 
