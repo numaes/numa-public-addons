@@ -2760,7 +2760,9 @@ class PolyBase(_original_BaseModel):
                     
                     # If it's a simple related like 'base_link.field'
                     if '.' in curr_f.related:
-                        rel_base_field, rel_fname = curr_f.related.split('.', 1)
+                        rel_parts = curr_f.related.split('.')
+                        rel_base_field = rel_parts[0]
+                        rel_fname = '.'.join(rel_parts[1:])
                         
                         # Find if rel_base_field is a PolyReference in curr_m_name
                         rel_base_model = None
@@ -2775,7 +2777,28 @@ class PolyBase(_original_BaseModel):
                                 break
                         
                         if rel_base_model and rel_base_model in cls.pool:
-                            next_f = cls.pool[rel_base_model]._fields.get(rel_fname)
+                            next_model = cls.pool[rel_base_model]
+                            
+                            # [poly] RECURSIVE RESOLUTION: If the path has more than 1 dot,
+                            # we MUST follow it step by step through polymorphic bases.
+                            if '.' in rel_fname:
+                                sub_parts = rel_fname.split('.')
+                                sub_prefix = sub_parts[0]
+                                sub_suffix = '.'.join(sub_parts[1:])
+                                
+                                sub_depend = getattr(next_model, '_poly_get_depend_models', lambda: {})()
+                                sub_link = sub_depend.get(sub_prefix) or next_model._fields.get(sub_prefix)
+                                
+                                if sub_link:
+                                     # It's another jump, let the while continue with one step
+                                     curr_f = sub_link
+                                     curr_m_name = rel_base_model
+                                     # We don't return here, we let the while loop handle the next part of the path
+                                     # but we must be careful with 'related' being evaluated.
+                                     # Actually, better to just resolve ONE step and continue.
+                                     continue
+
+                            next_f = next_model._fields.get(rel_fname)
                             if next_f and (rel_base_model, rel_fname) not in visited:
                                 curr_f = next_f
                                 curr_m_name = rel_base_model
@@ -4773,13 +4796,13 @@ _original_Field_setup_related = odoo.fields.Field.setup_related
 
 def poly_Field_setup_related(self, model):
     """
-    [poly] GENERIC FIX: Corrects 'related' paths that incorrectly point to model names instead of 
+    [poly] Corrects 'related' paths that incorrectly point to model names instead of 
     polymorphic link fields. 
     """
     # [poly] CRITICAL: We use __dict__ bypass to check the original 'related' value 
     # and avoid lazy-loading side effects that might trigger KeyError too early.
     related = getattr(self, 'related', None)
-    if not related:
+    if not related or not _poly_is_polymorphic(model):
         return _original_Field_setup_related(self, model)
     
     if '.' in related:
@@ -4787,77 +4810,6 @@ def poly_Field_setup_related(self, model):
         prefix = parts[0]
         registry = model.pool or model.env.registry
         
-        # [poly] Saneamiento Genérico: si hay prefijos que son nombres de modelos, limpiarlos
-        # e.g. 'facebook.account.name' -> 'name' (if facebook.account is model and not field)
-        # e.g. 'account.name' -> 'name' (if account is prefix of facebook.account and not field)
-        changed = False
-        while parts and len(parts) > 1:
-            segment = parts[0]
-            # OJO: No podemos usar hasattr(type(model), segment) porque dispararía descriptores técnicos
-            if segment in model._fields:
-                break
-                
-            is_invalid_prefix = False
-            if segment in registry:
-                is_invalid_prefix = True
-            elif model._name.startswith(segment + '.') or ('.' in model._name and segment in model._name.split('.')):
-                is_invalid_prefix = True
-            elif segment == 'account' and model._name == 'facebook.account': # Fallback para depurar
-                is_invalid_prefix = True
-            
-            if is_invalid_prefix:
-                # [poly] REDUCED NOISE: Only log if it's NOT a common model prefix or it was really needed
-                if segment not in ['conversation', 'message', 'session', 'account']:
-                    _logger.debug("[poly] Stripping model-name prefix '%s' from %s.%s: %s", segment, model._name, self.name, related)
-                parts = parts[1:]
-                changed = True
-            else:
-                break
-        
-        if changed:
-            related = '.'.join(parts)
-            self.related = related
-            if hasattr(self, '_args'): self._args['related'] = related
-            prefix = parts[0]
-            
-        # [poly] NEW: Aggressive mid-path sanitization to handle Odoo 18 auto-prefixing
-        # e.g., 'driver_id.account.name' -> 'driver_id.name'
-        if parts and len(parts) > 1:
-            new_parts = [parts[0]]
-            # We need the model of the first segment to check the second
-            try:
-                # Usar self.env.get para evitar excepciones si el modelo no existe
-                curr_f = model._fields.get(parts[0])
-                curr_model_for_path = model.env.get(curr_f.comodel_name) if curr_f and curr_f.comodel_name else None
-            except:
-                curr_model_for_path = None
-            
-            mid_changed = False
-            for segment in parts[1:]:
-                if curr_model_for_path and segment in registry and segment not in curr_model_for_path._fields:
-                    # [poly] REDUCED NOISE: Only log if it's NOT a common model prefix
-                    if segment not in ['conversation', 'message', 'session', 'account']:
-                        _logger.debug("[poly] Stripping mid-path model prefix '%s' in %s.%s", segment, model._name, self.name)
-                    mid_changed = True
-                    continue
-                new_parts.append(segment)
-                if curr_model_for_path and segment in curr_model_for_path._fields:
-                    try:
-                        next_f = curr_model_for_path._fields.get(segment)
-                        next_comodel = next_f.comodel_name if next_f else None
-                        curr_model_for_path = model.env.get(next_comodel) if next_comodel else None
-                    except:
-                        curr_model_for_path = None
-                else:
-                    curr_model_for_path = None
-            
-            if mid_changed:
-                related = '.'.join(new_parts)
-                self.related = related
-                if hasattr(self, '_args'): self._args['related'] = related
-                parts = new_parts
-                prefix = parts[0]
-
         # Si el prefijo es un padre polimórfico, redirigir a través del campo link
         depend_models = getattr(model, '_depend_models', {}) or {}
         link_fname = None
@@ -4890,13 +4842,6 @@ def poly_Field_setup_related(self, model):
             # REDIRECCIÓN: Usamos el campo link en lugar del nombre del modelo
             new_path = f"{link_fname}.{'.'.join(parts[1:])}"
             _logger.debug("[poly] Redirigiendo ruta polimórfica %s.%s: %s -> %s", model._name, self.name, related, new_path)
-            
-            # [poly] NEW: Before setting the new path, sanitize it too!
-            # This prevents cycles like account.state -> driver_id.account.state -> driver_id.state
-            new_path_sanitized = _poly_sanitize_path(model, new_path)
-            if new_path_sanitized != new_path:
-                 _logger.info("[poly] Saneamiento post-redirección para %s.%s: %s -> %s", model._name, self.name, new_path, new_path_sanitized)
-                 new_path = new_path_sanitized
             
             self.related = new_path
             if hasattr(self, '_args'): self._args['related'] = self.related
@@ -4937,54 +4882,11 @@ def poly_Field_setup_related(self, model):
                     # model, we allow it to pass. The field will be correctly initialized 
                     # during the final _poly_registry_setup_models pass.
                     if model.pool._init:
-                        is_poly = hasattr(model, '_depend_models') or 'ir.poly_base' in [c._name for c in model.mro() if hasattr(c, '_name')]
-                        if is_poly:
+                        if _poly_is_polymorphic(model):
                             _logger.debug("[poly] Deferring setup_related error for %s.%s: %s", model._name, self.name, str(e))
                             return
-
-                    # [poly] Special recovery for missing fields in related paths during boot
-                    if prefix not in model._fields and not hasattr(type(model), prefix):
-                        # Check if prefix is a model name (registered in the registry)
-                        if prefix in registry:
-                            depend_models = getattr(model, '_depend_models', {}) or {}
-                            link_field_name = depend_models.get(prefix)
-                            if not link_field_name:
-                                # Search in all link fields
-                                for _, link_fname in depend_models.items():
-                                    link_field_name = link_fname
-                                    break
-                            
-                            if link_field_name:
-                                _logger.error("[poly] Redirecting broken path %s.%s: %s -> %s.%s", model._name, self.name, cur_related, link_field_name, '.'.join(parts[1:]))
-                                self.related = f"{link_field_name}.{'.'.join(parts[1:])}"
-                                if hasattr(self, '_args'): self._args['related'] = self.related
-                                continue
-                        
-                        # [poly] SECONDARY REDIRECTION: If prefix is NOT in model fields 
-                        # but we have a polymorphic parent, try to redirect to IT.
-                        # This handles paths like 'project_id.privacy_visibility' where 'project_id' 
-                        # might be temporarily missing from 'project.task' during boot.
-                        depend_models = getattr(model, '_depend_models', {}) or {}
-                        if depend_models:
-                            # Use the first available polymorphic parent as gateway
-                            link_field_name = next(iter(depend_models.values()))
-                            # Guard against self-referential or already-prefixed paths
-                            if link_field_name == self.name or cur_related.startswith(f"{link_field_name}."):
-                                _logger.debug("[poly] Skipping gateway redirection for %s.%s: link '%s' already applied or equals field name", model._name, self.name, link_field_name)
-                            else:
-                                _logger.error("[poly] Gateway redirection for %s.%s: %s -> %s.%s", model._name, self.name, cur_related, link_field_name, cur_related)
-                                self.related = f"{link_field_name}.{cur_related}"
-                                if hasattr(self, '_args'): self._args['related'] = self.related
-                                continue
-
-                    # [poly] Aggressive KeyError handling: strip the first part and continue.
-                    _logger.error("[poly] setup_related error for %s.%s path %s. Stripping %s", model._name, self.name, cur_related, prefix)
-                    new_related = '.'.join(parts[1:])
-                    if new_related == cur_related or not new_related: # Prevent infinite loop or empty path
-                        break
-                    self.related = new_related
-                    if hasattr(self, '_args'): self._args['related'] = self.related
-                    continue
+                    
+                    raise e
                 raise e
     finally:
         odoo.fields.Field._poly_setup_stack.discard(stack_key)
@@ -5048,68 +4950,6 @@ def poly_NameManager_must_have_fields(self, node, names, node_info, use):
             if _poly_is_polymorphic(self.model):
                 return
         raise e
-
-def _poly_sanitize_path(model, path):
-    """
-    [poly] STRUCTURAL PATH SANITIZER
-    Strips segments from any position in a related path that look like model names 
-    but are not actual fields in the current model chain.
-    """
-    if not isinstance(path, str) or '.' not in path:
-        return path
-        
-    registry = model.pool or model.env.registry
-    parts = path.split('.')
-    curr_model = model
-    new_parts = []
-    changed = False
-    
-    # _logger.info("[poly] _poly_sanitize_path: path=%s, model=%s", path, model._name)
-    for i, segment in enumerate(parts):
-        # 1. If it's a valid field in the current model step, keep it
-        if curr_model and segment in curr_model._fields:
-            new_parts.append(segment)
-            f_obj = curr_model._fields.get(segment)
-            if f_obj and f_obj.comodel_name:
-                # Advance to next model in chain if possible
-                try:
-                    curr_model = model.env[f_obj.comodel_name]
-                except:
-                    curr_model = None
-            else:
-                curr_model = None
-            continue
-            
-        # 2. Check if segment is an invalid prefix (model name or model prefix)
-        is_invalid = False
-        if segment in registry:
-            is_invalid = True
-        elif i == 0 and curr_model and segment in curr_model._name.split('.'):
-            # If the segment is part of the model name and it's NOT a field
-            # it's definitely a prefix to strip.
-            is_invalid = True
-        elif i == 0 and any(mname.startswith(segment + '.') for mname in registry):
-            # If it looks like a model prefix (e.g. 'account') but it's NOT a field
-            # we should probably strip it too if it's the first segment
-            is_invalid = True
-        elif i == 0 and any(mname.endswith('.' + segment) for mname in registry):
-            # Handle 'poly_base' in 'ir.poly_base'
-            is_invalid = True
-                
-        if is_invalid:
-            # Skip this segment
-            changed = True
-            _logger.debug("[poly] Stripping invalid path segment '%s' from %s.%s", segment, model._name, path)
-            continue
-        
-        # 3. If we don't know what it is but it's not a field, keep it just in case 
-        # (might be a field added later or a special Odoo segment)
-        new_parts.append(segment)
-        curr_model = None
-            
-    res_path = '.'.join(new_parts) if changed and new_parts else path
-    # _logger.info("[poly] _poly_sanitize_path result: %s", res_path)
-    return res_path
 
 # PATCH: IrUiView._validate_view to tolerate missing polymorphic fields during update
 # In Odoo 18, the class is named 'View' but registered as 'ir.ui.view'
