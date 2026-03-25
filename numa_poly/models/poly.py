@@ -2343,55 +2343,49 @@ class PolyBase(_original_BaseModel):
                     # Clean args of Odoo-internal keys that shouldn't be in constructor
                     clean_args = {k: v for k, v in args.items() if not k.startswith('_')}
                     
-                    # [poly] Odoo 18: MANDATORY ATTRIBUTE PRESERVATION
-                    # Some attributes like 'selection' or 'comodel_name' might be 
-                    # processed by Odoo and not be in _args anymore if they were
-                    # passed as positional arguments or modified.
-                    # We ensure they are present for the new constructor.
+
+                    # [poly] MANDATORY ATTRIBUTE RECOVERY: 
+                    # Many relational fields in Odoo 18 (especially when passed as positional args) 
+                    # lose their original '_args' keys during setup. We MUST extract 
+                    # their state directly from the object if it's not in clean_args.
+                    
+                    # 1. Selection
                     if hasattr(field, 'selection') and 'selection' not in clean_args:
                          clean_args['selection'] = field.selection
-                    if hasattr(field, 'comodel_name') and 'comodel_name' not in clean_args:
-                         clean_args['comodel_name'] = field.comodel_name
-                
-                    # [poly] EMERGENCY: ensure comodel_name is NEVER None for relational fields
+                    
+                    # 2. Relational Metadata (Many2one, One2many, Many2many)
                     if f_type.__name__ in ('Many2one', 'One2many', 'Many2many', 'PolyReference'):
                         if not clean_args.get('comodel_name'):
-                             # Try to recover from the field object directly if it was lost in clean_args
                              clean_args['comodel_name'] = getattr(field, 'comodel_name', None)
-                             if not clean_args['comodel_name']:
-                                 # Fallback to a safe model if everything fails, but log it loudly
-                                 _logger.error("[poly] CRITICAL: comodel_name is NULL for relational field %s in %s. Using 'base' to avoid KeyError.", name, cls._name)
-                                 clean_args['comodel_name'] = 'base'
+                        
+                        if f_type.__name__ == 'One2many' and not clean_args.get('inverse_name'):
+                             clean_args['inverse_name'] = getattr(field, 'inverse_name', None)
+                             
+                        if f_type.__name__ == 'Many2many':
+                             if not clean_args.get('relation'):
+                                  clean_args['relation'] = getattr(field, 'relation', None)
+                             if not clean_args.get('column1'):
+                                  clean_args['column1'] = getattr(field, 'column1', None)
+                             if not clean_args.get('column2'):
+                                  clean_args['column2'] = getattr(field, 'column2', None)
 
-                    if hasattr(field, 'inverse_name') and 'inverse_name' not in clean_args:
-                         clean_args['inverse_name'] = field.inverse_name
-                    if hasattr(field, 'relation') and 'relation' not in clean_args:
-                         clean_args['relation'] = field.relation
-                    if hasattr(field, 'column1') and 'column1' not in clean_args:
-                         clean_args['column1'] = field.column1
-                    if hasattr(field, 'column2') and 'column2' not in clean_args:
-                         clean_args['column2'] = field.column2
+                    # 3. Domain and Context
                     if hasattr(field, 'domain') and 'domain' not in clean_args:
                          clean_args['domain'] = field.domain
                     if hasattr(field, 'context') and 'context' not in clean_args:
                          clean_args['context'] = field.context
                     
-            # [poly] Related fields must have 'related' in clean_args if it's missing
+                    # 4. Related path (Crucial for our strategy)
                     if hasattr(field, 'related') and field.related and 'related' not in clean_args:
                          clean_args['related'] = field.related
-                    
-                    # [poly] Odoo 18: ensure comodel_name is set for Many2one and other relational fields
-                    if hasattr(field, 'comodel_name') and field.comodel_name and 'comodel_name' not in clean_args:
-                         clean_args['comodel_name'] = field.comodel_name
-                    
-                    # [poly] DEBUG: Log what we are passing to constructor
-                    if not clean_args.get('comodel_name') and f_type.__name__ in ('Many2one', 'One2many', 'Many2many', 'PolyReference'):
-                         _logger.warning("[poly] MISSING comodel_name for relational field %s during RECREATION in %s (Field type: %s)", 
-                                       name, cls._name, f_type.__name__)
-                    
-                    # [poly] Preserve 'compute' if it was lost
-                    if hasattr(field, 'compute') and field.compute and 'compute' not in clean_args:
-                         clean_args['compute'] = field.compute
+
+                    # [poly] EMERGENCY: ensure comodel_name is NEVER None for relational fields
+                    if f_type.__name__ in ('Many2one', 'One2many', 'Many2many', 'PolyReference'):
+                        if not clean_args.get('comodel_name'):
+                             # Log with high visibility if it still fails
+                             _logger.error("[poly] CRITICAL: comodel_name is NULL for relational field %s in %s (Type: %s). Falling back to 'base'.", 
+                                          name, cls._name, f_type.__name__)
+                             clean_args['comodel_name'] = 'base'
 
                     try:
                         f_clone = f_type(**clean_args)
