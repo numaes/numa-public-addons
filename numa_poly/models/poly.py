@@ -2297,6 +2297,24 @@ class PolyBase(_original_BaseModel):
             # We try to get original args or use a shallow copy if args are already gone
             args = getattr(field, '_args', None) or getattr(field, '_args__', None)
             
+            # [poly] RECOVERY: If args are totally gone but it's a polymorphic field,
+            # we might find them in the base model's _fields if they were preserved there.
+            if not args and related_base:
+                base_model = cls.pool.get(related_base)
+                if base_model is not None:
+                    base_field = base_model._fields.get(name)
+                    if base_field:
+                        args = getattr(base_field, '_args', None) or getattr(base_field, '_args__', None)
+            
+            # [poly] SPECIAL: Odoo 18 Audit fields (create_uid, write_uid, etc.) 
+            # should NOT be recreated/cloned if we are inheriting them from ir.poly_base
+            # because they have special internal handling in Odoo 18.
+            # We also skip 'id', 'display_name', and 'old_id' which are better handled by standard Odoo.
+            if name in ('id', 'display_name', 'old_id', 'create_uid', 'create_date', 'write_uid', 'write_date'):
+                setattr(cls, name, field)
+                cls._fields[name] = field
+                return
+
             try:
                 # [poly] CLONE logic for Odoo 18:
                 # We MUST avoid using the same physical field object across models.
@@ -2308,9 +2326,36 @@ class PolyBase(_original_BaseModel):
                 if args:
                     # Clean args of Odoo-internal keys that shouldn't be in constructor
                     clean_args = {k: v for k, v in args.items() if not k.startswith('_')}
-                    f_clone = f_type(**clean_args)
-                    _logger.info("[poly] RECREATING field %s from base %s to %s: total isolation achieved", 
-                                 name, related_base or "N/A", cls._name)
+                    
+                    # [poly] Odoo 18: MANDATORY ATTRIBUTE PRESERVATION
+                    # Some attributes like 'selection' or 'comodel_name' might be 
+                    # processed by Odoo and not be in _args anymore if they were
+                    # passed as positional arguments or modified.
+                    # We ensure they are present for the new constructor.
+                    if hasattr(field, 'selection') and 'selection' not in clean_args:
+                         clean_args['selection'] = field.selection
+                    if hasattr(field, 'comodel_name') and 'comodel_name' not in clean_args:
+                         clean_args['comodel_name'] = field.comodel_name
+                    if hasattr(field, 'inverse_name') and 'inverse_name' not in clean_args:
+                         clean_args['inverse_name'] = field.inverse_name
+                    if hasattr(field, 'relation') and 'relation' not in clean_args:
+                         clean_args['relation'] = field.relation
+                    
+                    # [poly] Related fields must have 'related' in clean_args if it's missing
+                    if hasattr(field, 'related') and field.related and 'related' not in clean_args:
+                         clean_args['related'] = field.related
+                    
+                    # [poly] Preserve 'compute' if it was lost
+                    if hasattr(field, 'compute') and field.compute and 'compute' not in clean_args:
+                         clean_args['compute'] = field.compute
+
+                    try:
+                        f_clone = f_type(**clean_args)
+                        _logger.debug("[poly] RECREATING field %s from base %s to %s: total isolation achieved", 
+                                     name, related_base or "N/A", cls._name)
+                    except Exception as e:
+                        _logger.warning("[poly] RECREATION failed for %s using f_type(**clean_args): %s. Falling back to copy.", name, e)
+                        f_clone = copy.copy(field)
                 else:
                     # Fallback to copy if args are gone (should not happen with our setup)
                     f_clone = copy.copy(field)
@@ -2321,11 +2366,22 @@ class PolyBase(_original_BaseModel):
                     f_clone._args = dict(args)
                     f_clone._args__ = dict(args)
                 
+                # Odoo 18: MANDATORY: Ensure field name is set on the clone immediately
+                f_clone.name = name
+                f_clone.model_name = cls._name
+                
                 # Odoo 18: reset internal setup flags to allow re-setup for the new model
-                for flag in ['_setup_done', '_direct', '_toplevel', 'model_name', 'name']:
+                for flag in ['_setup_done', '_direct', '_toplevel', 'setup_done', 'model_name']:
                     if hasattr(f_clone, flag):
                         try: delattr(f_clone, flag)
                         except (AttributeError, KeyError): pass
+                
+                # [poly] Restore name and model_name AFTER potential deletion by setup flags clearing
+                f_clone.name = name
+                f_clone.model_name = cls._name
+                
+                _logger.debug("[poly] Field %s for %s recreated as %s. f_clone.name=%s", 
+                             name, cls._name, f_clone, getattr(f_clone, 'name', 'N/A'))
                 
                 # Clean class dict to remove any contaminated attribute
                 current_attr = cls.__dict__.get(name)
@@ -4192,11 +4248,14 @@ def _poly_column_exists(cr, table, column):
     if key in _POLY_COLUMN_CACHE:
         return _POLY_COLUMN_CACHE[key]
     try:
-        cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s AND column_name=%s", (table, column))
+        # [poly] Use information_schema only as fallback, prefer cr.has_column if available
+        # or use a direct query that works for all postgres versions
+        cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name=%s AND column_name=%s LIMIT 1", (table, column))
         res = bool(cr.fetchone())
         _POLY_COLUMN_CACHE[key] = res
         return res
-    except Exception:
+    except Exception as e:
+        _logger.debug("[poly] Column check error for %s.%s: %s", table, column, e)
         return False
 
 def poly_BaseModel_fetch_query(self, query, fields=None):
@@ -4213,6 +4272,11 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
                 _valid_fields.append(f)
                 continue
             
+            # [poly] Skip filtering for ir.poly_base as we handle it differently
+            if self._name == 'ir.poly_base':
+                _valid_fields.append(f)
+                continue
+
             # [poly] Use cached column check.
             if _poly_column_exists(self.env.cr, self._table, f_name):
                 _valid_fields.append(f)
@@ -4221,7 +4285,13 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
                 # This is critical for tech models like res.users, ir.model, etc.
                 _logger.debug("[poly] Removing non-existent column '%s' from %s query during boot.", f_name, self._name)
                 _removed_fields.add(f_name)
-            elif f_name in ('modules', 'is_seo_optimized', 'new_password', 'active_partner', 'xml_id', 'path', 'count', 'help', 'model'):
+            elif f_name in ('create_uid', 'create_date', 'write_uid', 'write_date'):
+                # [poly] Odoo 18: Audit fields for models that don't have them 
+                # (e.g. mail_followers, mail_notification in some environments/mixins)
+                # If they are NOT in the table, they must be filtered even at runtime.
+                _logger.debug("[poly] Filtering missing audit column '%s' from %s query.", f_name, self._name)
+                _removed_fields.add(f_name)
+            elif f_name in ('modules', 'is_seo_optimized', 'new_password', 'active_partner', 'xml_id', 'path', 'count', 'help', 'model', 'activity_ids', 'activity_state', 'activity_type_id', 'activity_date_deadline', 'activity_summary', 'activity_user_id', 'my_activity_date_deadline'):
                 # Known technical columns that often cause issues in Odoo 18
                 # but only if we are absolutely sure they are missing.
                 # If they are NOT in the table, they must be filtered.
@@ -4339,12 +4409,26 @@ odoo.models.BaseModel._add_field = poly_BaseModel_add_field
 # PATCH: Field.setup Interceptor to force polymorphic fields to be related/non-stored
 _original_Field_setup = odoo.fields.Field.setup
 def poly_Field_setup(self, model):
+    # Odoo 18: Ensure field name is available.
+    f_name = getattr(self, 'name', None)
+    if not f_name:
+        # If the field is already in model._fields, we can recover the name
+        for n, f in model._fields.items():
+            if f is self:
+                f_name = n
+                self.name = n
+                break
+    
+    if not f_name:
+        _logger.debug("[poly] Field.setup called on %s object WITHOUT .name (model: %s).", type(self), getattr(model, '_name', 'N/A'))
+        return _original_Field_setup(self, model)
+
     if not hasattr(model, 'pool') or not model.pool or not model.pool._init:
         return _original_Field_setup(self, model)
 
     # Check if this field should be a polymorphic related field
     # (exists in a polymorphic base but is currently being set up as stored/non-related)
-    if self.name not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
+    if f_name not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date', 'old_id']:
         # Odoo 18: Usar __dict__ para no disparar descriptores durante setup
         model_class = type(model)
         
@@ -4353,9 +4437,12 @@ def poly_Field_setup(self, model):
             dep_models = base.__dict__.get('_depend_models')
             if dep_models:
                 for dep_model, dep_field in dep_models.items():
-                    if dep_model in model.pool and self.name in model.pool[dep_model]._fields:
-                        _target_related = f'{dep_field}.{self.name}'
-                        break
+                    # [poly] SAFE POOL GET: During init_models, pool might be in inconsistent state
+                    if dep_model in model.pool:
+                         dep_model_fields = getattr(model.pool[dep_model], '_fields', {})
+                         if f_name in dep_model_fields:
+                            _target_related = f'{dep_field}.{f_name}'
+                            break
             if _target_related: break
             
         if _target_related:
@@ -4363,7 +4450,7 @@ def poly_Field_setup(self, model):
             # Force it to be a non-stored related field
             if not self.related or self.related != _target_related or self.store:
                 _logger.debug("[poly] INTERCEPTING setup for %s.%s: forcing related=%s, store=False", 
-                               model._name, self.name, _target_related)
+                               model._name, f_name, _target_related)
                 self.related = _target_related
                 self.store = False
                 self.compute = None
@@ -4375,14 +4462,14 @@ def poly_Field_setup(self, model):
                     self._args['store'] = False
                 
                 # Clear any stale attribute from the class __dict__
-                if self.name in model_class.__dict__:
-                    try: delattr(model_class, self.name)
+                if f_name in model_class.__dict__:
+                    try: delattr(model_class, f_name)
                     except: pass
                 # Clear from Proxy as well
                 if hasattr(model.pool, 'models') and model._name in model.pool.models:
                     proxy_cls = model.pool.models[model._name]
-                    if proxy_cls is not model_class and self.name in proxy_cls.__dict__:
-                        try: delattr(proxy_cls, self.name)
+                    if proxy_cls is not model_class and f_name in proxy_cls.__dict__:
+                        try: delattr(proxy_cls, f_name)
                         except: pass
 
     return _original_Field_setup(self, model)
