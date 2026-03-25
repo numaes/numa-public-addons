@@ -487,18 +487,9 @@ _original_Many2one_convert_to_read = odoo.fields.Many2one.convert_to_read
 
 def poly_many2one_convert_to_read(self, value, record, use_display_name=True):
     # [poly] Performance optimization: if the model is not polymorphic, delegate immediately.
-    try:
-        is_poly_hierarchy = False
-        if record:
-             for base in record.mro():
-                  if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
-                       is_poly_hierarchy = True
-                       break
-        
-        if not is_poly_hierarchy and (not record or not getattr(record, '_referenced_as_poly_base', False)):
-            return _original_Many2one_convert_to_read(self, value, record, use_display_name=use_display_name)
-    except (KeyError, AttributeError):
-        pass
+    if record and not _poly_is_polymorphic(record) and not getattr(record, '_referenced_as_poly_base', False):
+        return _original_Many2one_convert_to_read(self, value, record, use_display_name=use_display_name)
+    
     if use_display_name and value:
         # evaluate display_name as superuser, because the visibility of a
         # many2one field value (id and name) depends on the current record's
@@ -2995,6 +2986,17 @@ class PolyBase(_original_BaseModel):
                  related_path = f'poly_base_id.{field_name}'
             else:
                  related_path = f'{related_bases[model]}.{field_name}'
+
+            # [poly] ENSURE correct related path during creation
+            if '.' in field_name:
+                # If the field name already has a dot, it's likely a model prefix from Odoo
+                # e.g. 'facebook.account.name'. We must strip it.
+                parts = field_name.split('.')
+                field_name_clean = parts[-1]
+                if model == 'ir.poly_base':
+                    related_path = f'poly_base_id.{field_name_clean}'
+                else:
+                    related_path = f'{related_bases[model]}.{field_name_clean}'
             
             # [poly] Saneamiento preventivo de rutas relacionadas durante la creación
             # Asegurar que solo hay UN punto en la ruta (referencia de un solo nivel)
@@ -3822,72 +3824,10 @@ class PolyBase(_original_BaseModel):
                         break
             
             if is_model_related_error:
-                if self.env.context.get('_poly_sanitizing_fields'):
-                    _logger.error("[poly] Recursive fields_get error on %s: %s", self._name, e, exc_info=True)
-                    raise e
-                
-                _logger.warning("[poly] fields_get KeyError Detected on %s: %s (Key: %s). Sanitizing polymorphic fields...", self._name, e, faulty_key)
-                sanitized_count = 0
-                all_fields_to_check = []
-                # Check both instance fields and class fields
-                if hasattr(self, '_fields'):
-                    all_fields_to_check.extend(list(self._fields.items()))
-                if hasattr(type(self), '_fields'):
-                    all_fields_to_check.extend(list(type(self)._fields.items()))
-                
-                checked_fnames = set()
-                for f_name, field in all_fields_to_check:
-                    if f_name in checked_fnames: continue
-                    checked_fnames.add(f_name)
-                    
-                    rel = getattr(field, 'related', None)
-                    if not rel and hasattr(field, '_args'):
-                        rel = field._args.get('related')
-                    
-                    if rel:
-                        new_rel = _poly_sanitize_path(self, rel)
-                        if new_rel != rel:
-                            _logger.info("[poly] fields_get: Sanitizing %s.%s: %s -> %s", self._name, f_name, rel, new_rel)
-                            field.related = new_rel
-                            if hasattr(field, '_args'): field._args['related'] = new_rel
-                            sanitized_count += 1
-                            
-                            # [poly] CRITICAL: If we change the related path, we MUST ensure 
-                            # the registry's field_computed is invalidated, otherwise
-                            # Odoo 18 will raise KeyError during compute_value.
-                            if 'field_computed' in self.pool.__dict__:
-                                del self.pool.__dict__['field_computed']
-                            
-                            # Force re-triggering setup_related but carefully
-                            try:
-                                # We MUST use the original setup_related to ensure it runs
-                                # but with our recursive protection
-                                if hasattr(field, 'setup_related'):
-                                    _logger.info("[poly] Manually re-triggering setup_related for %s.%s", self._name, f_name)
-                                    field.setup_related(self)
-                            except Exception as setup_e:
-                                _logger.error("[poly] setup_related failed during fields_get sanitization for %s.%s: %s", self._name, f_name, setup_e, exc_info=True)
-                    
-                    # If the faulty key is the model itself, and we couldn't find ANY related field to sanitize,
-                    # it might be that Odoo is trying to resolve the model name from a field that IS NOT a related field
-                    # but maybe a Many2one or similar that was incorrectly built.
-                    # Or maybe we just need to force re-setup the field.
-                
-                if sanitized_count == 0 and faulty_key in self._name.split('.'):
-                    try:
-                        # self.pool.setup_models(self._cr)
-                        # This is too heavy. Let's try to just re-trigger setup for all fields.
-                        for f_name, field in list(self._fields.items()):
-                            if hasattr(field, 'setup_full'):
-                                field.setup_full(self)
-                        sanitized_count = 1 # Fake count to trigger retry
-                    except Exception as setup_full_e:
-                        _logger.debug("[poly] Global field setup failed: %s", setup_full_e)
-                
-                if sanitized_count > 0:
-                    return self.with_context(_poly_sanitizing_fields=True).fields_get(allfields=allfields, attributes=attributes)
-                else:
-                    pass
+                # [poly] NO TOCAR LAS RUTAS de related en caliente si falla.
+                # Delegamos en Odoo tras reportar el error con contexto para depuración.
+                _logger.error("[poly] KeyError in fields_get for %s (Key: %s). Traceback shows potential related route corruption.", self._name, faulty_key)
+                raise e
             
             raise e
         
@@ -4122,14 +4062,6 @@ class PolyBase(_original_BaseModel):
         if not _poly_is_polymorphic(self):
             return super()._field_to_sql(alias, fname, query, flush)
 
-        # [poly] Saneamiento de rutas relacionadas en SQL para Odoo 18
-        # Odoo 18 a veces inyecta el nombre del modelo como prefijo en la ruta del campo
-        if '.' in fname:
-            new_fname = _poly_sanitize_path(self, fname)
-            if new_fname != fname:
-                _logger.debug("[poly] Saneando prefijo en _field_to_sql para %s.%s -> %s", self._name, fname, new_fname)
-                return self._field_to_sql(alias, new_fname, query, flush)
-
         # [poly] Prevención de recursión infinita mediante stack en el Environment
         # Odoo 18 llama a _field_to_sql recursivamente para campos relacionados.
         # En modelos polimórficos, estas rutas pueden volverse circulares.
@@ -4184,59 +4116,10 @@ class PolyBase(_original_BaseModel):
             try:
                 return super()._field_to_sql(alias, fname, query, flush)
             except KeyError as e:
-                e_str = str(e)
-                # _logger.info("[poly] _field_to_sql: Caught KeyError %s for %s.%s. Related: %s", e_str, self._name, fname, getattr(field, 'related', 'N/A'))
-                if self._name.split('.')[0] in e_str or any(m.split('.')[0] in e_str for m in (self.pool or self.env.registry)) or any(m.endswith('.' + e_str.strip("'")) for m in (self.pool or self.env.registry)):
-                    _logger.debug("[poly] _field_to_sql KeyError caught for %s.%s: %s. Sanitizing...", self._name, fname, e)
-                    
-                    # Search for the problematic field in the path
-                    parts = []
-                    if field and getattr(field, 'related', None):
-                        parts = field.related.split('.')
-                    
-                    # Try to sanitize the related field itself
-                    if field and getattr(field, 'related', None):
-                        old_rel = field.related
-                        new_rel = _poly_sanitize_path(self, old_rel)
-                        if new_rel != old_rel:
-                            # _logger.info("[poly] _field_to_sql: Sanitizing %s.%s: %s -> %s", self._name, fname, old_rel, new_rel)
-                            field.related = new_rel
-                            if hasattr(field, '_args'): field._args['related'] = new_rel
-                            
-                            # [poly] CRITICAL: Invalidate field_computed
-                            if 'field_computed' in self.pool.__dict__:
-                                del self.pool.__dict__['field_computed']
-
-                            try:
-                                if hasattr(field, 'setup_related'):
-                                    field.setup_related(self)
-                            except: pass
-                            return super()._field_to_sql(alias, fname, query, flush)
-                    
-                    # If the above didn't help, it might be a field in the MIDDLE of the path
-                    # we should probably sanitize all fields of current model.
-                    sanitized_count = 0
-                    for f_n, f_o in list(self._fields.items()):
-                        rel = getattr(f_o, 'related', None)
-                        if rel:
-                            new_rel = _poly_sanitize_path(self, rel)
-                            if new_rel != rel:
-                                # _logger.info("[poly] _field_to_sql: Sanitizing brother field %s.%s: %s -> %s", self._name, f_n, rel, new_rel)
-                                f_o.related = new_rel
-                                if hasattr(f_o, '_args'): f_o._args['related'] = new_rel
-                                
-                                # [poly] CRITICAL: Invalidate field_computed
-                                if 'field_computed' in self.pool.__dict__:
-                                    del self.pool.__dict__['field_computed']
-
-                                try:
-                                    if hasattr(f_o, 'setup_related'): f_o.setup_related(self)
-                                except: pass
-                                sanitized_count += 1
-                    
-                    if sanitized_count > 0:
-                        return super()._field_to_sql(alias, fname, query, flush)
-                        
+                # [poly] NO TOCAR LAS RUTAS de related en caliente si falla.
+                # Reportar el error para depuración pero delegar en Odoo.
+                _logger.error("[poly] KeyError in _field_to_sql for %s.%s: %s. Related path: %s", 
+                              self._name, fname, e, getattr(field, 'related', 'N/A'))
                 raise e
         finally:
             self.env._poly_field_sql_stack.discard(stack_key)
@@ -4982,11 +4865,15 @@ def poly_Field_setup_related(self, model):
         if prefix and prefix in depend_models:
             link_fname = depend_models[prefix]
         elif prefix:
-            # Búsqueda agresiva por nombre de modelo
-            for mname, lfname in depend_models.items():
-                if prefix == mname:
-                    link_fname = lfname
-                    break
+            # [poly] SAFEGUARD: Avoid re-sanitizing if it's already a link field
+            if prefix in model._fields and isinstance(model._fields[prefix], (PolyReference, fields.Many2one)):
+                 link_fname = prefix
+            else:
+                # Búsqueda agresiva por nombre de modelo
+                for mname, lfname in depend_models.items():
+                    if prefix == mname:
+                        link_fname = lfname
+                        break
         
         # [poly] Si no se encontró el campo link en el modelo actual, 
         # buscar recursivamente en sus padres polimórficos
