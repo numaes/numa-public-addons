@@ -4267,10 +4267,25 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
         # Check physical existence of fields to avoid UndefinedColumn
         for f in fields:
             # Handle both Field objects and strings
-            f_name = getattr(f, 'name', f)
+            f_name = getattr(f, 'name', None) or f
             if not isinstance(f_name, str):
-                _valid_fields.append(f)
-                continue
+                # Odoo 18.0: If f is a Field object but lacks .name, 
+                # try to recover it from model._fields or from the field itself if possible.
+                if hasattr(f, 'model_name') and f.model_name and f.model_name in self.pool:
+                    _m = self.pool[f.model_name]
+                    for name, field in _m._fields.items():
+                        if field is f:
+                            f.name = name
+                            f_name = name
+                            break
+                
+                # If f_name is still not a string, check if it's the field object itself and it has 'name' in its dict
+                if not isinstance(f_name, str) and hasattr(f, '__dict__') and 'name' in f.__dict__:
+                    f_name = f.__dict__['name']
+                
+                if not isinstance(f_name, str):
+                    _valid_fields.append(f)
+                    continue
             
             # [poly] Skip filtering for ir.poly_base as we handle it differently
             if self._name == 'ir.poly_base':
