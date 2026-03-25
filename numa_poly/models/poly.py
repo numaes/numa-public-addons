@@ -4917,6 +4917,14 @@ def _poly_registry_setup_models(self, cr):
     # [poly] Identify which modules were loaded recently to optimize Deep Fix in Phase 2
     current_init_modules = set(self._init_modules)
 
+    # [poly] ENSURE INCREMENTAL ATTRIBUTES ARE INITIALIZED
+    # This prevents AttributeError: 'Registry' object has no attribute '_poly_processed_models'
+    # during early boot when setup_models is called before Registry.new finishes.
+    if not hasattr(self, '_poly_processed_models'):
+        object.__setattr__(self, '_poly_processed_models', defaultdict(set))
+    if not hasattr(self, '_poly_injected_mro'):
+        object.__setattr__(self, '_poly_injected_mro', {})
+
     for model_name in sorted_poly_names:
         if model_name not in self: continue
         model_instance = self[model_name]
