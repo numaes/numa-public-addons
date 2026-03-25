@@ -5695,7 +5695,15 @@ def _poly_registry_setup_models(self, cr):
                         _base_name = getattr(_base_class, '_name', None)
                         _is_poly_ancestor = (_base_name and (hasattr(_base_class, '_depend_models') or _base_name == 'ir.poly_base' or _base_name in getattr(model_class, '_depend_models', {})))
                         if _is_poly_ancestor and _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
-                            _new_fobj = type(_fobj)(related=f'{_base_name}.{_fname}', store=False)
+                            # [poly] RECREATION for Odoo 18: ensure comodel_name and other critical attributes
+                            # are preserved even for related fields to avoid KeyError: None during Registry load.
+                            _kwargs = {'related': f'{_base_name}.{_fname}', 'store': False}
+                            if hasattr(_fobj, 'comodel_name') and _fobj.comodel_name:
+                                _kwargs['comodel_name'] = _fobj.comodel_name
+                            if hasattr(_fobj, 'inverse_name') and _fobj.inverse_name:
+                                _kwargs['inverse_name'] = _fobj.inverse_name
+                            
+                            _new_fobj = type(_fobj)(**_kwargs)
                             _new_fobj.model_name = name
                             _new_fobj.name = _fname
                             model_class._fields[_fname] = _new_fobj
@@ -5799,7 +5807,15 @@ def _poly_registry_setup_models(self, cr):
                         _base_name = getattr(_base_class, '_name', None)
                         _is_poly_ancestor = (_base_name and (hasattr(_base_class, '_depend_models') or _base_name == 'ir.poly_base' or _base_name in getattr(model_class, '_depend_models', {})))
                         if _is_poly_ancestor and _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
-                            _new_fobj = type(_fobj)(related=f'{_base_name}.{_fname}', store=False)
+                            # [poly] RECREATION for Odoo 18: ensure comodel_name and other critical attributes
+                            # are preserved even for related fields to avoid KeyError: None during Registry load.
+                            _kwargs = {'related': f'{_base_name}.{_fname}', 'store': False}
+                            if hasattr(_fobj, 'comodel_name') and _fobj.comodel_name:
+                                _kwargs['comodel_name'] = _fobj.comodel_name
+                            if hasattr(_fobj, 'inverse_name') and _fobj.inverse_name:
+                                _kwargs['inverse_name'] = _fobj.inverse_name
+                                
+                            _new_fobj = type(_fobj)(**_kwargs)
                             _new_fobj.model_name = name
                             _new_fobj.name = _fname
                             model_class._fields[_fname] = _new_fobj
