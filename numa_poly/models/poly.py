@@ -2439,12 +2439,13 @@ class PolyBase(_original_BaseModel):
                     # their state directly from the object if it's not in clean_args.
                     
                     # 1. Selection
-                    if hasattr(field, 'selection') and 'selection' not in clean_args:
+                    if (f_type.__name__ == 'Selection' or (hasattr(field, 'type') and field.type == 'selection')) and 'selection' not in clean_args:
                          # [poly] RECURSION GUARD: Avoid calling selection property if it might trigger lambda recursion
                          # We check if 'selection' is in _args (raw) first.
                          _raw_sel = None
-                         if hasattr(field, '_args') and 'selection' in field._args:
-                              _raw_sel = field._args['selection']
+                         _f_args = getattr(field, '_args', {}) or getattr(field, '_args__', {})
+                         if _f_args and 'selection' in _f_args:
+                              _raw_sel = _f_args['selection']
                          
                          if _raw_sel:
                               clean_args['selection'] = _raw_sel
@@ -2453,13 +2454,14 @@ class PolyBase(_original_BaseModel):
                               # which is exactly what triggers the RecursionError in Odoo 18 if called during setup.
                               try:
                                    _obj_sel = getattr(field, 'selection', None)
-                                   if _obj_sel and not callable(_obj_sel):
+                                   # We check if it's a list or tuple (static selection)
+                                   if isinstance(_obj_sel, (list, tuple)):
                                         clean_args['selection'] = _obj_sel
-                                   else:
-                                        # It's a callable or None, we better skip it here and let it be recovered 
-                                        # from registry/DB later if possible, or let it stay as a callable if we can clone it.
-                                        if callable(_obj_sel):
-                                             clean_args['selection'] = _obj_sel
+                                   elif callable(_obj_sel):
+                                        # It's a callable. We can use it, BUT we must be careful not to call it here.
+                                        # However, assigning it to clean_args is usually safe as long as we don't 
+                                        # trigger the descriptor __get__ or _description_selection prematurely.
+                                        clean_args['selection'] = _obj_sel
                               except Exception: pass
                     
                     # [poly] ULTIMATE SELECTION RECOVERY: If selection is STILL missing, search in Registry
@@ -2467,18 +2469,19 @@ class PolyBase(_original_BaseModel):
                          for _m_name, _m in cls.pool.items():
                               if name in _m._fields:
                                    _f_proto = _m._fields[name]
-                                   if _f_proto.type == 'selection' and hasattr(_f_proto, 'selection'):
+                                   if (hasattr(_f_proto, 'type') and _f_proto.type == 'selection') and hasattr(_f_proto, 'selection'):
                                         # [poly] RECURSION GUARD: Prefer raw _args selection
                                         _proto_raw_sel = None
-                                        if hasattr(_f_proto, '_args') and 'selection' in _f_proto._args:
-                                             _proto_raw_sel = _f_proto._args['selection']
+                                        _f_proto_args = getattr(_f_proto, '_args', {}) or getattr(_f_proto, '_args__', {})
+                                        if _f_proto_args and 'selection' in _f_proto_args:
+                                             _proto_raw_sel = _f_proto_args['selection']
                                         
                                         if _proto_raw_sel:
                                              clean_args['selection'] = _proto_raw_sel
                                         else:
                                              try:
-                                                  _psel = _f_proto.selection
-                                                  if _psel and not callable(_psel):
+                                                  _psel = getattr(_f_proto, 'selection', None)
+                                                  if isinstance(_psel, (list, tuple)):
                                                        clean_args['selection'] = _psel
                                                   elif callable(_psel):
                                                        clean_args['selection'] = _psel
