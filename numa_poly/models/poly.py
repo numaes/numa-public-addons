@@ -187,11 +187,17 @@ def _poly_Field_get(self, record, owner=None):
     # We use the cached _referenced_as_poly_base to quickly identify non-polymorphic models.
     # ir.actions.server and other base models should fall here.
     try:
-        if not getattr(record, '_depend_models', None) and not getattr(record, '_referenced_as_poly_base', False):
+        is_poly_hierarchy = False
+        _mro = getattr(type(record), 'mro', lambda: [])()
+        for base in _mro:
+            if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
+                is_poly_hierarchy = True
+                break
+        
+        if not is_poly_hierarchy and not getattr(record, '_referenced_as_poly_base', False):
             return _original_Field_get(self, record, owner=owner)
-    except KeyError as e:
-        # [poly] Odoo 18: Protect against KeyError 'field_computed' during boot
-        # by falling through to the recovery logic.
+    except (KeyError, AttributeError):
+        # [poly] Odoo 18: Protect against errors during boot
         pass
 
     try:
@@ -262,8 +268,18 @@ def _poly_Field_set(self, records, value):
         return
 
     # [poly] Optimization: if the model is not polymorphic, delegate immediately.
-    if not getattr(records, '_depend_models', None) and not getattr(records, '_referenced_as_poly_base', False):
-        return _original_Field_set(self, records, value)
+    try:
+        is_poly_hierarchy = False
+        _mro = getattr(type(records), 'mro', lambda: [])()
+        for base in _mro:
+            if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
+                is_poly_hierarchy = True
+                break
+        
+        if not is_poly_hierarchy and not getattr(records, '_referenced_as_poly_base', False):
+            return _original_Field_set(self, records, value)
+    except (KeyError, AttributeError):
+        pass
 
     # Also check if _ids is iterable, because it might be a property object or member_descriptor
     # when accessed from the class (records is a class) but here we already checked for type.
@@ -287,7 +303,21 @@ def _poly_Relational_get(self, records, owner=None):
     """
     if records is None or isinstance(records, type):
         return self
+
+    # [poly] Optimization: delegate for non-polymorphic models
+    try:
+        is_poly_hierarchy = False
+        _mro = getattr(type(records), 'mro', lambda: [])()
+        for base in _mro:
+            if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
+                is_poly_hierarchy = True
+                break
         
+        if not is_poly_hierarchy and not getattr(records, '_referenced_as_poly_base', False):
+            return _original_Relational_get(self, records, owner=owner)
+    except (KeyError, AttributeError):
+        pass
+
     # Check if records is a valid recordset before calling len(records._ids)
     # We check for _ids because that's what Odoo base uses at line 3112 of fields.py
     if not hasattr(records, '_ids'):
@@ -316,6 +346,23 @@ def _poly_One2many_get(self, records, owner=None):
     Odoo 18 added an explicit __get__ to One2many that bypasses _Relational.__get__ and directly 
     accesses the pool's fields.
     """
+    if records is None or isinstance(records, type):
+        return self
+
+    # [poly] Optimization: delegate for non-polymorphic models
+    try:
+        is_poly_hierarchy = False
+        _mro = getattr(type(records), 'mro', lambda: [])()
+        for base in _mro:
+            if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
+                is_poly_hierarchy = True
+                break
+        
+        if not is_poly_hierarchy and not getattr(records, '_referenced_as_poly_base', False):
+            return _original_One2many_get(self, records, owner=owner)
+    except (KeyError, AttributeError):
+        pass
+
     if records is not None and getattr(self, 'inverse_name', None) is not None:
         try:
             # This is the line that fails in Odoo 18 fields.py:4672
@@ -423,7 +470,22 @@ class IrPolyBase(models.Model):
         return concrete_record if concrete_record else self
 
 
+_original_Many2one_convert_to_read = odoo.fields.Many2one.convert_to_read
+
 def poly_many2one_convert_to_read(self, value, record, use_display_name=True):
+    # [poly] Performance optimization: if the model is not polymorphic, delegate immediately.
+    try:
+        is_poly_hierarchy = False
+        if record:
+             for base in record.mro():
+                  if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
+                       is_poly_hierarchy = True
+                       break
+        
+        if not is_poly_hierarchy and (not record or not getattr(record, '_referenced_as_poly_base', False)):
+            return _original_Many2one_convert_to_read(self, value, record, use_display_name=use_display_name)
+    except (KeyError, AttributeError):
+        pass
     if use_display_name and value:
         # evaluate display_name as superuser, because the visibility of a
         # many2one field value (id and name) depends on the current record's
@@ -448,6 +510,20 @@ def poly_many2many_read(self, records):
     table and directly joins it. If the field is related (as often in polymorphic
     models), it should traverse the relation instead.
     """
+    # [poly] Optimization: delegate for non-polymorphic models
+    try:
+        is_poly_hierarchy = False
+        _mro = getattr(type(records), 'mro', lambda: [])()
+        for base in _mro:
+            if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
+                is_poly_hierarchy = True
+                break
+        
+        if not is_poly_hierarchy and not getattr(records, '_referenced_as_poly_base', False):
+            return _original_Many2many_read(self, records)
+    except (KeyError, AttributeError):
+        pass
+
     if self.related:
         return self._compute_related(records)
     
@@ -2353,6 +2429,25 @@ class PolyBase(_original_BaseModel):
                     if hasattr(field, 'selection') and 'selection' not in clean_args:
                          clean_args['selection'] = field.selection
                     
+                    # [poly] ULTIMATE SELECTION RECOVERY: If selection is STILL missing, search in Registry
+                    if f_type.__name__ == 'Selection' and not clean_args.get('selection') and hasattr(cls, 'pool'):
+                         for _m_name, _m in cls.pool.items():
+                              if name in _m._fields:
+                                   _f_proto = _m._fields[name]
+                                   if _f_proto.type == 'selection' and hasattr(_f_proto, 'selection'):
+                                        clean_args['selection'] = _f_proto.selection
+                                        _logger.debug("[poly] Recovered selection for %s from model %s registry", name, _m_name)
+                                        break
+                         
+                         # [poly] SECOND LEVEL: Search in ir.model.fields.selection (database) if registry fails
+                         if not clean_args.get('selection') and hasattr(cls, 'env'):
+                              try:
+                                   _selection_options = cls.env['ir.model.fields.selection'].sudo().search([('field_id.name', '=', name)])
+                                   if _selection_options:
+                                        clean_args['selection'] = [(opt.value, opt.name) for opt in _selection_options]
+                                        _logger.debug("[poly] Recovered selection for %s from ir.model.fields.selection", name)
+                              except Exception: pass
+                    
                     # 2. Relational Metadata (Many2one, One2many, Many2many)
                     if f_type.__name__ in ('Many2one', 'One2many', 'Many2many', 'PolyReference'):
                         if not clean_args.get('comodel_name'):
@@ -2371,6 +2466,15 @@ class PolyBase(_original_BaseModel):
                                                  _val = _f_proto.comodel_name
                                                  _logger.debug("[poly] Recovered comodel_name '%s' for %s from model %s registry", _val, name, _m_name)
                                                  break
+                                  
+                                  # [poly] SECOND LEVEL: Search in ir.model.fields (database) if registry fails
+                                  if not _val and hasattr(cls, 'env'):
+                                       try:
+                                            _ir_field = cls.env['ir.model.fields'].sudo().search([('name', '=', name), ('relation', '!=', False)], limit=1)
+                                            if _ir_field:
+                                                 _val = _ir_field.relation
+                                                 _logger.debug("[poly] Recovered comodel_name '%s' for %s from ir.model.fields", _val, name)
+                                       except Exception: pass
                              
                              clean_args['comodel_name'] = _val
                         
@@ -2388,6 +2492,15 @@ class PolyBase(_original_BaseModel):
                                                  _val = _f_proto.inverse_name
                                                  _logger.debug("[poly] Recovered inverse_name '%s' for %s from model %s registry", _val, name, _m_name)
                                                  break
+                                  
+                                  # [poly] SECOND LEVEL: Search in ir.model.fields (database) if registry fails
+                                  if not _val and hasattr(cls, 'env'):
+                                       try:
+                                            _ir_field = cls.env['ir.model.fields'].sudo().search([('name', '=', name), ('relation_field', '!=', False)], limit=1)
+                                            if _ir_field:
+                                                 _val = _ir_field.relation_field
+                                                 _logger.debug("[poly] Recovered inverse_name '%s' for %s from ir.model.fields", _val, name)
+                                       except Exception: pass
                              
                              clean_args['inverse_name'] = _val
                              
@@ -2416,6 +2529,19 @@ class PolyBase(_original_BaseModel):
                              _logger.error("[poly] CRITICAL: comodel_name is NULL for relational field %s in %s (Type: %s). Falling back to 'base'.", 
                                           name, cls._name, f_type.__name__)
                              clean_args['comodel_name'] = 'base'
+                        
+                        # [poly] SELECTION EMERGENCY: ensure selection is NOT missing for Selection fields
+                        if f_type.__name__ == 'Selection' and not clean_args.get('selection'):
+                             _logger.error("[poly] CRITICAL: selection is NULL for field %s in %s (Type: Selection). Falling back to empty list.", 
+                                          name, cls._name)
+                             clean_args['selection'] = []
+                    
+                    if f_type.__name__ == 'Selection':
+                        if not clean_args.get('selection'):
+                             # [poly] SELECTION EMERGENCY: ensure selection is NOT missing for Selection fields
+                             _logger.error("[poly] CRITICAL: selection is NULL for field %s in %s (Type: Selection). Falling back to empty list.", 
+                                          name, cls._name)
+                             clean_args['selection'] = []
 
                     try:
                         f_clone = f_type(**clean_args)
@@ -4368,6 +4494,18 @@ def _poly_column_exists(cr, table, column):
         return False
 
 def poly_BaseModel_fetch_query(self, query, fields=None):
+    # [poly] STRICT CHECK: Only apply filtering for models in the polymorphic hierarchy
+    # or during registry boot (to avoid UndefinedColumn during early stages).
+    is_poly_hierarchy = False
+    _mro = getattr(type(self), 'mro', lambda: [])()
+    for base in _mro:
+        if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
+            is_poly_hierarchy = True
+            break
+    
+    if not is_poly_hierarchy and self.pool.ready:
+        return _original_BaseModel_fetch_query(self, query, fields)
+
     # [poly] CLEAN QUERY: Filter out fields that are NOT physically in the database table
     # This prevents 'UndefinedColumn' errors during early boot or with mixins.
     _removed_fields = set()
@@ -5594,6 +5732,13 @@ def _poly_registry_setup_models(self, cr):
                                                 name, f_name, prefix, rel, new_rel)
                                 field.related = new_rel
                                 if hasattr(field, '_args'): field._args['related'] = new_rel
+                                
+                                # [poly] AGGRESSIVE: If it's display_name on ir.poly_base, ensure it doesn't loop
+                                if name == 'ir.poly_base' and f_name == 'display_name':
+                                     _logger.warning("[poly] PROTECT: ir.poly_base.display_name related to poly_id.display_name detected. Stripping loop.")
+                                     field.related = None
+                                     if hasattr(field, '_args'): field._args['related'] = None
+                                
                                 # Re-setup the field after modifying its related path
                                 try:
                                     field.setup_related(model_instance)
