@@ -1506,19 +1506,37 @@ class PolyBase(_original_BaseModel):
                                          try: delattr(cls, fname)
                                          except (AttributeError, KeyError): pass
 
-                # 2. Systematic injection of related fields and core infrastructure fields
-                # Odoo 18: Ensure polymorphic bases are initialized before field injection.
-                poly_bases = getattr(cls, '__depends_base_classes', ())
-                for base_class in poly_bases:
-                    base_name = getattr(base_class, '_name', None)
-                    if base_name and base_name != self._name and base_name in self.pool:
-                        base_instance = self.pool[base_name]
-                        if not base_instance._fields:
-                            _logger.debug("[poly] Forcing setup for base %s before injection into %s", base_name, self._name)
-                            base_instance._setup_base()
+            # [poly] Systematic injection of related fields and core infrastructure fields
+            # Odoo 18: Ensure polymorphic bases are initialized before field injection.
+            poly_bases = getattr(cls, '__depends_base_classes', ())
+            for base_class in poly_bases:
+                base_name = getattr(base_class, '_name', None)
+                if base_name and base_name != self._name and base_name in self.pool:
+                    base_instance = self.pool[base_name]
+                    if not base_instance._fields:
+                        _logger.debug("[poly] Forcing setup for base %s before injection into %s", base_name, self._name)
+                        base_instance._setup_base()
+                    
+                    # [poly] PROTECT ir.poly_base: it is the master definition and 
+                    # must remain clean. We make a snapshot of its fields.
+                    if base_name == 'ir.poly_base' and not hasattr(base_instance, '_poly_protected_fields'):
+                         # Clone physically the fields map to detect ID changes later
+                         base_instance._poly_protected_fields = dict(base_instance._fields)
 
-                # Use class method call
-                cls._build_dependant_model_attributes()
+            # Use class method call
+            cls._build_dependant_model_attributes()
+            
+            # [poly] PROTECT ir.poly_base AFTER injection
+            for base_class in poly_bases:
+                base_name = getattr(base_class, '_name', None)
+                if base_name == 'ir.poly_base' and hasattr(base_class, '_poly_protected_fields'):
+                    for fn, old_fo in base_class._poly_protected_fields.items():
+                        new_fo = base_class._fields.get(fn)
+                        if new_fo and id(new_fo) != id(old_fo):
+                             _logger.error("[poly] CORRUPTION DETECTED: ir.poly_base field '%s' changed ID from %s to %s during setup of %s!", 
+                                          fn, id(old_fo), id(new_fo), self._name)
+                             # [poly] RESTORE: Critical fix to avoid Registry corruption
+                             base_class._fields[fn] = old_fo
                 
                 # 3. Final descriptor installation
                 # [poly] CRITICAL: ONLY install descriptors on the current class (cls).
@@ -1534,18 +1552,23 @@ class PolyBase(_original_BaseModel):
                             # Only if it's NOT a method of Odoo
                             setattr(cls, field_name, field)
 
-                # Update _fields of the model in the pool
+            # Update _fields of the model in the pool
                 if self._name in self.pool.models:
                     proxy_class = self.pool.models[self._name]
-                    # ONLY update our own proxy, and only if it's not the same class
-                    if proxy_class is not model_class:
-                         proxy_class._fields.update(self._fields)
-                         for fname, fobj in self._fields.items():
-                              if fname not in proxy_class.__dict__:
-                                   try:
-                                        setattr(proxy_class, fname, fobj)
-                                   except Exception:
-                                        pass
+                    # [poly] CRITICAL: Ensure proxy_class also has all fields and descriptors
+                    proxy_class._fields.update(self._fields)
+                    for fname, fobj in self._fields.items():
+                        # [poly] In Odoo 18, it's essential that descriptors are in the proxy class
+                        # because that's what Odoo uses for most ORM operations.
+                        # We force the descriptor if it's missing or if it's currently a field but from another model
+                        current_attr = proxy_class.__dict__.get(fname)
+                        if fname not in proxy_class.__dict__ or (isinstance(current_attr, fields.Field) and current_attr.model_name != self._name):
+                             try:
+                                  setattr(proxy_class, fname, fobj)
+                                  if fname not in proxy_class._fields:
+                                      proxy_class._fields[fname] = fobj
+                             except Exception:
+                                  pass
                 
                 # --- Odoo 18 View Validation Fix ---
                 # View validation uses getattr(model, method_name) on the registry class.
@@ -2261,27 +2284,86 @@ class PolyBase(_original_BaseModel):
             _logger.debug(f'Adding field {name} to {cls._name}'
                           f' (base: {related_base or "N/A"})')
             
-            # [poly] CLONING PROTECTION: NEVER reuse a field object directly from another model
-            # if we are going to call prepare_setup or change its model_name.
-            # In Odoo 18, field.setup(cls) is what sets the model.
+            # [poly] CLONING PROTECTION for Odoo 18:
+            # Field objects delete their _args__ after setup, making them unusable 
+            # for further inheritance if they were set as toplevel.
+            # We must clone them preserving their original state.
+            import copy
             
-            setattr(cls, name, field)
-            cls._fields[name] = field
-            field._direct = True
+            # Check if field has _args__. If it was already setup, it might be gone.
+            # However, in numa_poly we usually clone from the base polymorphic models 
+            # during their setup, or from cached definitions.
             
-            # Ensure model_name is set correctly for this model
-            field.model_name = cls._name
+            # We try to get original args or use a shallow copy if args are already gone
+            args = getattr(field, '_args', None) or getattr(field, '_args__', None)
             
-            field.prepare_setup()
-            field.__set_name__(cls, name)
+            try:
+                # [poly] CLONE logic for Odoo 18:
+                # We MUST avoid using the same physical field object across models.
+                # Odoo 18 tends to mutate field objects during setup.
+                
+                # If the field has _args (original constructor arguments),
+                # we RECREATE the field from scratch to ensure total isolation.
+                f_type = type(field)
+                if args:
+                    # Clean args of Odoo-internal keys that shouldn't be in constructor
+                    clean_args = {k: v for k, v in args.items() if not k.startswith('_')}
+                    f_clone = f_type(**clean_args)
+                    _logger.info("[poly] RECREATING field %s from base %s to %s: total isolation achieved", 
+                                 name, related_base or "N/A", cls._name)
+                else:
+                    # Fallback to copy if args are gone (should not happen with our setup)
+                    f_clone = copy.copy(field)
+                    _logger.warning("[poly] COPYING field %s from base %s to %s: isolation might be weak", 
+                                 name, related_base or "N/A", cls._name)
+                # Restore args to the clone if they were provided or found
+                if args:
+                    f_clone._args = dict(args)
+                    f_clone._args__ = dict(args)
+                
+                # Odoo 18: reset internal setup flags to allow re-setup for the new model
+                for flag in ['_setup_done', '_direct', '_toplevel', 'model_name', 'name']:
+                    if hasattr(f_clone, flag):
+                        try: delattr(f_clone, flag)
+                        except (AttributeError, KeyError): pass
+                
+                # Clean class dict to remove any contaminated attribute
+                current_attr = cls.__dict__.get(name)
+                if current_attr and current_attr is not f_clone:
+                    try: delattr(cls, name)
+                    except (AttributeError, KeyError): pass
 
-            # Odoo 18: Ensure field is in the registry class (proxy) if it exists
-            if hasattr(cls.pool, 'models') and cls._name in cls.pool.models:
-                proxy = cls.pool.models[cls._name]
-                if proxy is not cls:
-                    setattr(proxy, name, field)
-                    if name not in proxy._fields:
-                        proxy._fields[name] = field
+                setattr(cls, name, f_clone)
+                cls._fields[name] = f_clone
+                f_clone.model_name = cls._name
+                
+                # Forcing __set_name__ to install the descriptor on 'cls'
+                # This will re-setup the field for the CURRENT model.
+                f_clone.__set_name__(cls, name)
+                
+                # [poly] SPECIAL: If it's a related field, we MUST clear its 'related_sudo'
+                # or similar caches to force re-evaluation if model_name changed.
+                if hasattr(f_clone, 'related'):
+                    f_clone._setup_done = False # Force setup
+                
+                # 3. Odoo 18: Ensure field is in the registry class (proxy) if it exists
+                if hasattr(cls.pool, 'models') and cls._name in cls.pool.models:
+                    proxy = cls.pool.models[cls._name]
+                    if proxy is not cls:
+                        # Clean proxy too
+                        proxy_attr = proxy.__dict__.get(name)
+                        if proxy_attr and proxy_attr is not f_clone:
+                             try: delattr(proxy, name)
+                             except (AttributeError, KeyError): pass
+                        
+                        setattr(proxy, name, f_clone)
+                        if name not in proxy._fields:
+                            proxy._fields[name] = f_clone
+            except Exception as e:
+                _logger.error("[poly] Failed to clone field %s for %s: %s", name, cls._name, e)
+                # Fallback to direct set if cloning fails
+                setattr(cls, name, field)
+                cls._fields[name] = field
 
         # Create a poly_base_id many2one - the core link to ir.poly_base
         _set_field('poly_base_id',
@@ -2898,14 +2980,16 @@ class PolyBase(_original_BaseModel):
                     f = self._fields[k]
                     f_model = getattr(f, 'model_name', None)
                     is_real_field = f.store and f_model == self._name
-                    # [poly] ALSO PRESERVE inherited fields via _inherits.
-                    # Odoo handles them during create(). 
-                    is_inherited = getattr(f, 'inherited', False)
                     
-                    # [poly] CRITICAL: if the field is REQUIRED on this model, 
-                    # we must pass it to the ORM, even if Odoo thinks it's a related
-                    # (due to the pollution we are fighting).
-                    if is_real_field or is_inherited or f.required or k == 'id':
+                    # [poly] CRITICAL FIX: Odoo 18 MUST preserve certain fields
+                    # even if it thinks they are not stored, to satisfy database
+                    # constraints in polymorphic tables.
+                    if k == 'name' or k == 'id' or f.required or getattr(f, 'inherited', False):
+                         is_real_field = True
+                    elif f.store and not f.related:
+                         is_real_field = True
+
+                    if is_real_field:
                         final_data[k] = v
             
             # [poly] INHERITED FIELD RECOVERY:
@@ -2915,23 +2999,90 @@ class PolyBase(_original_BaseModel):
             for k, v in orig_data.items():
                 if k in self._fields and k not in final_data:
                     f = self._fields[k]
-                    f_model = getattr(f, 'model_name', None)
-                    if (f.store and f_model == self._name) or getattr(f, 'inherited', False) or f.required:
-                        final_data[k] = v
+                    # [poly] Forcing field recovery if it's required, even if Odoo
+                    # thinks it's a related/non-stored due to Registry pollution.
+                    # We check the database column existence if possible.
+                    if f.required or getattr(f, 'inherited', False) or k == 'name':
+                         final_data[k] = v
+                    else:
+                        f_model = getattr(f, 'model_name', None)
+                        if (f.store and f_model == self._name):
+                            final_data[k] = v
 
             base_data = final_data
 
-            # Ensure _depend_models link fields point to the just-created base
-            for _dep_model, _link_field in (self._depend_models or {}).items():
-                if _link_field in self._fields:
-                    if not self._fields[_link_field].store:
-                         continue
-                    if not base_data.get(_link_field):
-                        base_data[_link_field] = dep_record_ids.get(_dep_model, new_id)
+            # [poly] CRITICAL ODOO 18 FIX:
+            # We force those fields back into 'base_data' if they are missing.
+            # AND we MUST ensure Odoo sees them as stored BEFORE they are classified.
+            
+            # [poly] Re-classify fields after our forced restoration
+            for k, v in orig_data.items():
+                if k not in base_data and k in self._fields:
+                    f = self._fields[k]
+                    if k in ('name', 'provider', 'active', 'facebook_account_id', 'driver_id') or not f.related or f.related.split('.')[0] in (self._depend_models or {}):
+                        base_data[k] = v
+                        # [poly] CRITICAL: force Odoo to include these fields in classification
+                        if not f.store:
+                            f._poly_old_store = f.store
+                            f.store = True
+                        if getattr(f, 'inherited', False):
+                            f._poly_old_inherited = f.inherited
+                            f.inherited = False
+                        if hasattr(f, 'related') and f.related:
+                             f._poly_old_related = f.related
 
-            _logger.info(f'[poly] Final create call for {self._name}: model={self._name}, data={base_data}')
+            # [poly] INSTRUMENTATION: Final values before standard create
+            _logger.info("[poly] Final create call for %s: data=%s", self._name, base_data)
+            for k, v in base_data.items():
+                f = self._fields.get(k)
+                if f:
+                    _logger.info("[poly]   field %s: store=%s, related=%s", k, f.store, getattr(f, 'related', 'N/A'))
+
             new_record = super().create([base_data])
             new_records |= new_record
+            
+            # [poly] RESTORE field state
+            # IMPORTANT: We MUST ensure Odoo has updated the database before restoring f.store
+            # and f.inherited, otherwise the flush might discard the values.
+            self.flush_model(base_data.keys())
+            
+            # [poly] CRITICAL: After flush, we MUST invalidate the cache for these records 
+            # so Odoo reads the values from DB using the descriptors we are about to restore.
+            # Odoo 18: Invalidate using field names to be precise.
+            self.env.cache.invalidate([(f, new_records._ids) for k in base_data.keys() if (f := self._fields.get(k))])
+            
+            # [poly] For related fields, we must also invalidate the target model cache 
+            # because the inversion might have put False/None there during create.
+            for k in base_data.keys():
+                f = self._fields.get(k)
+                if f and hasattr(f, 'related') and f.related:
+                     try:
+                         # E.g. driver_id.name -> invalidate conversation.driver
+                         target_model_name = f.related.split('.')[0]
+                         if target_model_name in (self._depend_models or {}):
+                              link_fname = self._depend_models[target_model_name]
+                              target_ids = [r[link_fname].id for r in new_records if r[link_fname]]
+                              if target_ids:
+                                   target_model = self.env[target_model_name]
+                                   target_field_name = f.related.split('.')[-1]
+                                   if target_field_name in target_model._fields:
+                                        target_field = target_model._fields[target_field_name]
+                                        self.env.cache.invalidate([(target_field, tuple(target_ids))])
+                     except:
+                         pass
+
+            for k in base_data.keys():
+                f = self._fields.get(k)
+                if f:
+                    if hasattr(f, '_poly_old_related'):
+                        f.related = f._poly_old_related
+                        del f._poly_old_related
+                    if hasattr(f, '_poly_old_store'):
+                        f.store = f._poly_old_store
+                        del f._poly_old_store
+                    if hasattr(f, '_poly_old_inherited'):
+                        f.inherited = f._poly_old_inherited
+                        del f._poly_old_inherited
 
         return new_records
 
@@ -4332,7 +4483,9 @@ def poly_Field_setup_related(self, model):
                 is_invalid_prefix = True
             
             if is_invalid_prefix:
-                _logger.info("[poly] Stripping model-name prefix '%s' from %s.%s: %s", segment, model._name, self.name, related)
+                # [poly] REDUCED NOISE: Only log if it's NOT a common model prefix or it was really needed
+                if segment not in ['conversation', 'message', 'session', 'account']:
+                    _logger.debug("[poly] Stripping model-name prefix '%s' from %s.%s: %s", segment, model._name, self.name, related)
                 parts = parts[1:]
                 changed = True
             else:
@@ -4359,7 +4512,9 @@ def poly_Field_setup_related(self, model):
             mid_changed = False
             for segment in parts[1:]:
                 if curr_model_for_path and segment in registry and segment not in curr_model_for_path._fields:
-                    _logger.info("[poly] Stripping mid-path model prefix '%s' in %s.%s", segment, model._name, self.name)
+                    # [poly] REDUCED NOISE: Only log if it's NOT a common model prefix
+                    if segment not in ['conversation', 'message', 'session', 'account']:
+                        _logger.debug("[poly] Stripping mid-path model prefix '%s' in %s.%s", segment, model._name, self.name)
                     mid_changed = True
                     continue
                 new_parts.append(segment)
@@ -4407,7 +4562,7 @@ def poly_Field_setup_related(self, model):
         if link_fname:
             # REDIRECCIÓN: Usamos el campo link en lugar del nombre del modelo
             new_path = f"{link_fname}.{'.'.join(parts[1:])}"
-            _logger.info("[poly] Redirigiendo ruta polimórfica %s.%s: %s -> %s", model._name, self.name, related, new_path)
+            _logger.debug("[poly] Redirigiendo ruta polimórfica %s.%s: %s -> %s", model._name, self.name, related, new_path)
             
             # [poly] NEW: Before setting the new path, sanitize it too!
             # This prevents cycles like account.state -> driver_id.account.state -> driver_id.state
