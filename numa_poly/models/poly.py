@@ -2349,6 +2349,17 @@ class PolyBase(_original_BaseModel):
                          clean_args['selection'] = field.selection
                     if hasattr(field, 'comodel_name') and 'comodel_name' not in clean_args:
                          clean_args['comodel_name'] = field.comodel_name
+                
+                    # [poly] EMERGENCY: ensure comodel_name is NEVER None for relational fields
+                    if f_type.__name__ in ('Many2one', 'One2many', 'Many2many', 'PolyReference'):
+                        if not clean_args.get('comodel_name'):
+                             # Try to recover from the field object directly if it was lost in clean_args
+                             clean_args['comodel_name'] = getattr(field, 'comodel_name', None)
+                             if not clean_args['comodel_name']:
+                                 # Fallback to a safe model if everything fails, but log it loudly
+                                 _logger.error("[poly] CRITICAL: comodel_name is NULL for relational field %s in %s. Using 'base' to avoid KeyError.", name, cls._name)
+                                 clean_args['comodel_name'] = 'base'
+
                     if hasattr(field, 'inverse_name') and 'inverse_name' not in clean_args:
                          clean_args['inverse_name'] = field.inverse_name
                     if hasattr(field, 'relation') and 'relation' not in clean_args:
@@ -5087,8 +5098,14 @@ def _poly_registry_setup_models(self, cr):
         if name == 'ir.poly_base':
             continue
 
+        # [poly] STRICT CHECK: A model is polymorphic ONLY if it inherits from PolyBase or PolyModel
+        # and defines _depend_models. This prevents standard Odoo models (like onboarding) 
+        # that might accidentally have a _depend_models attribute from being processed.
+        is_poly_hierarchy = False
         for base in type.mro(model_class):
-            if '_depend_models' in base.__dict__:
+            if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
+                is_poly_hierarchy = True
+            if '_depend_models' in base.__dict__ and is_poly_hierarchy:
                 has_depend_models = True
                 break
         
