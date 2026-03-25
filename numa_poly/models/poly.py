@@ -2285,6 +2285,16 @@ class PolyBase(_original_BaseModel):
         if cls._name == 'ir.poly_base':
             return
 
+        # [poly] STRICT CHECK: NEVER build attributes for models outside the polymorphic hierarchy
+        is_poly_hierarchy = False
+        for base in cls.mro():
+            if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
+                is_poly_hierarchy = True
+                break
+        if not is_poly_hierarchy:
+            _logger.warning("[poly] SKIPPING attribute building for non-polymorphic model %s", cls._name)
+            return
+
         def _set_field(name, field, related_base=None):
             """
             Set a field on the model.
@@ -5105,9 +5115,14 @@ def _poly_registry_setup_models(self, cr):
         for base in type.mro(model_class):
             if base.__name__ in ('PolyBase', 'PolyModel', 'IrPolyBase'):
                 is_poly_hierarchy = True
-            if '_depend_models' in base.__dict__ and is_poly_hierarchy:
-                has_depend_models = True
                 break
+        
+        if is_poly_hierarchy:
+            # Check for _depend_models only if it's in the hierarchy
+            for base in type.mro(model_class):
+                if '_depend_models' in base.__dict__:
+                    has_depend_models = True
+                    break
         
         if has_depend_models:
             poly_models_names_to_process.add(name)
@@ -5125,6 +5140,31 @@ def _poly_registry_setup_models(self, cr):
             for dep_model in dep_map.keys():
                 if dep_model in self and dep_model != 'ir.poly_base':
                     poly_models_names_to_process.add(dep_model)
+
+    # [poly] Phase 0.5: Aggressive Removal of polymorphic attributes from non-poly models
+    # This MUST happen BEFORE Phase 1 to ensure standard models are clean
+    _logger.debug("[poly] Entering Phase 0.5: Aggressive Cleanup")
+    for name, model_class in self.items():
+        if not isinstance(model_class, type): continue
+        if name not in poly_models_names_to_process and name != 'ir.poly_base':
+            # Identify if the model class or its proxies have been contaminated
+            classes_to_clean = [model_class]
+            if hasattr(self, 'models') and name in self.models:
+                classes_to_clean.append(self.models[name])
+            
+            for cls_to_clean in classes_to_clean:
+                for technical_fname in ['concrete_model_id', 'old_id', 'poly_payload', 'poly_base_id']:
+                    # Remove from __dict__ (descriptor level)
+                    if technical_fname in cls_to_clean.__dict__:
+                        try:
+                            delattr(cls_to_clean, technical_fname)
+                            _logger.debug("[poly] Cleanup: Removed descriptor %s from %s", technical_fname, name)
+                        except (AttributeError, KeyError):
+                            pass
+                    # Remove from _fields
+                    if hasattr(cls_to_clean, '_fields') and technical_fname in cls_to_clean._fields:
+                        del cls_to_clean._fields[technical_fname]
+                        _logger.debug("[poly] Cleanup: Removed field %s from %s._fields", technical_fname, name)
 
     # [poly] Phase 1: MRO Injection BEFORE Odoo's setup_models
     # This ensures Odoo 18 sees the correct class hierarchy from the start
@@ -5207,24 +5247,9 @@ def _poly_registry_setup_models(self, cr):
     if 'field_computed' in self.__dict__:
         del self.__dict__['field_computed']
 
-    # [poly] Identify which modules were loaded recently to optimize Deep Fix in Phase 2
+    # [poly] Identify which modules were loaded recently to optimize Phase 1
     current_init_modules = set(self._init_modules)
     
-    # [poly] CLEANUP Phase 0: Remove polymorphic fields from non-poly models
-    # This prevents field leakage into standard Odoo models like web_tour.tour
-    for name, model_class in self.items():
-        if not isinstance(model_class, type): continue
-        if name not in poly_models_names_to_process and name != 'ir.poly_base':
-            for technical_fname in ['concrete_model_id', 'old_id', 'poly_payload', 'poly_base_id']:
-                if technical_fname in model_class.__dict__ or (hasattr(model_class, '_fields') and technical_fname in model_class._fields):
-                    _logger.debug("[poly] Emergency Cleanup: Removing %s from non-polymorphic model %s", technical_fname, name)
-                    if hasattr(model_class, '_fields') and technical_fname in model_class._fields:
-                        del model_class._fields[technical_fname]
-                    try:
-                        delattr(model_class, technical_fname)
-                    except (AttributeError, KeyError):
-                        pass
-
     # [poly] ENSURE INCREMENTAL ATTRIBUTES ARE INITIALIZED
     # This prevents AttributeError: 'Registry' object has no attribute '_poly_processed_models'
     # during early boot when setup_models is called before Registry.new finishes.
@@ -5243,7 +5268,11 @@ def _poly_registry_setup_models(self, cr):
         # This prevents redundant heavy attribute building.
         model_module = getattr(model_class, '_module', None)
         is_model_new = model_module in current_init_modules
-        
+    
+        # [poly] DOUBLE CHECK: NEVER process non-poly models in Phase 1
+        if model_name not in poly_models_names_to_process:
+            continue
+
         # [poly] Aggressively check if we should be calling _build_dependant_model_attributes here
         if hasattr(model_class, '_build_dependant_model_attributes'):
              try:
