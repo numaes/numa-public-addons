@@ -1301,29 +1301,38 @@ class PolyBase(_original_BaseModel):
                 has_depend_models = True
                 break
         
-        # Detect if this model is referenced as a base by any other model's _depend_models
+        # [poly] Detect if this model is referenced as a base by any other model's _depend_models
+        # Odoo 18: Optimize detection to avoid full pool scans which are slow during registry setup
         referenced_as_base = False
-        try:
-            for other_name, other_model in self.pool.items():
-                if not isinstance(other_model, type):
-                    continue
-                
-                # [poly] Safeguard for ir.poly_base: it should NEVER be treated as polymorphic
-                # even if it is in some _depend_models (it is the root).
-                if name == 'ir.poly_base':
-                    break
-
-                # Use helper for other models too
-                if hasattr(other_model, '_poly_get_depend_models'):
-                     dep_map = other_model._poly_get_depend_models()
-                else:
-                     dep_map = PolyBase._poly_get_depend_models.__func__(other_model)
-
-                if dep_map and name in dep_map.keys():
-                    referenced_as_base = True
-                    break
-        except Exception:
-            referenced_as_base = False
+        if name != 'ir.poly_base':
+             # Instead of scanning the whole pool, we check if there are cached entries 
+             # indicating someone depends on us.
+             # Or we check a global map if we have it.
+             # For now, let's at least avoid scanning if we are not in Phase 2 or if we can use a shortcut.
+             try:
+                 # Shortcut: if the class has a known attribute from a previous Phase 1 scan
+                 if hasattr(model_class, '_referenced_as_poly_base'):
+                      referenced_as_base = model_class._referenced_as_poly_base
+                 else:
+                      # Minimal scan or check if we are in a state where pool is mostly ready
+                      if len(self.pool) > 100: # Heuristic: registry is being populated
+                           for other_name, other_model in self.pool.items():
+                                if not isinstance(other_model, type): continue
+                                if other_name == name: continue
+                                
+                                # Use a faster check if possible
+                                if hasattr(other_model, '_poly_get_depend_models'):
+                                     dep_map = other_model._poly_get_depend_models()
+                                else:
+                                     # Fallback to a cheaper check than calling the full method if possible
+                                     dep_map = getattr(other_model, '_depend_models', {})
+                                
+                                if dep_map and name in dep_map:
+                                     referenced_as_base = True
+                                     model_class._referenced_as_poly_base = True
+                                     break
+             except Exception:
+                 referenced_as_base = False
 
         # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
         # or inherits from a polymorphic model.
@@ -2214,7 +2223,7 @@ class PolyBase(_original_BaseModel):
         if cls._name == 'ir.poly_base':
             return
 
-        def set(name, field, related_base=None):
+        def _set_field(name, field, related_base=None):
             """
             Set a field on the model.
 
@@ -2249,7 +2258,7 @@ class PolyBase(_original_BaseModel):
                         proxy._fields[name] = field
 
         # Create a poly_base_id many2one - the core link to ir.poly_base
-        set('poly_base_id',
+        _set_field('poly_base_id',
             PolyReference(
                 'ir.poly_base',
                 string='Poly base',
@@ -2259,7 +2268,7 @@ class PolyBase(_original_BaseModel):
         )
 
         # Create a concrete_model_id field to know the concrete model of each record
-        set('concrete_model_id',
+        _set_field('concrete_model_id',
             fields.Many2one(
                 'ir.model',
                 string='Concrete model',
@@ -2275,7 +2284,7 @@ class PolyBase(_original_BaseModel):
 
         # Add poly_payload field for DTO-style injection
         # This field allows transporting subclass-specific data as JSON
-        set('poly_payload',
+        _set_field('poly_payload',
             fields.Text(
                 string='Polymorphic Payload',
                 store=False,
@@ -2286,7 +2295,7 @@ class PolyBase(_original_BaseModel):
             )
         )
 
-        # set('id',
+        # _set_field('id',
         #      fields.Id(string='id',
         #                related='poly_base_id.id',
         #                automatic=True))
@@ -2294,19 +2303,19 @@ class PolyBase(_original_BaseModel):
         # Add standard audit fields related to the poly_base record
         # TODO: log fields should be registered only on ir.poly_base
         #       currently not working
-        set('create_uid',
+        _set_field('create_uid',
              fields.Many2one('res.users', string='Created by',
                              related='poly_base_id.create_uid',
                              automatic=False))
-        set('create_date',
+        _set_field('create_date',
              fields.Datetime(string='Created on',
                              related='poly_base_id.create_date',
                              automatic=False))
-        set('write_uid',
+        _set_field('write_uid',
              fields.Many2one('res.users', string='Last Updated by',
                              related='poly_base_id.write_uid',
                              automatic=False))
-        set('write_date',
+        _set_field('write_date',
              fields.Datetime(string='Last Updated on',
                              related='poly_base_id.write_date',
                              automatic=False))
@@ -2463,7 +2472,7 @@ class PolyBase(_original_BaseModel):
                               string=f'Base for {base_model_name}',
                               automatic=True, readonly=True)
             link_field.search = link_field._search_related
-            set(base_field_name, link_field)
+            _set_field(base_field_name, link_field)
 
         # Create related fields for all fields from dependent models
         related_counter = 1
@@ -2496,7 +2505,7 @@ class PolyBase(_original_BaseModel):
                     related_bases[model] = 'poly_base_id'
                     model_field = 'poly_base_id'
                 else:
-                    set(model_field,
+                    _set_field(model_field,
                         PolyReference(comodel_name=model, string=f'Base for {model}',
                                       automatic=True, readonly=True)
                     )
@@ -2507,7 +2516,7 @@ class PolyBase(_original_BaseModel):
                          # Handled by poly_base_id creation above
                          pass
                     else:
-                        set(model_field,
+                        _set_field(model_field,
                             PolyReference(comodel_name=model, string=model,
                                           automatic=True, readonly=True)
                         )
@@ -2575,7 +2584,7 @@ class PolyBase(_original_BaseModel):
             new_field = field_subclass(**field_kwargs)
 
             # Add the field to the model
-            set(field_name, new_field, related_bases[model])
+            _set_field(field_name, new_field, related_bases[model])
 
         # Add _depends methods
         # Odoo 18: skip method copying as we now use MRO
