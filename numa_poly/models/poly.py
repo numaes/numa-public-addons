@@ -2440,7 +2440,13 @@ class PolyBase(_original_BaseModel):
                     
                     # 1. Selection
                     if hasattr(field, 'selection') and 'selection' not in clean_args:
-                         clean_args['selection'] = field.selection
+                         # [poly] RECURSION GUARD: Avoid calling selection property if it might trigger lambda recursion
+                         if hasattr(field, '_args') and 'selection' in field._args:
+                              clean_args['selection'] = field._args['selection']
+                         else:
+                              try:
+                                   clean_args['selection'] = field.selection
+                              except Exception: pass
                     
                     # [poly] ULTIMATE SELECTION RECOVERY: If selection is STILL missing, search in Registry
                     if f_type.__name__ == 'Selection' and not clean_args.get('selection') and hasattr(cls, 'pool'):
@@ -2448,13 +2454,26 @@ class PolyBase(_original_BaseModel):
                               if name in _m._fields:
                                    _f_proto = _m._fields[name]
                                    if _f_proto.type == 'selection' and hasattr(_f_proto, 'selection'):
-                                        clean_args['selection'] = _f_proto.selection
-                                        _logger.debug("[poly] Recovered selection for %s from model %s registry", name, _m_name)
-                                        break
+                                        # [poly] RECURSION GUARD: Prefer raw _args selection to avoid triggering lambdas during setup
+                                        if hasattr(_f_proto, '_args') and 'selection' in _f_proto._args:
+                                             clean_args['selection'] = _f_proto._args['selection']
+                                        else:
+                                             try:
+                                                  clean_args['selection'] = _f_proto.selection
+                                             except Exception: pass
+                                        
+                                        if clean_args.get('selection'):
+                                             _logger.debug("[poly] Recovered selection for %s from model %s registry", name, _m_name)
+                                             break
                          
                          # [poly] SECOND LEVEL: Search in ir.model.fields.selection (database) if registry fails
                          if not clean_args.get('selection') and hasattr(cls, 'env'):
+                              # Odoo 18: Be extremely careful not to trigger environment access if we are already
+                              # in a recursion deep in field setup.
                               try:
+                                   if not getattr(cls.env.registry, 'ready', False):
+                                        pass # Registry not ready, searching in DB might be dangerous/slow
+                                   
                                    _selection_options = cls.env['ir.model.fields.selection'].sudo().search([('field_id.name', '=', name)])
                                    if _selection_options:
                                         clean_args['selection'] = [(opt.value, opt.name) for opt in _selection_options]
