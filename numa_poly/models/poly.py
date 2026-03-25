@@ -84,10 +84,21 @@ _logger = logging.getLogger(__name__)
 POLY_MRO_CACHE = defaultdict(dict)
 
 # [poly] Technical list for deferred view validation
-# We'll use a lazy property in the Registry to manage this more robustly
 @odoo.tools.lazy_property
 def _poly_pending_views(self):
     return set()
+
+# [poly] Track processed models for incremental Deep Fix
+@odoo.tools.lazy_property
+def _poly_processed_models(self):
+    """ {model_name: set(module_names)} """
+    return defaultdict(set)
+
+# [poly] Track injected MRO for incremental Phase 1
+@odoo.tools.lazy_property
+def _poly_injected_mro(self):
+    """ {model_name: tuple(base_classes)} """
+    return {}
 
 def _poly_finalize_view_validation(self, cr):
     """
@@ -4903,15 +4914,67 @@ def _poly_registry_setup_models(self, cr):
     if 'field_computed' in self.__dict__:
         del self.__dict__['field_computed']
 
+    # [poly] Identify which modules were loaded recently to optimize Deep Fix in Phase 2
+    current_init_modules = set(self._init_modules)
+
     for model_name in sorted_poly_names:
         if model_name not in self: continue
         model_instance = self[model_name]
         model_class = type(model_instance)
         
+        # [poly] INCREMENTAL PHASE 1: Only build attributes if the model belongs to 
+        # a recently loaded module or if its polymorphic hierarchy has changed.
+        # This prevents redundant heavy attribute building.
+        model_module = getattr(model_class, '_module', None)
+        is_model_new = model_module in current_init_modules
+        
         # [poly] Aggressively check if we should be calling _build_dependant_model_attributes here
         if hasattr(model_class, '_build_dependant_model_attributes'):
              try:
-                 _logger.info("[poly] Building attributes for %s", model_name)
+                 # Recalculate depend_models for Phase 1 MRO logic
+                 all_depend_models = OrderedDict()
+                 for base in type.mro(model_class):
+                     if base is model_class: continue
+                     dep_models = base.__dict__.get('_depend_models') or getattr(base, '_depend_models', None)
+                     if dep_models:
+                         for dep_model, dep_field in dep_models.items():
+                             if dep_model not in all_depend_models:
+                                 all_depend_models[dep_model] = dep_field
+                 
+                 # Determine parents for MRO
+                 parents = list(all_depend_models.keys())
+                 if model_name != 'ir.poly_base' and 'ir.poly_base' not in parents:
+                     parents.append('ir.poly_base')
+
+                 parents_cls = []
+                 for p_name in parents:
+                     if p_name in self:
+                         parents_cls.append(self[p_name])
+
+                 # Calculate target bases
+                 _bm_bases = getattr(model_class, '_BaseModel__base_classes', None)
+                 if _bm_bases:
+                      original_bases = [b for b in _bm_bases if getattr(b, 'pool', None) is None]
+                 else:
+                      original_bases = [b for b in model_class.__bases__ if getattr(b, 'pool', None) is None]
+                 
+                 new_bases = parents_cls + [b for b in original_bases if b not in parents_cls]
+                 
+                 # Deduplication and linearization
+                 deduplicated = []
+                 for b in new_bases:
+                     if b is model_class: continue
+                     if any(b is not c and issubclass(c, b) for c in new_bases if c is not model_class):
+                         continue
+                     if b not in deduplicated:
+                         deduplicated.append(b)
+                 final_bases = tuple(deduplicated)
+
+                 # [poly] CACHE CHECK: If MRO hasn't changed, skip attribute building and injection
+                 if final_bases == self._poly_injected_mro.get(model_name) and not is_model_new:
+                     continue
+
+                 _logger.info("[poly] Building attributes for %s (Incremental)", model_name)
                  
                  # [poly] EXTREME AGGRESSIVE TAKEOVER: Scan for any field that should be related
                  # before even calling _build_dependant_model_attributes, to clear them from __dict__
@@ -4938,58 +5001,21 @@ def _poly_registry_setup_models(self, cr):
                  # Ensure _fields is updated immediately for the next model to see it
                  if hasattr(model_class, '_setup_base'):
                      odoo.models.BaseModel._setup_base(model_instance)
+
+                 # [poly] Apply MRO injection
+                 if final_bases != tuple(model_class.__bases__):
+                     _logger.debug("[poly] Pre-setup Injecting MRO for %s: %s", model_name, [getattr(b, '_name', b.__name__) for b in final_bases])
+                     model_class.__bases__ = final_bases
+                     model_class.__base_classes = final_bases
+                     model_class.__depends_base_classes = final_bases
+                     if hasattr(ctypes.pythonapi, 'PyType_Modified'):
+                         ctypes.pythonapi.PyType_Modified(ctypes.py_object(model_class))
+                 
+                 # Update cache
+                 self._poly_injected_mro[model_name] = final_bases
+
              except Exception as e:
                  _logger.error("[poly] Phase 1: Failed for %s: %s", model_name, e)
-
-        # Recalculate depend_models for Phase 1 MRO logic
-        all_depend_models = OrderedDict()
-        for base in type.mro(model_class):
-            if base is model_class: continue
-            dep_models = base.__dict__.get('_depend_models') or getattr(base, '_depend_models', None)
-            if dep_models:
-                for dep_model, dep_field in dep_models.items():
-                    if dep_model not in all_depend_models:
-                        all_depend_models[dep_model] = dep_field
-        
-        if not all_depend_models: continue
-
-        parents = list(all_depend_models.keys())
-        if model_name != 'ir.poly_base' and 'ir.poly_base' not in parents:
-            parents.append('ir.poly_base')
-
-        parents_cls = []
-        for p_name in parents:
-            if p_name in self:
-                parents_cls.append(self[p_name])
-
-        _bm_bases = getattr(model_class, '_BaseModel__base_classes', None)
-        if _bm_bases:
-             original_bases = [b for b in _bm_bases if getattr(b, 'pool', None) is None]
-        else:
-             original_bases = [b for b in model_class.__bases__ if getattr(b, 'pool', None) is None]
-        
-        new_bases = parents_cls + [b for b in original_bases if b not in parents_cls]
-        
-        # Deduplication and linearization
-        deduplicated = []
-        for b in new_bases:
-            if b is model_class: continue
-            if any(b is not c and issubclass(c, b) for c in new_bases if c is not model_class):
-                continue
-            if b not in deduplicated:
-                deduplicated.append(b)
-        final_bases = tuple(deduplicated)
-        
-        if final_bases != tuple(model_class.__bases__):
-            _logger.debug("[poly] Pre-setup Injecting MRO for %s: %s", model_name, [getattr(b, '_name', b.__name__) for b in final_bases])
-            try:
-                model_class.__bases__ = final_bases
-                model_class.__base_classes = final_bases
-                model_class.__depends_base_classes = final_bases
-                if hasattr(ctypes.pythonapi, 'PyType_Modified'):
-                    ctypes.pythonapi.PyType_Modified(ctypes.py_object(model_class))
-            except Exception as e:
-                _logger.error("[poly] Pre-setup MRO Injection failed for %s: %s", model_name, e)
 
     res = _original_Registry_setup_models(self, cr)
 
@@ -5026,6 +5052,40 @@ def _poly_registry_setup_models(self, cr):
         model_class = type(model_instance)
         if hasattr(self, 'models') and name in self.models:
              model_class = self.models[name]
+
+        # [poly] INCREMENTAL DEEP FIX:
+        # Check if the model has already been processed for the current set of modules.
+        # We only need to re-run Deep Fix if:
+        # 1. The model's own module or its polymorphic dependencies' modules are in current_init_modules.
+        # 2. It hasn't been fully processed yet for all its inheriting modules.
+        model_module = getattr(model_class, '_module', None)
+        processed_modules = self._poly_processed_models[name]
+        
+        # If the model is not new AND it has already been processed for at least 
+        # the current init_modules state, we can skip it.
+        # We use a simple but effective heuristic: if no new module has touched 
+        # this model or its hierarchy since the last run, we skip.
+        is_affected = False
+        if not current_init_modules:
+            # Normal startup, we process everything once
+            if name in self._poly_processed_models:
+                continue
+            is_affected = True
+        else:
+            # Update/Install mode: only process if affected by a loading module
+            if model_module in current_init_modules:
+                is_affected = True
+            else:
+                # Check polymorphic parents
+                for base in type.mro(model_class):
+                    if getattr(base, '_module', None) in current_init_modules:
+                        is_affected = True
+                        break
+        
+        if not is_affected:
+            continue
+
+        _logger.info("[poly] Deep fixing %s (Incremental)", name)
         
         # [poly] Force infrastructure fields injection for all involved models
         if name in poly_models_names_to_process:
@@ -5105,6 +5165,12 @@ def _poly_registry_setup_models(self, cr):
                 
                 # Aplicar fijación profunda atómica (Registry + Clase + Proxy Odoo 18)
                 _poly_deep_fix_field(self, name, base_f_name, _target_related)
+
+        # [poly] Mark as processed for the current module state
+        if current_init_modules:
+            self._poly_processed_models[name].update(current_init_modules)
+        else:
+            self._poly_processed_models[name].add('READY')
 
         # [poly] Final invalidation of field_computed after all deep fixes
         if 'field_computed' in self.__dict__:
