@@ -155,8 +155,8 @@ def _poly_get_safe_mro(cls):
 
 def _poly_is_polymorphic(model):
     """
-    [poly] Global helper to determine if a model belongs to the polymorphic hierarchy.
-    It checks for the presence of NON-EMPTY _depend_models in its OWN class hierarchy.
+    Determina si un modelo es polimórfico analizando su cadena de MRO y la presencia de _depend_models.
+    Un modelo es polimórfico si él o cualquiera de sus bases (CON EL MISMO _name) tiene _depend_models.
     """
     if not model or not hasattr(model, '_name'):
         return False
@@ -165,21 +165,16 @@ def _poly_is_polymorphic(model):
     if name == 'ir.poly_base':
         return False
         
-    # [poly] STRICT ISOLATION: NEVER consider core Odoo models/mixins as polymorphic consumers
-    _blocked_prefixes = (
-        'res.', 'base.', 'ir.', 'mail.', 'portal.', 'utm.', 'bus.', 'report.', 
-        'web.', 'website.', 'digest.', 'sms.', 'phone_validation.'
-    )
-    if name.startswith(_blocked_prefixes):
-        return False
-
     model_class = type(model) if not isinstance(model, type) else model
     
-    # [poly] A model is a polymorphic consumer only if it HAS _depend_models 
-    # and it is NOT just a technical base.
-    d = getattr(model_class, '_depend_models', None)
-    if d and isinstance(d, (dict, OrderedDict)) and len(d) > 0:
-        return True
+    # [poly] Explore MRO to find _depend_models in ANY base with the same _name
+    for base in _poly_get_safe_mro(model_class):
+        # We only care about bases that belong to the same Odoo model name
+        if getattr(base, '_name', None) == name:
+            if '_depend_models' in base.__dict__:
+                d = base.__dict__['_depend_models']
+                if d and isinstance(d, (dict, OrderedDict)) and len(d) > 0:
+                    return True
             
     return False
 
@@ -1483,7 +1478,20 @@ class PolyBase(_original_BaseModel):
         # [poly] Detect if this model is referenced as a base by any other model's _depend_models
         # Odoo 18: Optimize detection to avoid full pool scans which are slow during registry setup
         referenced_as_base = False
-        if name != 'ir.poly_base':
+        
+        # [poly] PROTECTION: If it's a core Odoo model, we don't care if it's referenced.
+        # Standard Odoo models should NEVER have their proxies/bases modified by us.
+        _odoo_core_prefixes = (
+            'res.', 'base.', 'ir.', 'mail.', 'payment.', 'account.', 'stock.', 'sale.', 'purchase.', 
+            'mailing.', 'link.', 'crm.', 'calendar.', 'rating.', 'gamification.', 'project.', 
+            'spreadsheet.', 'onboarding.', 'uom.', 'board.', 'lunch.', 'event.', 'survey.', 
+            'website_slides.', 'repair.', 'maintenance.', 'fleet.', 'point_of_sale.', 'pos.', 
+            'delivery.', 'website_sale.', 'loyalty.', 'mass_mailing.', 'im_livechat.', 'theme.', 
+            'sign.', 'quality.', 'iot.', 'helpdesk.', 'documents.', 'marketing.', 'social.', 
+            'approvals.', 'planning.', 'timesheet.', 'auth_signup.', 'bus.', 'iap.', 'resource.', 
+            'web_tour.', 'barcodes.', 'http_routing.'
+        )
+        if not name.startswith(_odoo_core_prefixes):
              # Instead of scanning the whole pool, we check if there are cached entries 
              # indicating someone depends on us.
              # Or we check a global map if we have it.
@@ -1516,9 +1524,27 @@ class PolyBase(_original_BaseModel):
         # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
         # or inherits from a polymorphic model.
         # ir.poly_base is NOT polymorphic.
-        is_poly_enabled = (
-             (has_depend_models or referenced_as_base) and name != 'ir.poly_base'
+        _odoo_core_prefixes = (
+            'res.', 'base.', 'ir.', 'mail.', 'payment.', 'account.', 'stock.', 'sale.', 'purchase.', 
+            'mailing.', 'link.', 'crm.', 'calendar.', 'rating.', 'gamification.', 'project.', 
+            'spreadsheet.', 'onboarding.', 'uom.', 'board.', 'lunch.', 'event.', 'survey.', 
+            'website_slides.', 'repair.', 'maintenance.', 'fleet.', 'point_of_sale.', 'pos.', 
+            'delivery.', 'website_sale.', 'loyalty.', 'mass_mailing.', 'im_livechat.', 'theme.', 
+            'sign.', 'quality.', 'iot.', 'helpdesk.', 'documents.', 'marketing.', 'social.', 
+            'approvals.', 'planning.', 'timesheet.', 'product.', 'mrp.', 'hr.', 'auth_signup.', 
+            'bus.', 'iap.', 'resource.', 'web_tour.', 'barcodes.', 'http_routing.'
         )
+        is_poly_enabled = (
+             (has_depend_models or referenced_as_base) and 
+             not name.startswith(_odoo_core_prefixes) and 
+             name != 'ir.poly_base'
+        )
+        
+        # [poly] FINAL CHECK: Only enable if it's actually a polymorphic consumer (has _depend_models in its own class)
+        # or if it's explicitly inheriting from PolyBase hierarchy.
+        if is_poly_enabled:
+             # Double check: does it have _depend_models in its MRO (excluding standard bases)?
+             is_poly_enabled = any('_depend_models' in b.__dict__ for b in model_class.mro() if b not in (_original_BaseModel, object))
         
         if not is_poly_enabled:
              return _original_BaseModel._setup_base(self)
@@ -4927,7 +4953,7 @@ def poly_Field_setup(self, model):
         _logger.debug("[poly] Field.setup called on %s object WITHOUT .name (model: %s).", type(self), getattr(model, '_name', 'N/A'))
         return _original_Field_setup(self, model)
 
-    if not hasattr(model, 'pool') or not model.pool or not model.pool._init:
+    if not hasattr(model, 'pool') or not model.pool:
         return _original_Field_setup(self, model)
 
     # [poly] STRICT ISOLATION: Delegate immediately if not a poly model
@@ -5308,16 +5334,28 @@ def _poly_registry_setup_models(self, cr):
     # [poly] Phase 0: Collect all models that have _depend_models
     # and also collect their declared base models (targets) so that root bases get infrastructure fields too
     poly_models_names_to_process = set()
+    _blocked_prefixes = (
+        'res.', 'base.', 'ir.', 'mail.', 'portal.', 'utm.', 'bus.', 'report.', 
+        'web.', 'website.', 'digest.', 'sms.', 'phone_validation.', 'payment.',
+        'account.', 'stock.', 'purchase.', 'sale.', 'product.', 'mrp.', 'hr.',
+        'mailing.', 'link.', 'crm.', 'calendar.', 'rating.', 'gamification.',
+        'project.', 'spreadsheet.', 'onboarding.', 'uom.', 'board.', 'lunch.',
+        'event.', 'survey.', 'website_slides.', 'repair.', 'maintenance.', 'fleet.',
+        'point_of_sale.', 'pos.', 'delivery.', 'website_sale.', 'loyalty.', 'mass_mailing.',
+        'im_livechat.', 'theme.', 'sign.', 'quality.', 'iot.', 'helpdesk.', 'documents.',
+        'marketing.', 'social.', 'approvals.', 'planning.', 'timesheet.', 'auth_signup.',
+        'bus.', 'iap.', 'resource.', 'web_tour.', 'barcodes.', 'http_routing.'
+    )
     for name, model_class in self.items():
         if not isinstance(model_class, type):
             continue
-        
+            
         # [poly] AGGRESSIVE: only consider models that are NOT ir.poly_base here
         if name == 'ir.poly_base':
             continue
-            
+                
         # [poly] STRICT ISOLATION: NEVER process core Odoo models as polymorphic consumers
-        if name.startswith('res.') or name.startswith('base.') or name.startswith('ir.'):
+        if name.startswith(_blocked_prefixes):
             continue
 
         has_depend_models = False
@@ -5542,33 +5580,60 @@ def _poly_registry_setup_models(self, cr):
 
     # [poly] Phase 2: Final MRO stabilization
     # All fields are already flattened in Phase 1 via _build_dependant_model_attributes.
-    
+        
     if 'field_computed' in self.__dict__:
         del self.__dict__['field_computed']
+
+    _blocked_prefixes = (
+        'res.', 'base.', 'ir.', 'mail.', 'portal.', 'utm.', 'bus.', 'report.', 
+        'web.', 'website.', 'digest.', 'sms.', 'phone_validation.', 'payment.',
+        'account.', 'stock.', 'purchase.', 'sale.', 'product.', 'mrp.', 'hr.',
+        'mailing.', 'link.', 'crm.', 'calendar.', 'rating.', 'gamification.',
+        'project.', 'spreadsheet.', 'onboarding.', 'uom.', 'board.', 'lunch.',
+        'event.', 'survey.', 'website_slides.', 'repair.', 'maintenance.', 'fleet.',
+        'point_of_sale.', 'pos.', 'delivery.', 'website_sale.', 'loyalty.', 'mass_mailing.',
+        'im_livechat.', 'theme.', 'sign.', 'quality.', 'iot.', 'helpdesk.', 'documents.',
+        'marketing.', 'social.', 'approvals.', 'planning.', 'timesheet.', 'auth_signup.',
+        'bus.', 'iap.', 'resource.', 'web_tour.', 'barcodes.', 'http_routing.'
+    )
 
     # 1. Identify all models that are polymorphic or depend on polymorphic models
     poly_models_names = getattr(self, '_poly_models_to_setup', set())
     # Fallback: scan registry for any model that has _depend_models
     for name, model_class in self.items():
         if not isinstance(model_class, type): continue
+        if name.startswith(_blocked_prefixes): continue
         if any('_depend_models' in base.__dict__ for base in _poly_get_safe_mro(model_class)):
             poly_models_names.add(name)
 
     # [poly] Sort names to ensure parents are fixed before children
     _logger.debug("[poly] Entering Phase 2: Final MRO stabilization")
     
+    _blocked_prefixes = (
+        'res.', 'base.', 'ir.', 'mail.', 'portal.', 'utm.', 'bus.', 'report.', 
+        'web.', 'website.', 'digest.', 'sms.', 'phone_validation.', 'payment.',
+        'account.', 'stock.', 'purchase.', 'sale.', 'product.', 'mrp.', 'hr.',
+        'mailing.', 'link.', 'crm.', 'calendar.', 'rating.', 'gamification.',
+        'project.', 'spreadsheet.', 'onboarding.', 'uom.', 'board.', 'lunch.',
+        'event.', 'survey.', 'website_slides.', 'repair.', 'maintenance.', 'fleet.',
+        'point_of_sale.', 'pos.', 'delivery.', 'website_sale.', 'loyalty.', 'mass_mailing.',
+        'im_livechat.', 'theme.', 'sign.', 'quality.', 'iot.', 'helpdesk.', 'documents.',
+        'marketing.', 'social.', 'approvals.', 'planning.', 'timesheet.', 'auth_signup.',
+        'bus.', 'iap.', 'resource.', 'web_tour.', 'barcodes.', 'http_routing.'
+    )
+
     # Sort names by MRO length
     all_models_to_check = sorted([n for n, m in self.items() if isinstance(m, type) or hasattr(m, '_name')], key=lambda n: len(_poly_get_safe_mro(self[n])))
-    
+        
     for name in all_models_to_check:
         if name not in self: continue
-        
+            
         # [poly] CRITICAL: NEVER apply polymorphic logic to ir.poly_base
         if name == 'ir.poly_base':
             continue
-
+    
         # [poly] STRICT ISOLATION: NEVER process core Odoo models here
-        if name.startswith('res.') or name.startswith('base.') or name.startswith('ir.'):
+        if name.startswith(_blocked_prefixes):
             continue
 
         model_instance = self[name]
