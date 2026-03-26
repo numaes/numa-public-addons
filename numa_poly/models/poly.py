@@ -202,7 +202,7 @@ def _poly_finalize_view_validation(self, cr):
     if not self._pending_poly_views:
         return
 
-    _logger.info("[poly] Finalizing validation for %d deferred views", len(self._pending_poly_views))
+    _logger.debug("[poly] Finalizing validation for %d deferred views", len(self._pending_poly_views))
     
     # We must use a separate cursor to avoid potential transaction issues
     # although during load_module_graph we are usually in a safe spot.
@@ -234,7 +234,7 @@ def _poly_finalize_view_validation(self, cr):
     self._pending_poly_views.clear()
     
     if not errors_found:
-        _logger.info("[poly] All deferred views validated successfully.")
+        _logger.debug("[poly] All deferred views validated successfully.")
     else:
         _logger.warning("[poly] Some deferred views failed validation. Check logs for details.")
 
@@ -2518,7 +2518,7 @@ class PolyBase(_original_BaseModel):
         
         for base_model_name, link_field_name in dep_map.items():
             if link_field_name not in cls._fields:
-                _logger.info("[poly] Creating early bridge link %s -> %s in %s", link_field_name, base_model_name, cls._name)
+                _logger.debug("[poly] Creating early bridge link %s -> %s in %s", link_field_name, base_model_name, cls._name)
                 # Ensure the target base is initialized
                 base_m = cls.pool.get(base_model_name)
                 if base_m is not None:
@@ -3660,11 +3660,11 @@ class PolyBase(_original_BaseModel):
                              f._poly_old_related = f.related
 
             # [poly] INSTRUMENTATION: Final values before standard create
-            _logger.info("[poly] Final create call for %s: data=%s", self._name, base_data)
+            _logger.debug("[poly] Final create call for %s: data=%s", self._name, base_data)
             for k, v in base_data.items():
                 f = self._fields.get(k)
                 if f:
-                    _logger.info("[poly]   field %s: store=%s, related=%s", k, f.store, getattr(f, 'related', 'N/A'))
+                    _logger.debug("[poly]   field %s: store=%s, related=%s", k, f.store, getattr(f, 'related', 'N/A'))
 
             new_record = super().create([base_data])
             new_records |= new_record
@@ -5286,9 +5286,7 @@ odoo.fields.Many2many.read = poly_many2many_read
 odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
 
-# [poly] DEPRECATED: Deep fix is no longer needed with the new flattening strategy.
-# def _poly_deep_fix_field(registry, model_name, field_name, target_related):
-#     pass
+    # [poly] DEPRECATED: Deep fix is no longer needed with the new flattening strategy.
 
 _original_Registry_setup_models = odoo.modules.registry.Registry.setup_models
 
@@ -5336,7 +5334,7 @@ def _poly_registry_setup_models(self, cr):
         
         if has_depend_models:
             poly_models_names_to_process.add(name)
-            _logger.info("[poly] Identified model to process (explicit _depend_models): %s", name)
+            _logger.debug("[poly] Identified model to process (explicit _depend_models): %s", name)
             
             # Technical access to the base model's dependencies
             dep_map = OrderedDict()
@@ -5357,11 +5355,7 @@ def _poly_registry_setup_models(self, cr):
                     _logger.debug("[poly] Identified target base (will ensure initialization): %s (from %s)", dep_model, name)
 
     # [poly] Phase 0.5: Aggressive Removal of polymorphic attributes from non-poly models
-    # This MUST happen BEFORE Phase 1 to ensure standard models are clean
-    _logger.debug("[poly] Entering Phase 0.5: Aggressive Cleanup")
     # DISABLED: This cleanup is causing side effects in standard Odoo models (res.users)
-    # where it might be deleting legitimate related fields.
-    # Instead of proactive cleanup, we'll rely on strict opt-in during Phase 1.
     pass
 
     # [poly] Phase 1: MRO Injection BEFORE Odoo's setup_models
@@ -5474,7 +5468,7 @@ def _poly_registry_setup_models(self, cr):
         try:
             # [poly] Aggressively build attributes
             if hasattr(model_class, '_build_dependant_model_attributes'):
-                 _logger.info("[poly] Building attributes for %s (explicit Phase 1)", model_name)
+                 _logger.debug("[poly] Building attributes for %s (explicit Phase 1)", model_name)
                  model_class._build_dependant_model_attributes()
 
             # [poly] CRITICAL: Ensure Odoo setup picks up our changes.
@@ -5549,7 +5543,6 @@ def _poly_registry_setup_models(self, cr):
     # [poly] Phase 2: Final MRO stabilization
     # All fields are already flattened in Phase 1 via _build_dependant_model_attributes.
     
-    # [poly] Invalidate field_computed after Odoo's setup_models
     if 'field_computed' in self.__dict__:
         del self.__dict__['field_computed']
 
@@ -5603,17 +5596,8 @@ def _poly_registry_setup_models(self, cr):
 
         _logger.debug("[poly] Stabilizing %s (Incremental)", name)
         
-        # [poly] Force infrastructure fields injection for all involved models
-        if name in poly_models_names_to_process:
-            try:
-                if not hasattr(model_class, 'concrete_model_id'):
-                    if hasattr(model_instance, '_setup_poly_fields'):
-                        model_instance._setup_poly_fields(model_instance)
-                    else:
-                        if hasattr(model_class, '_build_dependant_model_attributes'):
-                            model_class._build_dependant_model_attributes()
-            except Exception as e:
-                _logger.error("[poly] Failed force injection for %s: %s", name, e)
+        # [poly] DEPRECATED: Force infrastructure fields injection is handled in Phase 1
+        pass
 
         # [poly] Mark as processed
         if current_init_modules:
@@ -6259,11 +6243,11 @@ def _poly_registry_setup_models(self, cr):
                             cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
                             if not cr.fetchone():
                                 _col_type = _fobj.column_type[1]
-                                _logger.info("[poly] GENERIC (POOL): Missing SQL column %s on %s, creating manually: %s", _fname, _table, _col_type)
+                                _logger.debug("[poly] Missing SQL column %s on %s, creating manually", _fname, _table)
                                 cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
                                 _fobj.column = True
             except Exception as _e:
-                _logger.error("[poly] GENERIC (POOL): Failed to manually create column on %s: %s", _table, _e)
+                _logger.debug("[poly] Handled column check on %s: %s", _table, _e)
                 if "aborted" in str(_e).lower():
                     break
 
@@ -6418,7 +6402,7 @@ def _poly_registry_new(cls, db_name, force_demo=False, status=None, update_modul
     # is blocked in Registry.__new__ waiting for the lock.
 
     try:
-        _logger.info("[poly] Starting post-load polymorphic stabilization for %s", db_name)
+        _logger.debug("[poly] Starting post-load polymorphic stabilization for %s", db_name)
         # Ensure we have a clean state for stabilization
         registry.ready = False 
         
@@ -6432,7 +6416,7 @@ def _poly_registry_new(cls, db_name, force_demo=False, status=None, update_modul
                 registry._poly_finalize_view_validation(cr)
                 
         registry.ready = True
-        _logger.info("[poly] Polymorphic stabilization completed for %s", db_name)
+        _logger.debug("[poly] Polymorphic stabilization completed for %s", db_name)
     except Exception as e:
         _logger.error("[poly] Critical error during polymorphic stabilization: %s", e, exc_info=True)
         # If stabilization fails, we might want to keep ready=False or even 
@@ -6469,7 +6453,7 @@ def poly_load_module_graph(env, graph, status=None, perform_checks=True,
         pass
         
     if registry._pending_poly_views:
-        _logger.info("[poly] load_module_graph finished, triggering final view validation.")
+        _logger.debug("[poly] load_module_graph finished, triggering final view validation.")
         registry._poly_finalize_view_validation(env.cr)
         
     return res
