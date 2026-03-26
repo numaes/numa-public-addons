@@ -1,0 +1,177 @@
+2026-03-25 07:30:23,262 1709937 INFO ? odoo: Odoo version 18.0 
+2026-03-25 07:30:23,263 1709937 INFO ? odoo: Using configuration file at /home/gamarino/odoo/cm-18.0/odoo.config 
+2026-03-25 07:30:23,263 1709937 INFO ? odoo: addons paths: ['/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/addons', '/home/gamarino/.local/share/Odoo/addons/18.0', '/home/gamarino/odoo/numa-public-odoo-18.0-numa/addons', '/home/gamarino/odoo/numa-public-addons-18.0', '/home/gamarino/odoo/numa-addons-18.0', '/home/gamarino/odoo/extra-addons-18.0', '/home/gamarino/odoo/numa_l10n_ar-18.0', '/home/gamarino/odoo/cm-addons-18.0'] 
+2026-03-25 07:30:23,263 1709937 INFO ? odoo: database: pg-cm-18.0@default:default 
+2026-03-25 07:30:23,426 1709937 INFO ? odoo.addons.base.models.ir_actions_report: Will use the Wkhtmltopdf binary at /usr/local/bin/wkhtmltopdf 
+2026-03-25 07:30:23,450 1709937 INFO ? odoo.addons.base.models.ir_actions_report: Will use the Wkhtmltoimage binary at /usr/local/bin/wkhtmltoimage 
+2026-03-25 07:30:23,975 1709937 INFO cm-test-18.0 odoo.modules.loading: loading 1 modules... 
+2026-03-25 07:30:23,994 1709937 INFO cm-test-18.0 odoo.modules.loading: 1 modules loaded in 0.02s, 0 queries (+0 extra) 
+2026-03-25 07:30:24,077 1709937 INFO cm-test-18.0 odoo.modules.loading: updating modules list 
+2026-03-25 07:30:24,092 1709937 INFO cm-test-18.0 odoo.addons.base.models.ir_module: ALLOW access to module.update_list on [] to user __system__ #1 via n/a 
+2026-03-25 07:30:32,549 1709937 INFO cm-test-18.0 odoo.addons.base.models.ir_module: ALLOW access to module.button_upgrade on ['Numa Poly'] to user __system__ #1 via n/a 
+2026-03-25 07:30:32,549 1709937 INFO cm-test-18.0 odoo.addons.base.models.ir_module: ALLOW access to module.update_list on ['Numa Poly'] to user __system__ #1 via n/a 
+2026-03-25 07:30:36,804 1709937 INFO cm-test-18.0 odoo.addons.base.models.ir_module: ALLOW access to module.button_install on [] to user __system__ #1 via n/a 
+2026-03-25 07:30:36,904 1709937 INFO cm-test-18.0 odoo.modules.loading: loading 211 modules... 
+2026-03-25 07:30:37,222 1709937 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_poly (16/211) 
+2026-03-25 07:30:37,387 1709937 INFO cm-test-18.0 odoo.modules.registry: module numa_poly: creating or updating database tables 
+2026-03-25 07:30:37,546 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_poly/security/security.xml 
+2026-03-25 07:30:37,547 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_poly/security/ir.model.access.csv 
+2026-03-25 07:30:38,155 1709937 INFO cm-test-18.0 odoo.addons.base.models.ir_module: module numa_poly: no translation for language es_AR 
+2026-03-25 07:30:38,169 1709937 INFO cm-test-18.0 odoo.modules.loading: Module numa_poly loaded in 0.95s, 208 queries (+208 other) 
+2026-03-25 07:30:38,920 1709937 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_fsm (103/211) 
+2026-03-25 07:30:48,803 1709937 INFO cm-test-18.0 odoo.modules.registry: module numa_fsm: creating or updating database tables 
+2026-03-25 07:30:49,141 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_fsm/security/security.xml 
+2026-03-25 07:30:49,147 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_fsm/security/ir.model.access.csv 
+2026-03-25 07:30:49,310 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_fsm/views/fsm_views.xml 
+2026-03-25 07:30:49,423 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_fsm/views/menu_views.xml 
+2026-03-25 07:30:49,428 1709937 INFO cm-test-18.0 odoo.addons.base.models.ir_module: module numa_fsm: loading translation file /home/gamarino/odoo/numa-public-addons-18.0/numa_fsm/i18n/es.po for language es_AR 
+2026-03-25 07:30:49,429 1709937 INFO cm-test-18.0 odoo.tools.translate: loading base translation file /home/gamarino/odoo/numa-public-addons-18.0/numa_fsm/i18n/es.po for language es_AR 
+2026-03-25 07:30:49,483 1709937 INFO cm-test-18.0 odoo.modules.loading: Module numa_fsm loaded in 10.56s, 2384 queries (+2384 other) 
+2026-03-25 07:30:49,573 1709937 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_planning (139/211) 
+2026-03-25 07:31:06,666 1709937 INFO cm-test-18.0 odoo.modules.registry: module numa_planning: creating or updating database tables 
+2026-03-25 07:31:07,246 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_planning/security/ir.model.access.csv 
+2026-03-25 07:31:07,317 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_planning/views/numa_planning_views.xml 
+2026-03-25 07:31:07,482 1709937 INFO cm-test-18.0 odoo.addons.base.models.ir_module: module numa_planning: no translation for language es_AR 
+2026-03-25 07:31:07,550 1709937 INFO cm-test-18.0 odoo.modules.loading: Module numa_planning loaded in 17.98s, 2528 queries (+2528 other) 
+2026-03-25 07:31:07,699 1709937 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_planning_project (154/211) 
+2026-03-25 07:31:23,564 1709937 INFO cm-test-18.0 odoo.modules.registry: module numa_planning_project: creating or updating database tables 
+2026-03-25 07:31:23,719 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_planning_project/views/project_task_views.xml 
+2026-03-25 07:31:23,756 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_planning_project/views/project_project_views.xml 
+2026-03-25 07:31:23,770 1709937 INFO cm-test-18.0 odoo.addons.base.models.ir_module: module numa_planning_project: no translation for language es_AR 
+2026-03-25 07:31:23,794 1709937 INFO cm-test-18.0 odoo.modules.loading: Module numa_planning_project loaded in 16.10s, 2385 queries (+2385 other) 
+2026-03-25 07:31:23,851 1709937 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_conversation_engine (176/211) 
+2026-03-25 07:31:34,925 1709937 WARNING cm-test-18.0 odoo.fields: conversation.message.state: selection attribute will be ignored as the field is related 
+2026-03-25 07:31:41,042 1709937 WARNING cm-test-18.0 odoo.fields: conversation.message.state: selection attribute will be ignored as the field is related 
+2026-03-25 07:31:41,864 1709937 INFO cm-test-18.0 odoo.modules.registry: module numa_conversation_engine: creating or updating database tables 
+2026-03-25 07:31:41,972 1709937 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (conversation_message_ids, message_ids) of conversation.session() have the same label: Messages. [Modules: numa_conversation_engine and mail] 
+2026-03-25 07:31:41,973 1709937 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (attachment_ids, event_attachment_ids) of conversation.message() have the same label: Attachments. [Modules: numa_conversation_engine and numa_conversation_engine] 
+2026-03-25 07:31:41,973 1709937 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (attachment_count, message_attachment_count) of conversation.message() have the same label: Attachment Count. [Modules: numa_conversation_engine and mail] 
+2026-03-25 07:31:42,315 1709937 INFO cm-test-18.0 odoo.schema: Keep unexpected index conversation_message__create_date_index on table conversation_message 
+2026-03-25 07:31:42,398 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/security/ir.model.access.csv 
+2026-03-25 07:31:42,434 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/security/conversation_security.xml 
+2026-03-25 07:31:42,565 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/data/conversation_fsm_data.xml 
+2026-03-25 07:31:42,566 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/data/conversation_driver_notes_data.xml 
+2026-03-25 07:31:42,570 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/data/ir_cron.xml 
+2026-03-25 07:31:42,657 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/wizards/conversation_closing_wizards_view.xml 
+2026-03-25 07:31:42,667 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_message_forward_wizard_view.xml 
+2026-03-25 07:31:42,677 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_group_view.xml 
+2026-03-25 07:31:42,689 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_merge_wizard_view.xml 
+2026-03-25 07:31:42,696 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_session_view.xml 
+2026-03-25 07:31:42,773 1709937 INFO cm-test-18.0 odoo.models.unlink: User #1 deleted ir.actions.act_window.view records with IDs: [9884, 9885, 9886] 
+2026-03-25 07:31:42,776 1709937 INFO cm-test-18.0 odoo.models.unlink: User #1 deleted ir.poly_base records with IDs: [9884, 9885, 9886] 
+2026-03-25 07:31:42,805 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_driver_views.xml 
+2026-03-25 07:31:42,824 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_start_wizard_view.xml 
+2026-03-25 07:31:42,838 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_message_views.xml 
+2026-03-25 07:31:42,867 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_analysis_report_view.xml 
+2026-03-25 07:31:42,895 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/res_partner_view.xml 
+2026-03-25 07:31:42,917 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/crm_lead_view.xml 
+2026-03-25 07:31:42,930 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/ir_attachment_view.xml 
+2026-03-25 07:31:42,940 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/chat_template.xml 
+2026-03-25 07:31:42,948 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_workplace_view.xml 
+2026-03-25 07:31:42,962 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_transfer_wizard_view.xml 
+2026-03-25 07:31:42,972 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_canned_response_view.xml 
+2026-03-25 07:31:42,987 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/digital_core_view.xml 
+2026-03-25 07:31:43,004 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine/views/conversation_menus.xml 
+2026-03-25 07:31:43,167 1709937 INFO cm-test-18.0 odoo.addons.base.models.ir_module: module numa_conversation_engine: loading translation file /home/gamarino/odoo/numa-addons-18.0/numa_conversation_engine/i18n/es.po for language es_AR 
+2026-03-25 07:31:43,167 1709937 INFO cm-test-18.0 odoo.tools.translate: loading base translation file /home/gamarino/odoo/numa-addons-18.0/numa_conversation_engine/i18n/es.po for language es_AR 
+2026-03-25 07:31:43,302 1709937 INFO cm-test-18.0 odoo.modules.loading: Module numa_conversation_engine loaded in 19.45s, 3637 queries (+3637 other) 
+2026-03-25 07:31:43,347 1709937 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_conversation_fsm (192/211) 
+2026-03-25 07:31:48,687 1709937 WARNING cm-test-18.0 odoo.fields: conversation.message.state: selection attribute will be ignored as the field is related 
+2026-03-25 07:31:54,687 1709937 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 07:31:54,687 1709937 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 07:31:54,688 1709937 WARNING cm-test-18.0 odoo.fields: conversation.message.state: selection attribute will be ignored as the field is related 
+2026-03-25 07:31:54,810 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 07:31:54,810 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 07:31:54,811 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.state: selection attribute will be ignored as the field is related 
+2026-03-25 07:31:54,811 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.execution_policy: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:00,640 1709937 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:00,640 1709937 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:00,650 1709937 WARNING cm-test-18.0 odoo.fields: conversation.message.state: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:00,757 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:00,757 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:00,758 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.state: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:00,759 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.execution_policy: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:01,528 1709937 INFO cm-test-18.0 odoo.modules.registry: module numa_conversation_fsm: creating or updating database tables 
+2026-03-25 07:32:01,544 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Create failed for conversation.message ID 13835. Vals: {'state': None, 'id': 13835, 'company_id': 1} 
+2026-03-25 07:32:01,544 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Failed to migrate conversation.message ID 13835: None 
+2026-03-25 07:32:01,546 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Create failed for conversation.message ID 13836. Vals: {'state': None, 'id': 13835, 'company_id': 1} 
+2026-03-25 07:32:01,546 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Failed to migrate conversation.message ID 13836: None 
+2026-03-25 07:32:01,548 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Create failed for conversation.message ID 13837. Vals: {'state': None, 'id': 13835, 'company_id': 1} 
+2026-03-25 07:32:01,548 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Failed to migrate conversation.message ID 13837: None 
+2026-03-25 07:32:01,550 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Create failed for conversation.message ID 13838. Vals: {'state': None, 'id': 13835, 'company_id': 1} 
+2026-03-25 07:32:01,550 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Failed to migrate conversation.message ID 13838: None 
+2026-03-25 07:32:01,555 1709937 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (message_ids, conversation_message_ids) of conversation.session() have the same label: Messages. [Modules: numa_fsm and numa_conversation_engine] 
+2026-03-25 07:32:01,555 1709937 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (event_attachment_ids, attachment_ids) of conversation.message() have the same label: Attachments. [Modules: numa_conversation_engine and numa_conversation_engine] 
+2026-03-25 07:32:01,555 1709937 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (message_attachment_count, attachment_count) of conversation.message() have the same label: Attachment Count. [Modules: numa_fsm and numa_conversation_engine] 
+2026-03-25 07:32:01,712 1709937 INFO cm-test-18.0 odoo.schema: Keep unexpected index conversation_message__state_index on table conversation_message 
+2026-03-25 07:32:01,712 1709937 INFO cm-test-18.0 odoo.schema: Keep unexpected index conversation_message__create_date_index on table conversation_message 
+2026-03-25 07:32:01,734 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_fsm/security/security.xml 
+2026-03-25 07:32:01,736 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_fsm/security/ir.model.access.csv 
+2026-03-25 07:32:01,747 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_fsm/views/conversation_session_view.xml 
+2026-03-25 07:32:01,763 1709937 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_fsm/views/fsm_definition_view.xml 
+2026-03-25 07:32:01,788 1709937 INFO cm-test-18.0 odoo.addons.base.models.ir_module: module numa_conversation_fsm: loading translation file /home/gamarino/odoo/numa-addons-18.0/numa_conversation_fsm/i18n/es.po for language es_AR 
+2026-03-25 07:32:01,788 1709937 INFO cm-test-18.0 odoo.tools.translate: loading base translation file /home/gamarino/odoo/numa-addons-18.0/numa_conversation_fsm/i18n/es.po for language es_AR 
+2026-03-25 07:32:01,829 1709937 INFO cm-test-18.0 odoo.modules.loading: Module numa_conversation_fsm loaded in 18.48s, 2610 queries (+2610 other) 
+2026-03-25 07:32:01,886 1709937 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_conversation_engine_email (199/211) 
+2026-03-25 07:32:07,975 1709937 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:07,976 1709937 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:08,120 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] CORRUPTION DETECTED: ir.poly_base field 'concrete_model_id' changed ID from 128155687385376 to 128155681305856 during setup of conversation.session! 
+2026-03-25 07:32:08,120 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] CORRUPTION DETECTED: ir.poly_base field 'old_id' changed ID from 128155675413776 to 128155681299808 during setup of conversation.session! 
+2026-03-25 07:32:08,121 1709937 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] CORRUPTION DETECTED: ir.poly_base field 'poly_payload' changed ID from 128155675414112 to 128155681300480 during setup of conversation.session! 
+2026-03-25 07:32:08,121 1709937 WARNING cm-test-18.0 odoo.fields: conversation.message.state: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:08,241 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:08,241 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:08,242 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.state: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:08,242 1709937 WARNING cm-test-18.0 odoo.fields: conversation.bot.execution_policy: selection attribute will be ignored as the field is related 
+2026-03-25 07:32:08,919 1709937 WARNING cm-test-18.0 odoo.modules.loading: Transient module states were reset 
+2026-03-25 07:32:08,942 1709937 ERROR cm-test-18.0 odoo.modules.registry: Failed to load registry 
+2026-03-25 07:32:08,943 1709937 CRITICAL cm-test-18.0 odoo.service.server: Failed to initialize database `cm-test-18.0`. 
+Traceback (most recent call last):
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/service/server.py", line 1366, in preload_registries
+    registry = Registry.new(dbname, update_module=update_module)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/cm-18.0/.venv/lib/python3.12/site-packages/decorator.py", line 232, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/func.py", line 97, in locked
+    return func(inst, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/registry.py", line 129, in new
+    odoo.modules.load_modules(registry, force_demo, status, update_module)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/loading.py", line 485, in load_modules
+    processed_modules += load_marked_modules(env, graph,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/loading.py", line 365, in load_marked_modules
+    loaded, processed = load_module_graph(
+                        ^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/loading.py", line 181, in load_module_graph
+    registry.setup_models(env.cr)
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 5337, in _poly_registry_setup_models
+    res = _original_Registry_setup_models(self, cr)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/cm-18.0/.venv/lib/python3.12/site-packages/decorator.py", line 232, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/func.py", line 97, in locked
+    return func(inst, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/registry.py", line 355, in setup_models
+    model._setup_fields()
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/models.py", line 3725, in _setup_fields
+    field.setup(self)
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 4512, in poly_Field_setup
+    return _original_Field_setup(self, model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/fields.py", line 537, in setup
+    self.setup_related(model)
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 4800, in poly_Field_setup_related
+    raise e
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 4734, in poly_Field_setup_related
+    return _original_Field_setup_related(self, model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/fields.py", line 611, in setup_related
+    raise KeyError(
+KeyError: 'Field old_id referenced in related field definition conversation.message.old_id does not exist.'
+2026-03-25 07:32:08,952 1709937 INFO cm-test-18.0 odoo.service.server: Initiating shutdown 
+2026-03-25 07:32:08,952 1709937 INFO cm-test-18.0 odoo.service.server: Hit CTRL-C again or send a second signal to force the shutdown. 
+2026-03-25 07:32:08,952 1709937 INFO cm-test-18.0 odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
