@@ -31,6 +31,21 @@ class TestCircularB(models.Model):
     }
 
 
+@tagged('at_install', '-post_install')
+class TestPolyInstall(TransactionCase):
+    """At-install smoke test.
+
+    Having at least one at_install test causes Odoo's module loader to call
+    registry.setup_models() after importing the test files.  This ensures that
+    test model classes defined in this package (e.g. test.poly.child) are
+    present in the registry when the post_install tests run.
+    """
+
+    def test_module_installed(self):
+        """Verify that ir.poly_base is accessible after installation."""
+        self.assertIn('ir.poly_base', self.env.registry)
+
+
 @tagged('post_install', '-at_install')
 class TestPolyImprovements(TransactionCase):
     """Test suite for numa_poly improvements."""

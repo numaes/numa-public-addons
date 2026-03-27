@@ -49,6 +49,7 @@ Architecture & Design Decisions:
    lookup reflects the injected polymorphic hierarchy.
 """
 
+import copy
 import logging
 import ctypes
 import warnings
@@ -171,12 +172,161 @@ def _poly_is_polymorphic(model):
     for base in _poly_get_safe_mro(model_class):
         # We only care about bases that belong to the same Odoo model name
         if getattr(base, '_name', None) == name:
-            if '_depend_models' in base.__dict__:
-                d = base.__dict__['_depend_models']
+            raw = base.__dict__.get('_depend_models')
+            if raw:
+                d = raw
                 if d and isinstance(d, (dict, OrderedDict)) and len(d) > 0:
                     return True
-            
+
     return False
+
+
+# ---------------------------------------------------------------------------
+# Technical fields that are never inherited from a polymorphic base.
+# Audit fields (create_uid etc.) are re-injected explicitly via poly_base_id.
+# ---------------------------------------------------------------------------
+_POLY_TECHNICAL_FIELDS = frozenset({
+    'id', '__last_update', 'display_name',
+    'create_uid', 'create_date', 'write_uid', 'write_date',
+    'old_id', 'concrete_model_id', 'poly_payload', 'poly_base_id',
+})
+
+
+def _poly_collect_depend_models(cls) -> OrderedDict:
+    """
+    Collect the consolidated _depend_models map for cls.
+
+    Walk the MRO and include only bases where the base's own _name equals
+    cls._name (i.e. mixin layers of the same model).  Entries are collected
+    in definition order (subclass first) without repetition.
+
+    Returns an OrderedDict {base_model_name: link_field_name}.
+    """
+    if getattr(cls, '_name', None) == 'ir.poly_base':
+        return OrderedDict()
+    result = OrderedDict()
+    for base in _poly_get_safe_mro(cls):
+        if getattr(base, '_name', None) != cls._name:
+            continue
+        dep = base.__dict__.get('_depend_models')
+        if dep and isinstance(dep, (dict, OrderedDict)):
+            for model_name, field_name in dep.items():
+                if model_name not in result:
+                    result[model_name] = field_name
+    return result
+
+
+def _poly_resolve_field_origin(fname: str, model, pool) -> 'tuple[str, str]':
+    """
+    Follow the polymorphic related chain to find the model that natively defines
+    a field (i.e. where the field is NOT itself a poly-injected related).
+
+    Returns (model_name, field_name).  If resolution fails, returns the
+    input model name and fname unchanged.
+    """
+    visited: set = set()
+    current_model_name: str = model._name
+    current_fname: str = fname
+
+    while True:
+        key = (current_model_name, current_fname)
+        if key in visited:
+            break
+        visited.add(key)
+
+        current_model = pool.get(current_model_name)
+        if current_model is None:
+            break
+
+        field = current_model._fields.get(current_fname)
+        if field is None:
+            break
+
+        # A poly-injected related has the form related='link_field.field_name'
+        # where link_field is a PolyReference.
+        rel = getattr(field, 'related', None)
+        if not rel:
+            break  # native field — this is the origin
+
+        # Normalise to string
+        if isinstance(rel, (tuple, list)):
+            rel = '.'.join(str(p) for p in rel)
+
+        parts = rel.split('.', 1)
+        if len(parts) != 2:
+            break
+
+        link_fname, sub_fname = parts
+        link_field = current_model._fields.get(link_fname)
+        if not isinstance(link_field, PolyReference):
+            break  # not a poly bridge — stop
+
+        current_model_name = link_field.comodel_name
+        current_fname = sub_fname
+
+    return current_model_name, current_fname
+
+
+def _poly_ensure_poly_ref(cls, target_model_name: str, dep_map: OrderedDict) -> str:
+    """
+    Ensure a PolyReference to *target_model_name* exists in cls._fields.
+
+    Resolution order:
+    1. Explicit name from dep_map (if target is a direct dependency).
+    2. Existing PolyReference in cls._fields that already points to target.
+    3. Auto-generated name: poly_<model_name_underscored>_id.
+
+    Creates and injects the field if it does not yet exist.
+    Returns the link field name.
+    """
+    # 1. Prefer the explicit link name declared in _depend_models
+    explicit = dep_map.get(target_model_name)
+    if explicit:
+        if explicit not in cls._fields:
+            _poly_inject_field(cls, explicit, PolyReference(target_model_name))
+        return explicit
+
+    # 2. Re-use an existing PolyReference to the same model
+    for fname, field in list(cls._fields.items()):
+        if isinstance(field, PolyReference) and field.comodel_name == target_model_name:
+            return fname
+
+    # 3. Generate a stable name
+    auto_name = 'poly_{}_id'.format(target_model_name.replace('.', '_'))
+    if auto_name not in cls._fields:
+        _poly_inject_field(cls, auto_name, PolyReference(target_model_name))
+    return auto_name
+
+
+def _poly_inject_field(cls, fname: str, field) -> None:
+    """
+    Inject *field* as *fname* into *cls*.
+
+    Sets the field as a class attribute, registers it in cls._fields, and
+    propagates it to the Odoo 18 pool proxy class when the proxy differs from cls.
+    """
+    setattr(cls, fname, field)
+    cls._fields[fname] = field
+    field.model_name = cls._name
+    field.name = fname
+    # Run attribute setup so that comodel_name and other _args__ parameters are
+    # resolved as instance attributes.  Without this, dynamically injected
+    # fields (especially PolyReferences) keep comodel_name = None (class default).
+    try:
+        field._setup_attrs(cls, fname)
+    except Exception:
+        pass
+
+    # Odoo 18 keeps a separate proxy class in pool.models; keep it in sync.
+    try:
+        pool = cls.pool  # type: ignore[attr-defined]
+        proxy = pool.models.get(cls._name)
+        if proxy is not None and proxy is not cls:
+            setattr(proxy, fname, field)
+            proxy._fields[fname] = field
+    except Exception:
+        pass
+
 
 # [poly] Track processed models for incremental Deep Fix
 @odoo.tools.lazy_property
@@ -1242,54 +1392,6 @@ class PolyBase(_original_BaseModel):
         """
         return False
 
-    @classmethod
-    def _build_model(cls, pool, cr):
-        """
-        Build a model using the polymorphic inheritance system.
-        
-        This method is responsible for constructing the Python class for the model,
-        ensuring that it inherits from all dependent models specified in _depend_models.
-        """
-        # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
-        is_poly_enabled = (
-             hasattr(cls, '_depend_models') or
-             any(hasattr(base, '_depend_models') for base in cls.mro()) or
-             'ir.poly_base' in [getattr(c, '_name', None) for c in cls.mro() if hasattr(c, '_name')]
-        )
-        if not is_poly_enabled:
-             return _original_BaseModel._build_model(cls, pool, cr)
-
-        name = cls._name
-        # First build the model using the standard Odoo mechanism.
-        if name is None:
-            _logger.warning("Building model with name=None for class %s. MRO: %s", cls.__name__, cls.mro())
-            # Skip building if name is None to avoid TypeError in type.__new__
-            return None
-        model_class = _original_BaseModel._build_model.__func__(cls, pool, cr)
-
-        # [poly] Step 1: Decentralize MRO injection.
-        # We no longer modify __bases__ during _build_model.
-        # Instead, we just mark this model as needing a polymorphic MRO setup.
-        # This will be handled in _poly_registry_setup_models at the end of the registry load.
-        
-        # We still collect _depend_models for future use in setup stages.
-        all_depend_models = OrderedDict()
-        for base in _poly_get_safe_mro(model_class):
-            if base is model_class:
-                continue
-            if '_depend_models' in base.__dict__ and base._depend_models is not None:
-                for dep_model, dep_field in base._depend_models.items():
-                    if dep_model not in all_depend_models:
-                        all_depend_models[dep_model] = dep_field
-        
-        if all_depend_models:
-            model_class._depend_models = dict(all_depend_models)
-            # Mark for registry-wide setup
-            if not hasattr(pool, '_poly_models_to_setup'):
-                pool._poly_models_to_setup = set()
-            pool._poly_models_to_setup.add(name)
-
-        return model_class
 
     @classmethod
     def _validate_dependency_cycles(cls, pool, visited=None, rec_stack=None):
@@ -1463,291 +1565,15 @@ class PolyBase(_original_BaseModel):
                            _logger.error("Failed to re-apply cached bases to class %s: %s", self._name, e)
 
     def _setup_base(self):
-        """ Determine the inherited and custom fields of the model. """
-        model_class = type(self)
-        name = self._name
-        
-        # [poly] Detect if this model is polymorphic ONLY by existence of _depend_models in MRO
-        # If it is, ensure PolyModel is in its bases.
-        has_depend_models = False
-        for base in _poly_get_safe_mro(model_class):
-            if '_depend_models' in base.__dict__:
-                has_depend_models = True
-                break
-        
-        # [poly] Detect if this model is referenced as a base by any other model's _depend_models
-        # Odoo 18: Optimize detection to avoid full pool scans which are slow during registry setup
-        referenced_as_base = False
-        
-        # [poly] PROTECTION: If it's a core Odoo model, we don't care if it's referenced.
-        # Standard Odoo models should NEVER have their proxies/bases modified by us.
-        _odoo_core_prefixes = (
-            'res.', 'base.', 'ir.', 'mail.', 'payment.', 'account.', 'stock.', 'sale.', 'purchase.', 
-            'mailing.', 'link.', 'crm.', 'calendar.', 'rating.', 'gamification.', 'project.', 
-            'spreadsheet.', 'onboarding.', 'uom.', 'board.', 'lunch.', 'event.', 'survey.', 
-            'website_slides.', 'repair.', 'maintenance.', 'fleet.', 'point_of_sale.', 'pos.', 
-            'delivery.', 'website_sale.', 'loyalty.', 'mass_mailing.', 'im_livechat.', 'theme.', 
-            'sign.', 'quality.', 'iot.', 'helpdesk.', 'documents.', 'marketing.', 'social.', 
-            'approvals.', 'planning.', 'timesheet.', 'auth_signup.', 'bus.', 'iap.', 'resource.', 
-            'web_tour.', 'barcodes.', 'http_routing.'
-        )
-        if not name.startswith(_odoo_core_prefixes):
-             # Instead of scanning the whole pool, we check if there are cached entries 
-             # indicating someone depends on us.
-             # Or we check a global map if we have it.
-             # For now, let's at least avoid scanning if we are not in Phase 2 or if we can use a shortcut.
-             try:
-                 # Shortcut: if the class has a known attribute from a previous Phase 1 scan
-                 if hasattr(model_class, '_referenced_as_poly_base'):
-                      referenced_as_base = model_class._referenced_as_poly_base
-                 else:
-                      # Minimal scan or check if we are in a state where pool is mostly ready
-                      if len(self.pool) > 100: # Heuristic: registry is being populated
-                           for other_name, other_model in self.pool.items():
-                                if not isinstance(other_model, type): continue
-                                if other_name == name: continue
-                                
-                                # Use a faster check if possible
-                                if hasattr(other_model, '_poly_get_depend_models'):
-                                     dep_map = other_model._poly_get_depend_models()
-                                else:
-                                     # Fallback to a cheaper check than calling the full method if possible
-                                     dep_map = getattr(other_model, '_depend_models', {})
-                                
-                                if dep_map and name in dep_map:
-                                     referenced_as_base = True
-                                     model_class._referenced_as_poly_base = True
-                                     break
-             except Exception:
-                 referenced_as_base = False
-
-        # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
-        # or inherits from a polymorphic model.
-        # ir.poly_base is NOT polymorphic.
-        _odoo_core_prefixes = (
-            'res.', 'base.', 'ir.', 'mail.', 'payment.', 'account.', 'stock.', 'sale.', 'purchase.', 
-            'mailing.', 'link.', 'crm.', 'calendar.', 'rating.', 'gamification.', 'project.', 
-            'spreadsheet.', 'onboarding.', 'uom.', 'board.', 'lunch.', 'event.', 'survey.', 
-            'website_slides.', 'repair.', 'maintenance.', 'fleet.', 'point_of_sale.', 'pos.', 
-            'delivery.', 'website_sale.', 'loyalty.', 'mass_mailing.', 'im_livechat.', 'theme.', 
-            'sign.', 'quality.', 'iot.', 'helpdesk.', 'documents.', 'marketing.', 'social.', 
-            'approvals.', 'planning.', 'timesheet.', 'product.', 'mrp.', 'hr.', 'auth_signup.', 
-            'bus.', 'iap.', 'resource.', 'web_tour.', 'barcodes.', 'http_routing.'
-        )
-        is_poly_enabled = (
-             (has_depend_models or referenced_as_base) and 
-             not name.startswith(_odoo_core_prefixes) and 
-             name != 'ir.poly_base'
-        )
-        
-        # [poly] FINAL CHECK: Only enable if it's actually a polymorphic consumer (has _depend_models in its own class)
-        # or if it's explicitly inheriting from PolyBase hierarchy.
-        if is_poly_enabled:
-             # Double check: does it have _depend_models in its MRO (excluding standard bases)?
-             is_poly_enabled = any('_depend_models' in b.__dict__ for b in model_class.mro() if b not in (_original_BaseModel, object))
-        
-        if not is_poly_enabled:
-             return _original_BaseModel._setup_base(self)
-
-        # Ensure PolyModel is in bases if it has _depend_models but no PolyModel yet
-        if has_depend_models and PolyModel not in model_class.mro():
-             _logger.debug("[poly] Injecting PolyModel into %s during _setup_base", name)
-             # Note: actual __bases__ modification should have happened in Phase 1
-             # but we check it here for safety.
-
-        # Odoo 18: In Step 1 we already injected the MRO in the Registry.
-        # We just need to make sure the current class (and proxy) use those bases.
-        db_name = self.pool.db_name
-        cached_bases = POLY_MRO_CACHE.get(db_name, {}).get(name)
-
-        if not cached_bases and hasattr(self.pool, '_poly_mro_cache'):
-            cached_bases = self.pool._poly_mro_cache.get(name)
-
-        if cached_bases:
-             model_class.__base_classes = cached_bases
-             model_class.__bases__ = cached_bases
-             model_class.__depends_base_classes = cached_bases
-
-             import ctypes as _ctypes
-             if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                 _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
-             
-             # Sync proxy if exists
-             if hasattr(self.pool, 'models') and self._name in self.pool.models:
-                  proxy = self.pool.models[self._name]
-                  if proxy is not model_class:
-                       proxy.__base_classes = cached_bases
-                       proxy.__bases__ = cached_bases
-                       if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                           _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy))
-
+        """Run standard Odoo field setup then inject polymorphic fields."""
         _original_BaseModel._setup_base(self)
-
-        # Odoo 18: ensure polymorphic attributes are built after base setup
-        if hasattr(model_class, '__depends_base_classes'):
-             self._setup_poly_fields(self)
-             
-             # Clear registry caches to force method re-discovery
-             if hasattr(self.pool, 'model_methods'):
-                  _logger.debug("Clearing model_methods for %s in _setup_base after setup", self._name)
-                  self.pool.model_methods.pop(self._name, None)
-             
-             # Clear Environment cache to force recordset class re-creation
-             from odoo.api import Environment
-             if hasattr(Environment, '_classes') and Environment._classes is not None:
-                  if self.pool in Environment._classes:
-                       Environment._classes[self.pool].pop(self._name, None)
-
-             # Force synchronization with pool.models if it's a proxy
-             if hasattr(self.pool, 'models') and self._name in self.pool.models:
-                  proxy_class = self.pool.models[self._name]
-                  if proxy_class is not model_class:
-                       _logger.debug("Final sync of proxy class for %s in _setup_base after super", self._name)
-                       # Sync MRO and attributes
-                       proxy_class.__base_classes = model_class.__base_classes
-                       proxy_class.__bases__ = model_class.__bases__
-                       import ctypes as _ctypes
-                       if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                            _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
-                       
-                       # Safe field synchronization: ensure proxy sees all fields
-                       for field_name, field in model_class._fields.items():
-                            if field_name not in proxy_class._fields:
-                                 proxy_class._fields[field_name] = field
-                       
-                       # Fail-safe for proxy methods too: ensure all methods from model_class are visible
-                       for m_name in dir(model_class):
-                           if not m_name.startswith('__') and not hasattr(proxy_class, m_name):
-                               try:
-                                   m_meth = getattr(model_class, m_name)
-                                   if not isinstance(m_meth, (property, fields.Field)):
-                                       setattr(proxy_class, m_name, m_meth)
-                               except Exception:
-                                   continue
-
-                       # Clear the proxy class cache for methods to force re-evaluation
-                       if hasattr(proxy_class, '__dict__'):
-                            for m in list(proxy_class.__dict__.keys()):
-                                 if not m.startswith('__') and not isinstance(proxy_class.__dict__[m], (property, fields.Field)):
-                                      if m in ('_ids', '_names', '_context', 'env', 'pool', '_wrapped__'):
-                                          continue
-                                      try:
-                                          delattr(proxy_class, m)
-                                      except (AttributeError, KeyError):
-                                          pass
+        if _poly_is_polymorphic(type(self)):
+            type(self)._build_poly_fields(calling_self=self)
 
     @classmethod
     def _setup_poly_fields(cls, self):
-        """ Inject polymorphic field definitions from parent models. """
-        model_class = cls
-        
-        try:
-            # [poly] AGGRESSIVE PROTECTION: Only run if this model is actually polymorphic
-            # or inherits from a polymorphic model.
-            # Base models like conversation.driver MUST also be processed.
-            # Detect if this model is referenced as a base by any other model's _depend_models
-            referenced_as_base = False
-            try:
-                for other_name, other_model in self.pool.items():
-                    if not isinstance(other_model, type):
-                        continue
-                    dep_map = getattr(other_model, '_depend_models', None)
-                    if dep_map and self._name in dep_map.keys():
-                        referenced_as_base = True
-                        break
-            except Exception:
-                referenced_as_base = False
-
-            is_poly_enabled = (
-                 cls._poly_get_depend_models() or
-                 any(hasattr(base, '_depend_models') for base in cls.mro()) or
-                 'ir.poly_base' in [getattr(c, '_name', None) for c in cls.mro() if hasattr(c, '_name')] or
-                 referenced_as_base
-            )
-            
-            if is_poly_enabled:
-                # 1. Clean up "stale" fields that might have been injected during incremental load
-                # and are actually polymorphic (belong to a base).
-                poly_bases = getattr(cls, '__depends_base_classes', ())
-                for base_class in poly_bases:
-                     if base_class is cls: continue
-                     base_name = getattr(base_class, '_name', None)
-                     
-                     for fname, fobj in base_class.__dict__.items():
-                          if isinstance(fobj, fields.Field):
-                               # If it exists in the current model but is NOT a related field,
-                               # it's likely a stale stored field or an accidental shadow.
-                               if fname in cls.__dict__:
-                                    current_fobj = cls.__dict__[fname]
-                                    if isinstance(current_fobj, fields.Field) and not current_fobj.related:
-                                         _logger.debug("[poly] Cleanup: Removing stale/shadow field %s on %s (from %s)", fname, self._name, base_name)
-                                         if fname in self._fields: del self._fields[fname]
-                                         try: delattr(cls, fname)
-                                         except (AttributeError, KeyError): pass
-
-            # [poly] Systematic injection of related fields and core infrastructure fields
-            # Odoo 18: Ensure polymorphic bases are initialized before field injection.
-            poly_bases = getattr(cls, '__depends_base_classes', ())
-            for base_class in poly_bases:
-                base_name = getattr(base_class, '_name', None)
-                if base_name and base_name != self._name and base_name in self.pool:
-                    base_instance = self.pool[base_name]
-                    if not base_instance._fields:
-                        _logger.debug("[poly] Forcing setup for base %s before injection into %s", base_name, self._name)
-                        base_instance._setup_base()
-
-            # Use class method call
-            cls._build_dependant_model_attributes()
-            
-            # 3. Final descriptor installation
-            # [poly] CRITICAL: ONLY install descriptors on the current class (cls).
-            # NEVER modify base classes or other models in the pool.
-            for field_name, field in self._fields.items():
-                # If it's a polymorphic field (belongs to a base), we force the descriptor
-                is_poly_field = any(field_name in base.__dict__ for base in poly_bases)
-                
-                if field_name not in cls.__dict__ or is_poly_field:
-                    # Safety: don't shadow actual methods with field descriptors unless it's a field
-                    if not callable(getattr(cls, field_name, None)) or isinstance(getattr(cls, field_name, None), fields.Field):
-                        # Only if it's NOT a method of Odoo
-                        setattr(cls, field_name, field)
-
-            # Update _fields of the model in the pool
-            if self._name in self.pool.models:
-                proxy_class = self.pool.models[self._name]
-                # [poly] CRITICAL: Ensure proxy_class also has all fields and descriptors
-                proxy_class._fields.update(self._fields)
-                for fname, fobj in self._fields.items():
-                    # [poly] In Odoo 18, it's essential that descriptors are in the proxy class
-                    # because that's what Odoo uses for most ORM operations.
-                    # We force the descriptor if it's missing or if it's currently a field but from another model
-                    current_attr = proxy_class.__dict__.get(fname)
-                    if fname not in proxy_class.__dict__ or (isinstance(current_attr, fields.Field) and current_attr.model_name != self._name):
-                         try:
-                              setattr(proxy_class, fname, fobj)
-                              if fname not in proxy_class._fields:
-                                  proxy_class._fields[fname] = fobj
-                         except Exception:
-                              pass
-            
-            # --- Odoo 18 View Validation Fix ---
-            # View validation uses getattr(model, method_name) on the registry class.
-            # We explicitly inject the method descriptors into the model class.
-            for base_class in poly_bases:
-                 if hasattr(base_class, '_name') and base_class._name != self._name:
-                      for attr_name, attr_val in base_class.__dict__.items():
-                           if callable(attr_val) and not attr_name.startswith('__') and attr_name not in model_class.__dict__:
-                                setattr(model_class, attr_name, attr_val)
-
-            # Clear computation caches
-            if hasattr(self.pool, 'field_computed'):
-                if self._name in self.pool.field_computed:
-                    del self.pool.field_computed[self._name]
-            if hasattr(self.pool, 'field_inverses'):
-                if self._name in self.pool.field_inverses:
-                    del self.pool.field_inverses[self._name]
-        except Exception as e:
-            _logger.exception(f"[Poly.Setup] CRITICAL ERROR during injection for {self._name}: {e}")
+        """Deprecated: field injection is now handled in _setup_base via _build_poly_fields."""
+        pass
 
     def _check_migration_needed(self):
         """
@@ -2533,14 +2359,9 @@ class PolyBase(_original_BaseModel):
 
         # [poly] Phase 1: Create explicit bridge links from _depend_models
         # This ensures they exist before any 'related' field tries to reference them
-        _mro = _poly_get_safe_mro(cls)
-        dep_map = OrderedDict()
-        for base in _mro:
-            d = base.__dict__.get('_depend_models')
-            if d and isinstance(d, (dict, OrderedDict)):
-                for dm, df in d.items():
-                    if dm not in dep_map:
-                        dep_map[dm] = df
+        dep_map = getattr(cls, '_depend_models', OrderedDict())
+        if not isinstance(dep_map, (dict, OrderedDict)):
+            dep_map = OrderedDict()
         
         for base_model_name, link_field_name in dep_map.items():
             if link_field_name not in cls._fields:
@@ -2586,54 +2407,92 @@ class PolyBase(_original_BaseModel):
                 if name in ('id', '__last_update', 'create_date', 'create_uid', 'write_date', 'write_uid', 'display_name'):
                     continue
                 
-                # [poly] SINGLE LEVEL FLATTENING:
-                # If the field from the base is ALREADY a related field pointing to 
-                # ANOTHER base (multi-level polymorphism), we resolve its true origin
-                # to point directly to the implementation model.
+                # [poly] DEEP FIND: Recursive resolution of the polymorphic origin
+                # Resolve the field to its final implementation base if the base itself is polymorphic.
                 
                 target_field = field
                 target_path = name
                 target_base = base_model_name
                 
-                # Recursive resolution of the polymorphic origin
-                while target_field.related and len(target_field.related) == 2:
-                    ref_field_name, sub_field_name = target_field.related
-                    ref_field = target_field.model_name and cls.pool.get(target_field.model_name)._fields.get(ref_field_name)
-                    
-                    if ref_field and isinstance(ref_field, (fields.Many2one, PolyReference)):
-                        # It's a bridge to another polymorphic level
-                        target_base = ref_field.comodel_name
-                        target_model = cls.pool.get(target_base)
-                        if target_model and sub_field_name in target_model._fields:
-                             target_field = target_model._fields[sub_field_name]
-                             target_path = sub_field_name
-                        else:
+                # [poly] Deep resolution: if target_field is a PolyReference-based related field
+                # or if the target_model itself is polymorphic, we keep going deeper.
+                while True:
+                    # If the field is already a related field to another base (likely created by poly)
+                    if target_field.related and len(target_field.related) == 2:
+                        ref_field_name, sub_field_name = target_field.related
+                        # We need to know which model owns this field to find the ref_field
+                        current_model_name = target_field.model_name or target_base
+                        current_model = cls.pool.get(current_model_name)
+                        if not current_model:
                              break
-                    else:
-                        break
+                             
+                        ref_field = current_model._fields.get(ref_field_name)
+                        
+                        if ref_field and isinstance(ref_field, (fields.Many2one, PolyReference)):
+                            # It's a bridge to another polymorphic level
+                            target_base = ref_field.comodel_name
+                            target_model = cls.pool.get(target_base)
+                            if target_model and sub_field_name in target_model._fields:
+                                 target_field = target_model._fields[sub_field_name]
+                                 target_path = sub_field_name
+                                 # Continue loop to see if THIS target_field is also a bridge
+                                 continue
+                    
+                    # If not a related field, check if the current target_base has a more specific 
+                    # link to the field (in case we didn't land on a related field but the base IS polymorphic)
+                    target_model = cls.pool.get(target_base)
+                    if target_model:
+                        tm_depend = getattr(type(target_model), '_depend_models', {})
+                        # If the target model is polymorphic and the field exists in one of its bases, 
+                        # we should probably have caught it via 'related', but this is a safety net.
+                        # Actually, if it's NOT a related field but target_model IS polymorphic, 
+                        # it means the field is OWNED by target_model, which is what we want.
+                        pass
+                        
+                    break
                 
                 # Now we have the absolute origin. Create the related field.
-                # If target_base is different from base_model_name, we might need a direct bridge.
-                final_link = link_field_name
+                # If target_base is different from base_model_name, we might need intermediate PolyReferences.
+                # However, the requirement says "related fields must be created to the final bases, 
+                # and create the necessary PolyReferences (checking if they were already created) to reach the final field".
+                
+                # [poly] Building the path of PolyReferences
+                current_source_model = cls
+                current_link_name = link_field_name
+                
+                # If target_base is deep, we might need a chain. 
+                # But Odoo related fields can follow a chain: ('link1', 'link2', 'field')
+                # Wait, "campos related se deben crear a las bases finales"
+                # This means: field_name -> (link_to_final_base, field_name_in_final_base)
+                
                 if target_base != base_model_name:
-                    # [poly] We need a direct bridge to the target_base to keep it single-level
-                    # Search if such bridge already exists in cls
+                    # Search if a bridge to target_base already exists in cls
                     found_link = None
+                    # First check existing _depend_models/PolyReferences
                     for bmn, lfn in dep_map.items():
                         if bmn == target_base:
                             found_link = lfn
                             break
                     
                     if not found_link:
+                        # Check all fields to see if a PolyReference to target_base already exists
+                        for fname, f in cls._fields.items():
+                            if isinstance(f, PolyReference) and f.comodel_name == target_base:
+                                found_link = fname
+                                break
+                    
+                    if not found_link:
                         # Create an ad-hoc bridge name
                         found_link = f"poly_{target_base.replace('.', '_')}_id"
                         if found_link not in cls._fields:
-                             _logger.debug("[poly] Creating ad-hoc bridge %s -> %s in %s", found_link, target_base, cls._name)
+                             _logger.debug("[poly] Creating intermediate PolyReference %s -> %s in %s", found_link, target_base, cls._name)
                              _set_field(found_link, PolyReference(target_base))
                     
                     final_link = found_link
+                else:
+                    final_link = link_field_name
                 
-                # Create the single-level related field
+                # Create the related field pointing to the final base
                 new_field = copy.copy(target_field)
                 new_field.related = (final_link, target_path)
                 new_field.store = False
@@ -3356,6 +3215,171 @@ class PolyBase(_original_BaseModel):
 
         _logger.debug(f'_build_dependant_model_attributes finished')
 
+    @classmethod
+    def _build_poly_fields(cls, calling_self=None) -> None:
+        """
+        Inject polymorphic fields into cls from its _depend_models chain.
+
+        Called from _setup_base after the standard Odoo field setup so that
+        base._fields is guaranteed to be populated.  Forces _setup_base on any
+        base that has not yet been set up.
+
+        Arguments
+        ---------
+        calling_self: the model instance from _setup_base (used for env access
+                      when forcing _setup_base on a base that is not yet set up).
+
+        Algorithm
+        ---------
+        1. Guard: skip ir.poly_base, non-polymorphic models, and models already built.
+        2. Collect the consolidated dep_map via _poly_collect_depend_models.
+        3. For each (base_model_name, link_field_name):
+           a. Ensure the PolyReference link field exists in cls.
+           b. Force _setup_base on the base if its _fields is empty.
+           c. For every non-technical field in base._fields:
+              - Resolve to its ultimate origin via _poly_resolve_field_origin.
+              - Ensure a PolyReference to that origin exists in cls.
+              - Inject a related=copy of the field.
+        4. Inject infrastructure fields (poly_base_id and audit fields).
+        """
+        if cls._name == 'ir.poly_base':
+            return
+        if not _poly_is_polymorphic(cls):
+            cls._poly_fields_built = True
+            return
+        if getattr(cls, '_poly_fields_built', False):
+            return
+
+        # Recursion guard — set before any recursive calls below.
+        cls._poly_fields_built = True
+
+        dep_map = _poly_collect_depend_models(cls)
+        if not dep_map:
+            return
+
+        for base_model_name, link_field_name in dep_map.items():
+            # Ensure the direct PolyReference bridge exists.
+            _poly_ensure_poly_ref(cls, base_model_name, dep_map)
+
+            base = cls.pool.get(base_model_name)
+            if base is None:
+                _logger.warning(
+                    '[poly] _build_poly_fields: base model %s not found for %s',
+                    base_model_name, cls._name,
+                )
+                continue
+
+            # Ensure the base has its fields populated.
+            if not base._fields:
+                _logger.debug(
+                    '[poly] _build_poly_fields: forcing _setup_base on %s for %s',
+                    base_model_name, cls._name,
+                )
+                if calling_self is not None:
+                    calling_self.env[base_model_name]._setup_base()
+                else:
+                    _logger.warning(
+                        '[poly] _build_poly_fields: cannot force _setup_base on %s '
+                        '(no env available); fields may be incomplete for %s',
+                        base_model_name, cls._name,
+                    )
+
+            for fname, field in list(base._fields.items()):
+                if fname in _POLY_TECHNICAL_FIELDS:
+                    continue
+                if fname in cls._fields:
+                    continue
+                if isinstance(field, PolyReference):
+                    continue
+
+                origin_model, origin_fname = _poly_resolve_field_origin(
+                    fname, base, cls.pool
+                )
+                if not origin_model or '.' in origin_fname:
+                    _logger.warning(
+                        '[poly] _build_poly_fields: cannot resolve clean origin for '
+                        '%s.%s (origin_model=%r, origin_fname=%r); skipping',
+                        base_model_name, fname, origin_model, origin_fname,
+                    )
+                    continue
+                link = _poly_ensure_poly_ref(cls, origin_model, dep_map)
+
+                new_field = copy.copy(field)
+                new_field.related = '{}.{}'.format(link, origin_fname)
+                new_field.store = False
+                new_field.compute = None
+                new_field.inverse = None
+                new_field._setup_done = False
+                try:
+                    new_field._poly_injected = True
+                except Exception:
+                    pass
+                _poly_inject_field(cls, fname, new_field)
+
+        # --- Fix explicitly-defined related fields with model-name prefixes ----
+        # Some fields may be defined with related='some.depend.model.field_name'
+        # (e.g. injected by old code or written manually).  Redirect them to
+        # use the link field: 'link_field.field_name'.
+        for fname, field in list(cls._fields.items()):
+            rel = getattr(field, 'related', None)
+            if not isinstance(rel, str) or '.' not in rel:
+                continue
+            if getattr(field, '_poly_injected', False):
+                continue  # Already set correctly by _build_poly_fields
+            parts = rel.split('.')
+            for base_model_name, link_field_name in dep_map.items():
+                model_parts = base_model_name.split('.')
+                n = len(model_parts)
+                if len(parts) > n and parts[:n] == model_parts:
+                    new_related = link_field_name + '.' + '.'.join(parts[n:])
+                    redirected = copy.copy(field)
+                    redirected.related = new_related
+                    redirected.store = False
+                    redirected._setup_done = False
+                    try:
+                        redirected._poly_injected = True
+                    except Exception:
+                        pass
+                    _poly_inject_field(cls, fname, redirected)
+                    _logger.debug(
+                        '[poly] _build_poly_fields: redirected related path '
+                        'for %s.%s: %s -> %s',
+                        cls._name, fname, rel, new_related,
+                    )
+                    break
+
+        # --- Infrastructure fields ------------------------------------------
+        # poly_base_id: direct bridge to ir.poly_base (shared ID).
+        if 'poly_base_id' not in cls._fields:
+            _poly_inject_field(
+                cls, 'poly_base_id',
+                PolyReference('ir.poly_base', string='Poly base', automatic=True, readonly=True),
+            )
+
+        # Audit fields relayed through poly_base_id.
+        _audit = {
+            'create_uid': fields.Many2one(
+                'res.users', string='Created by',
+                related='poly_base_id.create_uid', automatic=False,
+            ),
+            'create_date': fields.Datetime(
+                string='Created on',
+                related='poly_base_id.create_date', automatic=False,
+            ),
+            'write_uid': fields.Many2one(
+                'res.users', string='Last Updated by',
+                related='poly_base_id.write_uid', automatic=False,
+            ),
+            'write_date': fields.Datetime(
+                string='Last Updated on',
+                related='poly_base_id.write_date', automatic=False,
+            ),
+        }
+        for fname, fobj in _audit.items():
+            if fname not in cls._fields:
+                _poly_inject_field(cls, fname, fobj)
+
+        _logger.debug('[poly] _build_poly_fields finished for %s', cls._name)
 
     @api.model_create_multi
     def create(self, data_list: list[ValuesType]) -> Self:
@@ -3365,6 +3389,16 @@ class PolyBase(_original_BaseModel):
         # [poly] ir.poly_base IS NOT polymorphic, it is the common base.
         # Standard Odoo models that ARE NOT polymorphic must also be handled by Odoo.
         if self._name == 'ir.poly_base' or not _poly_is_polymorphic(self):
+            # Validate explicit IDs before delegating so that duplicate IDs
+            # raise ValidationError rather than an unhandled UniqueViolation.
+            explicit_ids = [v['id'] for v in data_list if 'id' in v]
+            if explicit_ids:
+                existing = self.search([('id', 'in', explicit_ids)])
+                if existing:
+                    raise ValidationError(
+                        _("Records with the following IDs already exist in %s: %s")
+                        % (self._name, list(existing.ids))
+                    )
             return super().create(data_list)
             
         # SAFEGUARD: if we are in early boot, filter out any invalid fields
@@ -4694,11 +4728,40 @@ class PolyTransientModel(PolyModel):
 
 _logger.debug("Initializing numa_poly: monkey-patching odoo.models")
 
-# Monkey-patch Odoo models
+# Inject PolyBase into the Odoo model hierarchy.
+#
+# Strategy: modify the __bases__ of the existing AbstractModel class so that
+# PolyBase sits between AbstractModel and BaseModel.  This ensures that ALL
+# Odoo model classes — regardless of when they are imported relative to this
+# module — inherit from PolyBase via the same chain:
+#
+#   SomeModel → ... → AbstractModel → PolyBase → BaseModel → object
+#
+# Earlier approach (odoo.models.AbstractModel = PolyBase) replaced the module
+# attribute.  Classes imported before this module kept the original AbstractModel
+# as their Python base, while classes imported after received PolyBase directly.
+# The resulting __base_classes sets were inconsistent, producing a C3 MRO error
+# when setup_models processed the 'base' abstract registry class.
+#
+# By modifying AbstractModel.__bases__ instead, every class — old and new —
+# continues to reference the same AbstractModel object and receives an identical
+# MRO layout.
+#
+# Robustness note: on module reloads (Odoo incremental loading) the module
+# attribute odoo.models.AbstractModel may already point to PolyBase from a
+# previous run.  We therefore locate the real AbstractModel via models.Model's
+# direct Python base, which is always stable.
+# In Odoo 18, AbstractModel is merely an alias for BaseModel (AbstractModel = BaseModel).
+# Replacing odoo.models.AbstractModel with PolyBase (old approach) caused classes defined
+# AFTER this module to inherit from PolyBase directly, while classes defined BEFORE kept
+# BaseModel.  That inconsistency broke C3 linearization for the 'base' abstract registry
+# class whose __base_classes mixed both PolyBase-base and BaseModel-base entries.
+#
+# Standard Odoo models do NOT need PolyBase in their Python MRO.  PolyBase._prepare_setup
+# and PolyBase._setup_base are no-ops for models with _depend_models=None; poly models
+# explicitly inherit from PolyModel so they already carry PolyBase in their chain.
+# Only keep BaseModel alias for backward-compat isinstance checks.
 odoo.models.BaseModel = PolyBase
-odoo.models.AbstractModel = PolyBase
-odoo.models.Model = PolyModel
-odoo.models.TransientModel = PolyTransientModel
 odoo.fields.Many2one.convert_to_read = poly_many2one_convert_to_read
 odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
@@ -4816,17 +4879,6 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
                 # If they are NOT in the table, they must be filtered even at runtime.
                 _logger.debug("[poly] Filtering missing audit column '%s' from %s query.", f_name, self._name)
                 _removed_fields.add(f_name)
-            elif f_name in ('modules', 'is_seo_optimized', 'new_password', 'active_partner', 'xml_id', 'path', 'count', 'help', 'model', 
-                            'activity_ids', 'activity_state', 'activity_type_id', 'activity_date_deadline', 'activity_summary', 'activity_user_id', 'my_activity_date_deadline',
-                            'activity_exception_decoration', 'activity_exception_icon', 'activity_calendar_event_id', 'activity_type_icon',
-                            'message_is_follower', 'message_follower_ids', 'message_partner_ids', 'message_ids', 'has_message', 'message_needaction', 
-                            'message_needaction_counter', 'message_has_error', 'message_has_error_counter', 'message_attachment_count',
-                            'message_has_sms_error', 'website_message_ids', 'rating_ids', 'access_url', 'access_warning'):
-                # Known technical columns that often cause issues in Odoo 18
-                # but only if we are absolutely sure they are missing.
-                # If they are NOT in the table, they must be filtered.
-                _logger.debug("[poly] Filtering known problematic missing column '%s' from %s query.", f_name, self._name)
-                _removed_fields.add(f_name)
             else:
                 # At runtime, for other fields, keep them to let Odoo fail properly
                 _valid_fields.append(f)
@@ -4863,28 +4915,10 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
                          
                          self.env.cache.update_raw(record, field, [empty_value])
                     
-                    # [poly] EXTRA SAFETY: If we are in res.lang and removed flag_image,
-                    # also set flag_image_url to False to avoid compute failure
-                    if self._name == 'res.lang' and f_name == 'flag_image':
-                        _lang_url_field = self._fields.get('flag_image_url')
-                        if _lang_url_field:
-                            for record in self:
-                                 self.env.cache.update_raw(record, _lang_url_field, [False])
 
             except Exception as e:
                 _logger.debug("[poly] Failed to update cache for filtered field %s: %s", f_name, e)
         
-        # [poly] If we are in res.lang, ensure flag_image_url is False during boot
-        # even if _fetch_query was called without fields or with flag_image already missing.
-        if self and self._name == 'res.lang' and not self.pool.ready:
-             _lang_url_field = self._fields.get('flag_image_url')
-             if _lang_url_field:
-                  for record in self:
-                       if not self.env.cache.contains(record, _lang_url_field):
-                            try:
-                                 self.env.cache.update_raw(record, _lang_url_field, [False])
-                            except: pass
-            
     return res
 
 _original_BaseModel_fetch_query = odoo.models.BaseModel._fetch_query
@@ -4954,6 +4988,12 @@ def poly_Field_setup(self, model):
         return _original_Field_setup(self, model)
 
     if not hasattr(model, 'pool') or not model.pool:
+        return _original_Field_setup(self, model)
+
+    # [poly] Fields injected by _build_poly_fields already carry correct related paths.
+    # Bypass the old injection logic unconditionally for these fields, regardless of
+    # whether _poly_is_polymorphic() correctly identifies the model at this moment.
+    if getattr(self, '_poly_injected', False):
         return _original_Field_setup(self, model)
 
     # [poly] STRICT ISOLATION: Delegate immediately if not a poly model
@@ -5323,7 +5363,6 @@ def _poly_registry_setup_models(self, cr):
     This is now the only place where __bases__ is modified for polymorphic models,
     ensuring that all models are already present in the registry.
     """
-    # print(f"[poly] DEBUG: Entering _poly_registry_setup_models")
     _patch_ir_ui_view()
     
     # [poly] Technical access to core classes
@@ -5334,19 +5373,11 @@ def _poly_registry_setup_models(self, cr):
     # [poly] Phase 0: Collect all models that have _depend_models
     # and also collect their declared base models (targets) so that root bases get infrastructure fields too
     poly_models_names_to_process = set()
-    _blocked_prefixes = (
-        'res.', 'base.', 'ir.', 'mail.', 'portal.', 'utm.', 'bus.', 'report.', 
-        'web.', 'website.', 'digest.', 'sms.', 'phone_validation.', 'payment.',
-        'account.', 'stock.', 'purchase.', 'sale.', 'product.', 'mrp.', 'hr.',
-        'mailing.', 'link.', 'crm.', 'calendar.', 'rating.', 'gamification.',
-        'project.', 'spreadsheet.', 'onboarding.', 'uom.', 'board.', 'lunch.',
-        'event.', 'survey.', 'website_slides.', 'repair.', 'maintenance.', 'fleet.',
-        'point_of_sale.', 'pos.', 'delivery.', 'website_sale.', 'loyalty.', 'mass_mailing.',
-        'im_livechat.', 'theme.', 'sign.', 'quality.', 'iot.', 'helpdesk.', 'documents.',
-        'marketing.', 'social.', 'approvals.', 'planning.', 'timesheet.', 'auth_signup.',
-        'bus.', 'iap.', 'resource.', 'web_tour.', 'barcodes.', 'http_routing.'
-    )
     for name, model_class in self.items():
+        if not hasattr(model_class, '__base_classes'):
+            model_class.__base_classes = tuple() if not type(model_class.__bases__) == tuple else \
+                (model_class.__bases__)
+
         if not isinstance(model_class, type):
             continue
             
@@ -5354,10 +5385,6 @@ def _poly_registry_setup_models(self, cr):
         if name == 'ir.poly_base':
             continue
                 
-        # [poly] STRICT ISOLATION: NEVER process core Odoo models as polymorphic consumers
-        if name.startswith(_blocked_prefixes):
-            continue
-
         has_depend_models = False
         # [poly] DETECTION: check if the model or ANY of its parents in the registry
         # has _depend_models defined in its __dict__ or getattr.
@@ -5366,7 +5393,7 @@ def _poly_registry_setup_models(self, cr):
             has_depend_models = True
         else:
             for base in _poly_get_safe_mro(model_class):
-                if '_depend_models' in base.__dict__:
+                if base.__dict__.get('_depend_models'):
                     has_depend_models = True
                     break
         
@@ -5377,12 +5404,18 @@ def _poly_registry_setup_models(self, cr):
             # Technical access to the base model's dependencies
             dep_map = OrderedDict()
             # [poly] RECURSIVE dependency collection
+            # [poly] NEW: Consolidate _depend_models by exploring MRO, filtering those with the same _name
             for base in _poly_get_safe_mro(model_class):
-                d = base.__dict__.get('_depend_models') or getattr(base, '_depend_models', None)
-                if d and isinstance(d, (dict, OrderedDict)):
-                    for dm, df in d.items():
-                        if dm not in dep_map:
-                            dep_map[dm] = df
+                if getattr(base, '_name', None) == name:
+                    d = base.__dict__.get('_depend_models')
+                    if d:
+                        for dm, df in d.items():
+                            if dm not in dep_map:
+                                dep_map[dm] = df
+
+            # Update the class attribute with the consolidated map
+            if dep_map:
+                model_class._depend_models = dep_map
 
             # [poly] IMPORTANT: We DO NOT add dep_model to poly_models_names_to_process here.
             # We only need the base models to be initialized later, but not modified.
@@ -5396,172 +5429,77 @@ def _poly_registry_setup_models(self, cr):
     # DISABLED: This cleanup is causing side effects in standard Odoo models (res.users)
     pass
 
-    # [poly] Phase 1: MRO Injection BEFORE Odoo's setup_models
-    # This ensures Odoo 18 sees the correct class hierarchy from the start
-    # [poly] CRITICAL: Sort by MRO depth to ensure parents are processed before children
-    _logger.debug("[poly] Entering Phase 1: MRO Injection and attribute building")
-    
-    # [poly] RESTORE ir.poly_base integrity: Ensure it uses standard BaseModel setup
-    if 'ir.poly_base' in self:
-        ir_poly_instance = self['ir.poly_base']
-        if hasattr(type(ir_poly_instance), '_setup_base'):
-             # [poly] AGGRESSIVE: Clear ir.poly_base fields COMPLETELY before setup
-             ir_poly_instance._fields.clear()
-             _original_BaseModel._setup_base(ir_poly_instance)
-             
-             # [poly] Odoo 18: PROTECT ir.poly_base field objects from being shared/mutated
-             # We must use a clean dictionary and ensure no pollution.
-             for fname, f in list(ir_poly_instance._fields.items()):
-                 f._poly_protected = True
-                 # [poly] Odoo 18: ensure we use unique field objects for ir.poly_base
-                 # to prevent pollution from other models.
-                 from copy import copy
-                 clean_f = copy(f)
-                 clean_f.name = fname
-                 clean_f.model_name = 'ir.poly_base'
-                 clean_f.related = None
-                 clean_f.dependencies = ()
-                 clean_f.base_field = None
-                 clean_f.inherited = False
-                 ir_poly_instance._fields[fname] = clean_f
-                 
-                 # [poly] FORCE DESCRIPTOR IN THE MODEL CLASS AND ALL ITS MRO
-                 for base in type(ir_poly_instance).mro():
-                      # [poly] Odoo 18: descriptors are often in the model class itself 
-                      # or in the technical base classes.
-                      if base.__name__ in ('IrPolyBase', 'PolyBase') or 'ir.poly_base' in str(base):
-                           try:
-                                # Use __setattr__ to avoid any property overrides
-                                object.__setattr__(base, fname, clean_f)
-                           except Exception:
-                                pass
-                 
-                 # [poly] CRITICAL: Remove descriptors from ALL proxies too
-                 if hasattr(self, 'models'):
-                      for proxy_name, proxy_class in self.models.items():
-                           if proxy_name == 'ir.poly_base':
-                                try:
-                                     # Force the descriptor into the proxy class
-                                     # Odoo 18 uses different proxy mechanisms, we hit them all.
-                                     object.__setattr__(proxy_class, fname, clean_f)
-                                     if hasattr(proxy_class, '_fields'):
-                                          proxy_class._fields[fname] = clean_f
-                                except Exception:
-                                     pass
-             
-             # [poly] FINAL IR.POLY_BASE CACHE PROTECTION
-             # Standard fields like concrete_model_id should ALWAYS point to ir.poly_base
-             for technical_fname in ['concrete_model_id', 'old_id', 'poly_payload']:
-                 if technical_fname in ir_poly_instance._fields:
-                     cf = ir_poly_instance._fields[technical_fname]
-                     cf.name = technical_fname
-                     cf.model_name = 'ir.poly_base'
-                     cf.related = None
-                     cf.store = True
-                     # Ensure the descriptor is correct in the Registry class
-                     if hasattr(self, 'models') and 'ir.poly_base' in self.models:
-                         object.__setattr__(self.models['ir.poly_base'], technical_fname, cf)
-             
-             # [poly] SYSTEMATIC field protection for ALL fields in ir.poly_base
-             # Odoo 18 Registry has a 'field_computed' lazy property that we must reset
-             if 'field_computed' in self.__dict__:
-                  del self.__dict__['field_computed']
+    # [poly] Phase 1: MRO injection BEFORE Odoo's setup_models.
+    # Responsible ONLY for modifying __bases__ so that Odoo's _setup_base sees the
+    # correct inheritance hierarchy.  Field injection happens inside _setup_base via
+    # _build_poly_fields, which runs after the standard Odoo field population.
+    _logger.debug('[poly] Phase 1: MRO injection for %d models', len(poly_models_names_to_process))
 
-    # [poly] TEMPORARILY DISABLED FOR DEBUGGING
-    # return 
+    # Process parents before children by sorting on MRO depth.
+    sorted_poly_names = sorted(
+        poly_models_names_to_process,
+        key=lambda n: len(_poly_get_safe_mro(self[n])) if n in self else 0,
+    )
 
-    # Sort names by MRO length
-    sorted_poly_names = sorted(list(poly_models_names_to_process), key=lambda n: len(_poly_get_safe_mro(self[n])))
-    
-    # [poly] Invalidate field_computed at the beginning of synchronization
-    if 'field_computed' in self.__dict__:
-        del self.__dict__['field_computed']
+    # Registry classes that must be excluded from poly models' __bases__ to prevent
+    # cascade MRO errors when _prepare_setup changes their __bases__.  The 'base'
+    # abstract registry class is included in every model's _BaseModel__base_classes by
+    # _build_model, but poly models already inherit from BaseModel via their definition
+    # classes (PolyModel → PolyBase → BaseModel).  Having both 'base_reg' (which may
+    # include PolyBase-extending definition classes from addon modules) AND definition
+    # classes that extend PolyModel in the same __bases__ creates an MRO deadlock when
+    # _prepare_setup for 'base' triggers a cascade to poly model subclasses.
+    _excluded_from_poly_bases = set()
+    if 'base' in self:
+        _excluded_from_poly_bases.add(self['base'])
 
-    # [poly] Identify which modules were loaded recently to optimize Phase 1
-    current_init_modules = set(self._init_modules)
-    
-    # [poly] ENSURE INCREMENTAL ATTRIBUTES ARE INITIALIZED
-    if not hasattr(self, '_poly_processed_models'):
-        object.__setattr__(self, '_poly_processed_models', defaultdict(set))
-    if not hasattr(self, '_poly_injected_mro'):
-        object.__setattr__(self, '_poly_injected_mro', {})
+    # Fix: extend ir_poly_base_reg.__bases__ with base_reg now, before the loop.
+    # issubclass(ir_poly_base_reg, base_reg) becomes True, so deduplication removes
+    # base_reg from every poly model's final_bases.  No poly model gets base_reg directly
+    # in __bases__, and the cascade from _prepare_setup is harmless.
 
     for model_name in sorted_poly_names:
-        if model_name not in self: continue
-        model_instance = self[model_name]
-        model_class = model_instance # Registry[n] IS the model class in Odoo 18
-        
-        # [poly] PHASE 1: Build Attributes and Inject MRO
-        # DETERMINATION: only process models identified in Phase 0
-        if model_name not in poly_models_names_to_process:
-            # Mark as built to avoid future processing
-            if hasattr(model_class, '_poly_attributes_built'):
-                try: model_class._poly_attributes_built = True
-                except: pass
+        if model_name not in self:
+            continue
+        model_class = self[model_name]
+        if not isinstance(model_class, type):
             continue
 
-        model_module = getattr(model_class, '_module', None)
-        is_model_new = model_module in current_init_modules
-
         try:
-            # [poly] Aggressively build attributes
-            if hasattr(model_class, '_build_dependant_model_attributes'):
-                 _logger.debug("[poly] Building attributes for %s (explicit Phase 1)", model_name)
-                 model_class._build_dependant_model_attributes()
+            dep_map = _poly_collect_depend_models(model_class)
+            parents_cls = [self[p] for p in dep_map if p in self]
+            if 'ir.poly_base' in self and self['ir.poly_base'] not in parents_cls:
+                parents_cls.append(self['ir.poly_base'])
 
-            # [poly] CRITICAL: Ensure Odoo setup picks up our changes.
-            if hasattr(model_class, '_setup_done'):
-                 model_class._setup_done = False
+            if not parents_cls:
+                continue
 
-            # Recalculate depend_models for Phase 1 MRO logic
-            all_depend_models = OrderedDict()
-            _mro = _poly_get_safe_mro(model_class)
-            for base in _mro:
-                if base is model_class: continue
-                dep_models = base.__dict__.get('_depend_models') or getattr(base, '_depend_models', None)
-                if dep_models and isinstance(dep_models, (dict, OrderedDict)):
-                    for dep_model, dep_field in dep_models.items():
-                        if dep_model not in all_depend_models:
-                            all_depend_models[dep_model] = dep_field
-            
-            # Determine parents for MRO
-            parents = [p for p in all_depend_models.keys() if p in self]
-            # [poly] Ensure ir.poly_base is ALWAYS in the parents list for models that
-            # are TRULY polymorphic (have dependencies).
-            if all_depend_models and model_name != 'ir.poly_base' and 'ir.poly_base' not in parents and 'ir.poly_base' in self:
-                parents.append('ir.poly_base')
-
-            parents_cls = []
-            for p_name in parents:
-                if p_name in self:
-                    parents_cls.append(self[p_name])
-
-            # Calculate target bases
             _bm_bases = getattr(model_class, '_BaseModel__base_classes', None)
-            if _bm_bases:
-                 original_bases = [b for b in _bm_bases if getattr(b, 'pool', None) is None]
-            else:
-                 original_bases = [b for b in model_class.__bases__ if getattr(b, 'pool', None) is None]
-            
-            new_bases = parents_cls + [b for b in original_bases if b not in parents_cls]
-            
-            # Deduplication and linearization
+            original_bases = list(
+                _bm_bases if _bm_bases
+                else [b for b in model_class.__bases__ if getattr(b, 'pool', None) is None]
+            )
+            new_bases = parents_cls + [
+                b for b in original_bases
+                if b not in parents_cls and b not in _excluded_from_poly_bases
+            ]
+
             deduplicated = []
             for b in new_bases:
-                if b is model_class: continue
+                if b is model_class:
+                    continue
                 if any(b is not c and issubclass(c, b) for c in new_bases if c is not model_class):
                     continue
                 if b not in deduplicated:
                     deduplicated.append(b)
             final_bases = tuple(deduplicated)
 
-            # [poly] CACHE CHECK: If MRO hasn't changed, skip injection if not new
-            if final_bases == self._poly_injected_mro.get(model_name) and not is_model_new:
-                continue
-
-            # [poly] Apply MRO injection
-            if final_bases != tuple(model_class.__bases__):
-                _logger.debug("[poly] Pre-setup Injecting MRO for %s: %s", model_name, [getattr(b, '_name', b.__name__) for b in final_bases])
+            if final_bases and final_bases != tuple(model_class.__bases__):
+                _logger.debug(
+                    '[poly] Phase 1: injecting MRO for %s: %s',
+                    model_name,
+                    [getattr(b, '_name', b.__name__) for b in final_bases],
+                )
                 model_class.__bases__ = final_bases
                 if hasattr(model_class, '_BaseModel__base_classes'):
                     model_class._BaseModel__base_classes = final_bases
@@ -5569,753 +5507,82 @@ def _poly_registry_setup_models(self, cr):
                     model_class._BaseModel__depends_base_classes = final_bases
                 if hasattr(ctypes.pythonapi, 'PyType_Modified'):
                     ctypes.pythonapi.PyType_Modified(ctypes.py_object(model_class))
-            
-            # Update cache
-            self._poly_injected_mro[model_name] = final_bases
 
         except Exception as e:
-            _logger.error("[poly] Phase 1: Failed for %s: %s", model_name, e)
+            _logger.error('[poly] Phase 1: MRO injection failed for %s: %s', model_name, e)
 
-    res = _original_Registry_setup_models(self, cr)
+    # [poly] Pre-setup sync: ensure __base_classes == __bases__ for all processed models.
+    # _prepare_setup does `cls.__bases__ = cls.__base_classes` only when they differ.
+    # After Phase 1 set both to final_bases, Odoo's _add_manual_models (called at the
+    # start of setup_models) may invoke _build_model again, resetting __base_classes to
+    # the original Odoo value.  Re-sync here guarantees no spurious MRO error.
+    for _sync_name in sorted_poly_names:
+        if _sync_name not in self:
+            continue
+        _sync_cls = self[_sync_name]
+        if not isinstance(_sync_cls, type):
+            continue
+        _cur_bases = _sync_cls.__bases__
+        try:
+            _cur_bcc = _sync_cls._BaseModel__base_classes
+        except AttributeError:
+            continue
+        if _cur_bases and tuple(_cur_bases) != tuple(_cur_bcc):
+            _logger.debug(
+                '[poly] Pre-setup sync: %s __base_classes %s -> %s',
+                _sync_name,
+                [getattr(b, '__name__', repr(b)) for b in _cur_bcc],
+                [getattr(b, '__name__', repr(b)) for b in _cur_bases],
+            )
+            try:
+                _sync_cls._BaseModel__base_classes = tuple(_cur_bases)
+            except Exception as _sync_err:
+                _logger.warning('[poly] Pre-setup sync failed for %s: %s', _sync_name, _sync_err)
 
-    # [poly] Phase 2: Final MRO stabilization
-    # All fields are already flattened in Phase 1 via _build_dependant_model_attributes.
-        
+    # [poly] Diagnostic: intercept _prepare_setup to catch the exact __bases__ assignment that fails.
+    _original_prepare_setup = _original_BaseModel._prepare_setup
+
+    def _diag_prepare_setup(self_model):
+        cls = type(self_model)
+        cur_bases = getattr(cls, '__bases__', None)
+        bcc = getattr(cls, '_BaseModel__base_classes', None)
+        if bcc and cur_bases and tuple(cur_bases) != tuple(bcc):
+            try:
+                cls.__bases__ = bcc
+            except TypeError as _te:
+                _logger.error(
+                    '[poly] DIAGNOSTIC: _prepare_setup __bases__ assignment failed for %s (_name=%s): %s\n'
+                    '  current __bases__: %s\n  new __base_classes:',
+                    cls.__name__, getattr(cls, '_name', '?'), _te,
+                    [getattr(b, '__name__', repr(b)) for b in cur_bases],
+                )
+                for _i, _b in enumerate(bcc):
+                    _logger.error(
+                        '[poly] DIAGNOSTIC   [%d] %r  __name__=%s  _name=%s  module=%s  bases=%s',
+                        _i, _b, _b.__name__, getattr(_b, '_name', '?'),
+                        getattr(_b, '__module__', '?'),
+                        [getattr(x, '__name__', repr(x)) for x in _b.__bases__],
+                    )
+                raise
+        return _original_prepare_setup(self_model)
+
+    _original_BaseModel._prepare_setup = _diag_prepare_setup
+
+    try:
+        res = _original_Registry_setup_models(self, cr)
+    except TypeError as _mro_err:
+        if 'MRO' not in str(_mro_err) and 'resolution' not in str(_mro_err).lower():
+            raise
+        _logger.error('[poly] MRO TypeError in setup_models.')
+        raise
+    finally:
+        _original_BaseModel._prepare_setup = _original_prepare_setup
+
+    # [poly] Phase 2: Post-setup cache invalidation.
+    # Field injection is now handled by _setup_base via _build_poly_fields.
     if 'field_computed' in self.__dict__:
         del self.__dict__['field_computed']
-
-    _blocked_prefixes = (
-        'res.', 'base.', 'ir.', 'mail.', 'portal.', 'utm.', 'bus.', 'report.', 
-        'web.', 'website.', 'digest.', 'sms.', 'phone_validation.', 'payment.',
-        'account.', 'stock.', 'purchase.', 'sale.', 'product.', 'mrp.', 'hr.',
-        'mailing.', 'link.', 'crm.', 'calendar.', 'rating.', 'gamification.',
-        'project.', 'spreadsheet.', 'onboarding.', 'uom.', 'board.', 'lunch.',
-        'event.', 'survey.', 'website_slides.', 'repair.', 'maintenance.', 'fleet.',
-        'point_of_sale.', 'pos.', 'delivery.', 'website_sale.', 'loyalty.', 'mass_mailing.',
-        'im_livechat.', 'theme.', 'sign.', 'quality.', 'iot.', 'helpdesk.', 'documents.',
-        'marketing.', 'social.', 'approvals.', 'planning.', 'timesheet.', 'auth_signup.',
-        'bus.', 'iap.', 'resource.', 'web_tour.', 'barcodes.', 'http_routing.'
-    )
-
-    # 1. Identify all models that are polymorphic or depend on polymorphic models
-    poly_models_names = getattr(self, '_poly_models_to_setup', set())
-    # Fallback: scan registry for any model that has _depend_models
-    for name, model_class in self.items():
-        if not isinstance(model_class, type): continue
-        if name.startswith(_blocked_prefixes): continue
-        if any('_depend_models' in base.__dict__ for base in _poly_get_safe_mro(model_class)):
-            poly_models_names.add(name)
-
-    # [poly] Sort names to ensure parents are fixed before children
-    _logger.debug("[poly] Entering Phase 2: Final MRO stabilization")
-    
-    _blocked_prefixes = (
-        'res.', 'base.', 'ir.', 'mail.', 'portal.', 'utm.', 'bus.', 'report.', 
-        'web.', 'website.', 'digest.', 'sms.', 'phone_validation.', 'payment.',
-        'account.', 'stock.', 'purchase.', 'sale.', 'product.', 'mrp.', 'hr.',
-        'mailing.', 'link.', 'crm.', 'calendar.', 'rating.', 'gamification.',
-        'project.', 'spreadsheet.', 'onboarding.', 'uom.', 'board.', 'lunch.',
-        'event.', 'survey.', 'website_slides.', 'repair.', 'maintenance.', 'fleet.',
-        'point_of_sale.', 'pos.', 'delivery.', 'website_sale.', 'loyalty.', 'mass_mailing.',
-        'im_livechat.', 'theme.', 'sign.', 'quality.', 'iot.', 'helpdesk.', 'documents.',
-        'marketing.', 'social.', 'approvals.', 'planning.', 'timesheet.', 'auth_signup.',
-        'bus.', 'iap.', 'resource.', 'web_tour.', 'barcodes.', 'http_routing.'
-    )
-
-    # Sort names by MRO length
-    all_models_to_check = sorted([n for n, m in self.items() if isinstance(m, type) or hasattr(m, '_name')], key=lambda n: len(_poly_get_safe_mro(self[n])))
-        
-    for name in all_models_to_check:
-        if name not in self: continue
-            
-        # [poly] CRITICAL: NEVER apply polymorphic logic to ir.poly_base
-        if name == 'ir.poly_base':
-            continue
-    
-        # [poly] STRICT ISOLATION: NEVER process core Odoo models here
-        if name.startswith(_blocked_prefixes):
-            continue
-
-        model_instance = self[name]
-        model_class = model_instance # Registry[n] is the class in Odoo 18
-
-        model_module = getattr(model_class, '_module', None)
-        processed_modules = self._poly_processed_models[name]
-        
-        is_affected = False
-        if not current_init_modules:
-            if name in self._poly_processed_models:
-                continue
-            is_affected = True
-        else:
-            if model_module in current_init_modules:
-                is_affected = True
-            else:
-                for base in _poly_get_safe_mro(model_class):
-                    if getattr(base, '_module', None) in current_init_modules:
-                        is_affected = True
-                        break
-        
-        if not is_affected:
-            continue
-
-        _logger.debug("[poly] Stabilizing %s (Incremental)", name)
-        
-        # [poly] DEPRECATED: Force infrastructure fields injection is handled in Phase 1
-        pass
-
-        # [poly] Mark as processed
-        if current_init_modules:
-            self._poly_processed_models[name].update(current_init_modules)
-        else:
-            self._poly_processed_models[name].add('READY')
-
-        # [poly] Final invalidation of field_computed after all deep fixes
-        if 'field_computed' in self.__dict__:
-            del self.__dict__['field_computed']
-
-        # Original MRO logic continues...
-        # Collect merged _depend_models
-        all_depend_models = OrderedDict()
-        for base in _poly_get_safe_mro(model_class):
-            if base is model_class: continue
-            dep_models = base.__dict__.get('_depend_models') or getattr(base, '_depend_models', None)
-            if dep_models:
-                for dep_model, dep_field in dep_models.items():
-                    if dep_model not in all_depend_models:
-                        all_depend_models[dep_model] = dep_field
-        
-        if not all_depend_models: continue
-
-        parents = list(all_depend_models.keys())
-        if name != 'ir.poly_base' and 'ir.poly_base' not in parents:
-            parents.append('ir.poly_base')
-
-        # Calculate final bases
-        parents_cls = []
-        for p_name in parents:
-            if p_name in self:
-                parents_cls.append(self[p_name])
-
-        # Original Odoo bases (definition classes, no pool)
-        _bm_bases = getattr(model_class, '_BaseModel__base_classes', None)
-        if _bm_bases:
-             original_bases = [b for b in _bm_bases if getattr(b, 'pool', None) is None]
-        else:
-             original_bases = [b for b in model_class.__bases__ if getattr(b, 'pool', None) is None]
-        
-        new_bases = parents_cls + [b for b in original_bases if b not in parents_cls]
-        
-        # [poly] C3 Linearization safety: use a more robust approach to avoid "Cannot create a consistent MRO"
-        def merge(seqs):
-            res = []
-            while True:
-                non_empty = [s for s in seqs if s]
-                if not non_empty:
-                    return res
-                for s in non_empty:
-                    candidate = s[0]
-                    # Check if candidate is in the tail of any other sequence
-                    if any(candidate in s2[1:] for s2 in non_empty):
-                        continue
-                    # Found a candidate!
-                    res.append(candidate)
-                    for s2 in non_empty:
-                        if s2[0] == candidate:
-                            del s2[0]
-                    break
-                else:
-                    raise TypeError("Cannot create a consistent MRO")
-
-        try:
-            mro_seqs = [list(_poly_get_safe_mro(b)) for b in new_bases]
-            mro_seqs.append(list(new_bases))
-            final_bases_mro = merge(mro_seqs)
-            # Extract immediate bases from the merged MRO
-            # They are those in final_bases_mro that are NOT subclasses of any other in new_bases
-            deduplicated = []
-            for b in new_bases:
-                if b is model_class: continue
-                if any(b is not c and issubclass(c, b) for c in new_bases if c is not model_class):
-                    continue
-                if b not in deduplicated:
-                    deduplicated.append(b)
-            final_bases = tuple(deduplicated)
-        except Exception as e:
-            _logger.debug("[poly] Linearization failed for %s, falling back to deduplication: %s", name, e)
-            deduplicated = []
-            for b in new_bases:
-                if b is model_class: continue
-                if b not in deduplicated:
-                    deduplicated.append(b)
-            final_bases = tuple(deduplicated)
-        
-        # Inject!
-        if final_bases != tuple(model_class.__bases__):
-            _logger.debug("[poly] Injecting MRO for %s: %s", name, [getattr(b, '_name', b.__name__) for b in final_bases])
-            try:
-                model_class.__bases__ = final_bases
-                model_class.__base_classes = final_bases
-                model_class.__depends_base_classes = final_bases
-                
-                # Force Python MRO update
-                if hasattr(ctypes.pythonapi, 'PyType_Modified'):
-                    ctypes.pythonapi.PyType_Modified(ctypes.py_object(model_class))
-                
-                # Sync Odoo 18 Proxy
-                if hasattr(self, 'models') and name in self.models:
-                    proxy_class = self.models[name]
-                    if proxy_class is not model_class:
-                        proxy_class.__bases__ = final_bases
-                        proxy_class.__base_classes = final_bases
-                        if hasattr(ctypes.pythonapi, 'PyType_Modified'):
-                            ctypes.pythonapi.PyType_Modified(ctypes.py_object(proxy_class))
-                
-                # Invalidate Odoo model caches
-                if hasattr(self, 'model_methods'):
-                    self.model_methods.pop(name, None)
-                
-                from odoo.api import Environment
-                if hasattr(Environment, '_classes') and Environment._classes is not None:
-                    if self in Environment._classes:
-                        Environment._classes[self].pop(name, None)
-                
-                # Mark for re-setup
-                model_class._setup_done = False
-                
-                # FORCE FINAL SETUP OF FIELDS
-                try:
-                    _logger.debug("[poly] Forcing final setup for %s", name)
-                    model_instance = self[name]
-                    # We must use the instance to call these methods, which are @api.model
-                    if hasattr(model_class, '_setup_base'):
-                        try:
-                            # Use Odoo's method directly with the instance
-                            odoo.models.BaseModel._setup_base(model_instance)
-                        except (TypeError, AttributeError, Exception) as e:
-                            _logger.debug("[poly] _setup_base failed for %s: %s", name, e)
-                            
-                    if hasattr(model_class, '_setup_fields'):
-                        try:
-                            odoo.models.BaseModel._setup_fields(model_instance)
-                        except (TypeError, AttributeError, Exception) as e:
-                            _logger.debug("[poly] _setup_fields failed for %s: %s", name, e)
-
-                    # [poly] SANITIZATION PASS: Remove invalid model-name prefixes from related fields
-                    # These are often injected by Odoo 18's field inheritance during MRO setup.
-                    for f_name, field in model_class._fields.items():
-                        rel = getattr(field, 'related', None)
-                        if isinstance(rel, str) and '.' in rel:
-                            parts = rel.split('.')
-                            prefix = parts[0]
-                            if prefix == name or ('.' in name and prefix == name.split('.')[0]):
-                                new_rel = '.'.join(parts[1:])
-                                _logger.warning("[poly] Post-setup sanitization for %s.%s: stripping prefix '%s' from %s -> %s", 
-                                                name, f_name, prefix, rel, new_rel)
-                                field.related = new_rel
-                                if hasattr(field, '_args'): field._args['related'] = new_rel
-                                
-                                # [poly] AGGRESSIVE: If it's display_name on ir.poly_base, ensure it doesn't loop
-                                if name == 'ir.poly_base' and f_name == 'display_name':
-                                     _logger.warning("[poly] PROTECT: ir.poly_base.display_name related to poly_id.display_name detected. Stripping loop.")
-                                     field.related = None
-                                     if hasattr(field, '_args'): field._args['related'] = None
-                                
-                                # Re-setup the field after modifying its related path
-                                try:
-                                    field.setup_related(model_instance)
-                                except Exception as e:
-                                    _logger.debug("[poly] Re-setup_related failed for %s.%s: %s", name, f_name, e)
-                except Exception as e:
-                    _logger.warning("[poly] Setup failed for %s after MRO injection: %s", name, e)
-
-            except TypeError as e:
-                _logger.error("[poly] Failed to inject MRO for %s: %s", name, e)
-
-    # 3. Deep Recovery (legacy logic, to be refactored in Step 3)
-    from odoo.models import MetaModel
-    from odoo import fields as odoo_fields
-
-    for name, model_class in self.items():
-        if not isinstance(model_class, type): continue
-        mro = _poly_get_safe_mro(model_class)
-        
-        all_depend_models = OrderedDict()
-        is_polymorphic = False
-        for base in mro:
-            if base is model_class: continue
-            dep_models = base.__dict__.get('_depend_models') or getattr(base, '_depend_models', None)
-            if dep_models:
-                is_polymorphic = True
-                for dep_model, dep_field in dep_models.items():
-                    if dep_model not in all_depend_models:
-                        all_depend_models[dep_model] = dep_field
-        
-        if not is_polymorphic and not any(getattr(base, '_depend_models', None) for base in mro):
-             continue
-
-        for _base_class in mro:
-            if _base_class is model_class: continue
-            
-            _base_cls_name = getattr(_base_class, '_name', None)
-            
-            # Determine if this is a polymorphic ancestor
-            _is_poly_ancestor = False
-            _dep_models = _base_class.__dict__.get('_depend_models') or getattr(_base_class, '_depend_models', None)
-            if _dep_models or 'ir.poly_base' in [getattr(c, '_name', None) for c in _base_class.mro() if hasattr(c, '_name')]:
-                _is_poly_ancestor = True
-
-            for _fname, _attr in _base_class.__dict__.items():
-                if isinstance(_attr, odoo_fields.Field):
-                    # [poly] CRITICAL: Even if the field exists in _fields, if it's a stored field
-                    # from a polymorphic ancestor, it MUST be replaced by the related version
-                    # defined in _build_dependant_model_attributes. Odoo 1 incremental loading
-                    # sometimes injects the base class's stored version into the child's _fields.
-                    if _fname in model_class._fields and _is_poly_ancestor and _base_cls_name in all_depend_models:
-                         _existing = model_class._fields[_fname]
-                         if _existing.store and not _existing.related:
-                              _logger.debug("[poly] Deep Recovery: Found stale stored field %s on %s from ancestor %s, removing to allow poly redirection", _fname, name, _base_cls_name)
-                              del model_class._fields[_fname]
-                              if _fname in model_class.__dict__:
-                                   delattr(model_class, _fname)
-                    
-                    # [poly] Aggressive M2M cleanup: if the field is Many2many and comes from a poly ancestor
-                    # but doesn't have a relation table set, it's definitely broken.
-                    if _fname in model_class._fields and _is_poly_ancestor and _base_cls_name in all_depend_models:
-                         _existing = model_class._fields[_fname]
-                         if _existing.type == 'many2many' and not _existing.relation:
-                              _logger.debug("[poly] Deep Recovery: Found broken M2M %s on %s from ancestor %s (no relation), removing", _fname, name, _base_cls_name)
-                              del model_class._fields[_fname]
-                              if _fname in model_class.__dict__:
-                                   delattr(model_class, _fname)
-
-                    if _fname not in model_class._fields:
-                        # Skip stored Many2many fields from depend_model bases.
-                        # These must NOT be injected as shared store=True objects because
-                        # that would cause the child model to create or FK the parent's
-                        # relation table with wrong column names (UndefinedColumn).
-                        # _build_dependant_model_attributes adds a related store=False
-                        # version instead.
-                        if (_attr.type == 'many2many' and getattr(_attr, 'store', True)
-                                and _base_cls_name in all_depend_models):
-                            continue
-                        
-                        # [poly] RECOVERY: If field is missing from _fields, inject it.
-                        _logger.debug("[poly] Deep Recovery: Found missing field %s on %s from %s", _fname, name, _base_class)
-                        
-                        if _is_poly_ancestor and _base_cls_name in all_depend_models:
-                            # Re-run _build_dependant_model_attributes to ensure the related field is created
-                            # instead of just copying the base field instance.
-                            # We use a temporary environment since 'self' here is the registry.
-                            _env = api.Environment(cr, SUPERUSER_ID, {})
-                            model_instance = _env[name]
-                            model_instance._build_dependant_model_attributes()
-                            if _fname in model_class._fields:
-                                continue
-                        _attr.model_name = name
-                        if not getattr(_attr, '_module', None):
-                            _attr._module = getattr(_base_class, '_module', None) or getattr(model_class, '_module', None) or 'numa_poly'
-                        if not getattr(_attr, '_modules', None):
-                            _attr._modules = {_attr._module}
-                        model_class._fields[_fname] = _attr
-                        if _fname not in model_class.__dict__:
-                            try: setattr(model_class, _fname, _attr)
-                            except Exception: pass
-                        
-                        # Mark for re-setup to let Odoo/Poly logic process it further
-                        model_class._setup_done = False
-                    
-                    # Ensure metadata is correct if already present
-                    if _fname in model_class._fields:
-                        _fobj = model_class._fields[_fname]
-                        # Correct _module and _modules if missing or generic
-                        _base_mod = getattr(_base_class, '_module', None)
-                        if not getattr(_fobj, '_module', None) or _fobj._module == 'numa_poly':
-                            _fobj._module = _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
-                        if not getattr(_fobj, '_modules', None) or 'numa_poly' in _fobj._modules:
-                            _fobj._modules = {_fobj._module}
-                        
-                        # [poly] If field exists but is missing 'related' and comes from a polymorphic ancestor, 
-                        # force it to be related to the ancestor to avoid store=True/table creation issues.
-                        if _is_poly_ancestor and _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
-                            _poly_link_field = all_depend_models.get(_base_cls_name)
-                            # Odoo 18 sometimes injects wrong related fields based on class names.
-                            # We MUST ensure it points to the correct poly link field (e.g. driver_id) 
-                            # and NOT to the model name (e.g. conversation.driver).
-                            _expected_related = f'{_poly_link_field}.{_fname}' if _poly_link_field else f'{_base_cls_name}.{_fname}'
-                            
-                            _cur_related = getattr(_fobj, 'related', None)
-                            if not _cur_related or (_poly_link_field and not _cur_related.startswith(f'{_poly_link_field}.')):
-                                # If it's related to the model name instead of the link field, it's definitely wrong.
-                                # Odoo 18 tries to be smart but fails with poly models.
-                                _is_wrong = False
-                                if not _cur_related: _is_wrong = True
-                                elif _poly_link_field:
-                                    if _cur_related == f'{_base_cls_name}.{_fname}': _is_wrong = True
-                                    elif _cur_related and '.' in _cur_related:
-                                        _prefix = _cur_related.split('.')[0]
-                                        # Match if prefix is part of model name (e.g. "conversation" matches "conversation.driver")
-                                        if _prefix == _base_cls_name or _base_cls_name.startswith(f'{_prefix}.') or _prefix == _base_cls_name.split('.')[0]:
-                                            _is_wrong = True
-                                
-                                if _is_wrong and _poly_link_field:
-                                    _logger.debug("[poly] Field %s on %s has wrong or missing 'related' (%s), fixing to %s...", _fname, name, _cur_related, _expected_related)
-                                    # [Odoo 18 CRITICAL] We MUST set related through _args to ensure it's picked up by setup_models
-                                    _fobj.related = _expected_related
-                                    if hasattr(_fobj, '_args'): 
-                                        _fobj._args['related'] = _expected_related
-                                        _fobj._args['store'] = False
-                                    _fobj.store = False
-                                    if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
-                                    model_class._setup_done = False
-                                elif not _cur_related:
-                                    _logger.debug("[poly] Field %s on %s missing 'related' from poly-ancestor %s, fixing to %s", _fname, name, _base_cls_name, _expected_related)
-                                    _fobj.related = _expected_related
-                                    if hasattr(_fobj, '_args'): 
-                                        _fobj._args['related'] = _expected_related
-                                        _fobj._args['store'] = False
-                                    _fobj.store = False
-                                    if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
-                                    model_class._setup_done = False
-                        
-                        # Odoo 18: If Many2many relation is not set for a poly-injected field, 
-                        # ensure it's copied from the base class to prevent table name guess failures.
-                        if _fobj.type == 'many2many' and _is_poly_ancestor:
-                            # [poly] EVITAR descriptor access (TypeError: member_descriptor object has no len)
-                            # Buscamos el descriptor en __dict__ de la base
-                            _base_fobj = _base_class.__dict__.get(_fname)
-                            
-                            if isinstance(_base_fobj, odoo_fields.Field):
-                                for _attr in ['relation', 'column1', 'column2']:
-                                    if not getattr(_fobj, _attr, None) and getattr(_base_fobj, _attr, None):
-                                        setattr(_fobj, _attr, getattr(_base_fobj, _attr))
-                                        if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
-                                        model_class._setup_done = False
-
-        _fields_before = set(model_class._fields.keys())
-        for _base_class in mro:
-            # RECOVERY: Scan ALL base classes in the MRO for field definitions.
-            # Odoo 18's incremental loading often misses fields from extension modules
-            # if they inherit from a model that was already partially built.
-            _recovered_from_this_base = []
-            
-            # 1. From _field_definitions (standard Odoo way for non-setup models)
-            if hasattr(_base_class, '_field_definitions'):
-                for _fobj in _base_class._field_definitions:
-                    _fname = _fobj.name
-                    if _fname not in model_class._fields:
-                        _base_name = getattr(_base_class, '_name', None)
-                        _is_poly_ancestor = (_base_name and (hasattr(_base_class, '_depend_models') or _base_name == 'ir.poly_base' or _base_name in getattr(model_class, '_depend_models', {})))
-                        if _is_poly_ancestor and _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
-                            # [poly] RECREATION for Odoo 18: ensure comodel_name and other critical attributes
-                            # are preserved even for related fields to avoid KeyError: None during Registry load.
-                            _kwargs = {'related': f'{_base_name}.{_fname}', 'store': False}
-                            if hasattr(_fobj, 'comodel_name') and _fobj.comodel_name:
-                                _kwargs['comodel_name'] = _fobj.comodel_name
-                            if hasattr(_fobj, 'inverse_name') and _fobj.inverse_name:
-                                _kwargs['inverse_name'] = _fobj.inverse_name
-                            if hasattr(_fobj, 'selection') and _fobj.selection:
-                                _kwargs['selection'] = _fobj.selection
-                            if hasattr(_fobj, 'relation') and _fobj.relation:
-                                _kwargs['relation'] = _fobj.relation
-                            if hasattr(_fobj, 'column1') and _fobj.column1:
-                                _kwargs['column1'] = _fobj.column1
-                            if hasattr(_fobj, 'column2') and _fobj.column2:
-                                _kwargs['column2'] = _fobj.column2
-                                
-                            _new_fobj = type(_fobj)(**_kwargs)
-                            _new_fobj.model_name = name
-                            _new_fobj.name = _fname
-                            model_class._fields[_fname] = _new_fobj
-                            _fobj = _new_fobj
-                            if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
-                            _recovered_from_this_base.append(_fname)
-                        else:
-                            # [poly] FIX: DO NOT CLONE physical fields from standard Odoo ancestors (_inherit).
-                            # If they are missing, it's Odoo's responsibility to inherit them.
-                            # We just ensure the model is marked for re-setup if we find missing fields.
-                            if _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
-                                _logger.debug("[poly] Missing field %s on %s (from %s), marking for re-setup", _fname, name, _base_name)
-                                model_class._setup_done = False
-                            continue
-                    else:
-                        # Field already in _fields. In Odoo 18 incremental loading, 
-                        # sometimes it's there but incomplete (e.g. comodel_name is Sentinel or None).
-                        _existing_fobj = model_class._fields[_fname]
-                        if _existing_fobj.relational:
-                            _comodel = getattr(_existing_fobj, 'comodel_name', None)
-                            _inverse = getattr(_existing_fobj, 'inverse_name', None)
-                            
-                            _needs_correction = False
-                            if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
-                                _needs_correction = True
-                            if _existing_fobj.type == 'one2many' and (not _inverse or isinstance(_inverse, odoo_fields.Sentinel)):
-                                _needs_correction = True
-
-                            if _needs_correction:
-                                # Try to recover attributes from _base_class's version of the field
-                                _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
-                                _base_inverse = getattr(_fobj, 'inverse_name', None) or getattr(_fobj, '_args', {}).get('inverse_name')
-                                
-                                # Si el original tampoco tiene comodel o inverso, y es un campo incompleto inyectado por Odoo,
-                                # tal vez deberíamos forzarlo a store=False si no tiene forma de ser válido.
-                                
-                                if _base_comodel and not isinstance(_base_comodel, odoo_fields.Sentinel):
-                                    if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
-                                        _logger.debug("[poly] Correcting comodel_name for existing field %s on %s: %s -> %s", _fname, name, _comodel, _base_comodel)
-                                        _existing_fobj.comodel_name = _base_comodel
-                                
-                                if _existing_fobj.type == 'one2many':
-                                    if _base_inverse and not isinstance(_base_inverse, odoo_fields.Sentinel):
-                                        if not _inverse or isinstance(_inverse, odoo_fields.Sentinel):
-                                            _logger.debug("[poly] Correcting inverse_name for existing field %s on %s: %s -> %s", _fname, name, _inverse, _base_inverse)
-                                            _existing_fobj.inverse_name = _base_inverse
-                                    elif not _existing_fobj.inverse_name and not getattr(_existing_fobj, 'compute', None):
-                                         # Si sigue sin inverso y no es computado, forzar store=False para evitar update_db
-                                         _logger.debug("[poly] Field %s on %s still missing inverse_name, forcing store=False", _fname, name)
-                                         _existing_fobj.store = False
-                                
-                                if hasattr(_existing_fobj, '_setup_done'): 
-                                    _existing_fobj._setup_done = False
-                            else:
-                                # Even if not missing, ensure critical relational attributes are synced if they differ
-                                # (e.g. Many2many relation/column names)
-                                if _existing_fobj.type == 'many2many':
-                                    for _attr in ['relation', 'column1', 'column2', 'ondelete']:
-                                        _val = getattr(_existing_fobj, _attr, None)
-                                        _base_val = getattr(_fobj, _attr, None)
-                                        if _base_val and _val != _base_val:
-                                            _logger.debug("[poly] Syncing %s for existing Many2many field %s on %s: %s -> %s", _attr, _fname, name, _val, _base_val)
-                                            setattr(_existing_fobj, _attr, _base_val)
-                                            if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
-                                    
-                                    # [poly] FIX: Ensure relation is NEVER None for Many2many during recovery (existing)
-                                    if not getattr(_existing_fobj, 'relation', None):
-                                        _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
-                                        if _base_comodel:
-                                            _existing_fobj.relation = f"{name.replace('.', '_')}_{_fname}_rel"
-                                            _logger.debug("[poly] Generated missing relation for existing field %s on %s: %s", _fname, name, _existing_fobj.relation)
-
-                                    if getattr(_existing_fobj, 'relation', None):
-                                        _existing_fobj._explicit = True
-                                    if getattr(_existing_fobj, 'column1', None) or getattr(_existing_fobj, 'column2', None):
-                                        _existing_fobj._explicit = True
-                                    
-                                    if _existing_fobj._explicit and hasattr(_existing_fobj, '_setup_done'):
-                                        _existing_fobj._setup_done = False
-                    
-                    # Ensure descriptor is in model class __dict__
-                    if _fname not in model_class.__dict__:
-                        _logger.debug("[poly] FORCING descriptor for %s in %s class", _fname, name)
-                        try: setattr(model_class, _fname, _fobj)
-                        except Exception: pass
-
-                    if hasattr(self, 'models') and name in self.models:
-                        _proxy = self.models[name]
-                        if _proxy is not model_class:
-                            if _fname not in _proxy._fields:
-                                _proxy._fields[_fname] = _fobj
-                            if _fname not in _proxy.__dict__:
-                                _logger.debug("[poly] FORCING descriptor for %s in %s proxy", _fname, name)
-                                try: setattr(_proxy, _fname, _fobj)
-                                except Exception: pass
-
-            # 2. From __dict__ (fallback for fields already instantiated as descriptors)
-            for _fname, _fobj in _base_class.__dict__.items():
-                if isinstance(_fobj, fields.Field):
-                    if _fname not in model_class._fields:
-                        _base_name = getattr(_base_class, '_name', None)
-                        _is_poly_ancestor = (_base_name and (hasattr(_base_class, '_depend_models') or _base_name == 'ir.poly_base' or _base_name in getattr(model_class, '_depend_models', {})))
-                        if _is_poly_ancestor and _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
-                            # [poly] RECREATION for Odoo 18: ensure comodel_name and other critical attributes
-                            # are preserved even for related fields to avoid KeyError: None during Registry load.
-                            _kwargs = {'related': f'{_base_name}.{_fname}', 'store': False}
-                            if hasattr(_fobj, 'comodel_name') and _fobj.comodel_name:
-                                _kwargs['comodel_name'] = _fobj.comodel_name
-                            if hasattr(_fobj, 'inverse_name') and _fobj.inverse_name:
-                                _kwargs['inverse_name'] = _fobj.inverse_name
-                            if hasattr(_fobj, 'selection') and _fobj.selection:
-                                _kwargs['selection'] = _fobj.selection
-                            if hasattr(_fobj, 'relation') and _fobj.relation:
-                                _kwargs['relation'] = _fobj.relation
-                            if hasattr(_fobj, 'column1') and _fobj.column1:
-                                _kwargs['column1'] = _fobj.column1
-                            if hasattr(_fobj, 'column2') and _fobj.column2:
-                                _kwargs['column2'] = _fobj.column2
-                                    
-                            _new_fobj = type(_fobj)(**_kwargs)
-                            _new_fobj.model_name = name
-                            _new_fobj.name = _fname
-                            model_class._fields[_fname] = _new_fobj
-                            _fobj = _new_fobj
-                            if hasattr(_fobj, '_setup_done'): _fobj._setup_done = False
-                            _recovered_from_this_base.append(_fname)
-                        else:
-                            # [poly] FIX: DO NOT CLONE physical fields from standard Odoo ancestors (_inherit).
-                            # If they are missing, it's Odoo's responsibility to inherit them.
-                            # We just ensure the model is marked for re-setup if we find missing fields.
-                            if _fname not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
-                                _logger.debug("[poly] Missing field %s on %s (dict, from %s), marking for re-setup", _fname, name, _base_name)
-                                model_class._setup_done = False
-                            continue
-                    else:
-                        # Field already in _fields. In Odoo 18 incremental loading, 
-                        # sometimes it's there but incomplete (e.g. comodel_name is Sentinel or None).
-                        _existing_fobj = model_class._fields[_fname]
-                        if _existing_fobj.relational:
-                            _comodel = getattr(_existing_fobj, 'comodel_name', None)
-                            _inverse = getattr(_existing_fobj, 'inverse_name', None)
-                            
-                            _needs_correction = False
-                            if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
-                                _needs_correction = True
-                            if _existing_fobj.type == 'one2many' and (not _inverse or isinstance(_inverse, odoo_fields.Sentinel)):
-                                _needs_correction = True
-
-                            if _needs_correction:
-                                # Try to recover attributes from _base_class's version of the field
-                                _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
-                                _base_inverse = getattr(_fobj, 'inverse_name', None) or getattr(_fobj, '_args', {}).get('inverse_name')
-                                
-                                if _base_comodel and not isinstance(_base_comodel, odoo_fields.Sentinel):
-                                    if not _comodel or isinstance(_comodel, odoo_fields.Sentinel):
-                                        _logger.debug("[poly] Correcting comodel_name for existing field %s on %s (dict): %s -> %s", _fname, name, _comodel, _base_comodel)
-                                        _existing_fobj.comodel_name = _base_comodel
-                                
-                                if _existing_fobj.type == 'one2many':
-                                    if _base_inverse and not isinstance(_base_inverse, odoo_fields.Sentinel):
-                                        if not _inverse or isinstance(_inverse, odoo_fields.Sentinel):
-                                            _logger.debug("[poly] Correcting inverse_name for existing field %s on %s (dict): %s -> %s", _fname, name, _inverse, _base_inverse)
-                                            _existing_fobj.inverse_name = _base_inverse
-                                    elif not _existing_fobj.inverse_name and not getattr(_existing_fobj, 'compute', None):
-                                         # Si sigue sin inverso y no es computado, forzar store=False para evitar update_db
-                                         _logger.debug("[poly] Field %s on %s (dict) still missing inverse_name, forcing store=False", _fname, name)
-                                         _existing_fobj.store = False
-                                
-                                if hasattr(_existing_fobj, '_setup_done'): 
-                                    _existing_fobj._setup_done = False
-                            else:
-                                # Even if not missing, ensure critical relational attributes are synced if they differ
-                                # (e.g. Many2many relation/column names)
-                                if _existing_fobj.type == 'many2many':
-                                    for _attr in ['relation', 'column1', 'column2', 'ondelete']:
-                                        _val = getattr(_existing_fobj, _attr, None)
-                                        _base_val = getattr(_fobj, _attr, None)
-                                        if _base_val and _val != _base_val:
-                                            _logger.debug("[poly] Syncing %s for existing Many2many field %s on %s (dict): %s -> %s", _attr, _fname, name, _val, _base_val)
-                                            setattr(_existing_fobj, _attr, _base_val)
-                                            if hasattr(_existing_fobj, '_setup_done'): _existing_fobj._setup_done = False
-                                    
-                                    # [poly] FIX: Ensure relation is NEVER None for Many2many during recovery (existing dict)
-                                    if not getattr(_existing_fobj, 'relation', None):
-                                        _base_comodel = getattr(_fobj, 'comodel_name', None) or getattr(_fobj, '_args', {}).get('comodel_name')
-                                        if _base_comodel:
-                                            _existing_fobj.relation = f"{name.replace('.', '_')}_{_fname}_rel"
-                                            _logger.debug("[poly] Generated missing relation for existing field %s on %s (dict): %s", _fname, name, _existing_fobj.relation)
-
-                                    if getattr(_existing_fobj, 'relation', None):
-                                        _existing_fobj._explicit = True
-                                    if getattr(_existing_fobj, 'column1', None) or getattr(_existing_fobj, 'column2', None):
-                                        _existing_fobj._explicit = True
-                                    
-                                    if _existing_fobj._explicit and hasattr(_existing_fobj, '_setup_done'):
-                                        _existing_fobj._setup_done = False
-                    
-                    if _fname not in model_class.__dict__:
-                        _logger.debug("[poly] FORCING descriptor for %s in %s class (from __dict__)", _fname, name)
-                        try: setattr(model_class, _fname, _fobj)
-                        except Exception: pass
-
-                    if hasattr(self, 'models') and name in self.models:
-                        _proxy = self.models[name]
-                        if _proxy is not model_class:
-                            if _fname not in _proxy._fields:
-                                _proxy._fields[_fname] = _fobj
-                            if _fname not in _proxy.__dict__:
-                                _logger.debug("[poly] FORCING descriptor for %s in %s proxy (from __dict__)", _fname, name)
-                                try: setattr(_proxy, _fname, _fobj)
-                                except Exception: pass
-
-                    # [poly] FIX: Ensure _modules and _module is NEVER empty or containing None for relational fields
-                    if _fobj.relational:
-                        # Odoo 18: Many2many fields use self._module in update_db -> post_init(_reflect_relation, ...)
-                        # [poly] FIX: Use base class module (source of the extension) if available
-                        _base_mod = getattr(_base_class, '_module', None)
-                        # Only set when missing or set to numa_poly (placeholder). NEVER override a valid non-numa_poly value.
-                        if not getattr(_fobj, '_module', None) or _fobj._module == 'numa_poly':
-                            _mod_name = _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
-                            _fobj._module = _mod_name
-                            _logger.debug("[poly] Recovery field %s on %s: set/correct _module to %s", _fname, name, _fobj._module)
-                        
-                        if not getattr(_fobj, '_modules', None) or 'numa_poly' in _fobj._modules:
-                            _mod_name = getattr(_fobj, '_module', None) or _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
-                            _fobj._modules = {_mod_name}
-                            _logger.debug("[poly] Recovery field %s on %s: set/correct _modules to %s", _fname, name, _fobj._modules)
-                        elif None in _fobj._modules:
-                            _fobj._modules = {m for m in _fobj._modules if m is not None}
-                            if not _fobj._modules:
-                                _mod_name = getattr(_fobj, '_module', None) or _base_mod or getattr(model_class, '_module', None) or 'numa_poly'
-                                _fobj._modules = {_mod_name}
-                            _logger.debug("[poly] Recovery field %s on %s: cleaned None from _modules, now %s", _fname, name, _fobj._modules)
-                        
-                        # [poly] FIX: Ensure model is marked for re-setup if we found fields that SHOULD be physical
-                        # but might have been missed by Odoo's incremental setup.
-                        if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None) and not model_class._setup_done:
-                             _logger.debug("[poly] Recovery field %s on %s has column type but not yet setup, ensuring setup is not done", _fname, name)
-                             model_class._setup_done = False
-
-            # 3. Method propagation (Odoo 18 MRO might miss methods if classes are skipped)
-            # We already use MRO, so methods should be found by Python. 
-            # But calculated fields depend on methods (compute='_compute_...')
-            # If the method is NOT found in the model class but exists in a base,
-            # Python's MRO will find it. If it was skipped by Odoo, it might still be in the class MRO.
-
-        _fields_added = set(model_class._fields.keys()) - _fields_before
-        if _fields_added:
-            _logger.debug(
-                "[poly] _poly_registry_setup_models: recovered %d missing field(s) "
-                "for %s: %s",
-                len(_fields_added), name, sorted(_fields_added),
-            )
-
-            # Clear Env cache for this model to ensure fields are fresh
-            from odoo.api import Environment
-            if hasattr(Environment, '_classes') and Environment._classes is not None:
-                if self in Environment._classes:
-                    Environment._classes[self].pop(name, None)
-
-    # [poly] DEFERRED VIEW VALIDATION: Now that the registry is fully stabilized, 
-    # validate any views that were skipped during the module loading process.
-    # We use a copy of the pending views to avoid issues with pop while iterating
-    db_name = cr.dbname
-    pending_ids = list(getattr(self, '_pending_poly_views', set()))
-    if pending_ids:
-        _logger.info("[poly] Validating %d deferred polymorphic views", len(pending_ids))
-        _poly_finalize_view_validation(self, cr)
-
-    # [poly] GENERIC COLUMN RECOVERY: If a field is recovered and it should be a stored column,
-    # ensure it exists in the database. Odoo 18 incremental loading may skip columns if
-    # registry setup is not fully re-evaluated at the right time.
-    # Since these are standard Odoo fields from extensions, we ensure their columns exist.
-    from odoo.tools.sql import table_exists, table_kind
-    for model_name, model_class in self.items():
-        _table = getattr(model_class, '_table', None)
-        if _table and not model_name.startswith('ir.') and not model_class._transient and getattr(model_class, '_auto', True):
-            try:
-                if table_exists(cr, _table) and table_kind(cr, _table) == 'r':
-                    for _fname, _fobj in model_class._fields.items():
-                        if getattr(_fobj, 'store', False) and getattr(_fobj, 'column_type', None):
-                            cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND column_name = %s", (_table, _fname))
-                            if not cr.fetchone():
-                                _col_type = _fobj.column_type[1]
-                                _logger.debug("[poly] Missing SQL column %s on %s, creating manually", _fname, _table)
-                                cr.execute(f'ALTER TABLE "{_table}" ADD COLUMN IF NOT EXISTS "{_fname}" {_col_type}')
-                                _fobj.column = True
-            except Exception as _e:
-                _logger.debug("[poly] Handled column check on %s: %s", _table, _e)
-                if "aborted" in str(_e).lower():
-                    break
-
+    _logger.debug('[poly] Registry setup complete')
     return res
 
 _original_registry_init_models = odoo.modules.registry.Registry.init_models
@@ -6394,13 +5661,6 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
                 def table_exists(cr, table):
                     cr.execute("SELECT 1 FROM pg_catalog.pg_class WHERE relname = %s AND relkind = 'r'", (table,))
                     return bool(cr.fetchone())
-
-                # [poly] Professional Fix: Odoo 18 incremental setup_models might skip some
-                # extensions if they are not yet fully processed in the current Registry.load phase.
-                # We force setup_models() to ensure mclass._fields is fully up-to-date with
-                # all extensions (like sale_project extending project.task).
-                self.registry_invalidated = True
-                self.setup_models(cr)
 
                 for mname in model_names:
                     mclass = self.get(mname)

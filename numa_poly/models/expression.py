@@ -185,9 +185,11 @@ class PolyExpression(expression):
                     self.query = Query(model.env, model._table, model._table_sql)
                 self.query.add_where(self.result)
         finally:
-            # Restore original method
+            # Restore the patched method on BaseModel (where it was patched).
+            # Never use type(model) here: that would shadow the method on the
+            # concrete subclass and leave it as an unexpected class attribute.
             try:
-                type(model)._order_field_to_sql = _original_order_field_to_sql
+                BaseModel._order_field_to_sql = _original_order_field_to_sql
             except Exception: pass
         
         # [poly] Odoo 18: Aggressive safety check for 'id' field
