@@ -2358,40 +2358,52 @@ class PolyBase(_original_BaseModel):
     @classmethod
     def _build_poly_fields(cls, calling_self=None) -> None:
         """
-        Inject polymorphic fields into cls from its _depend_models chain.
+        THE single field-injection entry point for numa_poly.
 
-        Called from _setup_base after the standard Odoo field setup so that
-        base._fields is guaranteed to be populated.  Forces _setup_base on any
-        base that has not yet been set up.
+        Called from PolyBase._setup_base after _PolyFieldGuard has prevented foreign
+        definition classes from contributing stale stored fields, and after
+        _original_BaseModel._setup_base has populated cls._fields with the model's own
+        fields.  Forces _setup_base on any dep base that is not yet set up.
+
+        Guard: _poly_fields_built stores the current _poly_setup_cycle integer (not a
+        boolean).  Comparing stored value == _poly_setup_cycle serves as both a
+        recursion guard (within one setup_models call) and an inter-call guard (across
+        setup_models calls), because _poly_setup_cycle is incremented at the start of
+        each _poly_registry_setup_models invocation.  No explicit clearing loop is
+        needed.
 
         Arguments
         ---------
         calling_self: the model instance from _setup_base (used for env access
-                      when forcing _setup_base on a base that is not yet set up).
+                      when forcing _setup_base on a dep base that is not yet set up).
 
         Algorithm
         ---------
-        1. Guard: skip ir.poly_base, non-polymorphic models, and models already built.
-        2. Collect the consolidated dep_map via _poly_collect_depend_models.
-        3. For each (base_model_name, link_field_name):
+        1. Guard: skip ir.poly_base, non-polymorphic models, and models whose
+           _poly_fields_built token matches the current _poly_setup_cycle.
+        2. Set _poly_fields_built = _poly_setup_cycle as recursion/cycle guard.
+        3. Collect the consolidated dep_map via _poly_collect_depend_models.
+        4. For each (base_model_name, link_field_name):
            a. Ensure the PolyReference link field exists in cls.
            b. Force _setup_base on the base if its _fields is empty.
            c. For every non-technical field in base._fields:
+              - Skip if already correctly poly-injected (_poly_injected flag).
               - Resolve to its ultimate origin via _poly_resolve_field_origin.
               - Ensure a PolyReference to that origin exists in cls.
               - Inject a related=copy of the field.
-        4. Inject infrastructure fields (poly_base_id and audit fields).
+        5. Redirect manually-written related fields that still use model-name prefixes.
+        6. Inject infrastructure fields (poly_base_id and audit fields).
         """
         if cls._name == 'ir.poly_base':
             return
         if not _poly_is_polymorphic(cls):
-            cls._poly_fields_built = True
+            cls._poly_fields_built = _poly_setup_cycle
             return
-        if getattr(cls, '_poly_fields_built', False):
+        if getattr(cls, '_poly_fields_built', -1) == _poly_setup_cycle:
             return
 
-        # Recursion guard — set before any recursive calls below.
-        cls._poly_fields_built = True
+        # Recursion guard — store cycle token before any recursive calls below.
+        cls._poly_fields_built = _poly_setup_cycle
 
         dep_map = _poly_collect_depend_models(cls)
         if not dep_map:
@@ -4511,15 +4523,24 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
     # [poly] DEPRECATED: Deep fix is no longer needed with the new flattening strategy.
 
+# Monotonically-increasing counter incremented at the start of every
+# _poly_registry_setup_models call.  _build_poly_fields stores the current value
+# instead of a boolean True, making the guard automatically stale when a new
+# setup_models cycle begins — no explicit clearing loop required.
+_poly_setup_cycle: int = 0
+
 _original_Registry_setup_models = odoo.modules.registry.Registry.setup_models
 
 def _poly_registry_setup_models(self, cr):
     """
     Centralized polymorphic MRO injection.
-    
+
     This is now the only place where __bases__ is modified for polymorphic models,
     ensuring that all models are already present in the registry.
     """
+    global _poly_setup_cycle
+    _poly_setup_cycle += 1
+
     _patch_ir_ui_view()
     
     # [poly] Technical access to core classes
@@ -4725,16 +4746,11 @@ def _poly_registry_setup_models(self, cr):
 
     _original_BaseModel._prepare_setup = _diag_prepare_setup
 
-    # [poly] Phase 2: Clear the per-class _poly_fields_built flag before every
-    # setup_models call (including test-reset invocations).  Without this,
-    # _build_poly_fields returns early on subsequent calls and poly M2M related
-    # attributes are lost after registry resets in the test runner.
-    for _cls in self.values():
-        if isinstance(_cls, type) and '_poly_fields_built' in _cls.__dict__:
-            try:
-                delattr(_cls, '_poly_fields_built')
-            except AttributeError:
-                pass
+    # [poly] Phase 2 (removed): _poly_fields_built now stores the cycle token
+    # (_poly_setup_cycle integer) instead of a boolean.  The guard in
+    # _build_poly_fields compares stored value == current cycle, so it is
+    # automatically invalidated when _poly_setup_cycle increments at the top of
+    # this function.  No explicit clearing loop is needed.
 
     try:
         res = _original_Registry_setup_models(self, cr)
