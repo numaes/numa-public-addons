@@ -85,51 +85,88 @@ poly_payload = fields.Text(store=False, compute='_compute_payload_dummy', invers
 
 **Critical Methods**:
 
-#### `_build_model()` (lines 393-465)
+#### `_setup_base()` — primary field injection hook
+
+Overrides `BaseModel._setup_base`. After Odoo's standard field population runs
+(`_original_BaseModel._setup_base`), it calls `_build_poly_fields` for any model whose
+MRO contains a non-empty `_depend_models`.
+
 ```python
-@classmethod
-def _build_model(cls, pool, cr):
-    # Construct the standard model first
-    model_class_without_depends = super()._build_model(pool, cr)
-    
-    # Validate dependency cycles
-    cls._validate_dependency_cycles(pool)
-    
-    # Construct inheritance hierarchy
-    # ...
+def _setup_base(self):
+    _original_BaseModel._setup_base(self)
+    if _poly_is_polymorphic(type(self)):
+        type(self)._build_poly_fields(calling_self=self)
 ```
+
+This hook fires in every `setup_models` cycle (including test-framework resets), ensuring
+poly-related fields are always present and up-to-date.
+
+#### `_build_poly_fields()` — field injection engine
+
+Classmethod that injects `related` proxy fields for all fields from dependency models.
+
+**Algorithm**:
+```
+1. Guard: skip ir.poly_base; skip if _poly_fields_built already set for this cycle.
+2. Set _poly_fields_built = True (recursion guard).
+3. For each (base_model_name, link_field) in _depend_models:
+   a. _poly_ensure_poly_ref → inject PolyReference(base_model) if missing.
+   b. For each fname in base._fields:
+      - Skip technical fields.
+      - If fname in cls._fields AND field is _poly_injected+non-stored → skip (already correct).
+      - Otherwise (stale stored entry from MRO bleed or first run) → replace/inject.
+      - Resolve absolute origin via _poly_resolve_field_origin.
+      - Copy field; set related='link_field.origin_fname', store=False, compute=None.
+      - Mark new_field._poly_injected = True.
+      - _poly_inject_field(cls, fname, new_field).
+```
+
+**Why the tightened skip guard matters:**
+Phase-1 MRO injection adds the dependency model's registry class to the child's
+`__bases__`. The registry class's definition ancestors (without `pool`) appear in
+`_model_classes__`, so `_setup_base` picks up their `_field_definitions` and adds those
+fields as stored, non-related entries. Without the tightened guard, `_build_poly_fields`
+would skip them, leaving stored direct fields instead of related proxies.
 
 **Analysis**:
-- ✅ **Cycle Validation**: Detects circular dependencies (lines 468-507).
-- ✅ **Multiple Inheritance**: Allows dependencies from multiple models.
-- ⚠️ **Complexity**: High level of complexity in class construction.
+- ✅ **Runs every cycle**: Correct fields guaranteed after any `setup_models`.
+- ✅ **Stale-field replacement**: Detects and overwrites stored entries from MRO bleed.
+- ✅ **Idempotent**: `_poly_injected` flag prevents redundant re-injection within one cycle.
+- ⚠️ **Order**: `_depend_models` order determines which link field wins on name collisions.
 
-#### `_build_dependant_model_attributes()` (lines 567-803)
+#### `_build_dependant_model_attributes()` (legacy, retained)
 
-**Responsibilities**:
-1. Create technical fields (`poly_base_id`, `concrete_model_id`, `poly_payload`).
-2. Create reference fields (`PolyReference`) to base models.
-3. Create `related` fields for all fields of dependent models.
-4. Copy non-field methods and attributes from base models.
+An older classmethod that copies fields and methods from dependency models. It is no
+longer the primary field injection path — that role belongs to `_build_poly_fields`. It
+is retained for method propagation, deep hierarchies, and edge cases. It is a no-op for
+non-polymorphic models (`_poly_is_polymorphic` returns False → early return).
 
-**Workflow**:
+#### MRO Injection — `_poly_registry_setup_models` Phase 1
+
+Before calling the original `setup_models`, the poly hook:
+1. Identifies all models with non-empty `_depend_models`.
+2. Adds each dependency model's *registry class* to the child's `__bases__`.
+3. Syncs `__base_classes` to match `__bases__` (prevents `_prepare_setup` from
+   undoing the injection).
+
+**Side effect (handled):** Adding the dependency registry class bleeds its definition
+ancestors' `_field_definitions` into the child's `_model_classes__`. The tightened guard
+in `_build_poly_fields` corrects this.
+
+**`PolyBase` in global MRO:**
+```python
+if PolyBase not in odoo.models.Model.__bases__:
+    odoo.models.Model.__bases__ = (PolyBase,)
 ```
-1. Create poly_base_id (PolyReference to ir.poly_base)
-2. Create concrete_model_id (Many2one to ir.model, computed)
-3. Create poly_payload (Text, store=False)
-4. Create audit fields (create_uid, create_date, etc.)
-5. Iterate through _depend_models in reverse order:
-   - Create PolyReference for each base
-   - Collect all fields from each base
-   - Create related fields for each field found
-6. Copy methods and non-field attributes
-```
+This replaces the former `odoo.models.AbstractModel = PolyBase` approach, which caused
+C3 MRO errors due to inconsistent `__base_classes` when classes were imported in
+different orders relative to this module.
 
 **Analysis**:
-- ✅ **Comprehensive**: Covers all necessary aspects.
-- ⚠️ **Performance**: Costly process during startup.
-- ⚠️ **Dependency Order**: Order in `_depend_models` matters (last one wins on collisions).
-- ⚠️ **Orphan Records**: Handles legacy records (pre-polymorphic) with graceful metadata degradation.
+- ✅ **Stable**: `Model.__bases__` mutation is import-order-independent.
+- ✅ **Idempotent**: Membership check guards repeated loads.
+- ⚠️ **Side effect**: Dependency registry class in `__bases__` bleeds field definitions
+  (mitigated by stale-field replacement in `_build_poly_fields`).
 
 ### 9. Automatic Model Migration (Legacy to Poly)
 
@@ -153,7 +190,7 @@ Numa Poly includes a robust system to migrate existing records when a model conv
 - **Type Sanitization**: Deep cleaning of values (recordsets, ID lists) is performed before new record creation.
 - **Conflict Resolution**: Handles unique constraint violations (e.g., `mail_followers`, Many2many) by removing redundant records before updating IDs.
 - **Transactionality**: Uses database `savepoints` in critical updates to ensure that minor failures (such as third-party tables or complex constraints in Odoo 18) do not abort the entire migration.
-- **Odoo 18 Compatibility**: Specific handling for `project.task` by injecting its polymorphic hierarchy (`numa.planning.node`) after registry initialization to prevent loss of inherited methods. It also includes shared Many2many collision handling and deep type cleaning to prevent recordset interference in direct SQL operations. The engine now features **Retroactive MRO-Recovery**, **Emergency View Recovery**, and **Standard Odoo Inheritance Synchronization**. This ensures robustness during complex incremental loading and module updates (`-u`) by allowing Odoo's native `_setup_base` and `_setup_fields` to handle field inheritance for standard `_inherit` ancestors while reserving `related` field injection strictly for polymorphic ancestors. This architectural shift eliminates SQL column name conflicts (e.g., `UndefinedColumn` or `NotNullViolation`) caused by manual field cloning.
+- **Odoo 18 Compatibility**: The poly engine injects dependency model registry classes into child `__bases__` (Phase-1 MRO) so that inherited methods are always accessible. `PolyBase` is inserted into the global `Model.__bases__` chain via `__bases__` mutation (not module-alias replacement) to avoid C3 MRO errors. Shared Many2many relation tables are handled by patching `Many2many.setup_nonrelated`. Emergency View Recovery and Model Initialization Batching ensure stability during incremental loading and module updates (`-u`).
 - **Field and Relation Metadata Recovery**: Enhanced proactive label and relation metadata recovery to avoid `NotNullViolation` in `ir_model_relation` and `ir_model_fields` by ensuring `_module`, `_modules`, and physical metadata (relation, columns) are correctly populated. Relational fields from non-polymorphic ancestors are no longer cloned but instead trigger a re-setup of the model to let Odoo's standard engine resolve physical metadata correctly.
 - **ID Extraction**: Recursive logic implemented to ensure Many2one fields always reduce to integer IDs, eliminating interference from recordsets or tuples returned by the Odoo 18 ORM.
 - **Referential Integrity**: Related objects are updated to point to the new ID before physically deleting the old record, satisfying foreign key (FK) constraints.
@@ -776,48 +813,82 @@ new_field = field_subclass(
 
 ## Odoo 18 Compatibility
 
-Odoo version 18 introduced significant changes to registry construction (pool) and class management, requiring critical adaptations in the polymorphic engine.
+Odoo 18 changed registry construction (incremental pool loading) and class management in
+ways that required significant adaptations in the poly engine. The current implementation
+is stable against these changes as of **commit `e7591ad`**.
 
-### 1. Retroactive Dependency Resolution and Registry (Registry Hook)
+### 1. Global PolyBase Injection — `Model.__bases__`
 
-Odoo 18 builds the pool incrementally and has changed how it manages model inheritance. A model can be "extended" by multiple modules at different stages, which sometimes causes the Python MRO (Method Resolution Order) to freeze before all polymorphic classes have been injected.
+Odoo 18 makes `AbstractModel` a direct alias for `BaseModel` (the same Python object).
+Replacing the module attribute with `odoo.models.AbstractModel = PolyBase` mixed
+`_original_BaseModel`-based and `PolyBase`-based entries in registry class `__base_classes`,
+breaking C3 linearisation.
 
-*   **Problem**: During registry loading, critical models like `project.task` may lose their inheritance from `numa.planning.node` or `ir.poly_base` if the Odoo framework finalizes the hierarchy prematurely.
-*   **Solution (Final)**: A monkey-patch has been implemented in `Registry.setup_models`.
-    *   This hook executes after Odoo's standard configuration process.
-    *   It dynamically identifies all models in the registry that participate in polymorphic inheritance by inspecting their MRO for `_depend_models` declarations.
-    *   It verifies if their MRO contains all declared dependencies.
-    *   If a dependency is missing, it uses `_apply_polymorphic_hierarchy` to forcibly inject the missing parents into the Python class hierarchy at runtime.
-    *   This ensures that inherited methods (like `pln_get_allocations_view`) and fields from polymorphic extensions are always available in the final model, even in complex incremental loading scenarios.
+**Current approach:** `Model.__bases__ = (PolyBase,)` — idempotent, import-order-
+independent, and inherently consistent across all model classes.
 
-### 2. Proxy Classes Synchronization and Python Cache
+`odoo.models.BaseModel = PolyBase` is retained as a backward-compatibility alias for
+`isinstance(obj, BaseModel)` checks in third-party code.
 
-Odoo 18 makes heavy use of **Proxy Classes** (dynamic classes that wrap actual implementations).
+### 2. Pre-Setup MRO Injection — `_poly_registry_setup_models` Phase 1
 
-*   **Desynchronization**: Modifying the `__bases__` of the implementation class does not always automatically update the Proxy class that the environment (`self.env`) returns to users.
-*   **Synchronization Mechanism (`_poly_sync_proxy_class`)**:
-    *   `numa_poly` explicitly synchronizes `__bases__` and `__base_classes` between the real class and its Proxy.
-    *   Uses `ctypes.pythonapi.PyType_Modified` (via `_poly_force_mro_update`) to force Python to invalidate its internal method resolution caches in both the base class and the Proxy.
-    *   Explicitly invalidates the Odoo cache (`pool.model_methods` and `Environment._classes`) to ensure the framework discovers the newly injected methods.
+Before `_original_Registry_setup_models` runs, the poly hook adds each dependency model's
+registry class to the polymorphic child's `__bases__`. This makes the dependency model's
+methods accessible and ensures the child's `_setup_base` sees the expected inheritance.
 
-### 3. Polymorphic Many2many Collisions
+`__base_classes` is synced to `__bases__` immediately afterward so that Odoo's
+`_prepare_setup` (`cls.__bases__ = cls.__base_classes`) does not undo the injection.
 
-In standard Odoo, two models cannot share the same relationship table and columns for a `Many2many` relation.
+**Known side effect:** The dependency registry class carries definition ancestors without
+`pool`, which end up in `_model_classes__` and bleed their `_field_definitions` into the
+child (see §3).
 
-*   **Natural Conflict**: In a polymorphic system, it is **correct** for a model and its counterpart to share the same relationship table (since they are, conceptually, the same record).
-*   **Check Intervention**: `odoo.fields.Many2many.setup_nonrelated` was patched to intercept the collision `TypeError`.
-    *   If the conflicting models are polymorphic relatives (one is in the other's MRO), the error is silently ignored.
-    *   The inverse field binding logic that Odoo skips upon detecting the conflict is manually restored.
+### 3. Stale-Field Replacement — `_build_poly_fields` Tightened Guard
 
-### 4. Odoo 18 Registry and View Resilience
+**Problem:** When MRO Phase 1 adds `numa.planning.node`'s registry class to
+`project.task.__bases__`, Odoo's `_setup_base` picks up `NumaPlanningNode._field_definitions`
+and adds fields such as `pln_required_resource_ids` as stored, non-related entries in
+`project.task._fields`. The previous guard `if fname in cls._fields: continue` left those
+stale entries intact, causing test failures.
 
-To ensure that key models never lose their polymorphic capabilities or inherited fields, the system performs a final check upon completing registry loading (`Registry.setup_models`).
+**Fix:** A field is skipped only if already correctly poly-injected:
 
-If it detects that a model should be polymorphic but its Python MRO does not reflect the full hierarchy, it dynamically injects the missing bases and synchronizes its proxy classes. Additionally:
-- **Retroactive MRO-Recovery**: Performs an exhaustive scan of the MRO to "recover" any fields or methods that Odoo's incremental loading might have missed (e.g., standard Odoo members added by bridge modules).
-- **Emergency View Recovery**: Patches `ir.ui.view` to intercept `ParseError` (unknown fields/methods) during view validation. If a member is missing but present in the MRO, it is reactively injected into the model's registry proxy to allow the update process to continue without fatal errors.
-- **Enforced Model Initialization Batching**: To prevent `psycopg2.errors.UndefinedColumn` when creating views (e.g., `report.project.task.user` in `sale_project`), the engine now forces `setup_models()` and sets `registry_invalidated = True` during the `init_models` phase of any extending module. This ensures that all stored fields from the current module's extensions are correctly added to the model's `_fields` and subsequently created in SQL before any dependent views are initialized.
-- **Relation Metadata Enforcement**: Proactively forces physical metadata (`relation`, `columns`, `_modules`) for relational fields during `_auto_init` and registry setup to satisfy strict database constraints (like `ir_model_relation.module` NOT NULL).
+```python
+if getattr(existing, '_poly_injected', False) and not getattr(existing, 'store', True):
+    continue  # Already correct
+# Otherwise: replace stale entry
+```
+
+### 4. `_poly_fields_built` Cleared Before Every `setup_models`
+
+The per-class flag `_poly_fields_built` guards against redundant re-injection within one
+`setup_models` cycle. It is cleared from all registry classes at the start of
+`_poly_registry_setup_models` so that test-framework registry resets (which call
+`setup_models` again) trigger a full re-injection.
+
+### 5. Proxy Classes Synchronization
+
+Odoo 18 uses proxy classes. After modifying a registry class's `__bases__`, the proxy
+class is synchronized via `_poly_sync_proxy_class`, which updates `__bases__`,
+`__base_classes`, and calls `ctypes.pythonapi.PyType_Modified` to invalidate Python's
+internal MRO cache.
+
+### 6. Polymorphic Many2many Collisions
+
+`odoo.fields.Many2many.setup_nonrelated` is patched to suppress the collision `TypeError`
+when two polymorphic relatives share the same relation table. The inverse field binding
+that Odoo skips on collision is manually restored.
+
+### 7. View Resilience and Metadata Enforcement
+
+- **Emergency View Recovery**: `ir.ui.view` is patched to intercept `ParseError` during
+  view validation. Missing members present in the MRO are reactively injected.
+- **Model Initialization Batching**: `_poly_registry_init_models` forces `setup_models`
+  and sets `registry_invalidated = True` during the `init_models` phase of extending
+  modules to ensure SQL columns exist before dependent views are created.
+- **Relation Metadata Enforcement**: `_auto_init` proactively enforces `relation`,
+  `columns`, and `_modules` on relational fields to satisfy NOT NULL constraints in
+  `ir_model_relation` and `ir_model_fields`.
 
 ---
 
