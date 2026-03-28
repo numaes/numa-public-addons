@@ -1,0 +1,5 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_poly_ft_base,access_poly_ft_base,model_poly_ft_base,base.group_user,1,1,1,1
+access_poly_ft_alpha,access_poly_ft_alpha,model_poly_ft_alpha,base.group_user,1,1,1,1
+access_poly_ft_beta,access_poly_ft_beta,model_poly_ft_beta,base.group_user,1,1,1,1
+access_poly_ft_top,access_poly_ft_top,model_poly_ft_top,base.group_user,1,1,1,1
