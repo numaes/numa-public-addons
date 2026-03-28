@@ -216,6 +216,92 @@ def _poly_collect_depend_models(cls) -> OrderedDict:
     return result
 
 
+def _poly_foreign_def_classes(cls) -> frozenset:
+    """
+    Return the set of definition classes (MetaModel instances with pool=None) that
+    appear in cls.__mro__ because of Phase-1 dep model injection — NOT because they
+    belong to cls's own class hierarchy.
+
+    These classes have their _field_definitions temporarily blanked by _PolyFieldGuard
+    during _setup_base so they cannot contribute stale stored fields to cls._fields.
+
+    Algorithm:
+    - For each dep registry class in dep_map, collect all def classes reachable from
+      its MRO whose _name is a known dep model name.  The _name filter prevents
+      accidentally blanking shared bases like PolyBase or AbstractModel, which belong
+      legitimately to every model's hierarchy.
+    - Intersect with the actual MRO of cls to guard only classes that are present.
+    """
+    from odoo.models import MetaModel
+
+    dep_map = _poly_collect_depend_models(cls)
+    if not dep_map:
+        return frozenset()
+
+    pool = getattr(cls, 'pool', None)
+    if pool is None:
+        return frozenset()
+
+    dep_names = frozenset(dep_map.keys())
+
+    # Collect def classes from dep registry class ancestries whose _name is a known
+    # dep model name.  Registry classes (pool is not None) are never blanked.
+    candidate_foreign: set = set()
+    for dep_name in dep_names:
+        dep_reg = pool.get(dep_name)
+        if dep_reg is None:
+            continue
+        for c in type.mro(type(dep_reg)):
+            if (
+                isinstance(c, MetaModel)
+                and getattr(c, 'pool', None) is None
+                and getattr(c, '_name', None) in dep_names
+            ):
+                candidate_foreign.add(c)
+
+    if not candidate_foreign:
+        return frozenset()
+
+    # Only guard classes that are actually present in cls's MRO.
+    cls_mro_set = set(type.mro(cls))
+    return frozenset(candidate_foreign & cls_mro_set)
+
+
+class _PolyFieldGuard:
+    """
+    Context manager that temporarily blanks _field_definitions on definition classes
+    that are "foreign" to a poly model (injected into its MRO by Phase-1 dep model
+    injection, not part of its own class hierarchy).
+
+    While the guard is active, Odoo's _setup_base scans those classes but finds an
+    empty _field_definitions list, so their fields are never added to cls._fields as
+    stale stored entries.  On exit the original lists are restored unconditionally.
+
+    Usage::
+
+        with _PolyFieldGuard(SomePolyClass):
+            _original_BaseModel._setup_base(instance)
+    """
+
+    __slots__ = ('_saved',)
+
+    def __init__(self, cls):
+        self._saved: dict = {}
+        for fdc in _poly_foreign_def_classes(cls):
+            original = fdc.__dict__.get('_field_definitions')
+            if original is not None:
+                self._saved[fdc] = original
+
+    def __enter__(self):
+        for fdc in self._saved:
+            fdc._field_definitions = []
+        return self
+
+    def __exit__(self, *_):
+        for fdc, original in self._saved.items():
+            fdc._field_definitions = original
+
+
 def _poly_resolve_field_origin(fname: str, model, pool) -> 'tuple[str, str]':
     """
     Follow the polymorphic related chain to find the model that natively defines
@@ -1565,10 +1651,21 @@ class PolyBase(_original_BaseModel):
                            _logger.error("Failed to re-apply cached bases to class %s: %s", self._name, e)
 
     def _setup_base(self):
-        """Run standard Odoo field setup then inject polymorphic fields."""
-        _original_BaseModel._setup_base(self)
+        """
+        Run standard Odoo field setup then inject polymorphic fields.
+
+        For polymorphic models the standard _setup_base is wrapped in _PolyFieldGuard.
+        The guard temporarily blanks _field_definitions on definition classes that were
+        injected into this model's MRO by Phase-1 (dep model ancestry), preventing
+        Odoo from adding their fields as stale stored entries in cls._fields.
+        After the guard exits, _build_poly_fields injects the correct related versions.
+        """
         if _poly_is_polymorphic(type(self)):
+            with _PolyFieldGuard(type(self)):
+                _original_BaseModel._setup_base(self)
             type(self)._build_poly_fields(calling_self=self)
+        else:
+            _original_BaseModel._setup_base(self)
 
     @classmethod
     def _setup_poly_fields(cls, self):
@@ -3289,21 +3386,13 @@ class PolyBase(_original_BaseModel):
                     continue
                 if fname in cls._fields:
                     existing = cls._fields[fname]
-                    # Skip only if already correctly injected by poly (related and non-stored).
-                    # When Phase-1 MRO injection adds the depend model's registry class to
-                    # cls.__bases__, Odoo's _setup_base picks up the depend model's
-                    # _field_definitions and adds its fields as stored/non-related entries in
-                    # cls._fields.  We must replace those stale entries with the proper
-                    # poly-related version.
-                    if getattr(existing, '_poly_injected', False) and not getattr(existing, 'store', True):
+                    # _PolyFieldGuard (active during _setup_base) prevents foreign
+                    # definition classes from adding stale stored entries, so by the
+                    # time we reach here any pre-existing field is either a correctly
+                    # injected poly field or a user-declared override — both should be
+                    # left untouched.
+                    if getattr(existing, '_poly_injected', False):
                         continue
-                    _logger.debug(
-                        '[poly] _build_poly_fields: replacing stale field %s in %s '
-                        '(related=%r, store=%r) with poly-related version',
-                        fname, cls._name,
-                        getattr(existing, 'related', 'N/A'),
-                        getattr(existing, 'store', 'N/A'),
-                    )
                 if isinstance(field, PolyReference):
                     continue
 

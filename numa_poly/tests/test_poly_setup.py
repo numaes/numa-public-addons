@@ -100,3 +100,67 @@ class TestPolySetup(TransactionCase):
                 # If the fix works, it must NOT be a stored field on project.task
                 self.assertTrue(field.related, "Field should have been converted to RELATED")
                 self.assertFalse(field.store, "Field should have been converted to NON-STORED")
+
+    def test_no_stale_stored_entry_from_foreign_def_classes(self):
+        """
+        Verify that _PolyFieldGuard eliminates stale stored entries at the root.
+
+        Before the guard, Phase-1 MRO injection caused definition classes from dep
+        model hierarchies (e.g. NumaPlanningNode for numa.planning.node) to appear in
+        project.task's _model_classes__, causing _setup_base to add their fields as
+        stored/non-related entries.  _build_poly_fields then had to overwrite them.
+
+        With _PolyFieldGuard active during _setup_base, those foreign def classes see
+        an empty _field_definitions, so stale entries are never created.  Every field
+        that originated in a foreign def class must be related+non-stored in
+        project.task._fields.
+        """
+        if 'project.task' not in self.env or 'numa.planning.node' not in self.env:
+            self.skipTest("project.task or numa.planning.node not in registry")
+
+        from odoo.models import MetaModel
+        task_cls = type(self.env['project.task'])
+
+        # Collect dep model names for project.task.
+        dep_map = {}
+        for base in task_cls.__mro__:
+            raw = base.__dict__.get('_depend_models')
+            if raw and isinstance(raw, dict):
+                dep_map.update(raw)
+        if not dep_map:
+            self.skipTest("project.task has no _depend_models")
+
+        dep_names = set(dep_map.keys())
+
+        # Gather all def classes from dep registry class MROs whose _name is a dep model.
+        foreign_def_cls = set()
+        for dep_name in dep_names:
+            dep_reg = self.env.registry.get(dep_name)
+            if dep_reg is None:
+                continue
+            for c in type.mro(type(dep_reg)):
+                if (
+                    isinstance(c, MetaModel)
+                    and getattr(c, 'pool', None) is None
+                    and getattr(c, '_name', None) in dep_names
+                ):
+                    foreign_def_cls.add(c)
+
+        # Assert no field from a foreign def class appears as stored/non-related
+        # in project.task._fields.
+        task_fields = self.env['project.task']._fields
+        for fdc in foreign_def_cls:
+            fd_list = getattr(fdc, '_field_definitions', []) or []
+            for f in fd_list:
+                fname = getattr(f, 'name', None)
+                if fname is None:
+                    continue
+                field_in_task = task_fields.get(fname)
+                if field_in_task is not None:
+                    self.assertFalse(
+                        getattr(field_in_task, 'store', False)
+                        and not getattr(field_in_task, 'related', None),
+                        f"Stale stored/non-related entry for '{fname}' in project.task "
+                        f"originated from foreign def class {fdc.__name__}. "
+                        f"_PolyFieldGuard should have prevented this."
+                    )
