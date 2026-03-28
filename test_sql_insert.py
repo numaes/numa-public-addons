@@ -1,0 +1,7 @@
+print("--- Creación Manual con SQL ---")
+model_id = env['ir.model']._get_id('res.partner')
+env.cr.execute('INSERT INTO ir_poly_base (concrete_model_id, create_uid, write_uid, create_date, write_date) VALUES (%s, %s, %s, now(), now()) RETURNING id', (model_id, 1, 1))
+res = env.cr.fetchone()
+print(f"ID insertado: {res[0]}")
+env.cr.rollback()
+print("Rollback realizado.")
