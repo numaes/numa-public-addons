@@ -3288,7 +3288,22 @@ class PolyBase(_original_BaseModel):
                 if fname in _POLY_TECHNICAL_FIELDS:
                     continue
                 if fname in cls._fields:
-                    continue
+                    existing = cls._fields[fname]
+                    # Skip only if already correctly injected by poly (related and non-stored).
+                    # When Phase-1 MRO injection adds the depend model's registry class to
+                    # cls.__bases__, Odoo's _setup_base picks up the depend model's
+                    # _field_definitions and adds its fields as stored/non-related entries in
+                    # cls._fields.  We must replace those stale entries with the proper
+                    # poly-related version.
+                    if getattr(existing, '_poly_injected', False) and not getattr(existing, 'store', True):
+                        continue
+                    _logger.debug(
+                        '[poly] _build_poly_fields: replacing stale field %s in %s '
+                        '(related=%r, store=%r) with poly-related version',
+                        fname, cls._name,
+                        getattr(existing, 'related', 'N/A'),
+                        getattr(existing, 'store', 'N/A'),
+                    )
                 if isinstance(field, PolyReference):
                     continue
 
@@ -4730,10 +4745,10 @@ _logger.debug("Initializing numa_poly: monkey-patching odoo.models")
 
 # Inject PolyBase into the Odoo model hierarchy.
 #
-# Strategy: modify the __bases__ of the existing AbstractModel class so that
-# PolyBase sits between AbstractModel and BaseModel.  This ensures that ALL
-# Odoo model classes — regardless of when they are imported relative to this
-# module — inherit from PolyBase via the same chain:
+# Strategy: modify the __bases__ of AbstractModel, Model and TransientModel so
+# that PolyBase sits between them and BaseModel.  This ensures that ALL Odoo
+# model classes — regardless of when they are imported relative to this module —
+# inherit from PolyBase via the same chain:
 #
 #   SomeModel → ... → AbstractModel → PolyBase → BaseModel → object
 #
@@ -4743,24 +4758,34 @@ _logger.debug("Initializing numa_poly: monkey-patching odoo.models")
 # The resulting __base_classes sets were inconsistent, producing a C3 MRO error
 # when setup_models processed the 'base' abstract registry class.
 #
-# By modifying AbstractModel.__bases__ instead, every class — old and new —
-# continues to reference the same AbstractModel object and receives an identical
-# MRO layout.
+# By modifying __bases__ instead, every class — old and new — continues to
+# reference the same AbstractModel / Model / TransientModel objects and receives
+# an identical MRO layout.
 #
-# Robustness note: on module reloads (Odoo incremental loading) the module
-# attribute odoo.models.AbstractModel may already point to PolyBase from a
-# previous run.  We therefore locate the real AbstractModel via models.Model's
-# direct Python base, which is always stable.
-# In Odoo 18, AbstractModel is merely an alias for BaseModel (AbstractModel = BaseModel).
-# Replacing odoo.models.AbstractModel with PolyBase (old approach) caused classes defined
-# AFTER this module to inherit from PolyBase directly, while classes defined BEFORE kept
-# BaseModel.  That inconsistency broke C3 linearization for the 'base' abstract registry
-# class whose __base_classes mixed both PolyBase-base and BaseModel-base entries.
+# Robustness note: on module reloads (Odoo incremental loading) __bases__ may
+# already have been patched from a previous run.  We guard each assignment with
+# a membership check so repeated loads are idempotent.
 #
-# Standard Odoo models do NOT need PolyBase in their Python MRO.  PolyBase._prepare_setup
-# and PolyBase._setup_base are no-ops for models with _depend_models=None; poly models
-# explicitly inherit from PolyModel so they already carry PolyBase in their chain.
-# Only keep BaseModel alias for backward-compat isinstance checks.
+# Odoo 18 note: AbstractModel is merely an alias for BaseModel
+# (AbstractModel = BaseModel, same Python object).  Changing AbstractModel.__bases__
+# directly would be circular because PolyBase already inherits from
+# _original_BaseModel (= AbstractModel = BaseModel).  The equivalent injection is
+# therefore performed on Model.__bases__:
+#
+#   Model          → PolyBase → BaseModel(=AbstractModel) → object
+#   TransientModel → Model    → PolyBase → BaseModel      → object  (transitive)
+#
+# TransientModel.__bases__ is (Model,) — it does not reference BaseModel directly,
+# so its MRO gains PolyBase automatically once Model.__bases__ is updated below.
+if PolyBase not in odoo.models.Model.__bases__:
+    odoo.models.Model.__bases__ = (PolyBase,)
+# NOTE: do NOT reassign odoo.models.AbstractModel to PolyBase.  Doing so causes
+# addons imported after this module to inherit from PolyBase directly, while
+# addons imported before kept _original_BaseModel.  The resulting mixed
+# __base_classes break C3 linearization at setup_models time (exactly the
+# problem described above).  isinstance(obj, odoo.models.AbstractModel) still
+# works because AbstractModel = _original_BaseModel is an ancestor of PolyBase.
+# Keep only the BaseModel alias for backward-compat isinstance checks.
 odoo.models.BaseModel = PolyBase
 odoo.fields.Many2one.convert_to_read = poly_many2one_convert_to_read
 odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
@@ -5568,6 +5593,17 @@ def _poly_registry_setup_models(self, cr):
 
     _original_BaseModel._prepare_setup = _diag_prepare_setup
 
+    # [poly] Phase 2: Clear the per-class _poly_fields_built flag before every
+    # setup_models call (including test-reset invocations).  Without this,
+    # _build_poly_fields returns early on subsequent calls and poly M2M related
+    # attributes are lost after registry resets in the test runner.
+    for _cls in self.values():
+        if isinstance(_cls, type) and '_poly_fields_built' in _cls.__dict__:
+            try:
+                delattr(_cls, '_poly_fields_built')
+            except AttributeError:
+                pass
+
     try:
         res = _original_Registry_setup_models(self, cr)
     except TypeError as _mro_err:
@@ -5578,7 +5614,7 @@ def _poly_registry_setup_models(self, cr):
     finally:
         _original_BaseModel._prepare_setup = _original_prepare_setup
 
-    # [poly] Phase 2: Post-setup cache invalidation.
+    # [poly] Phase 3: Post-setup cache invalidation.
     # Field injection is now handled by _setup_base via _build_poly_fields.
     if 'field_computed' in self.__dict__:
         del self.__dict__['field_computed']
