@@ -1,53 +1,9 @@
 # -*- coding: utf-8 -*-
-from odoo import models, fields
 from odoo.tests import tagged, TransactionCase
-from odoo.addons.numa_poly.models.poly import PolyReference
-
-class PolyBaseModel(models.Model):
-    _name = 'test.poly.base'
-    _description = 'Test Poly Base'
-    _inherit = 'ir.poly_base'
-    
-    name = fields.Char(string='Name')
-    base_field = fields.Char(string='Base Field')
-
-class PolyChildModel(models.Model):
-    _name = 'test.poly.child'
-    _description = 'Test Poly Child'
-    _inherit = 'test.poly.base'
-    
-    # Simulate what numa_poly does manually for testing Field.setup_related
-    # related='test.poly.base.base_field' is what Odoo 18 incorrectly injects
-    # when classes are in MRO.
-    wrong_related_field = fields.Char(related='test.poly.base.base_field')
-    
-    _depend_models = {'test.poly.base': 'base_id'}
-    base_id = fields.Many2one('test.poly.base')
 
 @tagged('post_install', '-at_install', 'poly_setup')
 class TestPolySetup(TransactionCase):
-    
-    def test_related_path_correction(self):
-        """
-        Tests that polymorphic 'related' paths pointing to model names
-        are correctly redirected to link fields by poly_Field_setup_related.
 
-        NOTE: poly_Field_setup_related is currently disabled (deprecated).  Test
-        models defined in test files are also never loaded into the registry
-        because registry.load() runs before test files are imported.  This test
-        is skipped until the feature is re-enabled and the test model infrastructure
-        is in place.
-        """
-        if 'test.poly.child' not in self.env:
-            self.skipTest(
-                "test.poly.child not in registry — test models defined in test "
-                "files are loaded after registry.load(); re-enable when "
-                "poly_Field_setup_related is no longer deprecated."
-            )
-        field = self.env['test.poly.child']._fields['wrong_related_field']
-        self.assertEqual(field.related, 'base_id.base_field',
-                         "The related path should have been redirected via base_id")
-        
     def test_m2m_polymorphic_read(self):
         """
         Test that Many2many fields inherited polimorphically (which are related)
