@@ -41,23 +41,22 @@ class TestPolyEngineInternals(TransactionCase):
     def test_is_polymorphic_ir_poly_base_is_false(self):
         """ir.poly_base is the root — it must not be considered polymorphic."""
         self.assertFalse(
-            self._is_poly(self.env['ir.poly_base']),
+            self._is_poly(type(self.env['ir.poly_base'])),
             "ir.poly_base must not be polymorphic",
         )
 
     def test_is_polymorphic_regular_model_is_false(self):
         """Standard Odoo models without _depend_models are not polymorphic."""
         self.assertFalse(
-            self._is_poly(self.env['res.partner']),
+            self._is_poly(type(self.env['res.partner'])),
             "res.partner must not be polymorphic",
         )
 
     def test_is_polymorphic_requires_nonempty_depend_models(self):
         """A model with _depend_models = {} (empty) is not polymorphic."""
-        # ir.poly_base itself has _depend_models = None; find any model with empty dict.
-        # If no such model is installed, this test is vacuously consistent — we
-        # confirm the function's type checking via ir.poly_base.
-        result = self._is_poly(self.env['ir.poly_base'])
+        # ir.poly_base itself has _depend_models = None; confirm the function's
+        # type checking via ir.poly_base class (not an empty recordset).
+        result = self._is_poly(type(self.env['ir.poly_base']))
         self.assertFalse(result)
 
     # ------------------------------------------------------------------

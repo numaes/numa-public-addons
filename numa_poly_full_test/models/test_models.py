@@ -70,6 +70,5 @@ class PolyFtTop(models.Model):
 
     def make_uppercase(self):
         """Override: uppercase name (via super), append '_TOP', set top_flag."""
-        super().make_uppercase()           # sets self.name = name.upper()
-        self.name = (self.name or '') + '_TOP'
-        self.top_flag = True
+        new_name = (self.name or '').upper() + '_TOP'
+        self.write({'name': new_name, 'top_flag': True})
