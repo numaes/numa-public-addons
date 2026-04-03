@@ -1266,6 +1266,17 @@ class PolyBase(_original_BaseModel):
             The same record but as an instance of its concrete model class.
         """
         self.ensure_one()
+        if 'concrete_model_id' not in self._fields:
+            # This model is used as a poly base by other models (e.g. conversation.driver)
+            # but has no concrete_model_id field injected.  Resolve via ir.poly_base directly.
+            poly_base = self.env['ir.poly_base'].sudo().browse(self.id).exists()
+            if not poly_base or not poly_base.concrete_model_id:
+                return self
+            concrete_model_name = poly_base.concrete_model_id.model
+            if not concrete_model_name:
+                return self
+            concrete_record = self.env[concrete_model_name].browse(self.id).exists()
+            return concrete_record if concrete_record else self
         if not self.concrete_model_id:
             return self
         concrete_model_name = self.concrete_model_id.model
@@ -4510,9 +4521,16 @@ class IrModel(models.Model):
         
         # Call super to do the actual reflection and XML ID generation
         res = super()._reflect_models(all_model_names)
-        
-        # FORCED FIX for XML IDs: Sometimes Odoo's super()._reflect_models skips XML ID creation
-        # if the registry has an inconsistent state during incremental load.
+
+        # FORCED FIX for XML IDs: After poly Phase 1 MRO injection, a model's _module
+        # attribute may resolve to the dependency's module (e.g. fsm.definition's module)
+        # rather than the model's own defining module.  super()._reflect_models() checks
+        # only model._module == module, so it skips the ir.model.data entry for poly
+        # child models.  We ensure correctness in two complementary ways:
+        #
+        # 1. Create any missing ir.model.data records (force-register).
+        # 2. Always add the xmlid to loaded_xmlids so _process_end never treats the
+        #    ir.model record as orphaned (which would trigger _drop_table()).
         if module:
             data_list = []
             for name in all_model_names:
@@ -4520,19 +4538,23 @@ class IrModel(models.Model):
                 # If the model belongs to this module, ensure its XML ID exists.
                 if model._module == module or getattr(model, '_original_module', None) == module:
                     xml_id = f"model_{name.replace('.', '_')}"
-                    # Check if external ID already exists to avoid unnecessary updates
-                    if not self.env['ir.model.data']._xmlid_to_res_id(f"{module}.{xml_id}", raise_if_not_found=False):
+                    full_xml_id = f"{module}.{xml_id}"
+                    # Create the ir.model.data record if it is missing
+                    if not self.env['ir.model.data']._xmlid_to_res_id(full_xml_id, raise_if_not_found=False):
                         model_id = self._get_id(name)
                         if model_id:
-                            _logger.debug("[poly] Forcefully registering external ID %s.%s for model %s", module, xml_id, name)
+                            _logger.debug("[poly] Forcefully registering external ID %s for model %s", full_xml_id, name)
                             data_list.append({
-                                'xml_id': f"{module}.{xml_id}",
+                                'xml_id': full_xml_id,
                                 'record': self.browse(model_id),
                             })
-            
+                    # Belt-and-suspenders: always mark as loaded so _process_end never
+                    # treats this record as stale (avoids _drop_table on poly children).
+                    self.pool.loaded_xmlids.add(full_xml_id)
+
             if data_list:
                 self.env['ir.model.data']._update_xmlids(data_list)
-                
+
         return res
 
 
@@ -5525,6 +5547,16 @@ def _poly_registry_setup_models(self, cr):
                     model_name,
                     [getattr(b, '_name', b.__name__) for b in final_bases],
                 )
+                # Snapshot class-level attributes that must come from the child model,
+                # not from injected base models.  Injecting a base (e.g. digital.event)
+                # before the definition class puts the base's _order / _rec_name ahead
+                # in MRO and silently overrides the child's declared values.
+                _attrs_to_restore = {}
+                for _attr in ('_order', '_rec_name', '_description'):
+                    # Read from the registry class's current MRO (original order).
+                    _val = getattr(model_class, _attr, None)
+                    if _val is not None:
+                        _attrs_to_restore[_attr] = _val
                 model_class.__bases__ = final_bases
                 if hasattr(model_class, '_BaseModel__base_classes'):
                     model_class._BaseModel__base_classes = final_bases
@@ -5532,6 +5564,11 @@ def _poly_registry_setup_models(self, cr):
                     model_class._BaseModel__depends_base_classes = final_bases
                 if hasattr(ctypes.pythonapi, 'PyType_Modified'):
                     ctypes.pythonapi.PyType_Modified(ctypes.py_object(model_class))
+                # Restore child-model attributes that may have been shadowed by the
+                # newly injected bases (only if not already explicit in __dict__).
+                for _attr, _val in _attrs_to_restore.items():
+                    if _attr not in model_class.__dict__:
+                        setattr(model_class, _attr, _val)
 
         except Exception as e:
             _logger.error('[poly] Phase 1: MRO injection failed for %s: %s', model_name, e)
