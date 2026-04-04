@@ -3745,6 +3745,14 @@ class PolyBase(_original_BaseModel):
                         if hasattr(f, 'related') and f.related:
                              f._poly_old_related = f.related
 
+            # [poly] Auto-inject concrete_model_id: required NOT NULL in poly tables but
+            # callers never pass it.  poly already wrote it to ir_poly_base; mirror it
+            # into the child table so the INSERT doesn't fail the constraint.
+            if 'concrete_model_id' in self._fields and 'concrete_model_id' not in base_data:
+                _c_model_id = self.env['ir.model']._get_id(self._name)
+                if _c_model_id:
+                    base_data['concrete_model_id'] = _c_model_id
+
             # [poly] INSTRUMENTATION: Final values before standard create
             _logger.debug("[poly] Final create call for %s: data=%s", self._name, base_data)
             for k, v in base_data.items():
