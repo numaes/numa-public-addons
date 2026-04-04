@@ -2247,24 +2247,29 @@ class PolyBase(_original_BaseModel):
                 _logger.debug("Auto-migrating %s to polymorphic hierarchy in _auto_init", self._name)
                 self._migrate_to_poly()
 
-        # concrete_model_id is injected as a computed non-stored field (store=False).
-        # Legacy migrations may have created the column with NOT NULL, causing every
-        # ORM INSERT to fail (the ORM skips store=False fields).  Drop the constraint.
-        _cmid_field = self._fields.get('concrete_model_id')
-        if _cmid_field is not None and not _cmid_field.store and hasattr(self, '_table'):
-            self.env.cr.execute("""
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = %s AND column_name = 'concrete_model_id'
-                AND is_nullable = 'NO'
-            """, (self._table,))
-            if self.env.cr.fetchone():
-                _logger.info(
-                    "[poly] Dropping NOT NULL from %s.concrete_model_id (non-stored field)",
-                    self._table,
-                )
-                self.env.cr.execute(
-                    'ALTER TABLE "%s" ALTER COLUMN concrete_model_id DROP NOT NULL' % self._table
-                )
+        # Non-stored fields (injected poly relations, computed fields, related fields
+        # pointing to a parent table) must never be NOT NULL in the child table because
+        # the ORM omits them from INSERTs.  Legacy migrations may have created these
+        # columns with NOT NULL; drop the constraint for every such column found.
+        if hasattr(self, '_table'):
+            non_stored_cols = [
+                fname for fname, field in self._fields.items()
+                if not field.store and field.column_type  # has a DB column type but not stored here
+            ]
+            if non_stored_cols:
+                self.env.cr.execute("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = %s AND column_name = ANY(%s)
+                    AND is_nullable = 'NO'
+                """, (self._table, non_stored_cols))
+                for (col,) in self.env.cr.fetchall():
+                    _logger.info(
+                        "[poly] Dropping NOT NULL from %s.%s (non-stored field)",
+                        self._table, col,
+                    )
+                    self.env.cr.execute(
+                        'ALTER TABLE "%s" ALTER COLUMN "%s" DROP NOT NULL' % (self._table, col)
+                    )
 
         return res
 
@@ -2276,8 +2281,38 @@ class PolyBase(_original_BaseModel):
         polymorphic models don't have ID conflicts. It checks the current
         max ID values for all dependent models and adjusts the ir.poly_base
         sequence if necessary to avoid ID clashes.
+
+        Also drops NOT NULL from any column in this model's table that
+        corresponds to a non-stored field, to fix legacy migration artifacts
+        without requiring a module update (-u).
         """
         super()._register_hook()
+
+        # Drop NOT NULL from non-stored columns on every startup (no -u needed).
+        # Non-stored fields are never written by the ORM so a NOT NULL constraint
+        # left by a legacy migration would break every INSERT.
+        if hasattr(self, '_table'):
+            try:
+                non_stored_cols = [
+                    fname for fname, field in self._fields.items()
+                    if not field.store and field.column_type
+                ]
+                if non_stored_cols:
+                    self.env.cr.execute("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = %s AND column_name = ANY(%s)
+                        AND is_nullable = 'NO'
+                    """, (self._table, non_stored_cols))
+                    for (col,) in self.env.cr.fetchall():
+                        _logger.info(
+                            "[poly] Dropping NOT NULL from %s.%s (non-stored field)",
+                            self._table, col,
+                        )
+                        self.env.cr.execute(
+                            'ALTER TABLE "%s" ALTER COLUMN "%s" DROP NOT NULL' % (self._table, col)
+                        )
+            except Exception:
+                pass
 
         # Only perform actions for polymorphic models
         if getattr(self, '_depend_models', None) is not None:
