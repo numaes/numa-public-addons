@@ -129,8 +129,10 @@ def _run_in_thread(job_id, db_name, context):
         cr.commit()
 
         try:
-            # Execute the method
-            method(*job.args, **job.kwargs)
+            # Execute the method (Json fields return False when NULL — normalise)
+            _args = job.args if isinstance(job.args, (list, tuple)) else []
+            _kwargs = job.kwargs if isinstance(job.kwargs, dict) else {}
+            method(*_args, **_kwargs)
 
             # Mark as successfully completed
             _logger.debug(f'Asynchronous job {job.id} successfully executed')
