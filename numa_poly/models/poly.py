@@ -168,22 +168,24 @@ def _poly_is_polymorphic(model):
         
     model_class = type(model) if not isinstance(model, type) else model
 
-    # [poly] Explore MRO to find _depend_models in ANY base with the same _name
-    _debug = (name == 'conversation.message.facebook')
+    # [poly] Fast path: check getattr on the class directly.
+    # This works even if _depend_models is inherited (not in __dict__) because
+    # Python getattr walks the full MRO.  PolyModel sets _depend_models = None
+    # so we must check for non-None non-empty.
+    _fast = getattr(model_class, '_depend_models', None)
+    if _fast and isinstance(_fast, (dict, OrderedDict)) and len(_fast) > 0:
+        return True
+
+    # [poly] Slower fallback: walk MRO explicitly and check each class's __dict__.
+    # Needed when the registered class has a shadowing _depend_models = None/{}
+    # that blocks the fast-path, but a contributing class does define it.
     for base in _poly_get_safe_mro(model_class):
-        # We only care about bases that belong to the same Odoo model name
-        base_name = getattr(base, '_name', None)
-        if _debug:
-            raw_debug = base.__dict__.get('_depend_models')
-            if base_name == name or raw_debug:
-                _logger.info('[poly] _poly_is_polymorphic %s: base=%s, _name=%s, _depend_models=%s',
-                             name, base.__name__, base_name, raw_debug)
-        if base_name == name:
-            raw = base.__dict__.get('_depend_models')
-            if raw:
-                d = raw
-                if d and isinstance(d, (dict, OrderedDict)) and len(d) > 0:
-                    return True
+        raw = base.__dict__.get('_depend_models')
+        if raw and isinstance(raw, (dict, OrderedDict)) and len(raw) > 0:
+            # Only count it if the base truly belongs to this model
+            base_name = getattr(base, '_name', None)
+            if base_name is None or base_name == name:
+                return True
 
     return False
 
