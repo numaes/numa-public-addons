@@ -1130,17 +1130,27 @@ class PolyBase(_original_BaseModel):
             return {}
         
         depend_models = {}
+        cls_name = getattr(cls, '_name', None)
         # MRO is [Current, Base1, Base2, ..., object]
         # We iterate in reverse to let newer definitions overwrite older ones.
+        # CRITICAL: only collect _depend_models from bases that belong to THIS
+        # model (base._name == cls._name or base._name is None/absent).  Bases
+        # from PARENT models (e.g. ConversationMessage on conversation.message
+        # appearing in conversation.message.facebook's MRO via poly injection)
+        # must NOT contribute their own _depend_models — those express the
+        # parent's own poly relationships, not the child's.
         for base in reversed(cls.mro()):
+            base_name = base.__dict__.get('_name')  # None if not declared
+            if base_name is not None and base_name != cls_name:
+                continue  # skip bases from a different model
             # Use __dict__.get for safer access during Odoo 18 setup
             val = base.__dict__.get('_depend_models')
             if val is not None:
                 # If it's a list or tuple (legacy), convert to dict
                 if isinstance(val, (list, tuple)):
                     val = {v: v.replace('.', '_') + '_id' for v in val}
-                
-                depend_models.update(val)
+                if isinstance(val, (dict, OrderedDict)):
+                    depend_models.update(val)
         return depend_models
 
     def _get_all_poly_bases(self):
@@ -3829,12 +3839,20 @@ class PolyBase(_original_BaseModel):
                     if hasattr(f, 'related') and f.related:
                          f._poly_old_related = f.related
 
+        # [poly] CRITICAL: inject link fields from sub-created records into base_data.
+        # dep_record_ids holds {dep_model_name: created_id} from the sub-create loop.
+        # Without this, link fields like poly_id remain NULL in the leaf record, causing
+        # PolyReference.convert_to_record to return a recordset that doesn't exist in DB.
+        for _dep_model_name, _dep_id in dep_record_ids.items():
+            _link_field = self._depend_models.get(_dep_model_name)
+            if _link_field and _link_field not in base_data:
+                base_data[_link_field] = _dep_id
+
         # [poly] INSTRUMENTATION: Final values before standard create
-        _logger.debug("[poly] Final create call for %s: data=%s", self._name, base_data)
-        for k, v in base_data.items():
-            f = self._fields.get(k)
-            if f:
-                _logger.debug("[poly]   field %s: store=%s, related=%s", k, f.store, getattr(f, 'related', 'N/A'))
+        _logger.info("[poly] Final create for %s: id=%s dep_record_ids=%s link_fields=%s",
+                     self._name, base_data.get('id'),
+                     dep_record_ids,
+                     {k: base_data.get(k) for k in (self._depend_models or {}).values()})
 
         new_record = super().create([base_data])
         new_records |= new_record
