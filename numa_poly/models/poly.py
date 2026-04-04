@@ -3537,6 +3537,29 @@ class PolyBase(_original_BaseModel):
                         _("Records with the following IDs already exist in %s: %s")
                         % (self._name, list(existing.ids))
                     )
+            # [poly] Filter out Selection values that are invalid for this model.
+            # This prevents cross-model state pollution when poly sub-creates pass
+            # a value that is valid on the parent but not on this model (e.g.
+            # conversation.message.state='new' -> fsm.instance.state).
+            if self._name != 'ir.poly_base':
+                clean_list = []
+                for vals in data_list:
+                    clean_vals = {}
+                    for k, v in vals.items():
+                        if (v is not False and v is not None
+                                and k in self._fields):
+                            f = self._fields[k]
+                            if isinstance(f, fields.Selection) and isinstance(f.selection, list):
+                                valid_keys = {sel[0] for sel in f.selection}
+                                if valid_keys and v not in valid_keys:
+                                    _logger.warning(
+                                        "[poly] Filtering out Selection field %s=%r from %s create: not a valid value %s",
+                                        k, v, self._name, valid_keys
+                                    )
+                                    continue
+                        clean_vals[k] = v
+                    clean_list.append(clean_vals)
+                data_list = clean_list
             return super().create(data_list)
             
         # SAFEGUARD: if we are in early boot, filter out any invalid fields
