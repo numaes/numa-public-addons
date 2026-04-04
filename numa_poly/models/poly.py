@@ -2246,6 +2246,26 @@ class PolyBase(_original_BaseModel):
             if self._check_migration_needed():
                 _logger.debug("Auto-migrating %s to polymorphic hierarchy in _auto_init", self._name)
                 self._migrate_to_poly()
+
+        # concrete_model_id is injected as a computed non-stored field (store=False).
+        # Legacy migrations may have created the column with NOT NULL, causing every
+        # ORM INSERT to fail (the ORM skips store=False fields).  Drop the constraint.
+        _cmid_field = self._fields.get('concrete_model_id')
+        if _cmid_field is not None and not _cmid_field.store and hasattr(self, '_table'):
+            self.env.cr.execute("""
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = %s AND column_name = 'concrete_model_id'
+                AND is_nullable = 'NO'
+            """, (self._table,))
+            if self.env.cr.fetchone():
+                _logger.info(
+                    "[poly] Dropping NOT NULL from %s.concrete_model_id (non-stored field)",
+                    self._table,
+                )
+                self.env.cr.execute(
+                    'ALTER TABLE "%s" ALTER COLUMN concrete_model_id DROP NOT NULL' % self._table
+                )
+
         return res
 
     def _register_hook(self):
@@ -3744,14 +3764,6 @@ class PolyBase(_original_BaseModel):
                             f.inherited = False
                         if hasattr(f, 'related') and f.related:
                              f._poly_old_related = f.related
-
-            # [poly] Auto-inject concrete_model_id: required NOT NULL in poly tables but
-            # callers never pass it.  poly already wrote it to ir_poly_base; mirror it
-            # into the child table so the INSERT doesn't fail the constraint.
-            if 'concrete_model_id' in self._fields and 'concrete_model_id' not in base_data:
-                _c_model_id = self.env['ir.model']._get_id(self._name)
-                if _c_model_id:
-                    base_data['concrete_model_id'] = _c_model_id
 
             # [poly] INSTRUMENTATION: Final values before standard create
             _logger.debug("[poly] Final create call for %s: data=%s", self._name, base_data)
