@@ -159,7 +159,7 @@ def _poly_is_polymorphic(model):
     Determina si un modelo es polimórfico analizando su cadena de MRO y la presencia de _depend_models.
     Un modelo es polimórfico si él o cualquiera de sus bases (CON EL MISMO _name) tiene _depend_models.
     """
-    if not model or not hasattr(model, '_name'):
+    if model is None or not hasattr(model, '_name'):
         return False
         
     name = model._name
