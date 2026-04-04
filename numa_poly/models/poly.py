@@ -3695,6 +3695,17 @@ class PolyBase(_original_BaseModel):
                          _logger.warning("[poly] Hard-filtering driver_id from %s create", self._name)
                          continue
 
+                    if (v is not False and v is not None
+                            and isinstance(f, fields.Selection)
+                            and k not in poly_links):
+                         valid_keys = {sel[0] for sel in (f.selection if isinstance(f.selection, list) else [])}
+                         if valid_keys and v not in valid_keys:
+                              _logger.warning(
+                                   "[poly] Filtering out Selection field %s=%r from %s create: not a valid value %s",
+                                   k, v, self._name, valid_keys
+                              )
+                              continue
+
                     if f.related and not f.store and k not in poly_links and not f.required:
                          _logger.debug("[poly] Filtering out polluted related field %s from create on %s", k, self._name)
                          continue
