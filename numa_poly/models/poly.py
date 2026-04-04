@@ -3690,8 +3690,9 @@ class PolyBase(_original_BaseModel):
                     f = self._fields[k]
                     
                     if k == 'driver_id' and k not in poly_links and self._name != 'conversation.driver':
-                         _logger.warning("[poly] Hard-filtering driver_id from %s create", self._name)
-                         continue
+                         if k not in cls_real_fields:
+                              _logger.warning("[poly] Hard-filtering driver_id from %s create", self._name)
+                              continue
 
                     if (v is not False and v is not None
                             and isinstance(f, fields.Selection)
