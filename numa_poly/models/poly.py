@@ -168,21 +168,27 @@ def _poly_is_polymorphic(model):
         
     model_class = type(model) if not isinstance(model, type) else model
 
+    # DIAGNOSTIC: dump full MRO analysis for conversation.message.facebook
+    if name == 'conversation.message.facebook':
+        _logger.info('[poly_debug] model_class=%s id=%s', model_class, id(model_class))
+        _fast_diag = getattr(model_class, '_depend_models', 'NOT_FOUND')
+        _logger.info('[poly_debug] getattr(_depend_models)=%r', _fast_diag)
+        for _b in _poly_get_safe_mro(model_class):
+            _b_name_in_dict = _b.__dict__.get('_name', '<<not_in_dict>>')
+            _b_dm_in_dict = _b.__dict__.get('_depend_models', '<<not_in_dict>>')
+            _b_name_via_get = getattr(_b, '_name', 'NOT_FOUND')
+            _logger.info('[poly_debug]  base=%s _name_dict=%r _name_get=%r dm_dict=%r',
+                         _b.__name__, _b_name_in_dict, _b_name_via_get, _b_dm_in_dict)
+
     # [poly] Fast path: check getattr on the class directly.
-    # This works even if _depend_models is inherited (not in __dict__) because
-    # Python getattr walks the full MRO.  PolyModel sets _depend_models = None
-    # so we must check for non-None non-empty.
     _fast = getattr(model_class, '_depend_models', None)
     if _fast and isinstance(_fast, (dict, OrderedDict)) and len(_fast) > 0:
         return True
 
     # [poly] Slower fallback: walk MRO explicitly and check each class's __dict__.
-    # Needed when the registered class has a shadowing _depend_models = None/{}
-    # that blocks the fast-path, but a contributing class does define it.
     for base in _poly_get_safe_mro(model_class):
         raw = base.__dict__.get('_depend_models')
         if raw and isinstance(raw, (dict, OrderedDict)) and len(raw) > 0:
-            # Only count it if the base truly belongs to this model
             base_name = getattr(base, '_name', None)
             if base_name is None or base_name == name:
                 return True
