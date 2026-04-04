@@ -168,28 +168,9 @@ def _poly_is_polymorphic(model):
         
     model_class = type(model) if not isinstance(model, type) else model
 
-    # DIAGNOSTIC: dump full MRO analysis for conversation.message.facebook
-    if name == 'conversation.message.facebook':
-        _logger.info('[poly_debug] model_class=%s id=%s', model_class, id(model_class))
-        _fast_diag = getattr(model_class, '_depend_models', 'NOT_FOUND')
-        _logger.info('[poly_debug] getattr(_depend_models)=%r', _fast_diag)
-        for _b in _poly_get_safe_mro(model_class):
-            _b_name_in_dict = _b.__dict__.get('_name', '<<not_in_dict>>')
-            _b_dm_in_dict = _b.__dict__.get('_depend_models', '<<not_in_dict>>')
-            _b_name_via_get = getattr(_b, '_name', 'NOT_FOUND')
-            _logger.info('[poly_debug]  base=%s _name_dict=%r _name_get=%r dm_dict=%r',
-                         _b.__name__, _b_name_in_dict, _b_name_via_get, _b_dm_in_dict)
-
     # [poly] Fast path: check getattr on the class directly.
     _fast = getattr(model_class, '_depend_models', None)
-    if name == 'conversation.message.facebook':
-        _logger.info('[poly_debug] fast_path: _fast=%r type=%s bool=%s isinstance=%s',
-                     _fast, type(_fast).__name__,
-                     bool(_fast) if _fast is not None else 'None',
-                     isinstance(_fast, (dict, OrderedDict)) if _fast is not None else 'N/A')
     if _fast and isinstance(_fast, (dict, OrderedDict)) and len(_fast) > 0:
-        if name == 'conversation.message.facebook':
-            _logger.info('[poly_debug] fast_path returning True')
         return True
 
     # [poly] Slower fallback: walk MRO explicitly and check each class's __dict__.
@@ -198,8 +179,6 @@ def _poly_is_polymorphic(model):
         if raw and isinstance(raw, (dict, OrderedDict)) and len(raw) > 0:
             base_name = getattr(base, '_name', None)
             if base_name is None or base_name == name:
-                if name == 'conversation.message.facebook':
-                    _logger.info('[poly_debug] slow_path returning True via base=%s', base)
                 return True
 
     # [poly] Last-resort fallback: DFS over PolyModel definition subclasses.
@@ -214,15 +193,11 @@ def _poly_is_polymorphic(model):
             if _def_cls.__dict__.get('_name') == name:
                 _d = _def_cls.__dict__.get('_depend_models')
                 if _d and isinstance(_d, (dict, OrderedDict)) and len(_d) > 0:
-                    if name == 'conversation.message.facebook':
-                        _logger.info('[poly_debug] dfs_path returning True via def_cls=%s', _def_cls)
                     return True
             _def_stack.extend(_def_cls.__subclasses__())
     except Exception:
         pass
 
-    if name == 'conversation.message.facebook':
-        _logger.info('[poly_debug] returning False — no path succeeded')
     return False
 
 
