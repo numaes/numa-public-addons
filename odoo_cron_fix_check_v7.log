@@ -1,0 +1,84 @@
+2026-03-25 07:38:42,798 1745459 INFO ? odoo: Odoo version 18.0 
+2026-03-25 07:38:42,799 1745459 INFO ? odoo: Using configuration file at /home/gamarino/odoo/cm-18.0/odoo.config 
+2026-03-25 07:38:42,799 1745459 INFO ? odoo: addons paths: ['/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/addons', '/home/gamarino/.local/share/Odoo/addons/18.0', '/home/gamarino/odoo/numa-public-odoo-18.0-numa/addons', '/home/gamarino/odoo/numa-public-addons-18.0', '/home/gamarino/odoo/numa-addons-18.0', '/home/gamarino/odoo/extra-addons-18.0', '/home/gamarino/odoo/numa_l10n_ar-18.0', '/home/gamarino/odoo/cm-addons-18.0'] 
+2026-03-25 07:38:42,799 1745459 INFO ? odoo: database: pg-cm-18.0@default:default 
+2026-03-25 07:38:43,001 1745459 INFO ? odoo.addons.base.models.ir_actions_report: Will use the Wkhtmltopdf binary at /usr/local/bin/wkhtmltopdf 
+2026-03-25 07:38:43,024 1745459 INFO ? odoo.addons.base.models.ir_actions_report: Will use the Wkhtmltoimage binary at /usr/local/bin/wkhtmltoimage 
+2026-03-25 07:38:43,401 1745459 INFO cm-test-18.0 odoo.modules.loading: loading 1 modules... 
+2026-03-25 07:38:43,410 1745459 INFO cm-test-18.0 odoo.modules.loading: 1 modules loaded in 0.01s, 0 queries (+0 extra) 
+2026-03-25 07:38:43,446 1745459 INFO cm-test-18.0 odoo.modules.loading: updating modules list 
+2026-03-25 07:38:43,451 1745459 INFO cm-test-18.0 odoo.addons.base.models.ir_module: ALLOW access to module.update_list on [] to user __system__ #1 via n/a 
+2026-03-25 07:38:49,332 1745459 INFO cm-test-18.0 odoo.addons.base.models.ir_module: ALLOW access to module.button_upgrade on ['Numa Poly'] to user __system__ #1 via n/a 
+2026-03-25 07:38:49,332 1745459 INFO cm-test-18.0 odoo.addons.base.models.ir_module: ALLOW access to module.update_list on ['Numa Poly'] to user __system__ #1 via n/a 
+2026-03-25 07:38:53,362 1745459 INFO cm-test-18.0 odoo.addons.base.models.ir_module: ALLOW access to module.button_install on [] to user __system__ #1 via n/a 
+2026-03-25 07:38:53,452 1745459 INFO cm-test-18.0 odoo.modules.loading: loading 211 modules... 
+2026-03-25 07:38:53,822 1745459 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_poly (16/211) 
+2026-03-25 07:38:54,016 1745459 INFO cm-test-18.0 odoo.modules.registry: module numa_poly: creating or updating database tables 
+2026-03-25 07:38:54,189 1745459 INFO cm-test-18.0 odoo.modules.loading: loading numa_poly/security/security.xml 
+2026-03-25 07:38:54,190 1745459 INFO cm-test-18.0 odoo.modules.loading: loading numa_poly/security/ir.model.access.csv 
+2026-03-25 07:38:54,992 1745459 INFO cm-test-18.0 odoo.addons.base.models.ir_module: module numa_poly: no translation for language es_AR 
+2026-03-25 07:38:55,010 1745459 INFO cm-test-18.0 odoo.modules.loading: Module numa_poly loaded in 1.19s, 208 queries (+208 other) 
+2026-03-25 07:38:55,842 1745459 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_fsm (103/211) 
+2026-03-25 07:39:07,288 1745459 INFO cm-test-18.0 odoo.modules.registry: module numa_fsm: creating or updating database tables 
+2026-03-25 07:39:07,622 1745459 INFO cm-test-18.0 odoo.modules.loading: loading numa_fsm/security/security.xml 
+2026-03-25 07:39:07,627 1745459 INFO cm-test-18.0 odoo.modules.loading: loading numa_fsm/security/ir.model.access.csv 
+2026-03-25 07:39:07,771 1745459 INFO cm-test-18.0 odoo.modules.loading: loading numa_fsm/views/fsm_views.xml 
+2026-03-25 07:39:07,892 1745459 INFO cm-test-18.0 odoo.modules.loading: loading numa_fsm/views/menu_views.xml 
+2026-03-25 07:39:07,898 1745459 INFO cm-test-18.0 odoo.addons.base.models.ir_module: module numa_fsm: loading translation file /home/gamarino/odoo/numa-public-addons-18.0/numa_fsm/i18n/es.po for language es_AR 
+2026-03-25 07:39:07,898 1745459 INFO cm-test-18.0 odoo.tools.translate: loading base translation file /home/gamarino/odoo/numa-public-addons-18.0/numa_fsm/i18n/es.po for language es_AR 
+2026-03-25 07:39:07,962 1745459 INFO cm-test-18.0 odoo.modules.loading: Module numa_fsm loaded in 12.12s, 2384 queries (+2384 other) 
+2026-03-25 07:39:08,072 1745459 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_planning (139/211) 
+2026-03-25 07:39:19,879 1745459 INFO cm-test-18.0 odoo.modules.registry: module numa_planning: creating or updating database tables 
+2026-03-25 07:39:20,215 1745459 INFO cm-test-18.0 odoo.modules.loading: loading numa_planning/security/ir.model.access.csv 
+2026-03-25 07:39:20,248 1745459 INFO cm-test-18.0 odoo.modules.loading: loading numa_planning/views/numa_planning_views.xml 
+2026-03-25 07:39:20,333 1745459 INFO cm-test-18.0 odoo.addons.base.models.ir_module: module numa_planning: no translation for language es_AR 
+2026-03-25 07:39:20,367 1745459 INFO cm-test-18.0 odoo.modules.loading: Module numa_planning loaded in 12.29s, 2528 queries (+2528 other) 
+2026-03-25 07:39:20,434 1745459 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_planning_project (154/211) 
+2026-03-25 07:39:34,291 1745459 INFO cm-test-18.0 odoo.modules.registry: module numa_planning_project: creating or updating database tables 
+2026-03-25 07:39:34,301 1745459 WARNING cm-test-18.0 odoo.modules.loading: Transient module states were reset 
+2026-03-25 07:39:34,311 1745459 ERROR cm-test-18.0 odoo.modules.registry: Failed to load registry 
+2026-03-25 07:39:34,311 1745459 CRITICAL cm-test-18.0 odoo.service.server: Failed to initialize database `cm-test-18.0`. 
+Traceback (most recent call last):
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/service/server.py", line 1366, in preload_registries
+    registry = Registry.new(dbname, update_module=update_module)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/cm-18.0/.venv/lib/python3.12/site-packages/decorator.py", line 232, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/func.py", line 97, in locked
+    return func(inst, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/registry.py", line 129, in new
+    odoo.modules.load_modules(registry, force_demo, status, update_module)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/loading.py", line 485, in load_modules
+    processed_modules += load_marked_modules(env, graph,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/loading.py", line 365, in load_marked_modules
+    loaded, processed = load_module_graph(
+                        ^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/loading.py", line 206, in load_module_graph
+    registry.init_models(env.cr, model_names, {'module': package.name}, new_install)
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 6217, in _poly_registry_init_models
+    return _original_registry_init_models(self, cr, model_names, context, install=install)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/registry.py", line 605, in init_models
+    model._auto_init()
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 2250, in _auto_init
+    res = super()._auto_init()
+          ^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/models.py", line 3474, in _auto_init
+    new = field.update_db(self, columns)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/fields.py", line 3268, in update_db
+    comodel = model.env[self.comodel_name]
+              ~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/api.py", line 614, in __getitem__
+    return self.registry[model_name](self, (), ())
+           ~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/registry.py", line 244, in __getitem__
+    return self.models[model_name]
+           ~~~~~~~~~~~^^^^^^^^^^^^
+KeyError: None
+2026-03-25 07:39:34,317 1745459 INFO cm-test-18.0 odoo.service.server: Initiating shutdown 
+2026-03-25 07:39:34,317 1745459 INFO cm-test-18.0 odoo.service.server: Hit CTRL-C again or send a second signal to force the shutdown. 
+2026-03-25 07:39:34,317 1745459 INFO cm-test-18.0 odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  
