@@ -5523,12 +5523,29 @@ def _poly_registry_setup_models(self, cr):
             
             # Technical access to the base model's dependencies
             dep_map = OrderedDict()
-            # [poly] RECURSIVE dependency collection
-            # [poly] NEW: Consolidate _depend_models by exploring MRO, filtering those with the same _name
+            # [poly] ROBUST: Search Python definition-class hierarchy (PolyModel subclasses)
+            # for classes that declare _name == name in their own __dict__.
+            # This is MRO-independent: it works even before Phase 1 injects definition
+            # classes into the Odoo registered class's __bases__.  Without this, the MRO
+            # walk below finds nothing (ConversationMessageFacebook is not yet in
+            # model_class.mro()), dep_map stays empty, and model_class._depend_models is
+            # never set — causing _poly_is_polymorphic to return False at create() time.
+            _def_stack = list(cls_PolyModel.__subclasses__())
+            while _def_stack:
+                _def_cls = _def_stack.pop()
+                if _def_cls.__dict__.get('_name') == name:
+                    _d = _def_cls.__dict__.get('_depend_models')
+                    if _d and isinstance(_d, (dict, OrderedDict)):
+                        for _dm, _df in _d.items():
+                            if _dm not in dep_map:
+                                dep_map[_dm] = _df
+                _def_stack.extend(_def_cls.__subclasses__())
+
+            # Fallback: also walk the registered class's MRO (works after injection).
             for base in _poly_get_safe_mro(model_class):
                 if getattr(base, '_name', None) == name:
                     d = base.__dict__.get('_depend_models')
-                    if d:
+                    if d and isinstance(d, (dict, OrderedDict)):
                         for dm, df in d.items():
                             if dm not in dep_map:
                                 dep_map[dm] = df
