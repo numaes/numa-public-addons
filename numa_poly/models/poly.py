@@ -182,7 +182,14 @@ def _poly_is_polymorphic(model):
 
     # [poly] Fast path: check getattr on the class directly.
     _fast = getattr(model_class, '_depend_models', None)
+    if name == 'conversation.message.facebook':
+        _logger.info('[poly_debug] fast_path: _fast=%r type=%s bool=%s isinstance=%s',
+                     _fast, type(_fast).__name__,
+                     bool(_fast) if _fast is not None else 'None',
+                     isinstance(_fast, (dict, OrderedDict)) if _fast is not None else 'N/A')
     if _fast and isinstance(_fast, (dict, OrderedDict)) and len(_fast) > 0:
+        if name == 'conversation.message.facebook':
+            _logger.info('[poly_debug] fast_path returning True')
         return True
 
     # [poly] Slower fallback: walk MRO explicitly and check each class's __dict__.
@@ -191,8 +198,12 @@ def _poly_is_polymorphic(model):
         if raw and isinstance(raw, (dict, OrderedDict)) and len(raw) > 0:
             base_name = getattr(base, '_name', None)
             if base_name is None or base_name == name:
+                if name == 'conversation.message.facebook':
+                    _logger.info('[poly_debug] slow_path returning True via base=%s', base)
                 return True
 
+    if name == 'conversation.message.facebook':
+        _logger.info('[poly_debug] returning False — no path succeeded')
     return False
 
 
