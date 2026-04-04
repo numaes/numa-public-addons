@@ -3469,7 +3469,9 @@ class PolyBase(_original_BaseModel):
         """
         # [poly] ir.poly_base IS NOT polymorphic, it is the common base.
         # Standard Odoo models that ARE NOT polymorphic must also be handled by Odoo.
-        if self._name == 'ir.poly_base' or not _poly_is_polymorphic(self):
+        _is_poly = _poly_is_polymorphic(self)
+        _logger.info('[poly] create() called for %s, is_poly=%s', self._name, _is_poly)
+        if self._name == 'ir.poly_base' or not _is_poly:
             # Validate explicit IDs before delegating so that duplicate IDs
             # raise ValidationError rather than an unhandled UniqueViolation.
             explicit_ids = [v['id'] for v in data_list if 'id' in v]
