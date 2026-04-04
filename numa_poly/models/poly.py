@@ -167,11 +167,18 @@ def _poly_is_polymorphic(model):
         return False
         
     model_class = type(model) if not isinstance(model, type) else model
-    
+
     # [poly] Explore MRO to find _depend_models in ANY base with the same _name
+    _debug = (name == 'conversation.message.facebook')
     for base in _poly_get_safe_mro(model_class):
         # We only care about bases that belong to the same Odoo model name
-        if getattr(base, '_name', None) == name:
+        base_name = getattr(base, '_name', None)
+        if _debug:
+            raw_debug = base.__dict__.get('_depend_models')
+            if base_name == name or raw_debug:
+                _logger.info('[poly] _poly_is_polymorphic %s: base=%s, _name=%s, _depend_models=%s',
+                             name, base.__name__, base_name, raw_debug)
+        if base_name == name:
             raw = base.__dict__.get('_depend_models')
             if raw:
                 d = raw
