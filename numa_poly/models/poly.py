@@ -3596,6 +3596,12 @@ class PolyBase(_original_BaseModel):
             if base not in bases_to_create:
                 bases_to_create[base] = set()
 
+            # The create body below must only run ONCE.  When _depend_models has
+            # multiple entries this loop iterates >1 times; skip on subsequent
+            # iterations because the records were already created in the first pass.
+            if new_records:
+                continue
+
             # Optimize: check all explicit IDs in batch before processing
             explicit_ids = [data['id'] for data in data_list if 'id' in data]
             if explicit_ids:
