@@ -2303,7 +2303,7 @@ class PolyBase(_original_BaseModel):
             return
 
         # [poly] Performance check: avoid repeating setup if already done
-        if getattr(cls, '_poly_attributes_built', False):
+        if cls.__dict__.get('_poly_attributes_built', False):
             return
 
         # [poly] CHECK: A model is in the system if it has _depend_models in its MRO.
@@ -3278,7 +3278,7 @@ class PolyBase(_original_BaseModel):
         if not _poly_is_polymorphic(cls):
             cls._poly_fields_built = True
             return
-        if getattr(cls, '_poly_fields_built', False):
+        if cls.__dict__.get('_poly_fields_built', False):
             return
 
         # Recursion guard — set before any recursive calls below.
