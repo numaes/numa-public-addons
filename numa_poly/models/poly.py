@@ -3596,268 +3596,263 @@ class PolyBase(_original_BaseModel):
             if base not in bases_to_create:
                 bases_to_create[base] = set()
 
-            # The create body below must only run ONCE.  When _depend_models has
-            # multiple entries this loop iterates >1 times; skip on subsequent
-            # iterations because the records were already created in the first pass.
-            if new_records:
-                continue
-
-            # Optimize: check all explicit IDs in batch before processing
-            explicit_ids = [data['id'] for data in data_list if 'id' in data]
-            if explicit_ids:
-                existing_ids = set(self.search([('id', 'in', explicit_ids)]).ids)
-                for data in data_list:
-                    if 'id' in data and data['id'] in existing_ids:
-                        raise ValidationError(
-                            _('You are trying to create a %s with explicit id %d. It exists already!') %
-                            (self._name, data['id'])
-                        )
-
-            # SINCRONIZACIÓN PREVENTIVA:
-            # Si hay registros en el lote que requieren generación de ID, sincronizamos
-            # la secuencia una sola vez para todo el lote usando el bloqueo consultivo.
-            if any('id' not in data for data in data_list):
-                self._sync_poly_sequence()
-
-            # [poly] CLEANUP VALS: Ensure we only pass fields that exist in the model
-            # This is critical for Odoo 18 which is very strict about unknown fields in create()
-            clean_data_list = []
-            
-            # [poly] Odoo 18 PROXY PROTECTION: 
-            # Collect ALL field names defined in the model class or its MRO dicts.
-            cls_real_fields = set()
-            for base in type(self).mro():
-                 for attr_name, attr_val in base.__dict__.items():
-                      if isinstance(attr_val, fields.Field):
-                           cls_real_fields.add(attr_name)
-
-            dep_map = type(self)._poly_get_depend_models()
-            poly_links = set(dep_map.values())
-
+        # Optimize: check all explicit IDs in batch before processing
+        explicit_ids = [data['id'] for data in data_list if 'id' in data]
+        if explicit_ids:
+            existing_ids = set(self.search([('id', 'in', explicit_ids)]).ids)
             for data in data_list:
-                clean_data = {}
-                for k, v in data.items():
-                    if k in self._fields:
-                        f = self._fields[k]
-                        
-                        if k == 'driver_id' and k not in poly_links and self._name != 'conversation.driver':
-                             _logger.warning("[poly] Hard-filtering driver_id from %s create", self._name)
-                             continue
-
-                        if f.related and not f.store and k not in poly_links and not f.required:
-                             _logger.debug("[poly] Filtering out polluted related field %s from create on %s", k, self._name)
-                             continue
-
-                        if k in cls_real_fields or k in poly_links or getattr(f, 'inherited', False) or f.required or k == 'id':
-                             if f.related and not f.store and not f.required:
-                                  continue
-                             clean_data[k] = v
-                        else:
-                             if getattr(f, 'model_name', None) == self._name:
-                                  clean_data[k] = v
-                             else:
-                                  _logger.debug("[poly] Filtering out field %s not physically in %s", k, self._name)
-                
-                # [poly] CRITICAL: Ensure business fields are preserved if passed
-                # Search in all levels of the poly hierarchy for business fields
-                # that might have been filtered out but are needed.
-                for critical_f in ['name', 'provider', 'active', 'company_id']:
-                     if critical_f in data:
-                          clean_data[critical_f] = data[critical_f]
-
-                clean_data_list.append(clean_data)
-            data_list = clean_data_list
-
-            # Process each record to create
-            for data in data_list:
-                # Handle explicit ID or create a new one via ir.poly_base
-                if 'id' in data:
-                    new_id = data['id']
-                else:
-                    # Ahora creamos en ir.poly_base confiando en la secuencia ya sincronizada.
-                    # Si aun así falla por un ID insertado justo después del cálculo del max_id,
-                    # Odoo lanzará la excepción de integridad (comportamiento optimista).
-                    
-                    # [poly] Ensure concrete_model_id is passed when creating poly base
-                    # We use SQL to bypass any field filtering in Odoo 18 for this technical base
-                    model_id = self.env['ir.model']._get_id(self._name)
-                    self.env.cr.execute(
-                        'INSERT INTO ir_poly_base (concrete_model_id, create_uid, write_uid, create_date, write_date) '
-                        'VALUES (%s, %s, %s, now(), now()) RETURNING id',
-                        (model_id, self.env.uid, self.env.uid)
+                if 'id' in data and data['id'] in existing_ids:
+                    raise ValidationError(
+                        _('You are trying to create a %s with explicit id %d. It exists already!') %
+                        (self._name, data['id'])
                     )
-                    new_id = self.env.cr.fetchone()[0]
-                    _logger.debug('Creating poly base for %s, id = %s (via SQL)', self._name, new_id)
 
-                # [poly] CRITICAL: we must use the UNFILTERED data here to collect fields for bases.
-                # The data variable was already filtered in the loop before.
-                # Let's find the original data from processed_vals_list.
-                # Actually, data_list is now clean_data_list.
-                # We need the original values to propagate inherited fields.
-                # Let's re-extract the values for this record index.
-                current_idx = data_list.index(data)
-                orig_data = processed_vals_list[current_idx]
+        # SINCRONIZACIÓN PREVENTIVA:
+        # Si hay registros en el lote que requieren generación de ID, sincronizamos
+        # la secuencia una sola vez para todo el lote usando el bloqueo consultivo.
+        if any('id' not in data for data in data_list):
+            self._sync_poly_sequence()
 
-                # Enrich orig_data with main model defaults
-                _model_defaults = self.default_get(list(self._fields.keys()))
-                for _dk, _dv in _model_defaults.items():
-                    if _dk not in orig_data:
-                        orig_data[_dk] = _dv
+        # [poly] CLEANUP VALS: Ensure we only pass fields that exist in the model
+        # This is critical for Odoo 18 which is very strict about unknown fields in create()
+        clean_data_list = []
+        
+        # [poly] Odoo 18 PROXY PROTECTION: 
+        # Collect ALL field names defined in the model class or its MRO dicts.
+        cls_real_fields = set()
+        for base in type(self).mro():
+             for attr_name, attr_val in base.__dict__.items():
+                  if isinstance(attr_val, fields.Field):
+                       cls_real_fields.add(attr_name)
 
-                # Tracks the actual DB id of each created/found dependent record.
-                dep_record_ids = {}
+        dep_map = type(self)._poly_get_depend_models()
+        poly_links = set(dep_map.values())
 
-                # Create or update records in all dependent models
-                for base, field_set in bases_to_create.items():
-                    base_model = self.env[base]
-                    base_data = {}
-
-                    # Add fields that are explicitly in the field set (orig_data contains them)
-                    for field_name in field_set:
-                        if field_name in orig_data:
-                            base_data[field_name] = orig_data[field_name]
-
-                    # Add fields that match the base model's fields
-                    for field_name, field_definition in base_model._fields.items():
-                        field_plain_name = field_name.split('.')[-1]
-                        if field_plain_name in orig_data:
-                            base_data[field_name] = orig_data[field_plain_name]
-
-                    # Ensure the same ID is used
-                    base_data['id'] = new_id
-
-                    # Create or update the base record
-                    existing_base = base_model.search([('id', '=', new_id)], limit=1)
-                    if not existing_base:
-                        _logger.info(f'[poly] Sub-create for {base} from {self._name}: data={base_data}')
-                        created_base = base_model.create([base_data])
-                        dep_record_ids[base] = created_base.id
-                    else:
-                        _logger.info(f'[poly] Sub-write for {base} from {self._name}: data={base_data}')
-                        existing_base.write(base_data)
-                        dep_record_ids[base] = existing_base.id
-
-            # Finally, create the record in this model
-            # We use the filtered 'data' here which only contains stored fields of THIS model
-            # [poly] CRITICAL: we must use the UNFILTERED data to find inherited fields
-            # that might be stored in this model's table.
-            current_idx = data_list.index(data)
-            orig_data = processed_vals_list[current_idx]
-            
-            base_data = data.copy()
-            base_data['id'] = new_id
-
-            # [poly] AGGRESSIVE CLEANUP: Odoo 18 ORM rejects ANY field that is marked 
-            # as related but NOT stored in its internal _fields dict.
-            final_data = {}
-            for k, v in base_data.items():
+        for data in data_list:
+            clean_data = {}
+            for k, v in data.items():
                 if k in self._fields:
                     f = self._fields[k]
-                    f_model = getattr(f, 'model_name', None)
-                    is_real_field = f.store and f_model == self._name
                     
-                    # [poly] CRITICAL FIX: Odoo 18 MUST preserve certain fields
-                    # even if it thinks they are not stored, to satisfy database
-                    # constraints in polymorphic tables.
-                    if k == 'name' or k == 'id' or f.required or getattr(f, 'inherited', False):
-                         is_real_field = True
-                    elif f.store and not f.related:
-                         is_real_field = True
+                    if k == 'driver_id' and k not in poly_links and self._name != 'conversation.driver':
+                         _logger.warning("[poly] Hard-filtering driver_id from %s create", self._name)
+                         continue
 
-                    if is_real_field:
-                        final_data[k] = v
-            
-            # [poly] INHERITED FIELD RECOVERY:
-            # If a field is in orig_data and it's a stored field of this model,
-            # but was filtered out by the previous cleanup loop, we restore it.
-            # Also restore inherited fields from _inherits and REQUIRED fields.
-            for k, v in orig_data.items():
-                if k in self._fields and k not in final_data:
-                    f = self._fields[k]
-                    # [poly] Forcing field recovery if it's required, even if Odoo
-                    # thinks it's a related/non-stored due to Registry pollution.
-                    # We check the database column existence if possible.
-                    if f.required or getattr(f, 'inherited', False) or k == 'name':
-                         final_data[k] = v
+                    if f.related and not f.store and k not in poly_links and not f.required:
+                         _logger.debug("[poly] Filtering out polluted related field %s from create on %s", k, self._name)
+                         continue
+
+                    if k in cls_real_fields or k in poly_links or getattr(f, 'inherited', False) or f.required or k == 'id':
+                         if f.related and not f.store and not f.required:
+                              continue
+                         clean_data[k] = v
                     else:
-                        f_model = getattr(f, 'model_name', None)
-                        if (f.store and f_model == self._name):
-                            final_data[k] = v
-
-            base_data = final_data
-
-            # [poly] CRITICAL ODOO 18 FIX:
-            # We force those fields back into 'base_data' if they are missing.
-            # AND we MUST ensure Odoo sees them as stored BEFORE they are classified.
+                         if getattr(f, 'model_name', None) == self._name:
+                              clean_data[k] = v
+                         else:
+                              _logger.debug("[poly] Filtering out field %s not physically in %s", k, self._name)
             
-            # [poly] Re-classify fields after our forced restoration
-            for k, v in orig_data.items():
-                if k not in base_data and k in self._fields:
-                    f = self._fields[k]
-                    if k in ('name', 'provider', 'active', 'facebook_account_id', 'driver_id') or not f.related or f.related.split('.')[0] in (self._depend_models or {}):
-                        base_data[k] = v
-                        # [poly] CRITICAL: force Odoo to include these fields in classification
-                        if not f.store:
-                            f._poly_old_store = f.store
-                            f.store = True
-                        if getattr(f, 'inherited', False):
-                            f._poly_old_inherited = f.inherited
-                            f.inherited = False
-                        if hasattr(f, 'related') and f.related:
-                             f._poly_old_related = f.related
+            # [poly] CRITICAL: Ensure business fields are preserved if passed
+            # Search in all levels of the poly hierarchy for business fields
+            # that might have been filtered out but are needed.
+            for critical_f in ['name', 'provider', 'active', 'company_id']:
+                 if critical_f in data:
+                      clean_data[critical_f] = data[critical_f]
 
-            # [poly] INSTRUMENTATION: Final values before standard create
-            _logger.debug("[poly] Final create call for %s: data=%s", self._name, base_data)
-            for k, v in base_data.items():
-                f = self._fields.get(k)
-                if f:
-                    _logger.debug("[poly]   field %s: store=%s, related=%s", k, f.store, getattr(f, 'related', 'N/A'))
+            clean_data_list.append(clean_data)
+        data_list = clean_data_list
 
-            new_record = super().create([base_data])
-            new_records |= new_record
-            
-            # [poly] RESTORE field state
-            # IMPORTANT: We MUST ensure Odoo has updated the database before restoring f.store
-            # and f.inherited, otherwise the flush might discard the values.
-            self.flush_model(base_data.keys())
-            
-            # [poly] CRITICAL: After flush, we MUST invalidate the cache for these records 
-            # so Odoo reads the values from DB using the descriptors we are about to restore.
-            # Odoo 18: Invalidate using field names to be precise.
-            self.env.cache.invalidate([(f, new_records._ids) for k in base_data.keys() if (f := self._fields.get(k))])
-            
-            # [poly] For related fields, we must also invalidate the target model cache 
-            # because the inversion might have put False/None there during create.
-            for k in base_data.keys():
-                f = self._fields.get(k)
-                if f and hasattr(f, 'related') and f.related:
-                     try:
-                         # E.g. driver_id.name -> invalidate conversation.driver
-                         target_model_name = f.related.split('.')[0]
-                         if target_model_name in (self._depend_models or {}):
-                              link_fname = self._depend_models[target_model_name]
-                              target_ids = [r[link_fname].id for r in new_records if r[link_fname]]
-                              if target_ids:
-                                   target_model = self.env[target_model_name]
-                                   target_field_name = f.related.split('.')[-1]
-                                   if target_field_name in target_model._fields:
-                                        target_field = target_model._fields[target_field_name]
-                                        self.env.cache.invalidate([(target_field, tuple(target_ids))])
-                     except:
-                         pass
+        # Process each record to create
+        for data in data_list:
+            # Handle explicit ID or create a new one via ir.poly_base
+            if 'id' in data:
+                new_id = data['id']
+            else:
+                # Ahora creamos en ir.poly_base confiando en la secuencia ya sincronizada.
+                # Si aun así falla por un ID insertado justo después del cálculo del max_id,
+                # Odoo lanzará la excepción de integridad (comportamiento optimista).
+                
+                # [poly] Ensure concrete_model_id is passed when creating poly base
+                # We use SQL to bypass any field filtering in Odoo 18 for this technical base
+                model_id = self.env['ir.model']._get_id(self._name)
+                self.env.cr.execute(
+                    'INSERT INTO ir_poly_base (concrete_model_id, create_uid, write_uid, create_date, write_date) '
+                    'VALUES (%s, %s, %s, now(), now()) RETURNING id',
+                    (model_id, self.env.uid, self.env.uid)
+                )
+                new_id = self.env.cr.fetchone()[0]
+                _logger.debug('Creating poly base for %s, id = %s (via SQL)', self._name, new_id)
 
-            for k in base_data.keys():
-                f = self._fields.get(k)
-                if f:
-                    if hasattr(f, '_poly_old_related'):
-                        f.related = f._poly_old_related
-                        del f._poly_old_related
-                    if hasattr(f, '_poly_old_store'):
-                        f.store = f._poly_old_store
-                        del f._poly_old_store
-                    if hasattr(f, '_poly_old_inherited'):
-                        f.inherited = f._poly_old_inherited
-                        del f._poly_old_inherited
+            # [poly] CRITICAL: we must use the UNFILTERED data here to collect fields for bases.
+            # The data variable was already filtered in the loop before.
+            # Let's find the original data from processed_vals_list.
+            # Actually, data_list is now clean_data_list.
+            # We need the original values to propagate inherited fields.
+            # Let's re-extract the values for this record index.
+            current_idx = data_list.index(data)
+            orig_data = processed_vals_list[current_idx]
+
+            # Enrich orig_data with main model defaults
+            _model_defaults = self.default_get(list(self._fields.keys()))
+            for _dk, _dv in _model_defaults.items():
+                if _dk not in orig_data:
+                    orig_data[_dk] = _dv
+
+            # Tracks the actual DB id of each created/found dependent record.
+            dep_record_ids = {}
+
+            # Create or update records in all dependent models
+            _logger.info('[poly] Creating sub-records for %s, bases_to_create: %s', self._name, list(bases_to_create.keys()))
+            for base, field_set in bases_to_create.items():
+                base_model = self.env[base]
+                base_data = {}
+
+                # Add fields that are explicitly in the field set (orig_data contains them)
+                for field_name in field_set:
+                    if field_name in orig_data:
+                        base_data[field_name] = orig_data[field_name]
+
+                # Add fields that match the base model's fields
+                for field_name, field_definition in base_model._fields.items():
+                    field_plain_name = field_name.split('.')[-1]
+                    if field_plain_name in orig_data:
+                        base_data[field_name] = orig_data[field_plain_name]
+
+                # Ensure the same ID is used
+                base_data['id'] = new_id
+
+                # Create or update the base record
+                existing_base = base_model.search([('id', '=', new_id)], limit=1)
+                if not existing_base:
+                    _logger.info(f'[poly] Sub-create for {base} from {self._name}: data={base_data}')
+                    created_base = base_model.create([base_data])
+                    dep_record_ids[base] = created_base.id
+                else:
+                    _logger.info(f'[poly] Sub-write for {base} from {self._name}: data={base_data}')
+                    existing_base.write(base_data)
+                    dep_record_ids[base] = existing_base.id
+
+        # Finally, create the record in this model
+        # We use the filtered 'data' here which only contains stored fields of THIS model
+        # [poly] CRITICAL: we must use the UNFILTERED data to find inherited fields
+        # that might be stored in this model's table.
+        current_idx = data_list.index(data)
+        orig_data = processed_vals_list[current_idx]
+        
+        base_data = data.copy()
+        base_data['id'] = new_id
+
+        # [poly] AGGRESSIVE CLEANUP: Odoo 18 ORM rejects ANY field that is marked 
+        # as related but NOT stored in its internal _fields dict.
+        final_data = {}
+        for k, v in base_data.items():
+            if k in self._fields:
+                f = self._fields[k]
+                f_model = getattr(f, 'model_name', None)
+                is_real_field = f.store and f_model == self._name
+                
+                # [poly] CRITICAL FIX: Odoo 18 MUST preserve certain fields
+                # even if it thinks they are not stored, to satisfy database
+                # constraints in polymorphic tables.
+                if k == 'name' or k == 'id' or f.required or getattr(f, 'inherited', False):
+                     is_real_field = True
+                elif f.store and not f.related:
+                     is_real_field = True
+
+                if is_real_field:
+                    final_data[k] = v
+        
+        # [poly] INHERITED FIELD RECOVERY:
+        # If a field is in orig_data and it's a stored field of this model,
+        # but was filtered out by the previous cleanup loop, we restore it.
+        # Also restore inherited fields from _inherits and REQUIRED fields.
+        for k, v in orig_data.items():
+            if k in self._fields and k not in final_data:
+                f = self._fields[k]
+                # [poly] Forcing field recovery if it's required, even if Odoo
+                # thinks it's a related/non-stored due to Registry pollution.
+                # We check the database column existence if possible.
+                if f.required or getattr(f, 'inherited', False) or k == 'name':
+                     final_data[k] = v
+                else:
+                    f_model = getattr(f, 'model_name', None)
+                    if (f.store and f_model == self._name):
+                        final_data[k] = v
+
+        base_data = final_data
+
+        # [poly] CRITICAL ODOO 18 FIX:
+        # We force those fields back into 'base_data' if they are missing.
+        # AND we MUST ensure Odoo sees them as stored BEFORE they are classified.
+        
+        # [poly] Re-classify fields after our forced restoration
+        for k, v in orig_data.items():
+            if k not in base_data and k in self._fields:
+                f = self._fields[k]
+                if k in ('name', 'provider', 'active', 'facebook_account_id', 'driver_id') or not f.related or f.related.split('.')[0] in (self._depend_models or {}):
+                    base_data[k] = v
+                    # [poly] CRITICAL: force Odoo to include these fields in classification
+                    if not f.store:
+                        f._poly_old_store = f.store
+                        f.store = True
+                    if getattr(f, 'inherited', False):
+                        f._poly_old_inherited = f.inherited
+                        f.inherited = False
+                    if hasattr(f, 'related') and f.related:
+                         f._poly_old_related = f.related
+
+        # [poly] INSTRUMENTATION: Final values before standard create
+        _logger.debug("[poly] Final create call for %s: data=%s", self._name, base_data)
+        for k, v in base_data.items():
+            f = self._fields.get(k)
+            if f:
+                _logger.debug("[poly]   field %s: store=%s, related=%s", k, f.store, getattr(f, 'related', 'N/A'))
+
+        new_record = super().create([base_data])
+        new_records |= new_record
+        
+        # [poly] RESTORE field state
+        # IMPORTANT: We MUST ensure Odoo has updated the database before restoring f.store
+        # and f.inherited, otherwise the flush might discard the values.
+        self.flush_model(base_data.keys())
+        
+        # [poly] CRITICAL: After flush, we MUST invalidate the cache for these records 
+        # so Odoo reads the values from DB using the descriptors we are about to restore.
+        # Odoo 18: Invalidate using field names to be precise.
+        self.env.cache.invalidate([(f, new_records._ids) for k in base_data.keys() if (f := self._fields.get(k))])
+        
+        # [poly] For related fields, we must also invalidate the target model cache 
+        # because the inversion might have put False/None there during create.
+        for k in base_data.keys():
+            f = self._fields.get(k)
+            if f and hasattr(f, 'related') and f.related:
+                 try:
+                     # E.g. driver_id.name -> invalidate conversation.driver
+                     target_model_name = f.related.split('.')[0]
+                     if target_model_name in (self._depend_models or {}):
+                          link_fname = self._depend_models[target_model_name]
+                          target_ids = [r[link_fname].id for r in new_records if r[link_fname]]
+                          if target_ids:
+                               target_model = self.env[target_model_name]
+                               target_field_name = f.related.split('.')[-1]
+                               if target_field_name in target_model._fields:
+                                    target_field = target_model._fields[target_field_name]
+                                    self.env.cache.invalidate([(target_field, tuple(target_ids))])
+                 except:
+                     pass
+
+        for k in base_data.keys():
+            f = self._fields.get(k)
+            if f:
+                if hasattr(f, '_poly_old_related'):
+                    f.related = f._poly_old_related
+                    del f._poly_old_related
+                if hasattr(f, '_poly_old_store'):
+                    f.store = f._poly_old_store
+                    del f._poly_old_store
+                if hasattr(f, '_poly_old_inherited'):
+                    f.inherited = f._poly_old_inherited
+                    del f._poly_old_inherited
 
         return new_records
 
