@@ -202,6 +202,25 @@ def _poly_is_polymorphic(model):
                     _logger.info('[poly_debug] slow_path returning True via base=%s', base)
                 return True
 
+    # [poly] Last-resort fallback: DFS over PolyModel definition subclasses.
+    # This handles the case where setup_models rebuilds the registry class after
+    # Phase 0 set _depend_models, losing the dynamic attribute.  The definition
+    # class (e.g. ConversationMessageFacebook) always has _depend_models in its
+    # own __dict__ regardless of registry class identity.
+    try:
+        _def_stack = list(PolyModel.__subclasses__())
+        while _def_stack:
+            _def_cls = _def_stack.pop()
+            if _def_cls.__dict__.get('_name') == name:
+                _d = _def_cls.__dict__.get('_depend_models')
+                if _d and isinstance(_d, (dict, OrderedDict)) and len(_d) > 0:
+                    if name == 'conversation.message.facebook':
+                        _logger.info('[poly_debug] dfs_path returning True via def_cls=%s', _def_cls)
+                    return True
+            _def_stack.extend(_def_cls.__subclasses__())
+    except Exception:
+        pass
+
     if name == 'conversation.message.facebook':
         _logger.info('[poly_debug] returning False — no path succeeded')
     return False
