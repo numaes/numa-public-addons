@@ -154,6 +154,12 @@ def _poly_get_safe_mro(cls):
                 pass
         return []
 
+# [poly] Per-registry cache for _poly_is_polymorphic results.
+# Keyed by model _name -> bool.  Cleared in _poly_registry_setup_models after
+# each Registry.setup_models() call so stale entries never survive a reload.
+_poly_is_polymorphic_cache: dict = {}
+
+
 def _poly_is_polymorphic(model):
     """
     Determina si un modelo es polimórfico analizando su cadena de MRO y la presencia de _depend_models.
@@ -161,16 +167,22 @@ def _poly_is_polymorphic(model):
     """
     if model is None or not hasattr(model, '_name'):
         return False
-        
+
     name = model._name
     if name == 'ir.poly_base':
         return False
-        
+
+    # [poly] Cache hit — avoid repeated DFS on every ORM call.
+    cached = _poly_is_polymorphic_cache.get(name)
+    if cached is not None:
+        return cached
+
     model_class = type(model) if not isinstance(model, type) else model
 
     # [poly] Fast path: check getattr on the class directly.
     _fast = getattr(model_class, '_depend_models', None)
     if _fast and isinstance(_fast, (dict, OrderedDict)) and len(_fast) > 0:
+        _poly_is_polymorphic_cache[name] = True
         return True
 
     # [poly] Slower fallback: walk MRO explicitly and check each class's __dict__.
@@ -179,6 +191,7 @@ def _poly_is_polymorphic(model):
         if raw and isinstance(raw, (dict, OrderedDict)) and len(raw) > 0:
             base_name = getattr(base, '_name', None)
             if base_name is None or base_name == name:
+                _poly_is_polymorphic_cache[name] = True
                 return True
 
     # [poly] Last-resort fallback: DFS over PolyModel definition subclasses.
@@ -193,11 +206,13 @@ def _poly_is_polymorphic(model):
             if _def_cls.__dict__.get('_name') == name:
                 _d = _def_cls.__dict__.get('_depend_models')
                 if _d and isinstance(_d, (dict, OrderedDict)) and len(_d) > 0:
+                    _poly_is_polymorphic_cache[name] = True
                     return True
             _def_stack.extend(_def_cls.__subclasses__())
     except Exception:
         pass
 
+    _poly_is_polymorphic_cache[name] = False
     return False
 
 
@@ -5806,6 +5821,9 @@ def _poly_registry_setup_models(self, cr):
     # Field injection is now handled by _setup_base via _build_poly_fields.
     if 'field_computed' in self.__dict__:
         del self.__dict__['field_computed']
+    # [poly] Clear the polymorphic model name cache so stale results from the
+    # previous registry state don't persist into the newly rebuilt registry.
+    _poly_is_polymorphic_cache.clear()
     _logger.debug('[poly] Registry setup complete')
     return res
 
