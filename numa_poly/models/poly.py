@@ -5406,19 +5406,19 @@ def poly_Field_get_depends(self, model):
     if stack_key in odoo.fields.Field._poly_depends_stack:
         return [], set()
     
-    # [poly] Proteccion extra para campos related no inicializados durante el boot
+    # [poly] Proteccion para campos related con cadena rota (related_field is None).
+    # Aplica tanto en boot (_init=True) como en reset_changes/_button_immediate_upgrade
+    # (_init=False), ya que en ambos casos el campo relacionado aún no está resuelto.
     if self.related and (not hasattr(self, 'related_field') or self.related_field is None):
-        if model.pool._init:
-            return [self.related], set()
+        return [self.related], set()
 
     odoo.fields.Field._poly_depends_stack.add(stack_key)
     try:
         return _original_Field_get_depends(self, model)
     except (AttributeError, KeyError, TypeError) as e:
-        if model.pool._init:
-            is_poly = hasattr(model, '_depend_models') or 'ir.poly_base' in [c._name for c in model.mro() if hasattr(c, '_name')]
-            if is_poly:
-                return [], set()
+        is_poly = hasattr(model, '_depend_models') or 'ir.poly_base' in [c._name for c in model.mro() if hasattr(c, '_name')]
+        if is_poly:
+            return [], set()
         raise e
     finally:
         odoo.fields.Field._poly_depends_stack.discard(stack_key)
