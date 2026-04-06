@@ -5560,7 +5560,13 @@ def _poly_registry_setup_models(self, cr):
     ensuring that all models are already present in the registry.
     """
     _patch_ir_ui_view()
-    
+
+    # [poly] Invalidate polymorphic model cache before setup begins.
+    # Models are partially initialised during multi-phase setup, so any values
+    # cached in earlier phases would be stale by later phases.  Clearing here
+    # guarantees that every call during setup computes from the live class state.
+    _poly_is_polymorphic_cache.clear()
+
     # [poly] Technical access to core classes
     cls_PolyBase = PolyBase
     cls_PolyModel = PolyModel
