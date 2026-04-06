@@ -86,8 +86,11 @@ def _run_in_thread(job_id, db_name, context):
             cr.commit()
             return
 
-        # Validate recordset exists before proceeding
-        env_worker = api.Environment(cr, job.uid.id, job.context or context or {})
+        # Validate recordset exists before proceeding.
+        # Jobs run as SUPERUSER so that system-level operations (e.g. webhook
+        # processing) are not restricted by company-based ir.rules.  The
+        # original uid is preserved in job.uid for audit purposes.
+        env_worker = api.Environment(cr, SUPERUSER_ID, job.context or context or {})
         recordset = env_worker[job.model_name].browse(job.res_ids).exists()
         if not recordset:
             _logger.error(f'Asynchronous job {job.id} no target records found (model: {job.model_name}, ids: {job.res_ids}), marking as failed')
