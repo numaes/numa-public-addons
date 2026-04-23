@@ -1,0 +1,491 @@
+2026-03-25 02:06:57,064 331660 INFO ? odoo: Odoo version 18.0 
+2026-03-25 02:06:57,064 331660 INFO ? odoo: Using configuration file at /home/gamarino/odoo/cm-18.0/odoo.config 
+2026-03-25 02:06:57,064 331660 INFO ? odoo: addons paths: ['/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/addons', '/home/gamarino/.local/share/Odoo/addons/18.0', '/home/gamarino/odoo/numa-public-odoo-18.0-numa/addons', '/home/gamarino/odoo/numa-public-addons-18.0', '/home/gamarino/odoo/numa-addons-18.0', '/home/gamarino/odoo/extra-addons-18.0', '/home/gamarino/odoo/numa_l10n_ar-18.0', '/home/gamarino/odoo/cm-addons-18.0'] 
+2026-03-25 02:06:57,064 331660 INFO ? odoo: database: pg-cm-18.0@default:default 
+2026-03-25 02:06:57,184 331660 INFO ? odoo.addons.base.models.ir_actions_report: Will use the Wkhtmltopdf binary at /usr/local/bin/wkhtmltopdf 
+2026-03-25 02:06:57,196 331660 INFO ? odoo.addons.base.models.ir_actions_report: Will use the Wkhtmltoimage binary at /usr/local/bin/wkhtmltoimage 
+2026-03-25 02:06:57,481 331660 INFO cm-test-18.0 odoo.modules.loading: loading 1 modules... 
+2026-03-25 02:06:57,489 331660 INFO cm-test-18.0 odoo.modules.loading: 1 modules loaded in 0.01s, 0 queries (+0 extra) 
+2026-03-25 02:06:57,525 331660 INFO cm-test-18.0 odoo.modules.loading: updating modules list 
+2026-03-25 02:06:57,529 331660 INFO cm-test-18.0 odoo.addons.base.models.ir_module: ALLOW access to module.update_list on [] to user __system__ #1 via n/a 
+2026-03-25 02:07:00,016 331660 INFO cm-test-18.0 odoo.addons.base.models.ir_module: ALLOW access to module.button_install on ['Numa FSM CRM'] to user __system__ #1 via n/a 
+2026-03-25 02:07:00,086 331660 INFO cm-test-18.0 odoo.modules.loading: loading 211 modules... 
+2026-03-25 02:07:00,472 331660 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_poly (16/211) 
+2026-03-25 02:07:00,513 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Entering Phase 1: MRO Injection and attribute building 
+2026-03-25 02:07:00,545 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Entering Phase 2: Final field stabilization and sanitization 
+2026-03-25 02:07:00,561 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Entering Phase 1: MRO Injection and attribute building 
+2026-03-25 02:07:00,594 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Entering Phase 2: Final field stabilization and sanitization 
+2026-03-25 02:07:00,626 331660 INFO cm-test-18.0 odoo.modules.registry: module numa_poly: creating or updating database tables 
+2026-03-25 02:07:00,826 331660 INFO cm-test-18.0 odoo.modules.loading: loading numa_poly/security/security.xml 
+2026-03-25 02:07:00,828 331660 INFO cm-test-18.0 odoo.modules.loading: loading numa_poly/security/ir.model.access.csv 
+2026-03-25 02:07:01,661 331660 INFO cm-test-18.0 odoo.addons.base.models.ir_module: module numa_poly: no translation for language es_AR 
+2026-03-25 02:07:01,679 331660 INFO cm-test-18.0 odoo.modules.loading: Module numa_poly loaded in 1.21s, 207 queries (+207 other) 
+2026-03-25 02:07:03,124 331660 INFO cm-test-18.0 odoo.modules.loading: Loading module numa_conversation_engine_facebook (200/211) 
+2026-03-25 02:07:03,130 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Entering Phase 1: MRO Injection and attribute building 
+2026-03-25 02:07:09,125 331660 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:09,126 331660 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:09,126 331660 WARNING cm-test-18.0 odoo.fields: conversation.message.state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:09,241 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:09,241 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:09,242 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:09,242 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.execution_policy: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:10,200 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Entering Phase 2: Final field stabilization and sanitization 
+2026-03-25 02:07:10,588 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Entering Phase 1: MRO Injection and attribute building 
+2026-03-25 02:07:16,338 331660 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:16,338 331660 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:16,355 331660 WARNING cm-test-18.0 odoo.fields: conversation.message.state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:16,480 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:16,480 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:16,480 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:16,481 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.execution_policy: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:17,458 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.session.bot_id: conversation.session.bot_id 
+2026-03-25 02:07:17,458 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'session' from conversation.session.bot_id: conversation.session.bot_id 
+2026-03-25 02:07:17,458 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.session.bot_state: conversation.session.bot_state 
+2026-03-25 02:07:17,458 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'session' from conversation.session.bot_state: conversation.session.bot_state 
+2026-03-25 02:07:17,458 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.session.memory_context_id: conversation.session.memory_context_id 
+2026-03-25 02:07:17,458 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'session' from conversation.session.memory_context_id: conversation.session.memory_context_id 
+2026-03-25 02:07:17,458 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_state: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_type_icon: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_date_deadline: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.my_activity_date_deadline: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_summary: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_exception_decoration: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_exception_icon: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_is_follower: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.has_message: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_needaction: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_needaction_counter: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_has_error: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,459 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_has_error_counter: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_attachment_count: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_has_sms_error: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.state: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.current_state_id: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.next_node_id: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.instance_variables: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.intermediate_variables: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.debug_mode: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.is_simulation: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.json_ui_schema: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,460 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.display_name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,461 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.create_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,461 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.write_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.parent_id: conversation.message.parent_id 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.parent_id: conversation.message.parent_id 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.child_ids: conversation.message.child_ids 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.child_ids: conversation.message.child_ids 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.reference_id: conversation.message.reference_id 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.reference_id: conversation.message.reference_id 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.root_id: conversation.message.root_id 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.root_id: conversation.message.root_id 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.session_id: conversation.message.session_id 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.session_id: conversation.message.session_id 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.subject: conversation.message.subject 
+2026-03-25 02:07:17,461 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.subject: conversation.message.subject 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.body: conversation.message.body 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.body: conversation.message.body 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.direction: conversation.message.direction 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.direction: conversation.message.direction 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.send_state: conversation.message.send_state 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.send_state: conversation.message.send_state 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.last_attempt_date: conversation.message.last_attempt_date 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.last_attempt_date: conversation.message.last_attempt_date 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.retry_count: conversation.message.retry_count 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.retry_count: conversation.message.retry_count 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.user_id: conversation.message.user_id 
+2026-03-25 02:07:17,462 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.user_id: conversation.message.user_id 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.group_id: conversation.message.group_id 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.group_id: conversation.message.group_id 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.last_message_date: conversation.message.last_message_date 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.last_message_date: conversation.message.last_message_date 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.is_read: conversation.message.is_read 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.is_read: conversation.message.is_read 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.attachment_ids: conversation.message.attachment_ids 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.attachment_ids: conversation.message.attachment_ids 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.attachment_count: conversation.message.attachment_count 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.attachment_count: conversation.message.attachment_count 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.attachment_preview: conversation.message.attachment_preview 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.attachment_preview: conversation.message.attachment_preview 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.attachment_preview_mimetype: conversation.message.attachment_preview_mimetype 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.attachment_preview_mimetype: conversation.message.attachment_preview_mimetype 
+2026-03-25 02:07:17,463 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.conversation_message_ids: conversation.message.conversation_message_ids 
+2026-03-25 02:07:17,464 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.conversation_message_ids: conversation.message.conversation_message_ids 
+2026-03-25 02:07:17,464 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.fsm_instance_id: conversation.message.fsm_instance_id 
+2026-03-25 02:07:17,464 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.fsm_instance_id: conversation.message.fsm_instance_id 
+2026-03-25 02:07:17,464 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.bot_id: conversation.message.bot_id 
+2026-03-25 02:07:17,464 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.bot_id: conversation.message.bot_id 
+2026-03-25 02:07:17,464 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.bot_state: conversation.message.bot_state 
+2026-03-25 02:07:17,464 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.bot_state: conversation.message.bot_state 
+2026-03-25 02:07:17,464 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.event_type: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,464 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.payload: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,464 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.state: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,464 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.timestamp: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,464 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.job_uuid: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,464 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.error_message: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.display_name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.create_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.write_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_state: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_type_icon: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_date_deadline: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.my_activity_date_deadline: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_summary: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_exception_decoration: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_exception_icon: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,465 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_is_follower: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,466 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.has_message: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,466 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_needaction: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,466 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_needaction_counter: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,466 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_has_error: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,466 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_has_error_counter: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,466 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_attachment_count: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,466 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_has_sms_error: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,466 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,466 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.current_state_id: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,466 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.next_node_id: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.instance_variables: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.intermediate_variables: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.debug_mode: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.is_simulation: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.json_ui_schema: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.active: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.provider: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.use_generic_session_match: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.display_name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,467 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.create_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,468 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.write_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,479 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from email.account.logo: email.account.logo 
+2026-03-25 02:07:17,479 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from email.account.logo: email.account.logo 
+2026-03-25 02:07:17,479 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from email.account.alias_id: email.account.alias_id 
+2026-03-25 02:07:17,479 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from email.account.alias_id: email.account.alias_id 
+2026-03-25 02:07:17,479 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from email.account.fetchmail_server_id: email.account.fetchmail_server_id 
+2026-03-25 02:07:17,479 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from email.account.fetchmail_server_id: email.account.fetchmail_server_id 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from email.account.default_user_id: email.account.default_user_id 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from email.account.default_user_id: email.account.default_user_id 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from email.account.default_group_id: email.account.default_group_id 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from email.account.default_group_id: email.account.default_group_id 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from email.account.default_bot_id: email.account.default_bot_id 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from email.account.default_bot_id: email.account.default_bot_id 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from email.account.driver_email_id: email.account.driver_email_id 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from email.account.driver_email_id: email.account.driver_email_id 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from email.account.outgoing_header_html: email.account.outgoing_header_html 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from email.account.outgoing_header_html: email.account.outgoing_header_html 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from email.account.outgoing_include_signature: email.account.outgoing_include_signature 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from email.account.outgoing_include_signature: email.account.outgoing_include_signature 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from email.account.outgoing_footer_html: email.account.outgoing_footer_html 
+2026-03-25 02:07:17,480 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from email.account.outgoing_footer_html: email.account.outgoing_footer_html 
+2026-03-25 02:07:17,480 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,481 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.active: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,481 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.provider: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,481 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.use_generic_session_match: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,481 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.display_name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,481 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.create_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,481 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.write_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:17,481 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.driver.email.email_account_id: conversation.driver.email.email_account_id 
+2026-03-25 02:07:17,481 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'driver' from conversation.driver.email.email_account_id: conversation.driver.email.email_account_id 
+2026-03-25 02:07:17,481 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from conversation.driver.email.email_account_id: conversation.driver.email.email_account_id 
+2026-03-25 02:07:17,481 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.email.email_message_id: conversation.message.email.email_message_id 
+2026-03-25 02:07:17,481 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.email.email_message_id: conversation.message.email.email_message_id 
+2026-03-25 02:07:17,481 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from conversation.message.email.email_message_id: conversation.message.email.email_message_id 
+2026-03-25 02:07:17,481 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.email.email_in_reply_to: conversation.message.email.email_in_reply_to 
+2026-03-25 02:07:17,481 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.email.email_in_reply_to: conversation.message.email.email_in_reply_to 
+2026-03-25 02:07:17,482 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'email' from conversation.message.email.email_in_reply_to: conversation.message.email.email_in_reply_to 
+2026-03-25 02:07:17,557 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Entering Phase 2: Final field stabilization and sanitization 
+2026-03-25 02:07:17,789 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Entering Phase 1: MRO Injection and attribute building 
+2026-03-25 02:07:23,773 331660 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:23,774 331660 WARNING cm-test-18.0 odoo.fields: conversation.session.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:23,785 331660 WARNING cm-test-18.0 odoo.fields: conversation.message.state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:23,908 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:23,908 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.activity_exception_decoration: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:23,909 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.state: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:23,909 331660 WARNING cm-test-18.0 odoo.fields: conversation.bot.execution_policy: selection attribute will be ignored as the field is related 
+2026-03-25 02:07:24,896 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_state: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,896 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_type_icon: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,896 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_date_deadline: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,896 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.my_activity_date_deadline: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,897 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_summary: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,897 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_exception_decoration: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,897 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.activity_exception_icon: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,897 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_is_follower: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,897 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.has_message: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,897 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_needaction: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,897 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_needaction_counter: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,897 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_has_error: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,897 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_has_error_counter: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_attachment_count: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.message_has_sms_error: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.state: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.current_state_id: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.next_node_id: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.instance_variables: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.intermediate_variables: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.debug_mode: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.is_simulation: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.json_ui_schema: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,898 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.display_name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,899 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.create_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,899 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.session.write_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,899 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.event_type: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,900 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.payload: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,900 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.state: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,900 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.timestamp: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,900 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.job_uuid: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,900 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.error_message: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,900 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.display_name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,900 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.create_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,900 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.write_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,900 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_state: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,900 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_type_icon: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_date_deadline: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.my_activity_date_deadline: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_summary: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_exception_decoration: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.activity_exception_icon: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_is_follower: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.has_message: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_needaction: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_needaction_counter: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_has_error: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,901 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_has_error_counter: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_attachment_count: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.message_has_sms_error: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.current_state_id: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.next_node_id: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.instance_variables: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.intermediate_variables: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.debug_mode: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.is_simulation: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.message.json_ui_schema: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,902 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,903 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.active: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,903 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.provider: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,903 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.use_generic_session_match: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,903 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.display_name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,903 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.create_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,903 331660 WARNING cm-test-18.0 odoo.fields: Field conversation.driver.notes.write_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,914 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,914 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.active: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,914 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.provider: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,915 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.use_generic_session_match: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,915 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.display_name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,915 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.create_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,915 331660 WARNING cm-test-18.0 odoo.fields: Field email.account.write_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,915 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.facebook.facebook_mid: conversation.message.facebook.facebook_mid 
+2026-03-25 02:07:24,915 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.facebook.facebook_mid: conversation.message.facebook.facebook_mid 
+2026-03-25 02:07:24,915 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from conversation.message.facebook.facebook_mid: conversation.message.facebook.facebook_mid 
+2026-03-25 02:07:24,915 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.facebook.facebook_psid: conversation.message.facebook.facebook_psid 
+2026-03-25 02:07:24,915 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.facebook.facebook_psid: conversation.message.facebook.facebook_psid 
+2026-03-25 02:07:24,915 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from conversation.message.facebook.facebook_psid: conversation.message.facebook.facebook_psid 
+2026-03-25 02:07:24,915 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.facebook.facebook_event_type: conversation.message.facebook.facebook_event_type 
+2026-03-25 02:07:24,915 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.facebook.facebook_event_type: conversation.message.facebook.facebook_event_type 
+2026-03-25 02:07:24,915 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from conversation.message.facebook.facebook_event_type: conversation.message.facebook.facebook_event_type 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.facebook.facebook_page_id: conversation.message.facebook.facebook_page_id 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.facebook.facebook_page_id: conversation.message.facebook.facebook_page_id 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from conversation.message.facebook.facebook_page_id: conversation.message.facebook.facebook_page_id 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.message.facebook.facebook_delivered: conversation.message.facebook.facebook_delivered 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'message' from conversation.message.facebook.facebook_delivered: conversation.message.facebook.facebook_delivered 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from conversation.message.facebook.facebook_delivered: conversation.message.facebook.facebook_delivered 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'conversation' from conversation.driver.facebook.facebook_account_id: conversation.driver.facebook.facebook_account_id 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'driver' from conversation.driver.facebook.facebook_account_id: conversation.driver.facebook.facebook_account_id 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from conversation.driver.facebook.facebook_account_id: conversation.driver.facebook.facebook_account_id 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.state: facebook.account.state 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.state: facebook.account.state 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.uuid: facebook.account.uuid 
+2026-03-25 02:07:24,916 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.uuid: facebook.account.uuid 
+2026-03-25 02:07:24,916 331660 WARNING cm-test-18.0 odoo.fields: Redundant default on facebook.account.uuid 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.logo: facebook.account.logo 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.logo: facebook.account.logo 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.page_id: facebook.account.page_id 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.page_id: facebook.account.page_id 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.page_access_token: facebook.account.page_access_token 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.page_access_token: facebook.account.page_access_token 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.user_access_token: facebook.account.user_access_token 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.user_access_token: facebook.account.user_access_token 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.verify_token: facebook.account.verify_token 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.verify_token: facebook.account.verify_token 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.partner_category_id: facebook.account.partner_category_id 
+2026-03-25 02:07:24,917 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.partner_category_id: facebook.account.partner_category_id 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.default_user_id: facebook.account.default_user_id 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.default_user_id: facebook.account.default_user_id 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.default_group_id: facebook.account.default_group_id 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.default_group_id: facebook.account.default_group_id 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.default_bot_id: facebook.account.default_bot_id 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.default_bot_id: facebook.account.default_bot_id 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.facebook_mid: facebook.account.facebook_mid 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.facebook_mid: facebook.account.facebook_mid 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.webhook_url: facebook.account.webhook_url 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.webhook_url: facebook.account.webhook_url 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.fb_app_id: facebook.account.fb_app_id 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.fb_app_id: facebook.account.fb_app_id 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.fb_app_secret: facebook.account.fb_app_secret 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.fb_app_secret: facebook.account.fb_app_secret 
+2026-03-25 02:07:24,918 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.fb_api_version: facebook.account.fb_api_version 
+2026-03-25 02:07:24,919 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.fb_api_version: facebook.account.fb_api_version 
+2026-03-25 02:07:24,919 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.token_issued_date: facebook.account.token_issued_date 
+2026-03-25 02:07:24,919 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.token_issued_date: facebook.account.token_issued_date 
+2026-03-25 02:07:24,919 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.token_expiration_date: facebook.account.token_expiration_date 
+2026-03-25 02:07:24,919 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.token_expiration_date: facebook.account.token_expiration_date 
+2026-03-25 02:07:24,919 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.user_token_issued_date: facebook.account.user_token_issued_date 
+2026-03-25 02:07:24,919 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.user_token_issued_date: facebook.account.user_token_issued_date 
+2026-03-25 02:07:24,919 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'facebook' from facebook.account.user_token_expiration_date: facebook.account.user_token_expiration_date 
+2026-03-25 02:07:24,919 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Stripping model-name prefix 'account' from facebook.account.user_token_expiration_date: facebook.account.user_token_expiration_date 
+2026-03-25 02:07:24,919 331660 WARNING cm-test-18.0 odoo.fields: Field facebook.account.name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,919 331660 WARNING cm-test-18.0 odoo.fields: Field facebook.account.active: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,919 331660 WARNING cm-test-18.0 odoo.fields: Field facebook.account.provider: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,920 331660 WARNING cm-test-18.0 odoo.fields: Field facebook.account.use_generic_session_match: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,920 331660 WARNING cm-test-18.0 odoo.fields: Field facebook.account.display_name: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,920 331660 WARNING cm-test-18.0 odoo.fields: Field facebook.account.create_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,920 331660 WARNING cm-test-18.0 odoo.fields: Field facebook.account.write_date: unknown parameter 'auto_join', if this is an actual parameter you may want to override the method _valid_field_parameter on the relevant model in order to allow it 
+2026-03-25 02:07:24,999 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Entering Phase 2: Final field stabilization and sanitization 
+2026-03-25 02:07:25,559 331660 INFO cm-test-18.0 odoo.modules.registry: module numa_conversation_engine_facebook: creating or updating database tables 
+2026-03-25 02:07:25,815 331660 WARNING cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Removing non-existent column 'flag_image' from res.lang query during boot. 
+2026-03-25 02:07:25,820 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Create failed for conversation.message ID 13835. Vals: {'state': None, 'id': 13835, 'company_id': 1} 
+2026-03-25 02:07:25,820 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Failed to migrate conversation.message ID 13835: You are trying to create a conversation.message with explicit id 13835. It exists already! 
+2026-03-25 02:07:25,823 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Create failed for conversation.message ID 13836. Vals: {'state': None, 'id': 13835, 'company_id': 1} 
+2026-03-25 02:07:25,823 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Failed to migrate conversation.message ID 13836: You are trying to create a conversation.message with explicit id 13835. It exists already! 
+2026-03-25 02:07:25,825 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Create failed for conversation.message ID 13837. Vals: {'state': None, 'id': 13835, 'company_id': 1} 
+2026-03-25 02:07:25,826 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Failed to migrate conversation.message ID 13837: You are trying to create a conversation.message with explicit id 13835. It exists already! 
+2026-03-25 02:07:25,828 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Create failed for conversation.message ID 13838. Vals: {'state': None, 'id': 13835, 'company_id': 1} 
+2026-03-25 02:07:25,828 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Failed to migrate conversation.message ID 13838: You are trying to create a conversation.message with explicit id 13835. It exists already! 
+2026-03-25 02:07:25,877 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Sub-create for conversation.driver from conversation.driver.notes: data={'id': 13604} 
+2026-03-25 02:07:25,879 331660 ERROR cm-test-18.0 odoo.sql_db: bad query: b'INSERT INTO "conversation_driver" ("active", "create_date", "create_uid", "id", "use_generic_session_match", "write_date", "write_uid") VALUES (true, \'2026-03-25 02:07:01.675070\', 1, \'13604\', true, \'2026-03-25 02:07:01.675070\', 1) RETURNING "id"'
+ERROR: null value in column "name" of relation "conversation_driver" violates not-null constraint
+DETAIL:  Failing row contains (13604, 1, 1, 2026-03-25 02:07:01.67507, 2026-03-25 02:07:01.67507, null, null, t, null, t).
+ 
+2026-03-25 02:07:25,879 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Create failed for conversation.driver.notes ID 13604. Vals: {'id': 13604} 
+2026-03-25 02:07:25,879 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Failed to migrate conversation.driver.notes ID 13604: null value in column "name" of relation "conversation_driver" violates not-null constraint
+DETAIL:  Failing row contains (13604, 1, 1, 2026-03-25 02:07:01.67507, 2026-03-25 02:07:01.67507, null, null, t, null, t).
+ 
+2026-03-25 02:07:25,883 331660 INFO cm-test-18.0 odoo.addons.numa_poly.models.poly: [poly] Sub-create for conversation.driver from conversation.driver.notes: data={'id': 13604} 
+2026-03-25 02:07:25,884 331660 ERROR cm-test-18.0 odoo.sql_db: bad query: b'INSERT INTO "conversation_driver" ("active", "create_date", "create_uid", "id", "use_generic_session_match", "write_date", "write_uid") VALUES (true, \'2026-03-25 02:07:01.675070\', 1, \'13604\', true, \'2026-03-25 02:07:01.675070\', 1) RETURNING "id"'
+ERROR: null value in column "name" of relation "conversation_driver" violates not-null constraint
+DETAIL:  Failing row contains (13604, 1, 1, 2026-03-25 02:07:01.67507, 2026-03-25 02:07:01.67507, null, null, t, null, t).
+ 
+2026-03-25 02:07:25,884 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Create failed for conversation.driver.notes ID 13605. Vals: {'id': 13604} 
+2026-03-25 02:07:25,884 331660 ERROR cm-test-18.0 odoo.addons.numa_poly.models.poly: Failed to migrate conversation.driver.notes ID 13605: null value in column "name" of relation "conversation_driver" violates not-null constraint
+DETAIL:  Failing row contains (13604, 1, 1, 2026-03-25 02:07:01.67507, 2026-03-25 02:07:01.67507, null, null, t, null, t).
+ 
+2026-03-25 02:07:25,915 331660 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (event_attachment_ids, attachment_ids) of conversation.message() have the same label: Attachments. [Modules: numa_conversation_engine and numa_conversation_engine] 
+2026-03-25 02:07:25,915 331660 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (message_attachment_count, attachment_count) of conversation.message() have the same label: Attachment Count. [Modules: numa_fsm and numa_conversation_engine] 
+2026-03-25 02:07:25,915 331660 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (child_post_count, child_post_ids) of facebook.post() have the same label: Child Posts. [Modules: numa_conversation_engine_facebook and numa_conversation_engine_facebook] 
+2026-03-25 02:07:25,915 331660 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (comment_ids, comments_count) of facebook.post() have the same label: Comments. [Modules: numa_conversation_engine_facebook and numa_conversation_engine_facebook] 
+2026-03-25 02:07:25,915 331660 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (reply_count, child_comment_ids) of facebook.post.comment() have the same label: Replies. [Modules: numa_conversation_engine_facebook and numa_conversation_engine_facebook] 
+2026-03-25 02:07:25,916 331660 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (company_id, company_name) of facebook.lead() have the same label: Company. [Modules: numa_conversation_engine_facebook and numa_conversation_engine_facebook] 
+2026-03-25 02:07:25,916 331660 WARNING cm-test-18.0 odoo.addons.base.models.ir_model: Two fields (message_ids, conversation_message_ids) of conversation.session() have the same label: Messages. [Modules: numa_fsm and numa_conversation_engine] 
+2026-03-25 02:07:26,208 331660 INFO cm-test-18.0 odoo.schema: Keep unexpected index conversation_message__state_index on table conversation_message 
+2026-03-25 02:07:26,300 331660 INFO cm-test-18.0 odoo.modules.registry: Models have no table: conversation.message.email. 
+2026-03-25 02:07:26,300 331660 INFO cm-test-18.0 odoo.modules.registry: Recreate table of model conversation.message.email. 
+2026-03-25 02:07:26,304 331660 ERROR cm-test-18.0 odoo.modules.registry: Model conversation.message.email has no table. 
+2026-03-25 02:07:26,350 331660 INFO cm-test-18.0 odoo.modules.loading: loading numa_conversation_engine_facebook/data/digital_event_cron.xml 
+2026-03-25 02:07:26,437 331660 WARNING cm-test-18.0 odoo.modules.loading: Transient module states were reset 
+2026-03-25 02:07:26,439 331660 ERROR cm-test-18.0 odoo.modules.registry: Failed to load registry 
+2026-03-25 02:07:26,439 331660 CRITICAL cm-test-18.0 odoo.service.server: Failed to initialize database `cm-test-18.0`. 
+Traceback (most recent call last):
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/convert.py", line 590, in _tag_root
+    f(rec)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/convert.py", line 444, in _tag_record
+    record = model._load_records([data], self.mode == 'update')
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/models.py", line 5508, in _load_records
+    data['record']._load_records_write(data['values'])
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/models.py", line 5426, in _load_records_write
+    self.write(values)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/addons/base/models/ir_cron.py", line 613, in write
+    return super(ir_cron, self).write(vals)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 3119, in write
+    return super().write(processed_vals)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/models.py", line 4845, in write
+    fields[0].determine_inverse(real_recs)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/fields.py", line 1502, in determine_inverse
+    determine(self.inverse, records)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/fields.py", line 113, in determine
+    return needle(records, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/fields.py", line 727, in _inverse_related
+    target[field.name] = record_value[record]
+    ~~~~~~^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/models.py", line 7092, in __setitem__
+    return self._fields[key].__set__(self, value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 249, in _poly_Field_set
+    return _original_Field_set(self, records, value)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/fields.py", line 1426, in __set__
+    records.write({self.name: write_value})
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/addons/base/models/ir_actions.py", line 112, in write
+    res = super(IrActions, self).write(vals)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 3119, in write
+    return super().write(processed_vals)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/models.py", line 4835, in write
+    real_recs._validate_fields(vals, inverse_fields)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/models.py", line 1636, in _validate_fields
+    check(self)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/addons/mail/models/ir_actions_server.py", line 176, in _check_mail_model_coherency
+    if action.state in {'mail_post', 'followers', 'remove_followers', 'next_activity'} and action.model_id.transient:
+       ^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 171, in _poly_Field_get
+    return _original_Field_get(self, record, owner=owner)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/fields.py", line 1280, in __get__
+    raise MissingError("\n".join([
+odoo.exceptions.MissingError: Record does not exist or has been deleted.
+(Record: ir.actions.server(1254,), User: 1)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/service/server.py", line 1366, in preload_registries
+    registry = Registry.new(dbname, update_module=update_module)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/cm-18.0/.venv/lib/python3.12/site-packages/decorator.py", line 232, in fun
+    return caller(func, *(extras + args), **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/func.py", line 97, in locked
+    return func(inst, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/registry.py", line 129, in new
+    odoo.modules.load_modules(registry, force_demo, status, update_module)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/loading.py", line 485, in load_modules
+    processed_modules += load_marked_modules(env, graph,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/loading.py", line 365, in load_marked_modules
+    loaded, processed = load_module_graph(
+                        ^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/loading.py", line 228, in load_module_graph
+    load_data(env, idref, mode, kind='data', package=package)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/modules/loading.py", line 72, in load_data
+    tools.convert_file(env, package.name, filename, idref, mode, noupdate, kind)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/convert.py", line 662, in convert_file
+    convert_xml_import(env, module, fp, idref, mode, noupdate)
+  File "/home/gamarino/odoo/numa-public-addons-18.0/numa_poly/models/poly.py", line 4678, in poly_convert_xml_import
+    return _original_convert_xml_import(env, module, fp, idref, mode, noupdate)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/convert.py", line 733, in convert_xml_import
+    obj.parse(doc.getroot())
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/convert.py", line 648, in parse
+    self._tag_root(de)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/convert.py", line 590, in _tag_root
+    f(rec)
+  File "/home/gamarino/odoo/numa-public-odoo-18.0-numa/odoo/tools/convert.py", line 603, in _tag_root
+    raise ParseError('while parsing %s:%s, somewhere inside\n%s' % (
+odoo.tools.convert.ParseError: while parsing /home/gamarino/odoo/numa-addons-18.0/numa_conversation_engine_facebook/data/digital_event_cron.xml:5, somewhere inside
+<record id="ir_cron_process_facebook_events" model="ir.cron">
+            <field name="name">Digital Core: Process Facebook Events</field>
+            <field name="model_id" ref="numa_conversation_engine.model_digital_event"/>
+            <field name="state">code</field>
+            <field name="code">model._process_pending_events()</field>
+            <field name="user_id" ref="base.user_root"/>
+            <field name="interval_number">1</field>
+            <field name="interval_type">minutes</field>
+        </record>
+2026-03-25 02:07:26,447 331660 INFO cm-test-18.0 odoo.service.server: Initiating shutdown 
+2026-03-25 02:07:26,447 331660 INFO cm-test-18.0 odoo.service.server: Hit CTRL-C again or send a second signal to force the shutdown. 
+2026-03-25 02:07:26,447 331660 INFO cm-test-18.0 odoo.sql_db: ConnectionPool(read/write;used=0/count=0/max=64): Closed 1 connections  

@@ -1,0 +1,45 @@
+name: 🐞 Bug Report (Community)
+description: Report a bug in one of our open-source modules
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! 
+        
+        **Enterprise Users:** If you require immediate assistance or are using our modules in a mission-critical environment, please consider our **[Enterprise Support](mailto:info@numaes.com)**. Our experts will resolve your issue with guaranteed SLAs.
+  - type: input
+    id: module_name
+    attributes:
+      label: Module Name
+      description: Which module are you reporting an issue for? (e.g., numa_synch, numa_fsm)
+    validations:
+      required: true
+  - type: input
+    id: odoo_version
+    attributes:
+      label: Odoo Version
+      description: Are you using Odoo 18.0 Community or Enterprise?
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description of the Bug
+      description: Provide a clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this bug?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
