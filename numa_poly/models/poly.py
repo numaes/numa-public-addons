@@ -1721,10 +1721,6 @@ class PolyBase(_original_BaseModel):
                     if not vals:
                         raise ValueError(f"Could not find original record {old_id} in {self._table}")
 
-                    # Extraer el root original para restaurarlo después si es necesario
-                    # Lo guardamos porque al crear el nuevo registro puede perderse si no se pasa en vals
-                    old_root_id = vals.get('pln_root_id')
-
                     # Extraer campos X2M via ORM por separado, ya que no están en la tabla principal
                     old_record = self.browse(old_id)
                     x2m_fields = [f for f, field in self._fields.items() if field.store and field.type in ('many2many', 'one2many')]
@@ -1777,15 +1773,7 @@ class PolyBase(_original_BaseModel):
                                         return False
                                 
                                 vals[k] = extract_id(v)
-                                # Final cleanup for pln_root_id issues
-                                if k == 'pln_root_id' and vals[k] is not False:
-                                    # We ensure it's an int, not a recordset
-                                    if not isinstance(vals[k], (int, bool)):
-                                        try:
-                                            vals[k] = int(vals[k])
-                                        except:
-                                            vals[k] = False
-                        
+
                         # Limpiar campos técnicos de Odoo
                         if k in ('__last_update', 'display_name', 'create_uid', 'create_date', 'write_uid', 'write_date'):
                             vals.pop(k, None)
@@ -1793,23 +1781,17 @@ class PolyBase(_original_BaseModel):
                     # Añadir X2M procesados via ORM
                     for k in x2m_fields:
                         try:
-                            # Evitamos campos problemáticos de project.task que causan NOT NULL violations
-                            if self._name == 'project.task' and k in ('user_ids', 'personal_stage_type_ids'):
-                                continue
-                                
                             rel_records = old_record[k]
                             if rel_records:
                                 vals[k] = [Command.set(rel_records.ids)]
                         except Exception:
                             continue
                     
-                    # Preservar campos de auditoría y referencias circulares (leídos antes del create)
-                    # Añadimos pln_root_id y cualquier M2O que apunte a las bases
+                    # Preservar campos de auditoría y referencias circulares (leídos antes del
+                    # create): cualquier M2O que apunte a las bases de la jerarquía.
                     extra_cols = []
-                    if 'pln_root_id' in self._fields:
-                        extra_cols.append('pln_root_id')
                     for k, field in self._fields.items():
-                        if k != 'pln_root_id' and field.store and field.type == 'many2one' and getattr(field, 'comodel_name', None) in self._depend_models:
+                        if field.store and field.type == 'many2one' and getattr(field, 'comodel_name', None) in self._depend_models:
                             extra_cols.append(k)
                     
                     audit_cols = ['create_uid', 'create_date', 'write_uid', 'write_date'] + extra_cols
@@ -1877,14 +1859,6 @@ class PolyBase(_original_BaseModel):
                         params = []
                         # Columnas a restaurar: auditoría y referencias circulares
                         for col in audit_cols:
-                            # If it's pln_root_id, we restore the original old ID for now
-                            # it will be updated to the new ID later in _update_foreign_keys bulk
-                            if col == 'pln_root_id' and old_root_id:
-                                if col in existing_cols:
-                                    set_clauses.append(f"{col}=%s")
-                                    params.append(old_root_id)
-                                continue
-
                             if col in existing_cols and audit.get(col):
                                 set_clauses.append(f"{col}=%s")
                                 params.append(audit[col])
@@ -1909,70 +1883,9 @@ class PolyBase(_original_BaseModel):
                 _logger.error("Failed to migrate %s ID %s: %s", self._name, old_id, e)
                 # Continuamos con el siguiente registro
         
-        # Post-migration: re-trigger syncs that were skipped during migration
-        # We search all records of this model that now exist in ir_poly_base
-        _logger.debug("Performing post-migration sync for %s", self._name)
-
-        # Before syncing, we perform a repository-wide update for pln_root_id
-        # since all records are now migrated and have their new IDs in ir_poly_base
-        if 'pln_root_id' in self._fields:
-            try:
-                # This query updates ALL pln_root_id that still point to old IDs
-                # across all tables that have this field.
-                self.env.cr.execute("""
-                    SELECT f.model, f.name FROM ir_model_fields f 
-                    WHERE f.name = 'pln_root_id' AND f.store = True
-                """)
-                for root_model, root_field in self.env.cr.fetchall():
-                    try:
-                        root_table = self.env[root_model]._table
-                        # We use the ir_poly_base table as the mapping source
-                        # We also set to NULL if the old_id is not found in ir_poly_base to satisfy FKs
-                        # Split queries into smaller pieces to avoid static analyzer confusion
-                        # We use string constants for the SQL skeleton and identifier substitution later.
-                        sql_upd = "UPDATE %s AS t"
-                        sql_set = "SET %s = CASE WHEN m.id IS NOT NULL THEN m.id ELSE NULL END"
-                        sql_frm = "FROM (SELECT DISTINCT %s AS old_id FROM %s) AS old_ids"
-                        sql_jn1 = "LEFT JOIN ir_poly_base m ON old_ids.old_id = m.old_id"
-                        sql_jn2 = "AND m.concrete_model_id = (SELECT id FROM ir_model WHERE model = %s)"
-                        sql_whr = "WHERE t.%s = old_ids.old_id"
-                        full_sql = f"{sql_upd} {sql_set} {sql_frm} {sql_jn1} {sql_jn2} {sql_whr}"
-                        self.env.cr.execute(SQL(full_sql, SQL.identifier(root_table), SQL.identifier(root_field), SQL.identifier(root_field), SQL.identifier(root_table), self._name, SQL.identifier(root_field)))
-                    except:
-                        continue
-            except Exception as e:
-                _logger.error("Failed to bulk update pln_root_id: %s", e)
-
-        # [poly] During boot/migration, bypass search() and use direct SQL to avoid KeyError: None
-        # or premature registry access during flush_query.
-        if self.env.registry.ready:
-            newly_migrated_records = self.with_context(active_test=False).search([])
-        else:
-            self.env.cr.execute(f"SELECT id FROM {self._table}")
-            newly_migrated_ids = [r[0] for r in self.env.cr.fetchall()]
-            newly_migrated_records = self.browse(newly_migrated_ids)
-
-        for record in newly_migrated_records:
-            try:
-                # Ensure record exists and is accessible
-                if not record.exists():
-                    continue
-                
-                # During migration, avoid syncs that might fail due to incomplete mapping
-                # We skip them here and rely on the bulk update or manual re-sync later.
-                if self.env.context.get('is_migration'):
-                    continue
-
-                if hasattr(record, '_pln_sync_dependencies_to_links'):
-                    record._pln_sync_dependencies_to_links()
-                if hasattr(record, '_pln_set_root_from_project'):
-                    record._pln_set_root_from_project()
-                # If pln_root_id is still pointing to an old ID (failed to bulk update)
-                # or if it was nullified, we re-calculate it.
-                if hasattr(record, 'pln_root_id') and not record.pln_root_id:
-                     record._pln_set_root_from_project()
-            except Exception as e:
-                _logger.warning("Post-migration sync failed for %s ID %s: %s", self._name, record.id, e)
+        # (El re-sync post-migración era específico de numa_planning (_pln_*) y, como
+        # _migrate_to_poly corre siempre con is_migration=True, hacía `continue` sin ejecutar
+        # nada. Removido junto con numa_planning.)
 
     def _update_foreign_keys(self, old_id, new_id):
         """
@@ -1990,10 +1903,6 @@ class PolyBase(_original_BaseModel):
         """, [self._name])
         
         for field_model, field_name, ttype in self.env.cr.fetchall():
-            # Skip update if we are already updating this field in a specialized way
-            if self._name == 'project.task' and field_model == 'project.task' and field_name == 'pln_root_id':
-                continue
-            
             try:
                 model_obj = self.env[field_model]
                 table_name = model_obj._table
@@ -2067,30 +1976,6 @@ class PolyBase(_original_BaseModel):
             except Exception as e:
                 _logger.warning("Minor issue during FK update for %s.%s (ID %s -> %s): %s", field_model, field_name, old_id, new_id, e)
 
-        # A2. Specialized Many2one update for pln_root_id (across all tables)
-        # Any model pointing to a polymorphic base must be updated
-        # We only update if the old_id is not already a polymorphic ID (new_id)
-        # to avoid double-updating or cycle issues during the transition
-        if old_id != new_id:
-            try:
-                with self.env.cr.savepoint():
-                    self.env.cr.execute("""
-                        SELECT f.model, f.name FROM ir_model_fields f 
-                        WHERE f.name = 'pln_root_id' AND f.store = True
-                    """)
-                    for root_model, root_field in self.env.cr.fetchall():
-                        try:
-                            root_table = self.env[root_model]._table
-                            self.env.cr.execute(SQL(
-                                "UPDATE %s SET %s = %s WHERE %s = %s",
-                                SQL.identifier(root_table), SQL.identifier(root_field), new_id,
-                                SQL.identifier(root_field), old_id
-                            ))
-                        except:
-                            continue
-            except Exception:
-                pass
-
         # B. Referencias Dinámicas (res_model / res_id)
         dynamic_refs = [
             ('ir_attachment', 'res_model', 'res_id'),
@@ -2136,62 +2021,6 @@ class PolyBase(_original_BaseModel):
                     """, [new_id, self._name, old_id])
             except Exception:
                 pass
-
-        # C2. project_task_user_rel (Odoo 18 special relation table)
-        if self._name == 'project.task':
-            try:
-                with self.env.cr.savepoint():
-                    # En Odoo 18, project_task_user_rel tiene columnas: id, task_id, user_id, stage_id, ...
-                    # Manejar duplicados antes de actualizar
-                    self.env.cr.execute("""
-                        DELETE FROM project_task_user_rel t1
-                        WHERE task_id = %s
-                        AND EXISTS (
-                            SELECT 1 FROM project_task_user_rel t2
-                            WHERE t2.task_id = %s 
-                            AND t2.user_id IS NOT DISTINCT FROM t1.user_id
-                        )
-                    """, [old_id, new_id])
-                    
-                    self.env.cr.execute("""
-                        UPDATE project_task_user_rel SET task_id = %s WHERE task_id = %s
-                    """, [new_id, old_id])
-            except Exception as e:
-                _logger.warning("Issue updating project_task_user_rel for ID %s -> %s: %s", old_id, new_id, e)
-
-        # C3. numa_planning_link (Foreign Key constraints)
-        self.env.cr.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'numa_planning_link'")
-        if self.env.cr.fetchone()[0] > 0:
-            for col in ['source_node_id', 'target_node_id']:
-                try:
-                    with self.env.cr.savepoint():
-                        # Para numa_planning_link, existe una FK a numa_planning_node.
-                        # El ID viejo YA NO existe en numa_planning_node en este punto
-                        # porque _migrate_to_poly se asegura de que el nuevo_id ya esté creado.
-                        # PERO, si el source_node_id apunta a un ID que aún no ha sido migrado,
-                        # fallará si intentamos migrar el link antes que el nodo.
-                        # Como _migrate_to_poly procesa los IDs en orden, y los links suelen ser
-                        # entre registros del mismo modelo o relacionados, intentamos actualizar.
-                        
-                        # Eliminar duplicados si los hay
-                        other_col = 'target_node_id' if col == 'source_node_id' else 'source_node_id'
-                        self.env.cr.execute(SQL("""
-                            DELETE FROM numa_planning_link t1
-                            WHERE %s = %s
-                            AND EXISTS (
-                                SELECT 1 FROM numa_planning_link t2
-                                WHERE t2.%s = %s
-                                AND t2.%s = t1.%s
-                            )
-                        """, SQL.identifier(col), old_id, SQL.identifier(col), new_id, 
-                             SQL.identifier(other_col), SQL.identifier(other_col)))
-
-                        self.env.cr.execute(SQL(
-                            "UPDATE numa_planning_link SET %s = %s WHERE %s = %s",
-                            SQL.identifier(col), new_id, SQL.identifier(col), old_id
-                        ))
-                except Exception as e:
-                    _logger.debug("Could not update numa_planning_link.%s for ID %s -> %s (probably order of migration): %s", col, old_id, new_id, e)
 
     def _auto_init(self):
         """
@@ -4123,11 +3952,9 @@ class PolyBase(_original_BaseModel):
                 
                 # Identify fields that belong to this base model
                 base_fields = {
-                    f for f in processed_vals 
-                    if f in base_model._fields and (
-                        f.startswith('pln_') or 
-                        (f not in self._fields and f not in pool_fields)
-                    )
+                    f for f in processed_vals
+                    if f in base_model._fields
+                    and f not in self._fields and f not in pool_fields
                 }
                 
                 if base_fields:
@@ -5140,10 +4967,6 @@ def poly_BaseModel_add_field(self, name, field):
                 base_poly_class = self.pool[dep_model]
                 if name in base_poly_class._fields:
                     _target_related = f'{dep_field}.{name}'
-                    
-                    # Log específico para debuggear el campo problemático
-                    if self._name == 'project.task' and name == 'pln_required_resource_ids':
-                         _logger.info("[poly] INTERCEPTING _add_field for project.task.pln_required_resource_ids -> %s", _target_related)
 
                     # Forzamos los atributos del objeto field directamente antes de que Odoo lo registre
                     field.related = _target_related
@@ -5902,7 +5725,7 @@ def _poly_registry_init_models(self, cr, model_names, context, install=True):
                 # Odoo's init_models iterates and calls model._auto_init() and model.init().
                 # For tables, _auto_init() creates columns. For views, init() creates the view.
                 # If we have both in the same batch, the sorted order ensures tables go first.
-                # BUT, if project.task was already partially processed by Odoo or if there's any
+                # BUT, if a model was already partially processed by Odoo or if there's any
                 # inconsistency, we MUST ensure the SQL columns exist for stored fields.
                 # Odoo's _auto_init is sometimes too smart or too late; we manually ensure
                 # columns for the current module's stored fields.

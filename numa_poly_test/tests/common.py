@@ -1,6 +1,19 @@
 # -*- coding: utf-8 -*-
 from odoo import models, fields
+from odoo.tests.common import TransactionCase
 from odoo.addons.numa_poly.models.poly import PolyModel, PolyBase
+
+
+class PolyTestCommon(TransactionCase):
+    """Base TestCase para los tests de numa_poly.
+
+    test_structure.py la importa (`from .common import PolyTestCommon`) pero faltaba
+    definirla → ese archivo no podía importarse y quedó fuera de tests/__init__. Se la
+    agrega para resucitar la suite estructural. Es un TransactionCase estándar; el setUp
+    específico (contexto de jobs, etc.) lo hace cada test en su setUpClass.
+    """
+    pass
+
 
 class TestPolyBehaviorA(PolyModel):
     """Simple behavior model with a Char field."""
