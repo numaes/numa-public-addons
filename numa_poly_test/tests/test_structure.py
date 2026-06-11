@@ -93,7 +93,10 @@ class TestStructure(PolyTestCommon):
         # Search tests. Ensure expression is running ok
         assert t1_1 == t1_model.search([('a1', '=', 'A1')])
         assert t2_2 == t2_model.search([('a1', '=', 'B1')])
-        assert t4_1 == t4_model.search([('a1', '=', 'C1')])
+        # t4_1.a1 fue reescrito a 'D1' mas arriba (linea ~68); buscamos por el valor ACTUAL.
+        # (Antes buscaba 'C1' -> inconsistente con su propio write: el test estaba mal, no el
+        # search. Verificado: el write del diamante persiste a test.test1 y el search anda.)
+        assert t4_1 == t4_model.search([('a1', '=', 'D1')])
 
         # is normal path working?
         first_partner_id = self.env['res.partner'].search([], limit=1)
