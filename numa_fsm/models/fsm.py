@@ -473,6 +473,9 @@ class FSMInstance(models.Model):
     )
     is_simulation = fields.Boolean(string='Is Simulation', default=False, readonly=True)
     json_ui_schema = fields.Json(related='definition_id.json_ui_schema', readonly=True)
+    current_page = fields.Many2one(
+        'fsm.wf.page_template', 'Current Portal Page', copy=False, readonly=True,
+        help="Page set by set_page(), rendered by the public portal for this instance.")
 
     def log(self, message):
         self.ensure_one()
@@ -524,15 +527,15 @@ class FSMInstance(models.Model):
                     raise exceptions.UserError(f"Node '{current_node_id}' not found in compiled definition.")
 
                 if node['type'] in ['start', 'transition']:
-                    self.log(f"Executing transition: {node.get('label', node_id)}")
+                    self.log(f"Executing transition: {node.get('label', current_node_id)}")
                     global_objects = self._get_execution_globals(intermediate_vars)
                     exec(node.get('code', ''), global_objects, intermediate_vars)
-                    
+
                     outcome = intermediate_vars.get('outcome', '__default__')
                     next_node_id = node.get('outcomes', {}).get(outcome)
-                    
+
                     if not next_node_id:
-                        raise exceptions.UserError(f"Outcome '{outcome}' from transition '{node_id}' does not lead anywhere.")
+                        raise exceptions.UserError(f"Outcome '{outcome}' from transition '{current_node_id}' does not lead anywhere.")
                     
                     current_node_id = next_node_id
                     
@@ -550,10 +553,10 @@ class FSMInstance(models.Model):
                         return
 
                 elif node['type'] == 'state':
-                    self.log(f"Reached state: {node.get('label', node_id)}")
+                    self.log(f"Reached state: {node.get('label', current_node_id)}")
                     self.write({
                         'state': 'running',
-                        'current_state_id': node_id,
+                        'current_state_id': current_node_id,
                         'instance_variables': intermediate_vars,
                         'intermediate_variables': {},
                         'next_node_id': False,
@@ -561,18 +564,18 @@ class FSMInstance(models.Model):
                     return
 
                 elif node['type'] == 'end':
-                    self.log(f"Reached end: {node.get('label', node_id)}")
+                    self.log(f"Reached end: {node.get('label', current_node_id)}")
                     self.write({
                         'state': 'ended',
-                        'current_state_id': node_id,
+                        'current_state_id': current_node_id,
                         'instance_variables': intermediate_vars,
                         'intermediate_variables': {},
                         'next_node_id': False,
                     })
                     return
-                
+
                 else:
-                    raise exceptions.UserError(f"Unknown node type '{node['type']}' for node '{node_id}'.")
+                    raise exceptions.UserError(f"Unknown node type '{node['type']}' for node '{current_node_id}'.")
 
         except Exception as e:
             _logger.exception("FSM Execution Error", exc_info=True)
@@ -716,16 +719,16 @@ class FSMInstance(models.Model):
         if not at:
             at = fields.Datetime.now() + (timedelta(seconds=delay) if delay else timedelta(seconds=0))
         for fsm_instance in self:
-            self.log(f"Starting timer with event {event} for: {delay} seconds, trigger at: {at}")
-            timer_model.create(dict(name=event['name'], json_event=json.dumps(event), fsm_instance_id=self.id, trigger_at=at, database_name=self.env.cr.dbname,))
+            fsm_instance.log(f"Starting timer with event {event} for: {delay} seconds, trigger at: {at}")
+            timer_model.create(dict(name=event['name'], json_event=json.dumps(event), fsm_instance_id=fsm_instance.id, trigger_at=at, database_name=self.env.cr.dbname,))
 
     def stop_timer(self, event_name):
         timer_model = self.env['fsm.timer']
-        timers = timer_model.search([('name', '=', event_name), ('fsm_instance_id', '=', self.id)])
-        if timers:
-            timers.unlink()
         for fsm_instance in self:
-            self.log(f"Stopping timer {event_name}")
+            timers = timer_model.search([('name', '=', event_name), ('fsm_instance_id', '=', fsm_instance.id)])
+            if timers:
+                timers.unlink()
+            fsm_instance.log(f"Stopping timer {event_name}")
 
     def stop_all_timers(self):
         timer_model = self.env['fsm.timer']
@@ -751,7 +754,7 @@ class FSMInstance(models.Model):
         page = self.definition_id.pages.filtered(lambda s: s.name == page_name)
         if not page:
             raise exceptions.UserError(_('Page %s not found for definition %s') % (page_name, self.definition_id.name))
-        return self.render_dynamic_html(page[0].body_html, **params)
+        return self.render_dynamic_html(page[0].body, **params)
 
     def action_send_template_mail(self, target_object, mail_template_name, subject=None):
         self.ensure_one()
