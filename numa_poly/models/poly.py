@@ -3586,7 +3586,7 @@ class PolyBase(_original_BaseModel):
         data_list = clean_data_list
 
         # Process each record to create
-        for data in data_list:
+        for current_idx, data in enumerate(data_list):
             # Handle explicit ID or create a new one via ir.poly_base
             if 'id' in data:
                 new_id = data['id']
@@ -3606,13 +3606,9 @@ class PolyBase(_original_BaseModel):
                 new_id = self.env.cr.fetchone()[0]
                 _logger.debug('Creating poly base for %s, id = %s (via SQL)', self._name, new_id)
 
-            # [poly] CRITICAL: we must use the UNFILTERED data here to collect fields for bases.
-            # The data variable was already filtered in the loop before.
-            # Let's find the original data from processed_vals_list.
-            # Actually, data_list is now clean_data_list.
-            # We need the original values to propagate inherited fields.
-            # Let's re-extract the values for this record index.
-            current_idx = data_list.index(data)
+            # [poly] Use the UNFILTERED original values (processed_vals_list es paralelo a
+            # data_list por indice; current_idx viene del enumerate -> robusto ante dicts
+            # limpios iguales, que con data_list.index(data) cruzaba registros en bulk create).
             orig_data = processed_vals_list[current_idx]
 
             # Enrich orig_data with main model defaults
@@ -3655,135 +3651,133 @@ class PolyBase(_original_BaseModel):
                     existing_base.write(base_data)
                     dep_record_ids[base] = existing_base.id
 
-        # Finally, create the record in this model
-        # We use the filtered 'data' here which only contains stored fields of THIS model
-        # [poly] CRITICAL: we must use the UNFILTERED data to find inherited fields
-        # that might be stored in this model's table.
-        current_idx = data_list.index(data)
-        orig_data = processed_vals_list[current_idx]
+            # Finally, create the record in this model.
+            # Use the UNFILTERED original values (por current_idx del enumerate) para
+            # encontrar los campos heredados que se guardan en la tabla de este modelo.
+            orig_data = processed_vals_list[current_idx]
         
-        base_data = data.copy()
-        base_data['id'] = new_id
+            base_data = data.copy()
+            base_data['id'] = new_id
 
-        # [poly] AGGRESSIVE CLEANUP: Odoo 18 ORM rejects ANY field that is marked 
-        # as related but NOT stored in its internal _fields dict.
-        final_data = {}
-        for k, v in base_data.items():
-            if k in self._fields:
-                f = self._fields[k]
-                f_model = getattr(f, 'model_name', None)
-                is_real_field = f.store and f_model == self._name
-                
-                # [poly] CRITICAL FIX: Odoo 18 MUST preserve certain fields
-                # even if it thinks they are not stored, to satisfy database
-                # constraints in polymorphic tables.
-                if k == 'name' or k == 'id' or f.required or getattr(f, 'inherited', False):
-                     is_real_field = True
-                elif f.store and not f.related:
-                     is_real_field = True
-
-                if is_real_field:
-                    final_data[k] = v
-        
-        # [poly] INHERITED FIELD RECOVERY:
-        # If a field is in orig_data and it's a stored field of this model,
-        # but was filtered out by the previous cleanup loop, we restore it.
-        # Also restore inherited fields from _inherits and REQUIRED fields.
-        for k, v in orig_data.items():
-            if k in self._fields and k not in final_data:
-                f = self._fields[k]
-                # [poly] Forcing field recovery if it's required, even if Odoo
-                # thinks it's a related/non-stored due to Registry pollution.
-                # We check the database column existence if possible.
-                if f.required or getattr(f, 'inherited', False) or k == 'name':
-                     final_data[k] = v
-                else:
+            # [poly] AGGRESSIVE CLEANUP: Odoo 18 ORM rejects ANY field that is marked 
+            # as related but NOT stored in its internal _fields dict.
+            final_data = {}
+            for k, v in base_data.items():
+                if k in self._fields:
+                    f = self._fields[k]
                     f_model = getattr(f, 'model_name', None)
-                    if (f.store and f_model == self._name):
+                    is_real_field = f.store and f_model == self._name
+                
+                    # [poly] CRITICAL FIX: Odoo 18 MUST preserve certain fields
+                    # even if it thinks they are not stored, to satisfy database
+                    # constraints in polymorphic tables.
+                    if k == 'name' or k == 'id' or f.required or getattr(f, 'inherited', False):
+                         is_real_field = True
+                    elif f.store and not f.related:
+                         is_real_field = True
+
+                    if is_real_field:
                         final_data[k] = v
-
-        base_data = final_data
-
-        # [poly] CRITICAL ODOO 18 FIX:
-        # We force those fields back into 'base_data' if they are missing.
-        # AND we MUST ensure Odoo sees them as stored BEFORE they are classified.
         
-        # [poly] Re-classify fields after our forced restoration
-        for k, v in orig_data.items():
-            if k not in base_data and k in self._fields:
-                f = self._fields[k]
-                if k in ('name', 'provider', 'active', 'facebook_account_id', 'driver_id') or not f.related or f.related.split('.')[0] in (self._depend_models or {}):
-                    base_data[k] = v
-                    # [poly] CRITICAL: force Odoo to include these fields in classification
-                    if not f.store:
-                        f._poly_old_store = f.store
-                        f.store = True
-                    if getattr(f, 'inherited', False):
-                        f._poly_old_inherited = f.inherited
-                        f.inherited = False
-                    if hasattr(f, 'related') and f.related:
-                         f._poly_old_related = f.related
+            # [poly] INHERITED FIELD RECOVERY:
+            # If a field is in orig_data and it's a stored field of this model,
+            # but was filtered out by the previous cleanup loop, we restore it.
+            # Also restore inherited fields from _inherits and REQUIRED fields.
+            for k, v in orig_data.items():
+                if k in self._fields and k not in final_data:
+                    f = self._fields[k]
+                    # [poly] Forcing field recovery if it's required, even if Odoo
+                    # thinks it's a related/non-stored due to Registry pollution.
+                    # We check the database column existence if possible.
+                    if f.required or getattr(f, 'inherited', False) or k == 'name':
+                         final_data[k] = v
+                    else:
+                        f_model = getattr(f, 'model_name', None)
+                        if (f.store and f_model == self._name):
+                            final_data[k] = v
 
-        # [poly] CRITICAL: inject link fields from sub-created records into base_data.
-        # dep_record_ids holds {dep_model_name: created_id} from the sub-create loop.
-        # Without this, link fields like poly_id remain NULL in the leaf record, causing
-        # PolyReference.convert_to_record to return a recordset that doesn't exist in DB.
-        for _dep_model_name, _dep_id in dep_record_ids.items():
-            _link_field = self._depend_models.get(_dep_model_name)
-            if _link_field and _link_field not in base_data:
-                base_data[_link_field] = _dep_id
+            base_data = final_data
 
-        # [poly] INSTRUMENTATION: Final values before standard create
-        _logger.info("[poly] Final create for %s: id=%s dep_record_ids=%s link_fields=%s",
-                     self._name, base_data.get('id'),
-                     dep_record_ids,
-                     {k: base_data.get(k) for k in (self._depend_models or {}).values()})
-
-        new_record = super().create([base_data])
-        new_records |= new_record
+            # [poly] CRITICAL ODOO 18 FIX:
+            # We force those fields back into 'base_data' if they are missing.
+            # AND we MUST ensure Odoo sees them as stored BEFORE they are classified.
         
-        # [poly] RESTORE field state
-        # IMPORTANT: We MUST ensure Odoo has updated the database before restoring f.store
-        # and f.inherited, otherwise the flush might discard the values.
-        self.flush_model(base_data.keys())
-        
-        # [poly] CRITICAL: After flush, we MUST invalidate the cache for these records 
-        # so Odoo reads the values from DB using the descriptors we are about to restore.
-        # Odoo 18: Invalidate using field names to be precise.
-        self.env.cache.invalidate([(f, new_records._ids) for k in base_data.keys() if (f := self._fields.get(k))])
-        
-        # [poly] For related fields, we must also invalidate the target model cache 
-        # because the inversion might have put False/None there during create.
-        for k in base_data.keys():
-            f = self._fields.get(k)
-            if f and hasattr(f, 'related') and f.related:
-                 try:
-                     # E.g. driver_id.name -> invalidate conversation.driver
-                     target_model_name = f.related.split('.')[0]
-                     if target_model_name in (self._depend_models or {}):
-                          link_fname = self._depend_models[target_model_name]
-                          target_ids = [r[link_fname].id for r in new_records if r[link_fname]]
-                          if target_ids:
-                               target_model = self.env[target_model_name]
-                               target_field_name = f.related.split('.')[-1]
-                               if target_field_name in target_model._fields:
-                                    target_field = target_model._fields[target_field_name]
-                                    self.env.cache.invalidate([(target_field, tuple(target_ids))])
-                 except:
-                     pass
+            # [poly] Re-classify fields after our forced restoration
+            for k, v in orig_data.items():
+                if k not in base_data and k in self._fields:
+                    f = self._fields[k]
+                    if k in ('name', 'provider', 'active', 'facebook_account_id', 'driver_id') or not f.related or f.related.split('.')[0] in (self._depend_models or {}):
+                        base_data[k] = v
+                        # [poly] CRITICAL: force Odoo to include these fields in classification
+                        if not f.store:
+                            f._poly_old_store = f.store
+                            f.store = True
+                        if getattr(f, 'inherited', False):
+                            f._poly_old_inherited = f.inherited
+                            f.inherited = False
+                        if hasattr(f, 'related') and f.related:
+                             f._poly_old_related = f.related
 
-        for k in base_data.keys():
-            f = self._fields.get(k)
-            if f:
-                if hasattr(f, '_poly_old_related'):
-                    f.related = f._poly_old_related
-                    del f._poly_old_related
-                if hasattr(f, '_poly_old_store'):
-                    f.store = f._poly_old_store
-                    del f._poly_old_store
-                if hasattr(f, '_poly_old_inherited'):
-                    f.inherited = f._poly_old_inherited
-                    del f._poly_old_inherited
+            # [poly] CRITICAL: inject link fields from sub-created records into base_data.
+            # dep_record_ids holds {dep_model_name: created_id} from the sub-create loop.
+            # Without this, link fields like poly_id remain NULL in the leaf record, causing
+            # PolyReference.convert_to_record to return a recordset that doesn't exist in DB.
+            for _dep_model_name, _dep_id in dep_record_ids.items():
+                _link_field = self._depend_models.get(_dep_model_name)
+                if _link_field and _link_field not in base_data:
+                    base_data[_link_field] = _dep_id
+
+            # [poly] INSTRUMENTATION: Final values before standard create
+            _logger.info("[poly] Final create for %s: id=%s dep_record_ids=%s link_fields=%s",
+                         self._name, base_data.get('id'),
+                         dep_record_ids,
+                         {k: base_data.get(k) for k in (self._depend_models or {}).values()})
+
+            new_record = super().create([base_data])
+            new_records |= new_record
+        
+            # [poly] RESTORE field state
+            # IMPORTANT: We MUST ensure Odoo has updated the database before restoring f.store
+            # and f.inherited, otherwise the flush might discard the values.
+            self.flush_model(base_data.keys())
+        
+            # [poly] CRITICAL: After flush, we MUST invalidate the cache for these records 
+            # so Odoo reads the values from DB using the descriptors we are about to restore.
+            # Odoo 18: Invalidate using field names to be precise.
+            self.env.cache.invalidate([(f, new_records._ids) for k in base_data.keys() if (f := self._fields.get(k))])
+        
+            # [poly] For related fields, we must also invalidate the target model cache 
+            # because the inversion might have put False/None there during create.
+            for k in base_data.keys():
+                f = self._fields.get(k)
+                if f and hasattr(f, 'related') and f.related:
+                     try:
+                         # E.g. driver_id.name -> invalidate conversation.driver
+                         target_model_name = f.related.split('.')[0]
+                         if target_model_name in (self._depend_models or {}):
+                              link_fname = self._depend_models[target_model_name]
+                              target_ids = [r[link_fname].id for r in new_records if r[link_fname]]
+                              if target_ids:
+                                   target_model = self.env[target_model_name]
+                                   target_field_name = f.related.split('.')[-1]
+                                   if target_field_name in target_model._fields:
+                                        target_field = target_model._fields[target_field_name]
+                                        self.env.cache.invalidate([(target_field, tuple(target_ids))])
+                     except:
+                         pass
+
+            for k in base_data.keys():
+                f = self._fields.get(k)
+                if f:
+                    if hasattr(f, '_poly_old_related'):
+                        f.related = f._poly_old_related
+                        del f._poly_old_related
+                    if hasattr(f, '_poly_old_store'):
+                        f.store = f._poly_old_store
+                        del f._poly_old_store
+                    if hasattr(f, '_poly_old_inherited'):
+                        f.inherited = f._poly_old_inherited
+                        del f._poly_old_inherited
 
         return new_records
 
