@@ -190,7 +190,7 @@ export class PolyListRenderer extends ListRenderer {
                 kwargs: {
                     context: {
                         ...this.props.context,
-                        default_parent_id: this.props.record.resId,
+                        default_parent_id: this.props.record?.resId,
                     },
                 },
             });

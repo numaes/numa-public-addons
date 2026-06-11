@@ -20,10 +20,12 @@
             'numa_poly/static/src/index.js',
             'numa_poly/static/src/views/poly_list/poly_list_renderer.js',
             'numa_poly/static/src/views/poly_list/poly_list_renderer.xml',
+            'numa_poly/static/src/views/poly_list/poly_list_view.js',
             'numa_poly/static/src/views/fields/poly_field.js',
         ],
     },
     'doc': [
-        'readme/usage_guide.md',
+        'USER_GUIDE.md',
+        'TECHNICAL_ANALYSIS.md',
     ],
 }

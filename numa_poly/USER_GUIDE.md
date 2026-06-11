@@ -136,6 +136,55 @@ class ProjectExcavator(models.Model):
     digging_depth = fields.Float('Digging Depth (meters)')
 ```
 
+### What the concrete model inherits: fields **AND methods**
+
+A polymorphic child (concrete model) inherits **both the fields and the methods** of its
+polymorphic parents — Numa Poly injects the parent classes into the concrete model's
+`__bases__` / MRO (see `TECHNICAL_ANALYSIS.md` → MRO). Practical consequences:
+
+- **Fields** of the parent are reachable on the concrete (parent stored fields are exposed
+  as poly-`related`). `project.crane` can read/write `manufacturers_name` (from
+  `project.equipment`).
+- **Methods** defined on the parent are callable on the concrete. A method, `@api.depends`
+  compute, or button action defined ONCE on the base (`project.equipment`) is available on
+  every concrete (`project.crane`, `project.excavator`) **without redefining it**.
+
+Because of this, the idiomatic pattern is **define shared behavior once on the base**:
+
+```python
+class Equipment(models.Model):
+    _name = 'project.equipment'
+    _depend_models = {}
+
+    # Shared field + compute: available on crane and excavator too.
+    maintenance_count = fields.Integer(compute='_compute_maintenance_count')
+
+    def _compute_maintenance_count(self):
+        for rec in self:
+            rec.maintenance_count = self.env['maintenance.request'].search_count(
+                [('equipment_id', '=', rec.id)])
+
+    # Shared smart-button action: works from the crane/excavator concrete forms,
+    # because the concrete inherits this method via the injected MRO.
+    def action_open_maintenance(self):
+        self.ensure_one()
+        return {'type': 'ir.actions.act_window', 'res_model': 'maintenance.request',
+                'domain': [('equipment_id', '=', self.id)], 'view_mode': 'list,form'}
+```
+
+In the **concrete form** (e.g. `project.crane`) you can then reference `maintenance_count` and
+`action_open_maintenance` directly (e.g. in a smart button) — no need for a mixin or to
+re-declare them per subtype.
+
+> ⚠️ **Common misconception:** assuming poly only propagates *data* (fields) and that methods
+> defined on the base are not visible on the concrete. They **are** — it is full
+> field + method inheritance through the MRO. Don't create a separate mixin just to share a
+> method across subtypes; put it on the polymorphic base.
+
+> ℹ️ Everything resolves by **shared id** (base, concrete and any parent share the same `id`),
+> so a base method that does `self.env[...].search([('x_id', '=', self.id)])` works correctly
+> whether called on the base or on a concrete record.
+
 ### Step 4: Create Parent Model with One2Many Field
 
 ```python
@@ -217,24 +266,37 @@ If you are converting an existing model with data into a polymorphic model (by a
 </record>
 ```
 
-### Step 3: List View (Optional)
+### Step 3: Top-level (standalone) List View — use `js_class="poly_list"`
 
-If you want a standalone list view:
+The `numa_polimorphic_widget` only applies inside a **One2many/Many2many field** of a form.
+For a **standalone list** opened by a menu/action (e.g. a "Contacts" or "People" list), add
+**`js_class="poly_list"`** to the `<list>`. This applies the same `PolyListRenderer`, so:
+
+- clicking a row **navigates to the CONCRETE model's form** (based on `concrete_model_id`),
+  not the base model's generic form;
+- the "New" button shows the **subtype selection dialog**.
 
 ```xml
 <record id="project_site_list_view" model="ir.ui.view">
     <field name="name">project.site.list</field>
     <field name="model">project.site</field>
     <field name="arch" type="xml">
-        <list string="Project Sites">
+        <list string="Project Sites" js_class="poly_list">
             <field name="concrete_model_id" string="Type"/>
             <field name="manufacturers_name" string="Man.Name"/>
             <field name="quantity" string="Quantity used"/>
+            <!-- REQUIRED for the renderer, even at top level. Can be invisible. -->
             <field name="poly_payload" column_invisible="1"/>
         </list>
     </field>
 </record>
 ```
+
+> ⚠️ **Gotcha (silent fallback):** a plain `<list>` **without** `js_class="poly_list"` shows the
+> `concrete_model_id` column but does **NOT** navigate to the concrete form — clicking a row
+> opens the *base* model's form. There is no error; it just silently doesn't do the
+> polymorphic navigation. If "open the concrete form from a top-level list" isn't working,
+> the missing `js_class="poly_list"` is almost always the cause.
 
 ---
 
