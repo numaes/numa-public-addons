@@ -2126,9 +2126,14 @@ class PolyBase(_original_BaseModel):
         # the ORM omits them from INSERTs.  Legacy migrations may have created these
         # columns with NOT NULL; drop the constraint for every such column found.
         if hasattr(self, '_table'):
+            # NOTA: NO se exige field.column_type. Los campos poly inyectados
+            # (concrete_model_id, old_id, poly_payload, ...) son Many2one/Text computados
+            # con store=False cuyo column_type puede ser falsy; aun asi pueden tener una
+            # columna fisica NOT NULL legacy. El SELECT de abajo ya filtra a columnas que
+            # EXISTEN y son NOT NULL, asi que basta con `not field.store`.
             non_stored_cols = [
                 fname for fname, field in self._fields.items()
-                if not field.store and field.column_type  # has a DB column type but not stored here
+                if not field.store
             ]
             if non_stored_cols:
                 self.env.cr.execute("""
@@ -2167,9 +2172,11 @@ class PolyBase(_original_BaseModel):
         # left by a legacy migration would break every INSERT.
         if hasattr(self, '_table'):
             try:
+                # Sin exigir field.column_type (ver nota en _auto_init): incluye los campos
+                # poly inyectados no-stored aunque su column_type sea falsy.
                 non_stored_cols = [
                     fname for fname, field in self._fields.items()
-                    if not field.store and field.column_type
+                    if not field.store
                 ]
                 if non_stored_cols:
                     self.env.cr.execute("""
@@ -2245,8 +2252,13 @@ class PolyBase(_original_BaseModel):
             """
             _logger.debug(f'Injecting field {name} into {cls._name}')
             
-            # [poly] Aggressive takeover from ir.poly_base to ensure physical object parity
-            if name in ('old_id', 'concrete_model_id'):
+            # [poly] Aggressive takeover from ir.poly_base to ensure physical object parity.
+            # NOTA: concrete_model_id NO va acá. El takeover copia el campo de ir.poly_base
+            # (required=True, stored -> columna NOT NULL en el subtipo), pero el create del
+            # subtipo nunca la popula -> NotNullViolation. El diseño lo quiere store=False
+            # computado (ver _set_field('concrete_model_id', ... compute=_compute_concrete_model_id,
+            # store=False) mas abajo): se deja caer al path normal para usar ESE campo.
+            if name in ('old_id',):
                 base_instance = cls.pool.get('ir.poly_base')
                 if base_instance is not None:
                     base_field = base_instance._fields.get(name)
@@ -5653,6 +5665,24 @@ def _poly_registry_setup_models(self, cr):
     # [poly] Clear the polymorphic model name cache so stale results from the
     # previous registry state don't persist into the newly rebuilt registry.
     _poly_is_polymorphic_cache.clear()
+
+    # [poly] concrete_model_id pertenece a ir.poly_base; en los SUBTIPOS no debe ser una
+    # columna stored. Por el MRO inyectado (ir.poly_base queda mas derivado que el subtipo),
+    # la definicion required+stored de ir.poly_base gana sobre el override store=False, y Odoo
+    # crearia una columna NOT NULL en el subtipo que el create nunca popula -> NotNullViolation.
+    # Aca, tras el setup, forzamos el campo del subtipo a no-stored computado: el valor se lee
+    # del poly_base compartido (via _compute_concrete_model_id), sin columna propia.
+    for _mname, _mcls in self.items():
+        if not getattr(_mcls, '_depend_models', None):
+            continue  # base ({}) o modelo no-poly: dejar el campo como esta
+        _f = _mcls._fields.get('concrete_model_id')
+        if _f is not None and getattr(_f, 'store', False):
+            _f.store = False
+            _f.required = False
+            _f.compute = '_compute_concrete_model_id'
+            _f.compute_sudo = True
+            _f.readonly = True
+
     _logger.debug('[poly] Registry setup complete')
     return res
 
