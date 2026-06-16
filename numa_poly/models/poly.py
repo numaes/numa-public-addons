@@ -4684,7 +4684,7 @@ def poly_Field_setup(self, model):
 
     # Check if this field should be a polymorphic related field
     # (exists in a polymorphic base but is currently being set up as stored/non-related)
-    if f_name not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date', 'old_id']:
+    if f_name not in _POLY_TECHNICAL_FIELDS:
         # Odoo 18: Usar __dict__ para no disparar descriptores durante setup
         model_class = type(model)
         
@@ -4911,12 +4911,10 @@ def poly_Field_get_depends(self, model):
         return [], set()
     
     # [poly] Proteccion para campos related con cadena rota (related_field is None).
-    # Aplica en boot (_init=True) y durante reconstrucción del registry
-    # (reset_changes / button_immediate_upgrade), detectada via not pool.ready.
+    # Aplica siempre: durante boot, reset_changes o cualquier reconstrucción del registry.
     _in_setup = model.pool._init or not getattr(model.pool, 'ready', True)
     if self.related and (not hasattr(self, 'related_field') or self.related_field is None):
-        if _in_setup:
-            return [self.related], set()
+        return [self.related], set()
 
     odoo.fields.Field._poly_depends_stack.add(stack_key)
     try:
