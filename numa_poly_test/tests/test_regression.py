@@ -595,3 +595,53 @@ class TestPolyO2MAndConstraints(TransactionCase):
         t4 = self.env['test.test4'].create({'a1': 'ok'})
         with self.assertRaises(ValidationError):
             t4.a1 = 'BAD'
+
+
+@tagged('post_install', '-at_install')
+class TestPolyActiveArchive(TransactionCase):
+    """Campo active / archivado sobre un modelo poly (test.test4): exclusión del search por
+    defecto, active_test=False, toggle, y lectura de heredados estando archivado."""
+
+    MARK = '__ACT__'
+
+    def test_archived_excluded_from_default_search(self):
+        """Un registro archivado (active=False) no aparece en el search por defecto."""
+        keep = self.env['test.test4'].create({'a1': 'keep', 'a2': self.MARK})
+        gone = self.env['test.test4'].create({'a1': 'gone', 'a2': self.MARK})
+        gone.active = False
+        found = self.env['test.test4'].search([('a2', '=', self.MARK)])
+        self.assertIn(keep, found)
+        self.assertNotIn(gone, found)
+
+    def test_active_test_false_includes_archived(self):
+        """Con context(active_test=False) el search incluye los archivados."""
+        a = self.env['test.test4'].create({'a1': 'a', 'a2': self.MARK})
+        b = self.env['test.test4'].create({'a1': 'b', 'a2': self.MARK})
+        b.active = False
+        found = self.env['test.test4'].with_context(active_test=False).search([('a2', '=', self.MARK)])
+        self.assertEqual({a.id, b.id}, set(found.ids))
+
+    def test_search_inactive_domain(self):
+        """Buscar explícitamente los archivados con [('active','=',False)]."""
+        a = self.env['test.test4'].create({'a1': 'a', 'a2': self.MARK})
+        b = self.env['test.test4'].create({'a1': 'b', 'a2': self.MARK})
+        b.active = False
+        found = self.env['test.test4'].search([('a2', '=', self.MARK), ('active', '=', False)])
+        self.assertEqual(found, b)
+
+    def test_toggle_active_roundtrip(self):
+        """Archivar y desarchivar: vuelve a aparecer en el search por defecto."""
+        t4 = self.env['test.test4'].create({'a1': 'a', 'a2': self.MARK})
+        t4.active = False
+        self.assertNotIn(t4, self.env['test.test4'].search([('a2', '=', self.MARK)]))
+        t4.active = True
+        self.assertIn(t4, self.env['test.test4'].search([('a2', '=', self.MARK)]))
+
+    def test_archived_record_reads_inherited_fields(self):
+        """Un registro archivado sigue leyendo sus campos heredados (a1, de la base)."""
+        t4 = self.env['test.test4'].create({'a1': 'inherited_val', 'a2': self.MARK})
+        t4.active = False
+        t4.invalidate_recordset()
+        self.assertEqual(t4.a1, 'inherited_val')
+        # y vía la base sigue accesible
+        self.assertEqual(self.env['test.test1'].browse(t4.id).a1, 'inherited_val')

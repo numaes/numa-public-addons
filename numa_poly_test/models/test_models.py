@@ -97,6 +97,8 @@ class Test4(models.Model):
 
     a3 = fields.Char('A3 test 4')
     partner_id = fields.Many2one('res.partner', 'Test 1 related')
+    # active: hace al concreto archivable (patrón de producción; ej. res.partner como base poly).
+    active = fields.Boolean(default=True)
     # Campos para cubrir m2m y computed-stored sobre un modelo poly (patrones de producción).
     tag_ids = fields.Many2many('res.partner.category', string='Tags')
     # one2many a un modelo regular cuyo m2o apunta a este modelo poly.
