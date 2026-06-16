@@ -111,6 +111,26 @@ class TestPolyDiamondCRUD(TransactionCase):
         self.assertEqual(self.env['test.test2'].browse(t4.id).a3, 'SHARED',
                          "El campo sobrecargado comparte valor con el del padre (mismo id).")
 
+    def test_copy_creates_new_identity_with_copied_data(self):
+        """copy() crea un nuevo id con su propio ir_poly_base y copia los datos (no los links poly)."""
+        t4 = self.env['test.test4'].create({'a1': 'orig', 'a2': 'b', 'a3': 'c', 'a4': 'd'})
+        dup = t4.copy()
+        self.assertNotEqual(dup.id, t4.id, "La copia debe tener identidad propia.")
+        # Datos copiados (incl. heredados de las bases):
+        self.assertEqual(dup.a1, 'orig')
+        self.assertEqual(dup.a2, 'b')
+        self.assertEqual(dup.a4, 'd')
+        # Identidad poly fresca y consistente:
+        self.assertTrue(self.env['ir.poly_base'].browse(dup.id).exists(),
+                        "La copia debe tener su propia entrada en ir_poly_base.")
+        self.assertEqual(dup.concrete_model_id.model, 'test.test4')
+        # Las bases de la copia son propias (mismo id que la copia, no las del original):
+        self.assertEqual(self.env['test.test1'].browse(dup.id).a1, 'orig')
+        self.assertTrue(self.env['test.test2'].browse(dup.id).exists())
+        self.assertTrue(self.env['test.test3'].browse(dup.id).exists())
+        # El original queda intacto:
+        self.assertEqual(t4.a1, 'orig')
+
 
 @tagged('post_install', '-at_install')
 class TestPolyConcreteModel(TransactionCase):

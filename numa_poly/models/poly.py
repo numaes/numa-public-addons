@@ -1631,397 +1631,6 @@ class PolyBase(_original_BaseModel):
         """Deprecated: field injection is now handled in _setup_base via _build_poly_fields."""
         pass
 
-    def _check_migration_needed(self):
-        """
-        Verifica si el modelo actual requiere migración de registros existentes
-        para integrarse en la jerarquía polimórfica de ir.poly_base.
-        """
-        if not hasattr(type(self), '__depends_base_classes'):
-            return False
-
-        concrete_model_id = self.env['ir.model']._get_id(self._name)
-        
-        # We only check the main table of the model being migrated.
-        # If a record in self._table is NOT in ir_poly_base with its model_id,
-        # then migration is needed for this model.
-        query = SQL(
-            "SELECT id FROM %s WHERE id NOT IN ("
-            "    SELECT old_id FROM ir_poly_base WHERE concrete_model_id = %s"
-            ") LIMIT 1",
-            SQL.identifier(self._table),
-            concrete_model_id,
-        )
-        self.env.cr.execute(query)
-        return bool(self.env.cr.fetchone())
-
-    def _migrate_to_poly(self):
-        """
-        Realiza la migración de registros existentes a la jerarquía polimórfica.
-        """
-        self = self.with_context(is_migration=True)
-        if not self._check_migration_needed():
-            return
-
-        _logger.debug("Migrating model %s to polymorphic hierarchy", self._name)
-
-        concrete_model_id = self.env['ir.model']._get_id(self._name)
-
-        # Only migrate records from the CURRENT model's table that are not yet in ir_poly_base
-        self.env.cr.execute(SQL(
-            "SELECT id FROM %s WHERE id NOT IN ("
-            "    SELECT old_id FROM ir_poly_base WHERE concrete_model_id = %s"
-            ")",
-            SQL.identifier(self._table),
-            concrete_model_id,
-        ))
-        all_old_ids = {row[0] for row in self.env.cr.fetchall()}
-
-        if not all_old_ids:
-            return
-
-        # Para cada ID viejo, realizar la migración
-        concrete_model_id = self.env['ir.model']._get_id(self._name)
-        
-        for old_id in sorted(all_old_ids):
-            try:
-                with self.env.cr.savepoint():
-                    # 1. Asegurar registro en ir.poly_base
-                    # Intentamos buscar si ya existe (por si acaso hubo un fallo previo parcial)
-                    # o lo creamos usando el ORM para disparar hooks necesarios.
-                    PolyBase = self.env['ir.poly_base'].sudo()
-                    poly_base_rec = PolyBase.search([
-                        ('concrete_model_id', '=', concrete_model_id),
-                        ('old_id', '=', old_id)
-                    ], limit=1)
-                    
-                    if not poly_base_rec:
-                        try:
-                            poly_base_rec = PolyBase.create({
-                                'concrete_model_id': concrete_model_id,
-                                'old_id': old_id,
-                            })
-                        except Exception as e:
-                            # [poly] RECOVERY: Handle duplicate old_id gracefully
-                            if "already exists" in str(e) or "duplicate key" in str(e):
-                                poly_base_rec = PolyBase.search([
-                                    ('concrete_model_id', '=', concrete_model_id),
-                                    ('old_id', '=', old_id)
-                                ], limit=1)
-                            
-                            if not poly_base_rec:
-                                raise e
-                    
-                    new_id = poly_base_rec.id
-
-                    # 2. Duplicar datos
-                    # Usamos SQL para extraer los valores crudos de los campos almacenados
-                    # Esto garantiza que no haya recordsets ni basura del ORM
-                    self.env.cr.execute(SQL("SELECT * FROM %s WHERE id = %s", SQL.identifier(self._table), old_id))
-                    vals = self.env.cr.dictfetchone()
-                    if not vals:
-                        raise ValueError(f"Could not find original record {old_id} in {self._table}")
-
-                    # Extraer campos X2M via ORM por separado, ya que no están en la tabla principal
-                    old_record = self.browse(old_id)
-                    x2m_fields = [f for f, field in self._fields.items() if field.store and field.type in ('many2many', 'one2many')]
-                    
-                    # Limpiar vals para el create: eliminar campos no almacenados o problemáticos
-                    vals.pop('id', None)
-                    # Forzar el nuevo ID
-                    vals['id'] = new_id
-                    
-                    # Limpiar recordsets que puedan quedar en vals y procesar X2M
-                    for k, v in list(vals.items()):
-                        field = self._fields.get(k)
-                        if not field or not field.store:
-                            vals.pop(k, None)
-                            continue
-                        
-                        if field.type == 'many2one':
-                            # Extraction logic for Many2one
-                            is_self_base_ref = False
-                            if getattr(field, 'comodel_name', None) in self._depend_models:
-                                is_self_base_ref = True
-                            
-                            # En SQL los M2O ya son IDs enteros o None
-                            # Pero Odoo 18 puede devolver recordsets o tuplas incluso en SQL crudo si hay interceptores
-                            if v is None:
-                                vals[k] = False
-                            elif is_self_base_ref:
-                                # Saltamos validación del ORM para campos que apuntan a bases
-                                vals[k] = False
-                            else:
-                                # Extraer ID de forma agresiva
-                                def extract_id(val):
-                                    if not val:
-                                        return False
-                                    # Si es un recordset (tiene .ids y no es lista/tupla)
-                                    if hasattr(val, '_name') and hasattr(val, 'ids'):
-                                        try:
-                                            # We use val[:1].id to get the first ID if it's a recordset
-                                            return val[:1].id if val else False
-                                        except:
-                                            # Fallback if it's some other Odoo proxy
-                                            return val.id if hasattr(val, 'id') else False
-                                    # Si es una tupla (id, name) o lista de recordsets
-                                    if isinstance(val, (list, tuple)) and len(val) > 0:
-                                        return extract_id(val[0])
-                                    # Si es algo casteable a int
-                                    try:
-                                        return int(val)
-                                    except (ValueError, TypeError):
-                                        return False
-                                
-                                vals[k] = extract_id(v)
-
-                        # Limpiar campos técnicos de Odoo
-                        if k in ('__last_update', 'display_name', 'create_uid', 'create_date', 'write_uid', 'write_date'):
-                            vals.pop(k, None)
-
-                    # Añadir X2M procesados via ORM
-                    for k in x2m_fields:
-                        try:
-                            rel_records = old_record[k]
-                            if rel_records:
-                                vals[k] = [Command.set(rel_records.ids)]
-                        except Exception:
-                            continue
-                    
-                    # Preservar campos de auditoría y referencias circulares (leídos antes del
-                    # create): cualquier M2O que apunte a las bases de la jerarquía.
-                    extra_cols = []
-                    for k, field in self._fields.items():
-                        if field.store and field.type == 'many2one' and getattr(field, 'comodel_name', None) in self._depend_models:
-                            extra_cols.append(k)
-                    
-                    audit_cols = ['create_uid', 'create_date', 'write_uid', 'write_date'] + extra_cols
-                    # Use safer SQL construction for Odoo 18
-                    col_identifiers = [SQL.identifier(c) for c in audit_cols]
-                    self.env.cr.execute(SQL(
-                        "SELECT %s FROM %s WHERE id = %s",
-                        SQL(', ').join(col_identifiers),
-                        SQL.identifier(self._table), old_id
-                    ))
-                    audit = self.env.cr.dictfetchone() or {}
-
-                    # Crear el nuevo registro (esto disparará la creación en depend_models)
-                    self.env.flush_all()
-                    
-                    try:
-                        # Odoo 18: bypass security and recomputes
-                        new_record = self.with_context(
-                            tracking_disable=True,
-                            mail_create_nolog=True,
-                            mail_create_nosubscribe=True,
-                            prefetch_fields=False,
-                            no_upsert=True,  # Evitar lógicas de auto-merge si existen
-                            is_migration=True,  # Marcar explícitamente como migración
-                        ).create([vals])
-                        # IMPORTANTE: Forzar flush para que los registros base existan en BD
-                        # y no fallen las FKs en _update_foreign_keys
-                        self.env.flush_all()
-                        
-                        # Doble verificación: asegurar que ir_poly_base tenga el registro 
-                        # (debería haber sido creado por el create() arriba si no lo estuviera,
-                        # o el create() debería haber usado el ID que le pasamos).
-                        # Como ya lo creamos al inicio de la iteración con new_poly,
-                        # solo nos aseguramos de que siga ahí.
-                        if not self.env['ir.poly_base'].sudo().browse(new_id).exists():
-                            self.env['ir.poly_base'].sudo().create({
-                                'id': new_id,
-                                'concrete_model_id': concrete_model_id,
-                                'old_id': old_id,
-                            })
-                    except Exception as create_err:
-                        _logger.error("Create failed for %s ID %s. Vals: %s", self._name, old_id, vals)
-                        raise create_err
-
-                    # Restaurar auditoría en todas las tablas involucradas
-                    audit_tables = [self._table, 'ir_poly_base']
-                    for base_name in self._depend_models:
-                        base_model = self.env[base_name]
-                        if base_model._table:
-                            audit_tables.append(base_model._table)
-                    
-                    for table in set(audit_tables):
-                        # Columnas a restaurar: auditoría y referencias circulares
-                        self.env.cr.execute("""
-                            SELECT column_name 
-                            FROM information_schema.columns 
-                            WHERE table_name = %s AND column_name IN %s
-                        """, [table, tuple(audit_cols)])
-                        existing_cols = {row[0] for row in self.env.cr.fetchall()}
-                        
-                        if not existing_cols:
-                            continue
-                            
-                        set_clauses = []
-                        params = []
-                        # Columnas a restaurar: auditoría y referencias circulares
-                        for col in audit_cols:
-                            if col in existing_cols and audit.get(col):
-                                set_clauses.append(f"{col}=%s")
-                                params.append(audit[col])
-                        
-                        if set_clauses:
-                            query = f"UPDATE {table} SET {', '.join(set_clauses)} WHERE id=%s"
-                            params.append(new_id)
-                            self.env.cr.execute(query, params)
-
-                    # 3. Actualizar Referencias
-                    # IMPORTANTE: Se hace antes de borrar el ID viejo para satisfacer FKs si fuera necesario
-                    self._update_foreign_keys(old_id, new_id)
-
-                    # 4. Limpieza
-                    # Borrado físico de las tablas originales para el ID viejo
-                    for table in set(audit_tables):
-                        self.env.cr.execute(SQL("DELETE FROM %s WHERE id = %s", SQL.identifier(table), old_id))
-                    
-                    _logger.info("Migrated %s ID %s -> %s", self._name, old_id, new_id)
-
-            except Exception as e:
-                _logger.error("Failed to migrate %s ID %s: %s", self._name, old_id, e)
-                # Continuamos con el siguiente registro
-        
-        # (El re-sync post-migración era específico de numa_planning (_pln_*) y, como
-        # _migrate_to_poly corre siempre con is_migration=True, hacía `continue` sin ejecutar
-        # nada. Removido junto con numa_planning.)
-
-    def _update_foreign_keys(self, old_id, new_id):
-        """
-        Actualiza todas las referencias al ID viejo con el nuevo ID.
-        """
-        # A. Many2one y Many2many estándar
-        # Buscamos campos almacenados que apunten a este modelo
-        # En Odoo 18, ir_model tiene el nombre de la tabla en la columna 'name' o derivado, 
-        # pero la forma más segura y portable es usar self.env[model]._table
-        # Odoo 18: Many2one references are stored in 'relation' column of ir_model_fields for all types
-        self.env.cr.execute("""
-            SELECT f.model, f.name, f.ttype
-            FROM ir_model_fields f
-            WHERE f.relation = %s AND f.store = True
-        """, [self._name])
-        
-        for field_model, field_name, ttype in self.env.cr.fetchall():
-            try:
-                model_obj = self.env[field_model]
-                table_name = model_obj._table
-                
-                # Check field object directly to be sure
-                field = model_obj._fields.get(field_name)
-                if not field:
-                    continue
-            except Exception:
-                continue
-
-            try:
-                # Usamos un savepoint para cada actualización para evitar abortar la transacción entera
-                with self.env.cr.savepoint():
-                    if ttype in ('many2one', 'many2many'):
-                        # Para M2M necesitamos encontrar la tabla intermedia, para M2O la tabla del modelo
-                        # Odoo 18: Many2one tiene comodel_name, Many2many tiene relation
-                        if ttype == 'many2many':
-                            # Many2many specific: uses 'relation' for table name and 'column2' for the target ID
-                            rel_table = getattr(field, 'relation', None)
-                            col_id = getattr(field, 'column2', None)
-                        else:
-                            # Many2one specific: uses 'comodel_name' but we update the current model's table
-                            rel_table = getattr(field, 'comodel_name', None)
-                            col_id = field_name
-                            
-                        if not rel_table or not col_id:
-                            continue
-                        
-                        # Para Many2one, si rel_table es el comodel, queremos actualizar la tabla donde ESTÁ el campo
-                        target_update_table = rel_table if ttype == 'many2many' else table_name
-
-                        # Verificar si es una vista antes de intentar el UPDATE
-                        self.env.cr.execute("""
-                            SELECT count(*) FROM information_schema.views 
-                            WHERE table_name = %s AND table_schema = 'public'
-                        """, [target_update_table])
-                        if self.env.cr.fetchone()[0] > 0:
-                            continue
-
-                        if ttype == 'many2many':
-                            # Manejo de duplicados en M2M
-                            col_id_other = getattr(field, 'column1', None)
-                            if col_id_other:
-                                self.env.cr.execute(SQL("""
-                                    DELETE FROM %s 
-                                    WHERE %s = %s
-                                    AND %s IN (
-                                        SELECT %s FROM %s WHERE %s = %s
-                                    )
-                                """, SQL.identifier(rel_table), SQL.identifier(col_id), old_id,
-                                     SQL.identifier(col_id_other), SQL.identifier(col_id_other),
-                                     SQL.identifier(rel_table), SQL.identifier(col_id), new_id))
-
-                        # Special handling for project_task_user_rel (Personal Task Stage)
-                        # Odoo 18: task_id, user_id unique constraint
-                        if target_update_table == 'project_task_user_rel' and col_id == 'task_id':
-                            self.env.cr.execute(SQL("""
-                                DELETE FROM project_task_user_rel 
-                                WHERE task_id = %s
-                                AND user_id IN (
-                                    SELECT user_id FROM project_task_user_rel WHERE task_id = %s
-                                )
-                            """, new_id, old_id))
-
-                        self.env.cr.execute(SQL(
-                            "UPDATE %s SET %s = %s WHERE %s = %s",
-                            SQL.identifier(target_update_table), SQL.identifier(col_id), new_id,
-                            SQL.identifier(col_id), old_id
-                        ))
-            except Exception as e:
-                _logger.warning("Minor issue during FK update for %s.%s (ID %s -> %s): %s", field_model, field_name, old_id, new_id, e)
-
-        # B. Referencias Dinámicas (res_model / res_id)
-        dynamic_refs = [
-            ('ir_attachment', 'res_model', 'res_id'),
-            ('mail_message', 'model', 'res_id'),
-            ('mail_followers', 'res_model', 'res_id'),
-            ('mail_activity', 'res_model', 'res_id'),
-            ('ir_model_data', 'model', 'res_id'),
-        ]
-        for table, model_col, id_col in dynamic_refs:
-            try:
-                # Usamos un savepoint para cada actualización dinámica para evitar abortar la transacción entera
-                # en caso de violación de restricción única (ej. mail_followers)
-                with self.env.cr.savepoint():
-                    if table == 'mail_followers':
-                        # Para mail_followers, si ya existe el seguidor para el nuevo ID, 
-                        # simplemente borramos el del viejo ID en lugar de actualizar.
-                        self.env.cr.execute(SQL("""
-                            DELETE FROM mail_followers 
-                            WHERE res_model = %s AND res_id = %s
-                            AND partner_id IN (
-                                SELECT partner_id FROM mail_followers 
-                                WHERE res_model = %s AND res_id = %s
-                            )
-                        """, self._name, old_id, self._name, new_id))
-
-                    self.env.cr.execute(SQL(
-                        "UPDATE %s SET %s = %s WHERE %s = %s AND %s = %s",
-                        SQL.identifier(table), SQL.identifier(id_col), new_id,
-                        SQL.identifier(model_col), self._name, SQL.identifier(id_col), old_id
-                    ))
-            except Exception as e:
-                _logger.warning("Minor issue during dynamic ref update for %s (ID %s -> %s): %s", table, old_id, new_id, e)
-
-        # C. Casos Especiales
-        # C1. mail.alias
-        if 'mail.alias' in self.env:
-            try:
-                with self.env.cr.savepoint():
-                    self.env.cr.execute("""
-                        UPDATE mail_alias SET alias_parent_thread_id = %s 
-                        WHERE alias_parent_model_id = (SELECT id FROM ir_model WHERE model = %s)
-                        AND alias_parent_thread_id = %s
-                    """, [new_id, self._name, old_id])
-            except Exception:
-                pass
-
     def _auto_init(self):
         """
         Extend _auto_init to ensure migration is performed when the table is created/updated.
@@ -2114,12 +1723,6 @@ class PolyBase(_original_BaseModel):
                         )
 
         res = super()._auto_init()
-        # Only migrate if _depend_models is defined (is a polymorphic model)
-        if getattr(self, '_depend_models', None) is not None:
-            # Check if migration is needed and perform it
-            if self._check_migration_needed():
-                _logger.debug("Auto-migrating %s to polymorphic hierarchy in _auto_init", self._name)
-                self._migrate_to_poly()
 
         # Non-stored fields (injected poly relations, computed fields, related fields
         # pointing to a parent table) must never be NOT NULL in the child table because
@@ -3420,7 +3023,10 @@ class PolyBase(_original_BaseModel):
 
         # If this is a polymorphic create of a subclass handle it recursively
 
-        new_records = self
+        # Acumulador de los registros creados. DEBE arrancar vacío: create() puede invocarse
+        # sobre un recordset NO vacío (p.ej. record.copy() llama self.create(vals)), y devolver
+        # `self` mezclado con los nuevos rompe la semántica (copy() devolvía original + copia).
+        new_records = self.browse()
         concrete_model_id = None
 
         processed_vals_list = []
@@ -3469,19 +3075,26 @@ class PolyBase(_original_BaseModel):
         
         if concrete_model_id:
             concrete_model = self.env['ir.model'].browse(concrete_model_id).exists()
-            if concrete_model and concrete_model._name != self._name:
-                # clean the data_list from the concrete_model_id
-                # Create a copy to avoid modifying the original data
-                new_vals_list = []
-                for data in data_list:
-                    new_data = dict(data)
-                    if 'concrete_model_id' in new_data:
-                        del new_data['concrete_model_id']
-                    new_vals_list.append(new_data)
+            # OJO: `concrete_model` es un registro de ir.model; el nombre técnico del modelo
+            # concreto vive en su campo `.model` (ej. 'test.test4'), NO en `._name` (que para
+            # un recordset de ir.model siempre es 'ir.model'). concrete_model_id puede llegar en
+            # los vals como dispatch desde una base (redirigir al modelo concreto) o arrastrado
+            # por copy() (campo heredado de ir.poly_base): en ese caso target == self y sólo hay
+            # que descartar el bookkeeping, no redirigir (si no, se intentaba crear un ir.model).
+            target_name = concrete_model.model if concrete_model else None
+            # Descartar el bookkeeping field de los vals en ambos casos.
+            new_vals_list = []
+            for data in data_list:
+                new_data = dict(data)
+                new_data.pop('concrete_model_id', None)
+                new_vals_list.append(new_data)
 
-                _logger.debug(f'Creating subclass {concrete_model._name} with {new_vals_list}')
-                new_records = concrete_model.create(new_vals_list)
-                return new_records
+            if target_name and target_name != self._name:
+                _logger.debug(f'Creating subclass {target_name} with {new_vals_list}')
+                return self.env[target_name].create(new_vals_list)
+
+            # target == self (o ir.model inexistente): seguir el create normal sin el campo.
+            data_list = new_vals_list
 
         # Get all related fields and their definitions
         inverse_related = {field_name.split('.')[-1]: field_definition
@@ -3834,6 +3447,24 @@ class PolyBase(_original_BaseModel):
         self._add_precomputed_values(result_vals_list)
 
         return result_vals_list
+
+    def copy_data(self, default=None):
+        """
+        Al copiar un registro polimórfico hay que descartar los campos que gestiona poly
+        internamente: el bookkeeping de ir.poly_base (id, old_id, concrete_model_id, poly_payload,
+        poly_base_id) y TODOS los links a las bases (PolyReference: testN_id, etc.). Si se copiaran
+        verbatim apuntarían a las bases del ORIGINAL (o a columnas que no existen en la tabla hoja,
+        ej. poly_base_id en test_test2). Quitándolos, el create() de poly regenera identidad propia
+        y bases frescas a partir de los datos copiados.
+        """
+        vals_list = super().copy_data(default=default)
+        if not _poly_is_polymorphic(self):
+            return vals_list
+        for vals in vals_list:
+            for fname in list(vals.keys()):
+                if fname in _POLY_TECHNICAL_FIELDS or isinstance(self._fields.get(fname), PolyReference):
+                    vals.pop(fname, None)
+        return vals_list
 
     def unlink(self):
         """
