@@ -3072,7 +3072,14 @@ class PolyBase(_original_BaseModel):
             processed_vals_list.append(processed_vals)
 
         data_list = processed_vals_list
-        
+
+        # Capturar los nombres de campo del input ANTES de que el loop de creación los consuma
+        # (rutea/pop-ea los campos heredados hacia las sub-creaciones de las bases). Se usan al
+        # final para disparar las @api.constrains del concreto sobre campos heredados.
+        _poly_input_fnames = set()
+        for _vals in data_list:
+            _poly_input_fnames.update(_vals.keys())
+
         if concrete_model_id:
             concrete_model = self.env['ir.model'].browse(concrete_model_id).exists()
             # OJO: `concrete_model` es un registro de ir.model; el nombre técnico del modelo
@@ -3391,6 +3398,19 @@ class PolyBase(_original_BaseModel):
                     if hasattr(f, '_poly_old_inherited'):
                         f.inherited = f._poly_old_inherited
                         del f._poly_old_inherited
+
+        # [poly] Disparar las @api.constrains del modelo concreto para los campos del input que
+        # son HEREDADOS (related, viven en una base): el super().create() de la hoja sólo valida
+        # SUS columnas propias, así que un constraint sobre un campo heredado (ej. a1, en
+        # test.test1) no se evaluaba en create (sí en write -> asimetría / bypass de validación).
+        # Validamos explícitamente esos campos sobre los registros creados.
+        if new_records:
+            _inherited_fnames = [
+                fn for fn in _poly_input_fnames
+                if (f := self._fields.get(fn)) is not None and getattr(f, 'related', None)
+            ]
+            if _inherited_fnames:
+                new_records._validate_fields(_inherited_fnames)
 
         return new_records
 

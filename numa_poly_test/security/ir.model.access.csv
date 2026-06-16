@@ -9,3 +9,4 @@ access_test_poly_project,access_test_poly_project,numa_poly_test.model_test_poly
 access_test_poly_base,access_test_poly_base,numa_poly_test.model_test_poly_base,base.group_user,1,1,1,1
 access_test_poly_child_a,access_test_poly_child_a,numa_poly_test.model_test_poly_child_a,base.group_user,1,1,1,1
 access_test_poly_child_b,access_test_poly_child_b,numa_poly_test.model_test_poly_child_b,base.group_user,1,1,1,1
+access_test_test4_line,access_test_test4_line,numa_poly_test.model_test_test4_line,base.group_user,1,1,1,1

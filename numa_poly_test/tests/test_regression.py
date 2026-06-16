@@ -538,3 +538,60 @@ class TestPolyM2MAndComputed(TransactionCase):
         self.env['test.test4'].create({'a1': 'hello', 'a2': '__CMP__'})
         found = self.env['test.test4'].search([('a2', '=', '__CMP__'), ('a1_upper', '=', 'HELLO')])
         self.assertEqual(len(found), 1)
+
+
+@tagged('post_install', '-at_install')
+class TestPolyO2MAndConstraints(TransactionCase):
+    """one2many sobre poly, m2o desde un modelo regular hacia un poly, y @api.constrains."""
+
+    def test_o2m_create_with_lines(self):
+        """create con line_ids (Command.create) crea las líneas ligadas al registro poly."""
+        from odoo import Command
+        t4 = self.env['test.test4'].create({
+            'a1': 'a',
+            'line_ids': [Command.create({'name': 'L1'}), Command.create({'name': 'L2'})],
+        })
+        self.assertEqual(set(t4.line_ids.mapped('name')), {'L1', 'L2'})
+        self.assertEqual(t4.line_ids.mapped('parent_id'), t4)
+
+    def test_o2m_add_and_remove_lines(self):
+        """write con Command.create / Command.unlink sobre el o2m."""
+        from odoo import Command
+        t4 = self.env['test.test4'].create({'a1': 'a', 'line_ids': [Command.create({'name': 'L1'})]})
+        line1 = t4.line_ids
+        t4.write({'line_ids': [Command.create({'name': 'L2'})]})
+        t4.invalidate_recordset()
+        self.assertEqual(set(t4.line_ids.mapped('name')), {'L1', 'L2'})
+        t4.write({'line_ids': [Command.unlink(line1.id)]})
+        t4.invalidate_recordset()
+        self.assertEqual(t4.line_ids.mapped('name'), ['L2'])
+
+    def test_m2o_from_regular_to_poly(self):
+        """Un m2o de un modelo regular apuntando a un registro poly resuelve y permite dotted."""
+        t4 = self.env['test.test4'].create({'a1': 'parent_a1'})
+        line = self.env['test.test4.line'].create({'name': 'L', 'parent_id': t4.id})
+        self.assertEqual(line.parent_id, t4)
+        # dotted a través del m2o hacia un campo heredado del poly
+        found = self.env['test.test4.line'].search([('parent_id.a1', '=', 'parent_a1')])
+        self.assertIn(line, found)
+
+    def test_unlink_poly_cascades_o2m_lines(self):
+        """unlink del registro poly borra las líneas (ondelete='cascade' del m2o)."""
+        from odoo import Command
+        t4 = self.env['test.test4'].create({'a1': 'a', 'line_ids': [Command.create({'name': 'L1'})]})
+        line_id = t4.line_ids.id
+        t4.unlink()
+        self.assertFalse(self.env['test.test4.line'].browse(line_id).exists())
+
+    def test_constraint_blocks_invalid_on_create(self):
+        """@api.constrains sobre el modelo poly bloquea un create inválido."""
+        from odoo.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self.env['test.test4'].create({'a1': 'BAD'})
+
+    def test_constraint_blocks_invalid_on_write(self):
+        """@api.constrains se evalúa también en write."""
+        from odoo.exceptions import ValidationError
+        t4 = self.env['test.test4'].create({'a1': 'ok'})
+        with self.assertRaises(ValidationError):
+            t4.a1 = 'BAD'
