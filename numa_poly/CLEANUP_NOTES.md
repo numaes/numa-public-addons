@@ -117,10 +117,11 @@ Cada paso: agregar el test del patrón, remover el hardcode, correr la suite.
 
 Al escribir tests nuevos como red de regresión aparecieron **dos caminos no testeados que están
 rotos** en el estado actual del motor. Ninguno tiene cobertura previa, por eso pasaron inadvertidos.
-Se documentan acá como gaps **conocidos y rastreables** (no silenciosos); su arreglo es trabajo
-con forma de feature y se decide aparte (ver memoria `numa-poly-hardening`).
+Se documentaron acá como gaps **conocidos y rastreables** (no silenciosos). **AMBOS RESUELTOS**
+en commit `4f510c6` tras decisión del usuario (ver más abajo el estado de cada uno). El detalle
+del diagnóstico se conserva como referencia de por qué estaban rotos.
 
-### 1. Migración legacy→poly (`_migrate_to_poly` / `_check_migration_needed`) — DEAD CODE
+### 1. Migración legacy→poly (`_migrate_to_poly` / `_check_migration_needed`) — DEAD CODE → **REMOVIDA** (`4f510c6`)
 
 `_auto_init` (poly.py:2118) llama a `_migrate_to_poly()` sólo si `_check_migration_needed()`.
 Ese detector **nunca puede devolver True hoy**, por DOS razones independientes:
@@ -139,11 +140,14 @@ Ese detector **nunca puede devolver True hoy**, por DOS razones independientes:
 
 **Implicancia**: si un modelo poly se despliega con datos preexistentes (no-poly) en su tabla,
 **no se auto-migran**. Relevante para el onboarding de personas/comitentes (gallo.* → poly).
-**Decisión pendiente del usuario**: (a) revivir = arreglar guard (usar `_depend_models`) + arreglar
-el NULL-in-NOT-IN + test que lo pruebe; o (b) confirmar muerto y remover
-`_migrate_to_poly`/`_check_migration_needed`/`_update_foreign_keys` como scar.
 
-### 2. `copy()` sobre registros poly — ROTO
+**DECISIÓN (jun-2026): confirmar muerto y REMOVER.** La sync siempre recrea desde el backend;
+no se onboardean datos no-poly preexistentes. Eliminados `_check_migration_needed`,
+`_migrate_to_poly`, `_update_foreign_keys` (391 líneas) y la llamada en `_auto_init` (`4f510c6`).
+Si en el futuro hiciera falta migrar datos legacy, rehacerlo con guard sobre `_depend_models` y
+detector con `old_id IS NOT NULL` / `NOT EXISTS` (no reintroducir el `NOT IN` con NULL).
+
+### 2. `copy()` sobre registros poly — ROTO → **ARREGLADO** (`4f510c6`)
 
 `self.env['test.test4'].create({...}).copy()` falla. No hay override de `copy`/`copy_data` en poly,
 así que se usa el de Odoo, que arrastra al `create` los campos internos de poly heredados/inyectados:
@@ -157,7 +161,15 @@ así que se usa el de Odoo, que arrastra al `create` los campos internos de poly
   `testN_id`, `concrete_model_id`, `old_id`) que son **gestionados por poly** y no deben copiarse
   verbatim (apuntan a las bases del ORIGINAL).
 
-**Arreglo correcto (feature)**: override de `copy_data` en poly que descarte el bookkeeping/links
-poly (`concrete_model_id`, `old_id`, `poly_base_id`, y los `_depend_models.values()`) dejando que
-`create` regenere identidad y bases frescas; + arreglar el `._name`→`.model` del branch de dispatch;
-+ test `copy()` end-to-end. No se hizo half-fix en el hot path de `create` sin cobertura completa.
+**ARREGLO APLICADO (`4f510c6`)** — tres piezas:
+1. **`copy_data()` override**: descarta `_POLY_TECHNICAL_FIELDS` (id, audit, old_id,
+   concrete_model_id, poly_payload, poly_base_id) y todos los campos `PolyReference` (los links
+   `testN_id` a las bases). Así `create` regenera identidad y bases frescas desde los datos.
+2. **dispatch `._name`→`.model`**: el branch por `concrete_model_id` ahora usa el nombre técnico
+   real (`concrete_model.model`) y redirige vía `self.env[target]`; si `target == self` sólo
+   descarta el campo y sigue (caso copy, donde el id arrastrado apunta al propio modelo).
+3. **`new_records` arranca vacío** (`self.browse()` en vez de `self`): `create` se puede llamar
+   sobre un recordset NO vacío (`record.copy()` hace `self.create(vals)`), y arrancar en `self`
+   devolvía original+copia (`Expected singleton`). Para el create normal (self vacío) es idéntico.
+
+Cubierto por `TestPolyDiamondCRUD.test_copy_creates_new_identity_with_copied_data`.
