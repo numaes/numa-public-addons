@@ -446,3 +446,53 @@ class TestPolyDepthDefaultsM2o(TransactionCase):
         t4.partner_id = p2.id
         t4.invalidate_recordset()
         self.assertEqual(t4.partner_id, p2)
+
+
+@tagged('post_install', '-at_install')
+class TestPolyBatchAndAggregate(TransactionCase):
+    """Operaciones multi-registro y agregación: write batch, read_group SUM, dominio OR, mapped m2o."""
+
+    MARK = '__BATCH__'
+
+    def test_batch_write_inherited_field(self):
+        """write sobre un campo heredado en un recordset de varios -> persiste en todas las bases."""
+        recs = self.env['test.test4'].create([
+            {'a1': 'x', 'a2': self.MARK}, {'a1': 'y', 'a2': self.MARK}, {'a1': 'z', 'a2': self.MARK}])
+        recs.write({'a1': 'BATCH'})
+        recs.invalidate_recordset()
+        self.assertEqual(set(recs.mapped('a1')), {'BATCH'})
+        for r in recs:
+            self.assertEqual(self.env['test.test1'].browse(r.id).a1, 'BATCH')
+
+    # NOTA: read_group con SUM sobre un campo INYECTADO (ej. field_b en test.poly.project) NO
+    # funciona, pero es comportamiento estándar de Odoo: los campos inyectados por poly son
+    # related no-stored, y Odoo no puede agregar por SQL una columna que no existe. La agrupación
+    # por valor (groupby + _count) sí anda (ver test_read_group_by_inherited_field). Para sumar,
+    # agregar sobre el modelo base donde el campo es stored (ej. test.poly.behavior.b.field_b).
+
+    def test_or_domain_inherited_and_own(self):
+        """Dominio OR mezclando un campo heredado (a1) y uno propio (a4)."""
+        self.env['test.test4'].create({'a1': 'OX', 'a4': 'n', 'a2': self.MARK})
+        self.env['test.test4'].create({'a1': 'n', 'a4': 'OW', 'a2': self.MARK})
+        self.env['test.test4'].create({'a1': 'n', 'a4': 'n', 'a2': self.MARK})
+        found = self.env['test.test4'].search(
+            [('a2', '=', self.MARK), '|', ('a1', '=', 'OX'), ('a4', '=', 'OW')])
+        self.assertEqual(len(found), 2)
+        self.assertEqual(sorted(found.mapped('a1')), ['OX', 'n'])
+
+    def test_mapped_over_own_m2o(self):
+        """mapped() sobre un m2o propio (partner_id) en un recordset."""
+        p1 = self.env['res.partner'].create({'name': 'M1 ZZ'})
+        p2 = self.env['res.partner'].create({'name': 'M2 ZZ'})
+        recs = self.env['test.test4'].create([
+            {'a1': 'a', 'a2': self.MARK, 'partner_id': p1.id},
+            {'a1': 'b', 'a2': self.MARK, 'partner_id': p2.id}])
+        self.assertEqual(set(recs.mapped('partner_id').ids), {p1.id, p2.id})
+
+    def test_batch_read_multi_records(self):
+        """read() sobre un recordset de varios devuelve una fila por registro con sus campos."""
+        recs = self.env['test.test4'].create([
+            {'a1': 'r1', 'a4': 's1', 'a2': self.MARK}, {'a1': 'r2', 'a4': 's2', 'a2': self.MARK}])
+        data = recs.read(['a1', 'a4'])
+        by_a1 = {d['a1']: d['a4'] for d in data}
+        self.assertEqual(by_a1, {'r1': 's1', 'r2': 's2'})
