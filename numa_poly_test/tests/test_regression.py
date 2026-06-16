@@ -131,6 +131,29 @@ class TestPolyDiamondCRUD(TransactionCase):
         # El original queda intacto:
         self.assertEqual(t4.a1, 'orig')
 
+    def test_copy_with_default_override(self):
+        """copy(default=...) aplica overrides sobre los datos copiados."""
+        t4 = self.env['test.test4'].create({'a1': 'orig', 'a4': 'd'})
+        dup = t4.copy({'a4': 'override'})
+        self.assertEqual(dup.a1, 'orig', "Lo no overrideado se copia.")
+        self.assertEqual(dup.a4, 'override', "El default override gana.")
+
+    def test_mapped_filtered_sorted_on_inherited_field(self):
+        """mapped()/filtered()/sorted() sobre un campo heredado en un recordset.
+        Es el patrón exacto que loopeaba en unlink (mapped sobre PolyReference) — guardián."""
+        recs = self.env['test.test4'].create([
+            {'a1': 'm1', 'a2': 'M'}, {'a1': 'm2', 'a2': 'M'}, {'a1': 'm3', 'a2': 'M'}])
+        self.assertEqual(sorted(recs.mapped('a1')), ['m1', 'm2', 'm3'])
+        self.assertEqual(recs.filtered(lambda r: r.a1 == 'm2').a1, 'm2')
+        self.assertEqual(recs.sorted('a1', reverse=True).mapped('a1'), ['m3', 'm2', 'm1'])
+
+    def test_write_via_base_model_reflects_on_concrete(self):
+        """Escribir el campo en el modelo BASE (mismo id) se ve desde el concreto."""
+        t4 = self.env['test.test4'].create({'a1': 'orig'})
+        self.env['test.test1'].browse(t4.id).a1 = 'from_base'
+        t4.invalidate_recordset()
+        self.assertEqual(t4.a1, 'from_base')
+
 
 @tagged('post_install', '-at_install')
 class TestPolyConcreteModel(TransactionCase):
@@ -262,3 +285,47 @@ class TestPolySearchReadAggregate(TransactionCase):
         counts = {g['a1']: g['a1_count'] for g in groups}
         self.assertEqual(counts.get('G1'), 2)
         self.assertEqual(counts.get('G2'), 1)
+
+
+@tagged('post_install', '-at_install')
+class TestPolyPolymorphicRecordset(TransactionCase):
+    """El núcleo de poly: varios concretos comparten una base, y se navega de base a concreto.
+    Usa la jerarquía test.poly.base <- {child.a, child.b} (dos concretos sobre la misma base)."""
+
+    def test_as_concrete_model_resolves_mixed_types(self):
+        """Distintos concretos sobre la misma base poly se resuelven cada uno a SU tipo."""
+        ca = self.env['test.poly.child.a'].create({'base_field': 'a', 'child_a_field': 'x'})
+        cb = self.env['test.poly.child.b'].create({'base_field': 'b', 'child_b_field': 'y'})
+        base_a = self.env['ir.poly_base'].browse(ca.id)
+        base_b = self.env['ir.poly_base'].browse(cb.id)
+        self.assertEqual(base_a.as_concrete_model()._name, 'test.poly.child.a')
+        self.assertEqual(base_b.as_concrete_model()._name, 'test.poly.child.b')
+        self.assertNotEqual(ca.concrete_model_id, cb.concrete_model_id,
+                            "Cada concreto tiene su propio concrete_model_id.")
+
+    def test_shared_base_distinct_identities(self):
+        """child.a y child.b comparten test.poly.base como base, pero tienen ids propios distintos."""
+        ca = self.env['test.poly.child.a'].create({'base_field': 'A', 'child_a_field': '1'})
+        cb = self.env['test.poly.child.b'].create({'base_field': 'B', 'child_b_field': '2'})
+        self.assertNotEqual(ca.id, cb.id)
+        self.assertEqual(self.env['test.poly.base'].browse(ca.id).base_field, 'A')
+        self.assertEqual(self.env['test.poly.base'].browse(cb.id).base_field, 'B')
+
+    def test_single_parent_full_crud(self):
+        """CRUD completo en jerarquía de 1 nivel (child.a -> base): create/write/search/unlink."""
+        c = self.env['test.poly.child.a'].create({'base_field': 'bf', 'child_a_field': 'cf'})
+        cid = c.id
+        # write de campo heredado (base_field) y propio (child_a_field) juntos
+        c.write({'base_field': 'bf2', 'child_a_field': 'cf2'})
+        c.invalidate_recordset()
+        self.assertEqual(c.base_field, 'bf2')
+        self.assertEqual(c.child_a_field, 'cf2')
+        self.assertEqual(self.env['test.poly.base'].browse(cid).base_field, 'bf2',
+                         "El heredado persiste en la base compartida.")
+        # search por campo heredado
+        found = self.env['test.poly.child.a'].search([('base_field', '=', 'bf2')])
+        self.assertEqual(found, c)
+        # unlink cascada a la base
+        c.unlink()
+        self.assertFalse(self.env['test.poly.child.a'].browse(cid).exists())
+        self.assertFalse(self.env['test.poly.base'].browse(cid).exists())
