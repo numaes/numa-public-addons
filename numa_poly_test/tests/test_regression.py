@@ -94,6 +94,23 @@ class TestPolyDiamondCRUD(TransactionCase):
             self.assertFalse(self.env['test.test4'].browse(tid).exists())
             self.assertFalse(self.env['test.test1'].browse(tid).exists())
 
+    def test_write_mixed_inherited_and_own_fields(self):
+        """write que toca a la vez un campo heredado (a1, de Test1) y uno propio (a4)."""
+        t4 = self.env['test.test4'].create({'a1': 'a', 'a4': 'x'})
+        t4.write({'a1': 'a2', 'a4': 'y'})
+        t4.invalidate_recordset()
+        self.assertEqual(t4.a1, 'a2')
+        self.assertEqual(t4.a4, 'y')
+        self.assertEqual(self.env['test.test1'].browse(t4.id).a1, 'a2',
+                         "El campo heredado debe persistir en la base compartida.")
+
+    def test_overloaded_field_shares_value(self):
+        """a3 está declarado en Test2 y sobrecargado en Test4: comparten el valor (delegado al mismo id)."""
+        t4 = self.env['test.test4'].create({'a1': 'a', 'a3': 'SHARED'})
+        self.assertEqual(t4.a3, 'SHARED')
+        self.assertEqual(self.env['test.test2'].browse(t4.id).a3, 'SHARED',
+                         "El campo sobrecargado comparte valor con el del padre (mismo id).")
+
 
 @tagged('post_install', '-at_install')
 class TestPolyConcreteModel(TransactionCase):
