@@ -3322,11 +3322,17 @@ class PolyBase(_original_BaseModel):
             # We force those fields back into 'base_data' if they are missing.
             # AND we MUST ensure Odoo sees them as stored BEFORE they are classified.
         
-            # [poly] Re-classify fields after our forced restoration
+            # [poly] Re-classify fields after our forced restoration.
+            # Principio (sin hardcodes de consumidores): un campo se fuerza al base_data de la HOJA
+            # sólo si es un campo PROPIO (no related). Los campos related/heredados (ej. `active`,
+            # o `name` en un subtipo de res.partner) pertenecen a una base y se rutean a su
+            # sub-create, NO a la tabla hoja (si no, INSERT falla: la columna no existe en la hoja).
+            # (Antes: lista hardcodeada `('name','provider','active','facebook_account_id','driver_id')`
+            # — scar de estabilización — forzaba `active` a la hoja y rompía personas poly de res.partner.)
             for k, v in orig_data.items():
                 if k not in base_data and k in self._fields:
                     f = self._fields[k]
-                    if k in ('name', 'provider', 'active', 'facebook_account_id', 'driver_id') or not f.related or f.related.split('.')[0] in (self._depend_models or {}):
+                    if not f.related:
                         base_data[k] = v
                         # [poly] CRITICAL: force Odoo to include these fields in classification
                         if not f.store:
@@ -5377,6 +5383,26 @@ def _poly_registry_setup_models(self, cr):
         # (que con related=None matchea todo -> name_search no filtraba). Restaurar el search
         # estandar de display_name para que name_search use _rec_name.
         _dn.search = '_search_display_name'
+
+    # [poly] Selection injertados: poly inyecta los campos heredados como related. Para un Selection
+    # related, el setup de Odoo deja `.selection` como CALLABLE (lo resuelve del target). Eso rompe
+    # codigo que introspecciona `.selection` asumiendo lista, p.ej. el default de account:
+    #   display_invoice_edi_format = Boolean(default=lambda self: len(self._fields['invoice_edi_format'].selection))
+    # -> len(callable) revienta al crear un subtipo poly de res.partner. Resolvemos el callable a la
+    # lista estatica del campo padre (que es de donde sale), preservando la semantica related del
+    # valor pero dejando `.selection` introspectable como lista.
+    for _mname, _mcls in self.items():
+        if getattr(_mcls, '_depend_models', None) is None:
+            continue
+        for _sf in _mcls._fields.values():
+            if _sf.type != 'selection' or not getattr(_sf, 'related', None):
+                continue
+            if not callable(getattr(_sf, 'selection', None)):
+                continue
+            _tgt = getattr(_sf, 'related_field', None)
+            _tsel = getattr(_tgt, 'selection', None) if _tgt is not None else None
+            if isinstance(_tsel, (list, tuple)):
+                _sf.selection = list(_tsel)
 
     _logger.debug('[poly] Registry setup complete')
     return res
