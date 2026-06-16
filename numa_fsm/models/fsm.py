@@ -351,8 +351,22 @@ class FSMTimer(models.Model):
     json_event = fields.Text('JSON Event')
 
     fsm_instance_id = fields.Many2one('fsm.instance', 'Target FSM instance')
+    # Referencia POLIMÓRFICA a la instancia: un modelo que hereda fsm.instance por prototipo
+    # (ej. persona.documento.pedido, crm.lead) NO vive en la tabla fsm_instance, así que el M2one
+    # de arriba (FK a fsm.instance) no puede apuntarlo. Estos campos lo resuelven por (modelo, id).
+    fsm_instance_model = fields.Char('Target model', index=True)
+    fsm_instance_res_id = fields.Integer('Target res id', index=True)
     trigger_at = fields.Datetime('Trigger at')
     database_name = fields.Char('Database name')
+
+    def _target_instance(self):
+        """Resuelve la instancia destino del timer (soporta prototipos de fsm.instance)."""
+        self.ensure_one()
+        model = self.fsm_instance_model or 'fsm.instance'
+        res_id = self.fsm_instance_res_id or self.fsm_instance_id.id
+        if not res_id or model not in self.env:
+            return self.env['fsm.instance'].browse()
+        return self.env[model].browse(res_id)
 
     @api.model
     def _process_timers(self):
@@ -375,7 +389,7 @@ class FSMTimer(models.Model):
         triggered_timers = self.search([('trigger_at', '<=', now)])
         
         for timer in triggered_timers:
-            fsm_instance = timer.fsm_instance_id
+            fsm_instance = timer._target_instance()
             if not fsm_instance.exists():
                 # Skip if instance no longer exists
                 continue
@@ -720,12 +734,27 @@ class FSMInstance(models.Model):
             at = fields.Datetime.now() + (timedelta(seconds=delay) if delay else timedelta(seconds=0))
         for fsm_instance in self:
             fsm_instance.log(f"Starting timer with event {event} for: {delay} seconds, trigger at: {at}")
-            timer_model.create(dict(name=event['name'], json_event=json.dumps(event), fsm_instance_id=fsm_instance.id, trigger_at=at, database_name=self.env.cr.dbname,))
+            vals = dict(name=event['name'], json_event=json.dumps(event), trigger_at=at,
+                        database_name=self.env.cr.dbname,
+                        fsm_instance_model=fsm_instance._name, fsm_instance_res_id=fsm_instance.id)
+            # Sólo setear el M2one (FK a fsm.instance) si la instancia ES una fsm.instance real;
+            # para los prototipos heredados rompería la FK (su id no vive en fsm_instance).
+            if fsm_instance._name == 'fsm.instance':
+                vals['fsm_instance_id'] = fsm_instance.id
+            timer_model.create(vals)
+
+    def _own_timers_domain(self, event_name=None):
+        """Dominio de los timers de esta instancia (por referencia polimórfica)."""
+        self.ensure_one()
+        dom = [('fsm_instance_model', '=', self._name), ('fsm_instance_res_id', '=', self.id)]
+        if event_name is not None:
+            dom = [('name', '=', event_name)] + dom
+        return dom
 
     def stop_timer(self, event_name):
         timer_model = self.env['fsm.timer']
         for fsm_instance in self:
-            timers = timer_model.search([('name', '=', event_name), ('fsm_instance_id', '=', fsm_instance.id)])
+            timers = timer_model.search(fsm_instance._own_timers_domain(event_name))
             if timers:
                 timers.unlink()
             fsm_instance.log(f"Stopping timer {event_name}")
@@ -733,7 +762,7 @@ class FSMInstance(models.Model):
     def stop_all_timers(self):
         timer_model = self.env['fsm.timer']
         self.ensure_one()
-        timers = timer_model.search([('fsm_instance_id', '=', self.id)])
+        timers = timer_model.search(self._own_timers_domain())
         if timers:
             timers.unlink()
         for fsm_instance in self:
