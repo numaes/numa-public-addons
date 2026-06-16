@@ -110,3 +110,54 @@ sitio. Es el cambio más seguro para empezar a practicar el loop test-guiado.
 5. **B** (`project.task` → hook `_poly_migration_skip_fields`).
 
 Cada paso: agregar el test del patrón, remover el hardcode, correr la suite.
+
+---
+
+## Hallazgos al expandir la suite de regresión (jun-2026)
+
+Al escribir tests nuevos como red de regresión aparecieron **dos caminos no testeados que están
+rotos** en el estado actual del motor. Ninguno tiene cobertura previa, por eso pasaron inadvertidos.
+Se documentan acá como gaps **conocidos y rastreables** (no silenciosos); su arreglo es trabajo
+con forma de feature y se decide aparte (ver memoria `numa-poly-hardening`).
+
+### 1. Migración legacy→poly (`_migrate_to_poly` / `_check_migration_needed`) — DEAD CODE
+
+`_auto_init` (poly.py:2118) llama a `_migrate_to_poly()` sólo si `_check_migration_needed()`.
+Ese detector **nunca puede devolver True hoy**, por DOS razones independientes:
+
+- **Guard muerto**: `_check_migration_needed` (poly.py:1639) hace
+  `if not hasattr(type(self), '__depends_base_classes'): return False`. Ese atributo
+  **no se setea en ningún modelo** (verificado por introspección sobre test.test2/4,
+  test.poly.behavior.a/child.a: ni mangled `_BaseModel__depends_base_classes` ni sin manglear).
+  Es un vestigio del path de MRO reactivo "neutralized" (poly.py:1494, set en 1534 que ya no corre;
+  5573-5574 sólo actualizan `if hasattr`, nunca crean). → el guard siempre corta en False.
+- **Detector con NULL-in-NOT-IN**: aún sin el guard, la query
+  `SELECT id FROM <tabla> WHERE id NOT IN (SELECT old_id FROM ir_poly_base WHERE concrete_model_id=X)`
+  está rota: los registros poly nativos tienen `old_id = NULL` (verificado). En SQL,
+  `x NOT IN (..., NULL)` nunca evalúa TRUE → la query no devuelve filas aunque exista una fila
+  legacy huérfana real. Habría que filtrar `WHERE old_id IS NOT NULL` o usar `NOT EXISTS`.
+
+**Implicancia**: si un modelo poly se despliega con datos preexistentes (no-poly) en su tabla,
+**no se auto-migran**. Relevante para el onboarding de personas/comitentes (gallo.* → poly).
+**Decisión pendiente del usuario**: (a) revivir = arreglar guard (usar `_depend_models`) + arreglar
+el NULL-in-NOT-IN + test que lo pruebe; o (b) confirmar muerto y remover
+`_migrate_to_poly`/`_check_migration_needed`/`_update_foreign_keys` como scar.
+
+### 2. `copy()` sobre registros poly — ROTO
+
+`self.env['test.test4'].create({...}).copy()` falla. No hay override de `copy`/`copy_data` en poly,
+así que se usa el de Odoo, que arrastra al `create` los campos internos de poly heredados/inyectados:
+
+- Primero entra al branch de dispatch por `concrete_model_id` (poly.py:3470) que además tiene un bug:
+  usa `concrete_model._name` (siempre `'ir.model'`) donde quería `concrete_model.model`
+  (ej. `'test.test4'`) → terminaba haciendo `create` sobre `ir.model` con campos ajenos
+  (`ValueError: Invalid field 'old_id' on model 'ir.model'`).
+- Corregido ese branch, el siguiente error es `psycopg2 UndefinedColumn: no existe la columna
+  "poly_base_id" en la relación "test_test2"`: `copy_data` copia `poly_base_id` (y los link fields
+  `testN_id`, `concrete_model_id`, `old_id`) que son **gestionados por poly** y no deben copiarse
+  verbatim (apuntan a las bases del ORIGINAL).
+
+**Arreglo correcto (feature)**: override de `copy_data` en poly que descarte el bookkeeping/links
+poly (`concrete_model_id`, `old_id`, `poly_base_id`, y los `_depend_models.values()`) dejando que
+`create` regenere identidad y bases frescas; + arreglar el `._name`→`.model` del branch de dispatch;
++ test `copy()` end-to-end. No se hizo half-fix en el hot path de `create` sin cobertura completa.
