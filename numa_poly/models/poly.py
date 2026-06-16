@@ -3855,7 +3855,10 @@ class PolyBase(_original_BaseModel):
         if getattr(self, '_depend_models', None) is not None:
             for base_model_name, link_field in self._depend_models.items():
                 try:
-                    linked_ids = self.mapped(link_field).ids
+                    # Acceso POR-REGISTRO (no self.mapped): mapped() sobre el PolyReference
+                    # entra en loop en su __get__ (Field.mapped re-dispara el descriptor); el
+                    # acceso directo por registro resuelve el link sin colgar.
+                    linked_ids = [lid for rec in self if (lid := rec[link_field].id)]
                 except Exception:
                     linked_ids = original_ids  # fallback: assume id-sharing
                 if linked_ids:

@@ -85,40 +85,13 @@ class PolyExpression(expression):
                 type(model)._fields = model._fields
             except Exception: pass
 
-        # [poly] Odoo 18 AGGRESSIVE PATCH: Intercept _order_field_to_sql to avoid 'id' error
-        # Note: We must patch it on the base class or the proxy class to be effective
-        # because type(model) might be a proxy or a registry class.
-        from odoo.models import BaseModel
-        _original_order_field_to_sql = getattr(BaseModel, '_poly_original_order_field_to_sql', BaseModel._order_field_to_sql)
-        if not hasattr(BaseModel, '_poly_original_order_field_to_sql'):
-            BaseModel._poly_original_order_field_to_sql = _original_order_field_to_sql
-        
-        def _poly_order_field_to_sql(self, alias, field_name, direction, nulls, query):
-            try:
-                # [poly] Before calling original, check if the field exists in _fields
-                # to avoid loud ValueError and traceback in Odoo 18 log
-                fname = field_name.split('.', 1)[0] if '.' in field_name else field_name
-                if fname not in self._fields:
-                    # Known missing fields in Odoo 18 technical models or early boot
-                    # Log as DEBUG instead of WARNING to avoid noise
-                    _logger.debug("[poly] Intercepted missing field '%s' in _order_field_to_sql for %s. Using fallback.", field_name, self._name)
-                    return SQL("%s.%s %s %s", SQL.identifier(alias), SQL.identifier(fname), direction, nulls)
-                
-                return _original_order_field_to_sql(self, alias, field_name, direction, nulls, query)
-            except (ValueError, KeyError):
-                # [poly] AGGRESSIVE RECOVERY: If any field resolution fails during boot,
-                # use a raw SQL identifier as fallback if it's likely a standard column.
-                # This handles 'id', 'sequence', etc. on models like 'website' or 'base.automation'.
-                _logger.debug("[poly] Recovery fallback for missing field '%s' in _order_field_to_sql for %s.", field_name, self._name)
-                fname = field_name.split('.', 1)[0] if '.' in field_name else field_name
-                return SQL("%s.%s %s %s", SQL.identifier(alias), SQL.identifier(fname), direction, nulls)
-            except Exception:
-                raise
-        
+        # [poly] _order_field_to_sql se patchea UNA sola vez a nivel modulo (al final de este
+        # archivo), NO por-instancia. El set/restore de BaseModel en cada __init__ disparaba el
+        # guard metamodel_setattr de Odoo en MODO TEST (un setattr sobre una clase de modelo por
+        # cada expression) -> tormenta de logging runbot -> cuelgue de la suite. El patch global
+        # delega al original salvo campo faltante (mismo comportamiento, sin tocar BaseModel por
+        # search; ademas elimina overhead por-query en produccion).
         try:
-            # Temporarily patch BaseModel! Extreme measures for Odoo 18 boot.
-            BaseModel._order_field_to_sql = _poly_order_field_to_sql
-
             # [poly] Ensure self._unaccent and self._has_trigram are set BEFORE super().__init__
             # because standard expression.__init__ uses them immediately.
             self._unaccent = getattr(model.pool, 'unaccent', lambda x: x)
@@ -184,14 +157,7 @@ class PolyExpression(expression):
                     from odoo.osv.expression import Query
                     self.query = Query(model.env, model._table, model._table_sql)
                 self.query.add_where(self.result)
-        finally:
-            # Restore the patched method on BaseModel (where it was patched).
-            # Never use type(model) here: that would shadow the method on the
-            # concrete subclass and leave it as an unexpected class attribute.
-            try:
-                BaseModel._order_field_to_sql = _original_order_field_to_sql
-            except Exception: pass
-        
+
         # [poly] Odoo 18: Aggressive safety check for 'id' field
         # This prevents ValueError: Invalid field 'id' on model 'base.automation'
         # during _register_hook -> search([]) -> _order_to_sql
@@ -888,6 +854,37 @@ class PolyExpression(expression):
         else:
             self.result = SQL("TRUE")
         self.query.add_where(self.result)
+
+
+# [poly] Patch GLOBAL (una sola vez) de _order_field_to_sql: tolera campos faltantes en el
+# ORDER BY (modelos tecnicos / boot temprano) delegando al original salvo que el campo no
+# exista en _fields. Se hace a nivel modulo -y NO en PolyExpression.__init__- para no hacer
+# setattr sobre BaseModel en cada search: en MODO TEST cada setattr sobre una clase de modelo
+# dispara metamodel_setattr de Odoo -> logging runbot -> tormenta/cuelgue de la suite. El
+# comportamiento es identico al anterior, sin tocar BaseModel por-query.
+from odoo.models import BaseModel as _PolyBaseModel
+
+_poly_original_order_field_to_sql = getattr(
+    _PolyBaseModel, '_poly_original_order_field_to_sql', _PolyBaseModel._order_field_to_sql)
+
+
+def _poly_order_field_to_sql(self, alias, field_name, direction, nulls, query):
+    try:
+        fname = field_name.split('.', 1)[0] if '.' in field_name else field_name
+        if fname not in self._fields:
+            _logger.debug("[poly] Campo '%s' ausente en _order_field_to_sql de %s; fallback.",
+                          field_name, self._name)
+            return SQL("%s.%s %s %s", SQL.identifier(alias), SQL.identifier(fname), direction, nulls)
+        return _poly_original_order_field_to_sql(self, alias, field_name, direction, nulls, query)
+    except (ValueError, KeyError):
+        fname = field_name.split('.', 1)[0] if '.' in field_name else field_name
+        _logger.debug("[poly] Recovery fallback para campo '%s' en %s.", field_name, self._name)
+        return SQL("%s.%s %s %s", SQL.identifier(alias), SQL.identifier(fname), direction, nulls)
+
+
+if not hasattr(_PolyBaseModel, '_poly_original_order_field_to_sql'):
+    _PolyBaseModel._poly_original_order_field_to_sql = _poly_original_order_field_to_sql
+    _PolyBaseModel._order_field_to_sql = _poly_order_field_to_sql
 
 
 osv.expression.expression = PolyExpression
