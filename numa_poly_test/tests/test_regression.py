@@ -183,3 +183,82 @@ class TestPolyBehaviorInjection(TransactionCase):
         self.assertFalse(self.env['test.poly.project'].browse(pid).exists())
         self.assertFalse(self.env['test.poly.behavior.a'].browse(pid).exists())
         self.assertFalse(self.env['test.poly.behavior.b'].browse(pid).exists())
+
+
+@tagged('post_install', '-at_install')
+class TestPolySearchReadAggregate(TransactionCase):
+    """search (orden y operadores sobre campos heredados), read batch, display_name, read_group, m2o.
+    Usa un marcador único en a2 para aislar los registros del test del resto de la tabla."""
+
+    MARK = '__SRA__'  # marcador para aislar (campo a2, heredado de Test1)
+
+    def _make(self, a1, a4=False):
+        return self.env['test.test4'].create({'a1': a1, 'a2': self.MARK, 'a4': a4})
+
+    def test_order_by_inherited_field(self):
+        """search(order=) por un campo HEREDADO (a1, vive en test_test1) — ancla el patch
+        _order_field_to_sql de expression.py (ordenar por columna ausente de la tabla hoja)."""
+        self._make('B'); self._make('A'); self._make('C')
+        recs_asc = self.env['test.test4'].search([('a2', '=', self.MARK)], order='a1 asc')
+        self.assertEqual(recs_asc.mapped('a1'), ['A', 'B', 'C'])
+        recs_desc = self.env['test.test4'].search([('a2', '=', self.MARK)], order='a1 desc')
+        self.assertEqual(recs_desc.mapped('a1'), ['C', 'B', 'A'])
+
+    def test_domain_operators_on_inherited_field(self):
+        """Operadores in / not in / like / != sobre un campo heredado."""
+        self._make('alpha'); self._make('beta'); self._make('gamma')
+        base = [('a2', '=', self.MARK)]
+        self.assertEqual(
+            self.env['test.test4'].search(base + [('a1', 'in', ['alpha', 'gamma'])]).mapped('a1'),
+            ['alpha', 'gamma'])
+        self.assertEqual(
+            self.env['test.test4'].search(base + [('a1', 'like', 'bet')]).mapped('a1'), ['beta'])
+        self.assertEqual(
+            sorted(self.env['test.test4'].search(base + [('a1', '!=', 'beta')]).mapped('a1')),
+            ['alpha', 'gamma'])
+
+    def test_domain_combines_inherited_and_own_fields(self):
+        """Dominio que mezcla campo heredado (a1) y propio (a4) en el mismo search."""
+        self._make('x', a4='keep')
+        self._make('x', a4='drop')
+        found = self.env['test.test4'].search(
+            [('a2', '=', self.MARK), ('a1', '=', 'x'), ('a4', '=', 'keep')])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found.a4, 'keep')
+
+    def test_search_count_with_inherited_domain(self):
+        self._make('A'); self._make('A'); self._make('B')
+        self.assertEqual(
+            self.env['test.test4'].search_count([('a2', '=', self.MARK), ('a1', '=', 'A')]), 2)
+
+    def test_read_batch_mixed_fields(self):
+        """read() de varios campos (heredado a1/a2, sobrecargado a3, propio a4) en una llamada."""
+        t4 = self.env['test.test4'].create({'a1': 'i', 'a2': 'ii', 'a3': 'iii', 'a4': 'iv'})
+        data = t4.read(['a1', 'a2', 'a3', 'a4'])[0]
+        self.assertEqual(data['a1'], 'i')
+        self.assertEqual(data['a2'], 'ii')
+        self.assertEqual(data['a3'], 'iii')
+        self.assertEqual(data['a4'], 'iv')
+
+    def test_display_name_is_singleton_string(self):
+        """display_name no rompe sobre un registro poly (no hay _rec_name custom: forma por defecto)."""
+        t4 = self.env['test.test4'].create({'a1': 'a'})
+        self.assertIsInstance(t4.display_name, str)
+        self.assertTrue(t4.display_name)
+
+    def test_own_many2one_field(self):
+        """Campo m2o propio del concreto (partner_id en Test4): set, lectura y búsqueda."""
+        partner = self.env['res.partner'].create({'name': 'Poly Partner SRA'})
+        t4 = self.env['test.test4'].create({'a1': 'a', 'a2': self.MARK, 'partner_id': partner.id})
+        self.assertEqual(t4.partner_id, partner)
+        found = self.env['test.test4'].search([('a2', '=', self.MARK), ('partner_id', '=', partner.id)])
+        self.assertEqual(found, t4)
+
+    def test_read_group_by_inherited_field(self):
+        """read_group agrupando por un campo heredado (a1) cuenta correctamente."""
+        self._make('G1'); self._make('G1'); self._make('G2')
+        groups = self.env['test.test4'].read_group(
+            [('a2', '=', self.MARK)], fields=['a1'], groupby=['a1'])
+        counts = {g['a1']: g['a1_count'] for g in groups}
+        self.assertEqual(counts.get('G1'), 2)
+        self.assertEqual(counts.get('G2'), 1)
