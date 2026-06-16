@@ -16,7 +16,10 @@ Jerarquías fixture:
   Inyección de comportamientos: test.poly.project depende de behavior.a (field_a) + behavior.b (field_b).
 """
 
+from psycopg2 import IntegrityError
+
 from odoo.tests.common import TransactionCase, tagged
+from odoo.tools import mute_logger
 
 
 @tagged('post_install', '-at_install')
@@ -645,3 +648,39 @@ class TestPolyActiveArchive(TransactionCase):
         self.assertEqual(t4.a1, 'inherited_val')
         # y vía la base sigue accesible
         self.assertEqual(self.env['test.test1'].browse(t4.id).a1, 'inherited_val')
+
+
+@tagged('post_install', '-at_install')
+class TestPolySqlConstraints(TransactionCase):
+    """_sql_constraints (UNIQUE a nivel DB) sobre la tabla hoja de un modelo poly (test.test4.code)."""
+
+    def test_sql_unique_blocks_duplicate(self):
+        """Dos registros con el mismo code violan el UNIQUE de la tabla hoja en el flush."""
+        self.env['test.test4'].create({'a1': 'a', 'code': 'DUP'})
+        with self.assertRaises(IntegrityError), mute_logger('odoo.sql_db'):
+            with self.env.cr.savepoint():
+                self.env['test.test4'].create({'a1': 'b', 'code': 'DUP'})
+                self.env.flush_all()
+
+    def test_sql_unique_allows_distinct_codes(self):
+        """Codes distintos no violan el constraint."""
+        a = self.env['test.test4'].create({'a1': 'a', 'code': 'C1'})
+        b = self.env['test.test4'].create({'a1': 'b', 'code': 'C2'})
+        self.env.flush_all()
+        self.assertTrue(a.exists() and b.exists())
+
+    def test_sql_unique_allows_multiple_null(self):
+        """Varios registros sin code (NULL) conviven (UNIQUE permite múltiples NULL en Postgres)."""
+        recs = self.env['test.test4'].create([{'a1': 'a'}, {'a1': 'b'}, {'a1': 'c'}])
+        self.env.flush_all()
+        self.assertEqual(len(recs), 3)
+
+    def test_sql_unique_constraint_exists_on_leaf_table(self):
+        """El constraint UNIQUE quedó efectivamente creado sobre la tabla hoja test_test4."""
+        self.env.cr.execute("""
+            SELECT conname FROM pg_constraint
+            WHERE conrelid = 'test_test4'::regclass AND contype = 'u'
+              AND conname LIKE %s
+        """, ('%code_uniq%',))
+        self.assertTrue(self.env.cr.fetchone(),
+                        "El _sql_constraints debe materializarse como UNIQUE en test_test4.")
