@@ -329,3 +329,52 @@ class TestPolyPolymorphicRecordset(TransactionCase):
         c.unlink()
         self.assertFalse(self.env['test.poly.child.a'].browse(cid).exists())
         self.assertFalse(self.env['test.poly.base'].browse(cid).exists())
+
+    def test_as_concrete_model_over_mixed_list(self):
+        """as_concrete_model iterando una lista MIXTA de ir.poly_base — base del rendering
+        polimórfico de listas en la UI. Cada base se resuelve a su modelo concreto."""
+        ca = self.env['test.poly.child.a'].create({'base_field': 'a', 'child_a_field': 'x'})
+        cb = self.env['test.poly.child.b'].create({'base_field': 'b', 'child_b_field': 'y'})
+        t4 = self.env['test.test4'].create({'a1': 'z'})
+        bases = self.env['ir.poly_base'].browse([ca.id, cb.id, t4.id])
+        names = [b.as_concrete_model()._name for b in bases]
+        self.assertEqual(names, ['test.poly.child.a', 'test.poly.child.b', 'test.test4'])
+
+
+@tagged('post_install', '-at_install')
+class TestPolyLinksAndSearch(TransactionCase):
+    """Links PolyReference (navegar concreto->base por el campo link), name_search y paginación."""
+
+    def test_polyreference_link_navigation(self):
+        """Los link fields (test2_id/test3_id) apuntan al registro base del MISMO id y dan sus datos."""
+        t4 = self.env['test.test4'].create({'a1': 'a', 'a2': 'b', 'a3': 'c', 'a4': 'd'})
+        self.assertEqual(t4.test2_id._name, 'test.test2')
+        self.assertEqual(t4.test2_id.id, t4.id, "El link comparte id (shared-PK).")
+        self.assertEqual(t4.test3_id.id, t4.id)
+        # a3 está en test.test2: vía el link se ve el mismo valor.
+        self.assertEqual(t4.test2_id.a3, t4.a3)
+
+    def test_name_search_on_named_model(self):
+        """name_search sobre un modelo poly con campo name (test.poly.project) filtra por name."""
+        self.env['test.poly.project'].create({'name': 'Alpha NS', 'field_a': '1'})
+        self.env['test.poly.project'].create({'name': 'Beta NS', 'field_a': '2'})
+        res = self.env['test.poly.project'].name_search('Alpha')
+        names = [n for _id, n in res]
+        self.assertIn('Alpha NS', names)
+        self.assertNotIn('Beta NS', names)
+
+    def test_display_name_uses_own_name_not_base(self):
+        """display_name de un modelo poly con campo name usa SU name, no el del primer base.
+        Guarda el fix de des-delegación de _inherits sobre display_name (rendering de listas poly)."""
+        p = self.env['test.poly.project'].create({'name': 'Proj X', 'field_a': '1'})
+        self.assertEqual(p.display_name, 'Proj X',
+                         "display_name debe ser el name propio, no 'test.poly.behavior.a,<id>'.")
+
+    def test_search_pagination_on_inherited_field(self):
+        """limit/offset con order por campo heredado devuelven el slice correcto."""
+        mark = '__PAGIN__'
+        for v in ['a', 'b', 'c', 'd', 'e']:
+            self.env['test.test4'].create({'a1': v, 'a2': mark})
+        page = self.env['test.test4'].search(
+            [('a2', '=', mark)], order='a1 asc', limit=2, offset=1)
+        self.assertEqual(page.mapped('a1'), ['b', 'c'])

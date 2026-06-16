@@ -5317,6 +5317,47 @@ def _poly_registry_setup_models(self, cr):
             _f.compute_sudo = True
             _f.readonly = True
 
+    # [poly] _rec_name: ir.poly_base declara `_rec_name = 'id'` (no tiene campo name), y por el
+    # MRO inyectado ese valor se hereda explicitamente en TODOS los subtipos, pisando el default
+    # automatico de Odoo (`if 'name' in _fields: _rec_name = 'name'`). Resultado: display_name y
+    # name_search de un modelo poly CON campo name mostraban "<modelo>,<id>" en vez del nombre
+    # (rompe el rendering de las listas polimorficas en la UI). Aca restauramos la intencion de
+    # Odoo: si el modelo poly tiene 'name' y quedo con _rec_name='id' heredado, usar 'name'.
+    for _mname, _mcls in self.items():
+        if _mname == 'ir.poly_base':
+            continue
+        if getattr(_mcls, '_depend_models', None) is None:
+            continue  # no es modelo poly
+        if getattr(_mcls, '_rec_name', None) == 'id' and 'name' in _mcls._fields:
+            _mcls._rec_name = 'name'
+
+    # [poly] display_name: poly usa _inherits con los link fields, y Odoo delega display_name al
+    # PRIMER padre _inherits (un link de infraestructura, ej. behavior_a_id / test2_id). Resultado:
+    # el display_name de un subtipo mostraba el del primer base ("<base>,<id>") en vez del propio
+    # -> rompe el rendering de las listas polimorficas. Acá lo des-delegamos: lo devolvemos al
+    # _compute_display_name estandar de Odoo, que respeta el _rec_name del modelo concreto.
+    for _mname, _mcls in self.items():
+        if _mname == 'ir.poly_base':
+            continue
+        if getattr(_mcls, '_depend_models', None) is None:
+            continue
+        _dn = _mcls._fields.get('display_name')
+        if _dn is None or not getattr(_dn, 'related', None):
+            continue
+        _dn.related = None
+        _dn.inherited = False
+        _dn.inherited_field = None
+        _dn.related_field = None
+        _dn.store = False
+        _dn.readonly = True
+        _dn.compute = '_compute_display_name'
+        _dn.compute_sudo = False
+        _dn.depends = (_mcls._rec_name,) if _mcls._rec_name and _mcls._rec_name != 'id' else ()
+        # OJO: al venir de un related, el `search` del campo quedaba apuntando a _search_related
+        # (que con related=None matchea todo -> name_search no filtraba). Restaurar el search
+        # estandar de display_name para que name_search use _rec_name.
+        _dn.search = '_search_display_name'
+
     _logger.debug('[poly] Registry setup complete')
     return res
 
