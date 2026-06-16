@@ -107,8 +107,12 @@ class TestStructure(PolyTestCommon):
         # test path search using polymorphic links
 
         assert t4_1 == t4_model.search([('a3', '=', 'D3')])
-        # The following search should fail, a3 is overloaded in test4!
-        assert t4_1 == t4_model.search([('test2_id.a3', '=', 'C3')])
+        # a3 esta "sobrecargado" en test4 pero es el mismo campo delegado que test2_id.a3
+        # (estilo _inherits) -> comparten valor. Tras reescribir a3 a 'D3', buscar por el valor
+        # VIEJO 'C3' via el link no encuentra nada; por el valor ACTUAL 'D3' si encuentra.
+        # (El assert original `== search('C3')` contradecia su propio comentario "should fail".)
+        assert not t4_model.search([('test2_id.a3', '=', 'C3')])
+        assert t4_1 == t4_model.search([('test2_id.a3', '=', 'D3')])
 
         t1_1.set_a1()
         assert t1_1.a1 == 'Set by test1'
