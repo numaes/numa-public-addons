@@ -378,3 +378,71 @@ class TestPolyLinksAndSearch(TransactionCase):
         page = self.env['test.test4'].search(
             [('a2', '=', mark)], order='a1 asc', limit=2, offset=1)
         self.assertEqual(page.mapped('a1'), ['b', 'c'])
+
+
+@tagged('post_install', '-at_install')
+class TestPolyDepthDefaultsM2o(TransactionCase):
+    """Consulta a nivel base (abarca concretos), cadena de 3 niveles, dominio con punto por m2o,
+    default_get, create mínimo, copy 1-nivel, y manejo de un m2o propio (set/clear/change)."""
+
+    def test_base_model_search_spans_concretes(self):
+        """search sobre el modelo BASE encuentra los registros de TODOS sus concretos.
+        Es la consulta polimórfica de fondo (una lista de la base ve child.a y child.b)."""
+        ca = self.env['test.poly.child.a'].create({'base_field': 'SPAN', 'child_a_field': '1'})
+        cb = self.env['test.poly.child.b'].create({'base_field': 'SPAN', 'child_b_field': '2'})
+        bases = self.env['test.poly.base'].search([('base_field', '=', 'SPAN')])
+        self.assertEqual(set(bases.ids), {ca.id, cb.id},
+                         "La base debe ver los registros de ambos concretos.")
+
+    def test_write_via_intermediate_base_propagates(self):
+        """Cadena de 3 niveles: escribir a1 en la base intermedia test.test2 (mismo id) se ve
+        desde el concreto test.test4 Y desde la raíz test.test1."""
+        t4 = self.env['test.test4'].create({'a1': 'orig'})
+        self.env['test.test2'].browse(t4.id).a1 = 'via_t2'
+        t4.invalidate_recordset()
+        self.assertEqual(t4.a1, 'via_t2')
+        self.assertEqual(self.env['test.test1'].browse(t4.id).a1, 'via_t2')
+
+    def test_dotted_domain_through_own_m2o(self):
+        """Dominio con punto a través de un m2o propio: buscar test4 por partner_id.name."""
+        partner = self.env['res.partner'].create({'name': 'Dotted Partner ZZ'})
+        t4 = self.env['test.test4'].create({'a1': 'a', 'a2': '__DOT__', 'partner_id': partner.id})
+        self.env['test.test4'].create({'a1': 'b', 'a2': '__DOT__'})
+        found = self.env['test.test4'].search(
+            [('a2', '=', '__DOT__'), ('partner_id.name', '=', 'Dotted Partner ZZ')])
+        self.assertEqual(found, t4)
+
+    def test_default_get_returns_dict(self):
+        """default_get no rompe sobre un modelo poly y devuelve un dict para los campos pedidos."""
+        defaults = self.env['test.test4'].default_get(['a1', 'a4', 'partner_id'])
+        self.assertIsInstance(defaults, dict)
+
+    def test_create_minimal_then_read(self):
+        """create con vals mínimos ({}) crea un registro poly válido y legible."""
+        t4 = self.env['test.test4'].create({})
+        self.assertTrue(t4.exists())
+        self.assertTrue(self.env['ir.poly_base'].browse(t4.id).exists())
+        self.assertEqual(t4.concrete_model_id.model, 'test.test4')
+        self.assertFalse(t4.a1)  # sin valor -> falsy
+
+    def test_copy_single_parent_model(self):
+        """copy() en jerarquía de 1 nivel (child.a): identidad nueva, datos copiados, base propia."""
+        c = self.env['test.poly.child.a'].create({'base_field': 'bf', 'child_a_field': 'cf'})
+        dup = c.copy()
+        self.assertNotEqual(dup.id, c.id)
+        self.assertEqual(dup.base_field, 'bf')
+        self.assertEqual(dup.child_a_field, 'cf')
+        self.assertTrue(self.env['test.poly.base'].browse(dup.id).exists())
+
+    def test_own_m2o_set_clear_change(self):
+        """m2o propio (partner_id): asignar, limpiar (False) y cambiar a otro."""
+        p1 = self.env['res.partner'].create({'name': 'P1 ZZ'})
+        p2 = self.env['res.partner'].create({'name': 'P2 ZZ'})
+        t4 = self.env['test.test4'].create({'a1': 'a', 'partner_id': p1.id})
+        self.assertEqual(t4.partner_id, p1)
+        t4.partner_id = False
+        t4.invalidate_recordset()
+        self.assertFalse(t4.partner_id)
+        t4.partner_id = p2.id
+        t4.invalidate_recordset()
+        self.assertEqual(t4.partner_id, p2)
