@@ -5527,10 +5527,16 @@ def _poly_registry_setup_models(self, cr):
                 _bm_bases if _bm_bases
                 else [b for b in model_class.__bases__ if getattr(b, 'pool', None) is None]
             )
-            new_bases = parents_cls + [
+            # [poly] Orden CONCRETO-primero: la clase de definicion del modelo (original_bases)
+            # va ANTES que los padres inyectados. Asi los overrides del concreto (metodos,
+            # _order, campos sobrecargados) GANAN sobre el padre -en MRO de Python gana el
+            # primero-, manteniendo la herencia (los padres siguen accesibles, despues).
+            # (Antes era parents_cls + original -> el padre pisaba los overrides del concreto:
+            # ej. test.test4.set_a1 corria el de Test1. De ahi venia el hack de _attrs_to_restore.)
+            new_bases = [
                 b for b in original_bases
                 if b not in parents_cls and b not in _excluded_from_poly_bases
-            ]
+            ] + parents_cls
 
             deduplicated = []
             for b in new_bases:
