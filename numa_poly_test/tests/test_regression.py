@@ -496,3 +496,45 @@ class TestPolyBatchAndAggregate(TransactionCase):
         data = recs.read(['a1', 'a4'])
         by_a1 = {d['a1']: d['a4'] for d in data}
         self.assertEqual(by_a1, {'r1': 's1', 'r2': 's2'})
+
+
+@tagged('post_install', '-at_install')
+class TestPolyM2MAndComputed(TransactionCase):
+    """Many2many y campo computed-stored sobre un modelo poly (test.test4): patrones de producción."""
+
+    def _tag(self, name):
+        return self.env['res.partner.category'].create({'name': name})
+
+    def test_m2m_set_read_and_update(self):
+        """Asignar tags (m2m), leerlos, y reemplazar el set con Command."""
+        from odoo import Command
+        t1, t2, t3 = self._tag('T1 ZZ'), self._tag('T2 ZZ'), self._tag('T3 ZZ')
+        t4 = self.env['test.test4'].create({'a1': 'a', 'tag_ids': [Command.set([t1.id, t2.id])]})
+        self.assertEqual(set(t4.tag_ids.ids), {t1.id, t2.id})
+        t4.write({'tag_ids': [Command.set([t3.id])]})
+        t4.invalidate_recordset()
+        self.assertEqual(t4.tag_ids.ids, [t3.id])
+
+    def test_m2m_search(self):
+        """Buscar por el m2m (tag_ids in [...])."""
+        from odoo import Command
+        tag = self._tag('FindTag ZZ')
+        t4 = self.env['test.test4'].create({'a1': 'a', 'a2': '__M2M__', 'tag_ids': [Command.link(tag.id)]})
+        self.env['test.test4'].create({'a1': 'b', 'a2': '__M2M__'})
+        found = self.env['test.test4'].search([('a2', '=', '__M2M__'), ('tag_ids', 'in', tag.id)])
+        self.assertEqual(found, t4)
+
+    def test_computed_stored_from_inherited_field(self):
+        """Computed STORED (a1_upper) que depende de un campo heredado (a1): se computa al crear
+        y se RECOMPUTA cuando cambia a1 (que vive en la base test.test1)."""
+        t4 = self.env['test.test4'].create({'a1': 'abc'})
+        self.assertEqual(t4.a1_upper, 'ABC', "Debe computarse al crear.")
+        t4.a1 = 'xyz'
+        t4.invalidate_recordset()
+        self.assertEqual(t4.a1_upper, 'XYZ', "Debe recomputarse al cambiar el campo heredado.")
+
+    def test_computed_stored_is_searchable(self):
+        """El computed STORED queda como columna -> es buscable."""
+        self.env['test.test4'].create({'a1': 'hello', 'a2': '__CMP__'})
+        found = self.env['test.test4'].search([('a2', '=', '__CMP__'), ('a1_upper', '=', 'HELLO')])
+        self.assertEqual(len(found), 1)

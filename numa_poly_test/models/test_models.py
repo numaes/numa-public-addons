@@ -18,7 +18,7 @@ Test2   Test3
 These models are used for testing the polymorphic inheritance system.
 """
 
-from odoo import models, fields
+from odoo import models, fields, api
 from collections import OrderedDict
 
 
@@ -96,6 +96,16 @@ class Test4(models.Model):
 
     a3 = fields.Char('A3 test 4')
     partner_id = fields.Many2one('res.partner', 'Test 1 related')
+    # Campos para cubrir m2m y computed-stored sobre un modelo poly (patrones de producción).
+    tag_ids = fields.Many2many('res.partner.category', string='Tags')
+    # Computed STORED que depende de un campo HEREDADO (a1, vive en test.test1): ejercita el
+    # disparo del recompute cuando cambia un campo de una base compartida.
+    a1_upper = fields.Char(compute='_compute_a1_upper', store=True)
+
+    @api.depends('a1')
+    def _compute_a1_upper(self):
+        for rec in self:
+            rec.a1_upper = (rec.a1 or '').upper()
 
     def set_a1(self):
         """Override the set_a1 method from Test1."""
