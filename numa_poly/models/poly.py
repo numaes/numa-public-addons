@@ -4614,41 +4614,50 @@ odoo.models.BaseModel._fetch_query = poly_BaseModel_fetch_query
 # PATCH: BaseModel._add_field Interceptor para forzar campos polimórficos
 _original_BaseModel_add_field = odoo.models.BaseModel._add_field
 def poly_BaseModel_add_field(self, name, field):
-    if name not in ['id', 'create_uid', 'create_date', 'write_uid', 'write_date']:
+    # [poly] Use _POLY_TECHNICAL_FIELDS (includes display_name, id, audit fields) so that
+    # Odoo's own _inherits delegation for these fields is not overridden here.
+    # Phase 3 of _poly_registry_setup_models handles display_name separately.
+    if name not in _POLY_TECHNICAL_FIELDS:
         # [poly] STRICT ISOLATION: Delegate immediately if not a poly model
         if not _poly_is_polymorphic(self):
             return _original_BaseModel_add_field(self, name, field)
 
         model_class = type(self)
-        # Buscar en la jerarquía polimórfica si este campo debería ser un related
+        # Buscar en la jerarquía polimórfica si este campo debería ser un related.
+        # Use __dict__.get (not getattr) to avoid finding _depend_models inherited from
+        # poly-injected parent classes (e.g. test.test2's deps leaking into test.test4).
+        _target_related = None
         for base in _poly_get_safe_mro(model_class):
             if base is model_class: continue
-            dep_models = getattr(base, '_depend_models', None)
+            dep_models = base.__dict__.get('_depend_models')
             if not dep_models: continue
             for dep_model, dep_field in dep_models.items():
                 if dep_model not in self.pool: continue
-                
+
                 # Si el campo existe en la base polimórfica, lo forzamos a ser related
-                # Importante: comprobamos en la clase base real para estar seguros
                 base_poly_class = self.pool[dep_model]
                 if name in base_poly_class._fields:
                     _target_related = f'{dep_field}.{name}'
+                    break
+            if _target_related:
+                break
 
-                    # Forzamos los atributos del objeto field directamente antes de que Odoo lo registre
-                    field.related = _target_related
-                    field.store = False
-                    field.compute = None
-                    field.compute_sudo = None
-                    field.inverse = None
-                    field.search = None
-                    field.automatic = True
-                    if hasattr(field, '_args'):
-                        field._args['related'] = _target_related
-                        field._args['store'] = False
-                    
-                    # [poly] REMOVED delattr logic: Odoo 18 manages its descriptors.
-                    # Mutating the field object is enough.
-    
+        if _target_related:
+            # Forzamos los atributos del objeto field directamente antes de que Odoo lo registre
+            field.related = _target_related
+            field.store = False
+            field.compute = None
+            field.compute_sudo = None
+            field.inverse = None
+            field.search = None
+            field.automatic = True
+            if hasattr(field, '_args'):
+                field._args['related'] = _target_related
+                field._args['store'] = False
+
+            # [poly] REMOVED delattr logic: Odoo 18 manages its descriptors.
+            # Mutating the field object is enough.
+
     return _original_BaseModel_add_field(self, name, field)
 odoo.models.BaseModel._add_field = poly_BaseModel_add_field
 
