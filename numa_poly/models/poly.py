@@ -3102,16 +3102,24 @@ class PolyBase(_original_BaseModel):
         _is_poly = _poly_is_polymorphic(self)
         _logger.debug('[poly] create() called for %s, is_poly=%s', self._name, _is_poly)
         if self._name == 'ir.poly_base' or not _is_poly:
-            # Validate explicit IDs before delegating so that duplicate IDs
-            # raise ValidationError rather than an unhandled UniqueViolation.
+            # Strip explicit IDs that already exist in the table. This can
+            # happen when Odoo's copy() (e.g. recurring task sub-task copy)
+            # accidentally forwards the source record's id in the default
+            # dict. Raising here would surface a confusing ValidationError to
+            # the user; silently removing the id lets the ORM auto-assign a
+            # new one, which is the correct behaviour for copy operations.
             explicit_ids = [v['id'] for v in data_list if 'id' in v]
             if explicit_ids:
-                existing = self.search([('id', 'in', explicit_ids)])
-                if existing:
-                    raise ValidationError(
-                        _("Records with the following IDs already exist in %s: %s")
-                        % (self._name, list(existing.ids))
-                    )
+                existing_ids = set(self.search([('id', 'in', explicit_ids)]).ids)
+                if existing_ids:
+                    for v in data_list:
+                        if v.get('id') in existing_ids:
+                            _logger.warning(
+                                "[poly] Stripping duplicate id=%s from create() vals "
+                                "for %s — likely leaked from copy() default dict.",
+                                v['id'], self._name,
+                            )
+                            del v['id']
             # [poly] Filter out Selection values that are invalid for this model.
             # This prevents cross-model state pollution when poly sub-creates pass
             # a value that is valid on the parent but not on this model (e.g.
