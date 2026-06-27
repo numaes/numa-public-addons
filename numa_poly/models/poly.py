@@ -80,6 +80,27 @@ if typing.TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 
+# [poly] Per-table physical-column cache (no-migration strategy): used to decide
+# whether a field is the concrete model's OWN column and must therefore never be
+# shadowed by a related-to-base version. Stable within a process after install.
+_POLY_LEAF_COLUMNS = {}
+
+
+def _poly_leaf_columns(cr, table):
+    """Set of physical columns of `table` (cached). Empty on any error/missing table."""
+    cols = _POLY_LEAF_COLUMNS.get(table)
+    if cols is None:
+        try:
+            cols = set(sql.table_columns(cr, table))
+        except Exception:
+            cols = set()
+        # Only cache non-empty results so a probe done before the table exists
+        # (very early setup) is retried later.
+        if cols:
+            _POLY_LEAF_COLUMNS[table] = cols
+    return cols
+
+
 # [poly] Professional Patch for _inherits_check to avoid KeyError: None
 _original_inherits_check = odoo.models.BaseModel._inherits_check
 def poly_inherits_check(self):
@@ -1841,6 +1862,70 @@ class PolyBase(_original_BaseModel):
                 return
 
     @classmethod
+    def _poly_native_field_names(cls):
+        """Field names the model defines NATIVELY, i.e. in its own module classes,
+        excluding fields contributed by its polymorphic dependent base models.
+
+        No-migration strategy: when a model that already exists (a core model such as
+        res.partner / purchase.order.line) becomes polymorphic, its own fields stay
+        untouched (legacy rows are read as the core model; only new rows get the full
+        poly structure). numa_poly must therefore NEVER shadow such a field — neither a
+        pre-existing core field (name) nor one the bridge explicitly redefines on the
+        concrete model (e.g. pln_constraint_date with its own compute/inverse/store) —
+        with a related-to-base version. Returns the set of names to protect.
+
+        Cached on the registry class; the MRO/class field definitions are stable once
+        built.
+        """
+        cached = cls.__dict__.get('_poly_native_fnames_cache')
+        if cached is not None:
+            return cached
+
+        # Names of the dependent base models whose field-bearing classes must be
+        # excluded from the "native" scan.
+        dep_models = {'ir.poly_base'}
+        for base in cls.mro():
+            d = base.__dict__.get('_depend_models')
+            if d and isinstance(d, (dict, OrderedDict)):
+                dep_models.update(d.keys())
+
+        def _class_model_name(klass):
+            kn = klass.__dict__.get('_name')
+            if kn:
+                return kn
+            inh = klass.__dict__.get('_inherit')
+            if isinstance(inh, str):
+                return inh
+            if isinstance(inh, (list, tuple)) and len(inh) == 1:
+                return inh[0]
+            return None
+
+        native = set()
+        for klass in cls.mro():
+            # Skip the classes that belong to a dependent base model: their fields are
+            # the polymorphic capability we DO want to inject as related.
+            if _class_model_name(klass) in dep_models:
+                continue
+            # Odoo stores field definitions either as class attributes (Field instances)
+            # or in _field_definitions (dict {name: field} or list[field]); scan both.
+            for attr, val in vars(klass).items():
+                if isinstance(val, fields.Field):
+                    native.add(attr)
+            defs = klass.__dict__.get('_field_definitions')
+            if isinstance(defs, dict):
+                native.update(defs.keys())
+            elif isinstance(defs, (list, tuple)):
+                for f in defs:
+                    fn = getattr(f, 'name', None)
+                    if fn:
+                        native.add(fn)
+        try:
+            cls._poly_native_fnames_cache = native
+        except Exception:
+            pass
+        return native
+
+    @classmethod
     def _build_dependant_model_attributes(cls):
         """
         Initialize and build the attributes of a polymorphic model.
@@ -2466,7 +2551,11 @@ class PolyBase(_original_BaseModel):
 
         # Collect all fields from dependent models
         related_fields = {}
-        
+
+        # [poly] Fields the concrete model defines natively must never be shadowed by a
+        # related-to-base version (no-migration strategy). Computed once here.
+        _native_fnames = cls._poly_native_field_names()
+
         all_bases = getattr(cls, '__depends_base_classes', ())
         # IMPORTANT: ensure we use the same order as in __depends_base_classes (already reversed in _build_model)
         dependent_model_names = [c._name for c in reversed(all_bases) if hasattr(c, '_name') and c._name not in (cls._name, 'ir.poly_base')]
@@ -2587,6 +2676,13 @@ class PolyBase(_original_BaseModel):
                     # Only add fields that aren't already defined, aren't PolyReferences,
                     # and aren't related fields (unless they are the flattened target)
                     if not isinstance(curr_subfield, PolyReference):
+                        # [poly] No-migration strategy: if the concrete (core) model
+                        # defines this field natively, keep its OWN field — never shadow
+                        # it with a related-to-base version (that breaks reads of legacy
+                        # rows with no base record, and crashes on type mismatches such
+                        # as Text vs Char).
+                        if curr_fname in _native_fnames:
+                            continue
                         # [poly] Aggressive takeover: if the field is already in the model but is a stored field
                         # and it also exists in the polymorphic base, it MUST be converted to related.
                         _force_related = False
@@ -2844,6 +2940,13 @@ class PolyBase(_original_BaseModel):
         if not dep_map:
             return
 
+        # [poly] Fields the concrete model defines natively must never be shadowed by a
+        # related-to-base version (no-migration strategy). Use the precise per-class scan
+        # (NOT set(cls._fields), which also contains base fields the model does not
+        # redefine, e.g. project.task does not redefine pln_constraint_type and must let
+        # it be a related field).
+        _native_fnames = cls._poly_native_field_names()
+
         for base_model_name, link_field_name in dep_map.items():
             # Ensure the direct PolyReference bridge exists.
             _poly_ensure_poly_ref(cls, base_model_name, dep_map)
@@ -2883,6 +2986,10 @@ class PolyBase(_original_BaseModel):
                     # cls._fields.  We must replace those stale entries with the proper
                     # poly-related version.
                     if getattr(existing, '_poly_injected', False) and not getattr(existing, 'store', True):
+                        continue
+                    # [poly] Never shadow a field the concrete model defines natively
+                    # (no-migration strategy): keep its own field as-is.
+                    if fname in _native_fnames:
                         continue
                     _logger.debug(
                         '[poly] _build_poly_fields: replacing stale field %s in %s '
@@ -4727,6 +4834,7 @@ def poly_BaseModel_add_field(self, name, field):
         # Use __dict__.get (not getattr) to avoid finding _depend_models inherited from
         # poly-injected parent classes (e.g. test.test2's deps leaking into test.test4).
         _target_related = None
+        _base_field = None
         for base in _poly_get_safe_mro(model_class):
             if base is model_class: continue
             dep_models = base.__dict__.get('_depend_models')
@@ -4738,11 +4846,29 @@ def poly_BaseModel_add_field(self, name, field):
                 base_poly_class = self.pool[dep_model]
                 if name in base_poly_class._fields:
                     _target_related = f'{dep_field}.{name}'
+                    _base_field = base_poly_class._fields[name]
                     break
             if _target_related:
                 break
 
         if _target_related:
+            # [poly] No-migration strategy: NEVER shadow a field the concrete (core)
+            # model OWNS with a related-to-base version (legacy rows are read as the core
+            # model; only new rows get the full poly structure). Keep the concrete's own
+            # field when it has its own physical column, or when its type differs from the
+            # dependent base field (the latter would also crash registry setup).
+            _keep_own = name in model_class._poly_native_field_names()
+            if not _keep_own:
+                try:
+                    _keep_own = name in _poly_leaf_columns(self.env.cr, self._table)
+                except Exception:
+                    pass
+            if not _keep_own and _base_field is not None:
+                _ftype = getattr(field, 'type', None)
+                if _ftype and _ftype != getattr(_base_field, 'type', None):
+                    _keep_own = True
+            if _keep_own:
+                return _original_BaseModel_add_field(self, name, field)
             # Forzamos los atributos del objeto field directamente antes de que Odoo lo registre
             field.related = _target_related
             field.store = False
@@ -4798,6 +4924,7 @@ def poly_Field_setup(self, model):
         model_class = type(model)
         
         _target_related = None
+        _base_field = None
         for base in _poly_get_safe_mro(model_class):
             dep_models = base.__dict__.get('_depend_models')
             if dep_models:
@@ -4807,10 +4934,28 @@ def poly_Field_setup(self, model):
                          dep_model_fields = getattr(model.pool[dep_model], '_fields', {})
                          if f_name in dep_model_fields:
                             _target_related = f'{dep_field}.{f_name}'
+                            _base_field = dep_model_fields[f_name]
                             break
             if _target_related: break
-            
+
         if _target_related:
+            # [poly] No-migration strategy: NEVER shadow a field the concrete (core)
+            # model OWNS with a related-to-base version. When a model that already exists
+            # (e.g. res.partner, purchase.order.line) becomes polymorphic, its own
+            # fields/rows are read as the core model itself; only new rows get the full
+            # poly structure. Shadowing breaks reads of legacy rows (MissingError, no
+            # base record) and, where the types differ (e.g. POL.name Text vs
+            # node.name Char), crashes registry setup. Keep the concrete's own field when
+            # it has its own physical column, or when its type differs from the base.
+            _keep_own = f_name in model_class._poly_native_field_names()
+            if not _keep_own:
+                _keep_own = f_name in _poly_leaf_columns(model.env.cr, model._table)
+            if not _keep_own and _base_field is not None:
+                _self_type = getattr(self, 'type', None)
+                if _self_type and _self_type != getattr(_base_field, 'type', None):
+                    _keep_own = True
+            if _keep_own:
+                return _original_Field_setup(self, model)
             # Found a polymorphic field!
             # Force it to be a non-stored related field
             if not self.related or self.related != _target_related or self.store:
