@@ -5312,6 +5312,13 @@ def _poly_registry_setup_models(self, cr):
     # guarantees that every call during setup computes from the live class state.
     _poly_is_polymorphic_cache.clear()
 
+    # [poly] Clear the schema (physical column) caches on every registry (re)build:
+    # a module update (-u) may have added/removed columns, which would make the cached
+    # information stale; this also bounds the caches' lifetime to a single registry
+    # generation instead of growing across reloads.
+    _POLY_LEAF_COLUMNS.clear()
+    _POLY_COLUMN_CACHE.clear()
+
     # [poly] Technical access to core classes
     cls_PolyBase = PolyBase
     cls_PolyModel = PolyModel
