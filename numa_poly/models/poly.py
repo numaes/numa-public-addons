@@ -3098,7 +3098,7 @@ class PolyBase(_original_BaseModel):
         # [poly] ir.poly_base IS NOT polymorphic, it is the common base.
         # Standard Odoo models that ARE NOT polymorphic must also be handled by Odoo.
         _is_poly = _poly_is_polymorphic(self)
-        _logger.info('[poly] create() called for %s, is_poly=%s', self._name, _is_poly)
+        _logger.debug('[poly] create() called for %s, is_poly=%s', self._name, _is_poly)
         if self._name == 'ir.poly_base' or not _is_poly:
             # Validate explicit IDs before delegating so that duplicate IDs
             # raise ValidationError rather than an unhandled UniqueViolation.
@@ -3392,7 +3392,7 @@ class PolyBase(_original_BaseModel):
             dep_record_ids = {}
 
             # Create or update records in all dependent models
-            _logger.info('[poly] Creating sub-records for %s, bases_to_create: %s', self._name, list(bases_to_create.keys()))
+            _logger.debug('[poly] Creating sub-records for %s, bases_to_create: %s', self._name, list(bases_to_create.keys()))
             for base, field_set in bases_to_create.items():
                 base_model = self.env[base]
                 base_data = {}
@@ -3414,11 +3414,11 @@ class PolyBase(_original_BaseModel):
                 # Create or update the base record
                 existing_base = base_model.search([('id', '=', new_id)], limit=1)
                 if not existing_base:
-                    _logger.info(f'[poly] Sub-create for {base} from {self._name}: data={base_data}')
+                    _logger.debug(f'[poly] Sub-create for {base} from {self._name}: data={base_data}')
                     created_base = base_model.create([base_data])
                     dep_record_ids[base] = created_base.id
                 else:
-                    _logger.info(f'[poly] Sub-write for {base} from {self._name}: data={base_data}')
+                    _logger.debug(f'[poly] Sub-write for {base} from {self._name}: data={base_data}')
                     existing_base.write(base_data)
                     dep_record_ids[base] = existing_base.id
 
@@ -3550,7 +3550,7 @@ class PolyBase(_original_BaseModel):
                     _f.inherited = False
 
             # [poly] INSTRUMENTATION: Final values before standard create
-            _logger.info("[poly] Final create for %s: id=%s dep_record_ids=%s link_fields=%s",
+            _logger.debug("[poly] Final create for %s: id=%s dep_record_ids=%s link_fields=%s",
                          self._name, base_data.get('id'),
                          dep_record_ids,
                          {k: base_data.get(k) for k in (self._depend_models or {}).values()})
