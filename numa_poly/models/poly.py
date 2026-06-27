@@ -3555,62 +3555,66 @@ class PolyBase(_original_BaseModel):
                          dep_record_ids,
                          {k: base_data.get(k) for k in (self._depend_models or {}).values()})
 
-            new_record = super().create([base_data])
-            new_records |= new_record
+            # [poly] The temporary Field-state changes above (store/related/inherited on
+            # SHARED Field objects) MUST be restored no matter what — if super().create
+            # or the post-processing raises, leaving them mutated corrupts the registry
+            # for every subsequent operation. Hence the try/finally.
+            try:
+                new_record = super().create([base_data])
+                new_records |= new_record
 
-            # [poly] Apply deferred non-stored writable fields via their inverse now
-            # that the leaf row exists. Best-effort: a failing inverse must not abort
-            # the create.
-            if _poly_deferred:
-                try:
-                    new_record.write(_poly_deferred)
-                except Exception:
-                    _logger.exception(
-                        "[poly] create: failed applying deferred non-stored fields %s on %s",
-                        list(_poly_deferred), self._name)
+                # [poly] Apply deferred non-stored writable fields via their inverse now
+                # that the leaf row exists. Best-effort: a failing inverse must not abort
+                # the create.
+                if _poly_deferred:
+                    try:
+                        new_record.write(_poly_deferred)
+                    except Exception:
+                        _logger.exception(
+                            "[poly] create: failed applying deferred non-stored fields %s on %s",
+                            list(_poly_deferred), self._name)
 
-            # [poly] RESTORE field state
-            # IMPORTANT: We MUST ensure Odoo has updated the database before restoring f.store
-            # and f.inherited, otherwise the flush might discard the values.
-            self.flush_model(base_data.keys())
-        
-            # [poly] CRITICAL: After flush, we MUST invalidate the cache for these records 
-            # so Odoo reads the values from DB using the descriptors we are about to restore.
-            # Odoo 18: Invalidate using field names to be precise.
-            self.env.cache.invalidate([(f, new_records._ids) for k in base_data.keys() if (f := self._fields.get(k))])
-        
-            # [poly] For related fields, we must also invalidate the target model cache 
-            # because the inversion might have put False/None there during create.
-            for k in base_data.keys():
-                f = self._fields.get(k)
-                if f and hasattr(f, 'related') and f.related:
-                     try:
-                         # E.g. driver_id.name -> invalidate conversation.driver
-                         target_model_name = f.related.split('.')[0]
-                         if target_model_name in (self._depend_models or {}):
-                              link_fname = self._depend_models[target_model_name]
-                              target_ids = [r[link_fname].id for r in new_records if r[link_fname]]
-                              if target_ids:
-                                   target_model = self.env[target_model_name]
-                                   target_field_name = f.related.split('.')[-1]
-                                   if target_field_name in target_model._fields:
-                                        target_field = target_model._fields[target_field_name]
-                                        self.env.cache.invalidate([(target_field, tuple(target_ids))])
-                     except:
-                         pass
+                # [poly] Ensure Odoo has flushed to DB before we restore f.store/f.inherited,
+                # otherwise the flush might discard the values.
+                self.flush_model(base_data.keys())
 
-            for k in base_data.keys():
-                f = self._fields.get(k)
-                if f:
-                    if hasattr(f, '_poly_old_related'):
-                        f.related = f._poly_old_related
-                        del f._poly_old_related
-                    if hasattr(f, '_poly_old_store'):
-                        f.store = f._poly_old_store
-                        del f._poly_old_store
-                    if hasattr(f, '_poly_old_inherited'):
-                        f.inherited = f._poly_old_inherited
-                        del f._poly_old_inherited
+                # [poly] After flush, invalidate the cache for these records so Odoo reads
+                # the values from DB using the descriptors we are about to restore.
+                self.env.cache.invalidate([(f, new_records._ids) for k in base_data.keys() if (f := self._fields.get(k))])
+
+                # [poly] For related fields, also invalidate the target model cache
+                # because the inversion might have put False/None there during create.
+                for k in base_data.keys():
+                    f = self._fields.get(k)
+                    if f and hasattr(f, 'related') and f.related:
+                         try:
+                             # E.g. driver_id.name -> invalidate conversation.driver
+                             target_model_name = f.related.split('.')[0]
+                             if target_model_name in (self._depend_models or {}):
+                                  link_fname = self._depend_models[target_model_name]
+                                  target_ids = [r[link_fname].id for r in new_records if r[link_fname]]
+                                  if target_ids:
+                                       target_model = self.env[target_model_name]
+                                       target_field_name = f.related.split('.')[-1]
+                                       if target_field_name in target_model._fields:
+                                            target_field = target_model._fields[target_field_name]
+                                            self.env.cache.invalidate([(target_field, tuple(target_ids))])
+                         except Exception:
+                             pass
+            finally:
+                # [poly] RESTORE field state — ALWAYS, even on exception.
+                for k in base_data.keys():
+                    f = self._fields.get(k)
+                    if f:
+                        if hasattr(f, '_poly_old_related'):
+                            f.related = f._poly_old_related
+                            del f._poly_old_related
+                        if hasattr(f, '_poly_old_store'):
+                            f.store = f._poly_old_store
+                            del f._poly_old_store
+                        if hasattr(f, '_poly_old_inherited'):
+                            f.inherited = f._poly_old_inherited
+                            del f._poly_old_inherited
 
         # [poly] Disparar las @api.constrains del modelo concreto para los campos del input que
         # son HEREDADOS (related, viven en una base): el super().create() de la hoja sólo valida

@@ -220,6 +220,50 @@ class TestPolyImprovements(TransactionCase):
         
         # Unlink the record
         record.unlink()
-        
+
         # Verify it's gone
         self.assertFalse(poly_base.browse(record_id).exists())
+
+    def test_10_create_failure_restores_field_state(self):
+        """A polymorphic create() that raises must NOT leave shared Field objects
+        mutated (store/related/inherited), and must not corrupt later creates.
+
+        create() temporarily flips those attributes on shared Field instances to force
+        certain values into the leaf INSERT; the try/finally guarantees they are
+        restored even when create raises. Exercised here through numa.planning models
+        (skipped if numa_planning is not installed)."""
+        from datetime import timedelta
+        Allocation = self.env.get('numa.planning.allocation')
+        if Allocation is None:
+            self.skipTest("numa_planning not installed in this database")
+        Node = self.env['numa.planning.node']
+        Resource = self.env['numa.planning.resource']
+        Scenario = self.env['numa.planning.scenario']
+
+        node = Node.create({'name': 'PolySafety'})
+        resource = Resource.create({'name': 'PolySafety', 'capacity': 1.0})
+        scenario = Scenario.search([('is_official', '=', True)], limit=1) or \
+            Scenario.create({'name': 'Official', 'is_official': True})
+        base = fields.Datetime.now()
+
+        # Force a create failure (end before start trips the model constraint).
+        with self.assertRaises(ValidationError):
+            Allocation.create({
+                'node_id': node.id, 'resource_id': resource.id, 'scenario_id': scenario.id,
+                'start_date': base, 'end_date': base - timedelta(hours=1),
+            })
+
+        # No Field across the involved poly models may retain temporary state.
+        for model in (Allocation, Node, Resource, Scenario):
+            for f in model._fields.values():
+                for attr in ('_poly_old_store', '_poly_old_related', '_poly_old_inherited'):
+                    self.assertFalse(
+                        hasattr(f, attr),
+                        "%s.%s leaked %s after a failed create" % (model._name, f.name, attr))
+
+        # The registry is intact: a valid create still succeeds.
+        ok = Allocation.create({
+            'node_id': node.id, 'resource_id': resource.id, 'scenario_id': scenario.id,
+            'start_date': base, 'end_date': base + timedelta(hours=2),
+        })
+        self.assertTrue(ok)
