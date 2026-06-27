@@ -4989,7 +4989,7 @@ def poly_BaseModel_repr(self):
         _name = object.__getattribute__(self, '_name')
         _ids = object.__getattribute__(self, '_ids')
         return f"{_name}{_ids}"
-    except:
+    except Exception:
         return "BaseModel()"
 odoo.models.BaseModel.__repr__ = poly_BaseModel_repr
 
