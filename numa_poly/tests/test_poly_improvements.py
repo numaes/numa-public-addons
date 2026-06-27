@@ -267,3 +267,41 @@ class TestPolyImprovements(TransactionCase):
             'start_date': base, 'end_date': base + timedelta(hours=2),
         })
         self.assertTrue(ok)
+
+    def test_11_native_field_names_excludes_base_technical_fields(self):
+        """_poly_native_field_names() — the no-shadow mechanism — returns the model's
+        OWN fields and excludes the technical fields injected from the ir.poly_base
+        dependent base (old_id, concrete_model_id, poly_payload)."""
+        Node = self.env.get('numa.planning.node')
+        if Node is None:
+            self.skipTest("numa_planning not installed in this database")
+        native = Node._poly_native_field_names()
+        self.assertIn('name', native, "the model's own fields must be reported as native")
+        for injected in ('old_id', 'concrete_model_id', 'poly_payload'):
+            self.assertNotIn(
+                injected, native,
+                "%s comes from the poly base and must NOT be treated as native" % injected)
+
+    def test_12_bulk_create_with_one_failure_does_not_corrupt_registry(self):
+        """A bulk polymorphic create() where one record violates a constraint raises and
+        still leaves the registry/Field state clean (no _poly_old_* leak)."""
+        from datetime import timedelta
+        Allocation = self.env.get('numa.planning.allocation')
+        if Allocation is None:
+            self.skipTest("numa_planning not installed in this database")
+        Node = self.env['numa.planning.node']
+        Resource = self.env['numa.planning.resource']
+        Scenario = self.env['numa.planning.scenario']
+        node = Node.create({'name': 'Bulk'})
+        resource = Resource.create({'name': 'Bulk', 'capacity': 1.0})
+        scenario = Scenario.search([('is_official', '=', True)], limit=1) or \
+            Scenario.create({'name': 'Official', 'is_official': True})
+        base = fields.Datetime.now()
+        good = {'node_id': node.id, 'resource_id': resource.id, 'scenario_id': scenario.id,
+                'start_date': base, 'end_date': base + timedelta(hours=2)}
+        bad = dict(good, end_date=base - timedelta(hours=1))
+        with self.assertRaises(ValidationError):
+            Allocation.create([good, bad])
+        for f in Allocation._fields.values():
+            self.assertFalse(hasattr(f, '_poly_old_store'),
+                             "%s leaked _poly_old_store after a failed bulk create" % f.name)

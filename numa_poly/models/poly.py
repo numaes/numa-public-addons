@@ -85,6 +85,11 @@ _logger = logging.getLogger(__name__)
 # shadowed by a related-to-base version. Stable within a process after install.
 _POLY_LEAF_COLUMNS = {}
 
+# Native-field-names cache keyed by model name (NOT stored as a class attribute, which
+# Odoo's test framework flags as an "unexpected attribute" leak). Cleared on every
+# registry rebuild together with the schema caches.
+_POLY_NATIVE_FNAMES = {}
+
 
 def _poly_leaf_columns(cr, table):
     """Set of physical columns of `table` (cached). Empty on any error/missing table."""
@@ -1877,7 +1882,7 @@ class PolyBase(_original_BaseModel):
         Cached on the registry class; the MRO/class field definitions are stable once
         built.
         """
-        cached = cls.__dict__.get('_poly_native_fnames_cache')
+        cached = _POLY_NATIVE_FNAMES.get(cls._name)
         if cached is not None:
             return cached
 
@@ -1919,10 +1924,7 @@ class PolyBase(_original_BaseModel):
                     fn = getattr(f, 'name', None)
                     if fn:
                         native.add(fn)
-        try:
-            cls._poly_native_fnames_cache = native
-        except Exception:
-            pass
+        _POLY_NATIVE_FNAMES[cls._name] = native
         return native
 
     @classmethod
@@ -5318,6 +5320,7 @@ def _poly_registry_setup_models(self, cr):
     # generation instead of growing across reloads.
     _POLY_LEAF_COLUMNS.clear()
     _POLY_COLUMN_CACHE.clear()
+    _POLY_NATIVE_FNAMES.clear()
 
     # [poly] Technical access to core classes
     cls_PolyBase = PolyBase
