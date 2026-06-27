@@ -1724,6 +1724,38 @@ class PolyBase(_original_BaseModel):
 
         res = super()._auto_init()
 
+        # [poly] Ensure stored poly-injected fields have a physical column on the
+        # (pre-existing core) table. old_id is taken over from ir.poly_base keeping its
+        # foreign model_name, so Odoo's update_db skips creating its column on the child
+        # table, yet it stays store=True and gets SELECTed -> "column ... old_id does not
+        # exist". Create any still-missing stored column. Additive: existing columns are
+        # left untouched.
+        if getattr(self, '_depend_models', None) and getattr(self, '_table', None):
+            try:
+                _existing = sql.table_columns(self.env.cr, self._table)
+                # old_id is a known Integer poly field taken over from ir.poly_base; its
+                # store flag may not yet be set at _auto_init time, so guarantee the column
+                # unconditionally (nullable) — it is SELECTed at runtime.
+                if 'old_id' not in _existing:
+                    _logger.info("[poly] _auto_init: guaranteeing old_id column on %s", self._table)
+                    self.env.cr.execute(SQL(
+                        "ALTER TABLE %s ADD COLUMN IF NOT EXISTS old_id integer",
+                        SQL.identifier(self._table),
+                    ))
+                for _fn, _fo in self._fields.items():
+                    if _fo.store and _fo.column_type and _fn not in _existing:
+                        _logger.info("[poly] _auto_init: creating missing stored column %s.%s",
+                                     self._table, _fn)
+                        self.env.cr.execute(SQL(
+                            "ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s",
+                            SQL.identifier(self._table),
+                            SQL.identifier(_fn),
+                            SQL(_fo.column_type[1]),
+                        ))
+            except Exception:
+                _logger.exception("[poly] _auto_init: failed creating missing columns on %s",
+                                  self._table)
+
         # Non-stored fields (injected poly relations, computed fields, related fields
         # pointing to a parent table) must never be NOT NULL in the child table because
         # the ORM omits them from INSERTs.  Legacy migrations may have created these
@@ -3205,6 +3237,18 @@ class PolyBase(_original_BaseModel):
             clean_data_list.append(clean_data)
         data_list = clean_data_list
 
+        # [poly] Physical columns that actually exist on THIS model's (leaf) table.
+        # Used below to avoid forcing genuinely non-stored fields (e.g. computed
+        # fields like personal_stage_type_id on project.task, or company-dependent
+        # account fields on res.partner) into the leaf INSERT, which would raise
+        # "column ... does not exist".
+        _poly_leaf_cols = set()
+        if getattr(self, '_table', None):
+            try:
+                _poly_leaf_cols = set(sql.table_columns(self.env.cr, self._table))
+            except Exception:
+                _poly_leaf_cols = set()
+
         # Process each record to create
         for current_idx, data in enumerate(data_list):
             # Handle explicit ID or create a new one via ir.poly_base
@@ -3329,20 +3373,43 @@ class PolyBase(_original_BaseModel):
             # sub-create, NO a la tabla hoja (si no, INSERT falla: la columna no existe en la hoja).
             # (Antes: lista hardcodeada `('name','provider','active','facebook_account_id','driver_id')`
             # — scar de estabilización — forzaba `active` a la hoja y rompía personas poly de res.partner.)
+            # [poly] Fields skipped here because they have no physical column on the
+            # leaf table (genuinely non-stored computed/company-dependent fields).
+            # Their values are applied after the INSERT via write() -> inverse.
+            _poly_deferred = {}
             for k, v in orig_data.items():
                 if k not in base_data and k in self._fields:
                     f = self._fields[k]
                     if not f.related:
+                        # Only push a field into the leaf INSERT when it owns a physical
+                        # column there. Forcing store=True on a column-less computed field
+                        # (e.g. personal_stage_type_id, store=False) makes super().create
+                        # emit an INSERT for a column that does not exist.
+                        if f.store or k in _poly_leaf_cols:
+                            base_data[k] = v
+                            # [poly] force Odoo to include registry-polluted-but-physical
+                            # fields in classification.
+                            if not f.store:
+                                f._poly_old_store = f.store
+                                f.store = True
+                            if getattr(f, 'inherited', False):
+                                f._poly_old_inherited = f.inherited
+                                f.inherited = False
+                            if hasattr(f, 'related') and f.related:
+                                 f._poly_old_related = f.related
+                        elif getattr(f, 'inverse', None):
+                            # Writable computed field with no column: defer to its inverse.
+                            _poly_deferred[k] = v
+                    elif k in _poly_leaf_cols:
+                        # [poly] Related field that ALSO owns a physical column on the leaf
+                        # table (e.g. res.partner.name, which carries the res_partner_check_name
+                        # constraint). The base sub-create already received it, but the leaf
+                        # INSERT must include it too or the leaf-table constraint fails.
+                        # Keep `related` intact (a stored related field still gets a column).
                         base_data[k] = v
-                        # [poly] CRITICAL: force Odoo to include these fields in classification
                         if not f.store:
                             f._poly_old_store = f.store
                             f.store = True
-                        if getattr(f, 'inherited', False):
-                            f._poly_old_inherited = f.inherited
-                            f.inherited = False
-                        if hasattr(f, 'related') and f.related:
-                             f._poly_old_related = f.related
 
             # [poly] CRITICAL: inject link fields from sub-created records into base_data.
             # dep_record_ids holds {dep_model_name: created_id} from the sub-create loop.
@@ -3353,6 +3420,28 @@ class PolyBase(_original_BaseModel):
                 if _link_field and _link_field not in base_data:
                     base_data[_link_field] = _dep_id
 
+            # [poly] Ensure every value routed to the leaf INSERT that maps to a real
+            # leaf column is classified as STORED, so Odoo emits it in the INSERT rather
+            # than deferring it to an inverse. Without this, related/store=False fields
+            # that nevertheless own a leaf column (e.g. res.partner.name) are omitted
+            # from the INSERT and the leaf-table constraints (res_partner_check_name)
+            # fire before the inverse runs. Restored together with the other temporary
+            # field-state changes after create.
+            for _k in list(base_data.keys()):
+                _f = self._fields.get(_k)
+                if not _f or _k not in _poly_leaf_cols:
+                    continue
+                # Force store=True so Odoo emits the value in the leaf INSERT. We keep
+                # `related` intact: a STORED related field still gets a column and is
+                # written (clearing related breaks Odoo's related machinery — it expects
+                # a dotted path, not False).
+                if not _f.store and not hasattr(_f, '_poly_old_store'):
+                    _f._poly_old_store = _f.store
+                    _f.store = True
+                if getattr(_f, 'inherited', False) and not hasattr(_f, '_poly_old_inherited'):
+                    _f._poly_old_inherited = _f.inherited
+                    _f.inherited = False
+
             # [poly] INSTRUMENTATION: Final values before standard create
             _logger.info("[poly] Final create for %s: id=%s dep_record_ids=%s link_fields=%s",
                          self._name, base_data.get('id'),
@@ -3361,7 +3450,18 @@ class PolyBase(_original_BaseModel):
 
             new_record = super().create([base_data])
             new_records |= new_record
-        
+
+            # [poly] Apply deferred non-stored writable fields via their inverse now
+            # that the leaf row exists. Best-effort: a failing inverse must not abort
+            # the create.
+            if _poly_deferred:
+                try:
+                    new_record.write(_poly_deferred)
+                except Exception:
+                    _logger.exception(
+                        "[poly] create: failed applying deferred non-stored fields %s on %s",
+                        list(_poly_deferred), self._name)
+
             # [poly] RESTORE field state
             # IMPORTANT: We MUST ensure Odoo has updated the database before restoring f.store
             # and f.inherited, otherwise the flush might discard the values.
