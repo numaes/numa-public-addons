@@ -314,9 +314,6 @@ class InvoiceLine(models.Model):
             if not il.move_id.is_invoice(include_receipts=True):
                 continue
 
-            il.price_qty = il.quantity
-            continue
-
             if not il.product_id:
                 il.price_qty = il.quantity
                 il._compute_amount()
@@ -342,9 +339,9 @@ class InvoiceLine(models.Model):
             il.price_qty = price_qty
             il._compute_amount()
 
-    @api.onchange('price_qty', 'price_unit', 'tax_ids')
-    @api.depends('price_qty', 'price_unit', 'tax_ids')
+    @api.depends('price_qty')
     def _compute_amount(self):
+        super()._compute_amount()
         return
         for il in self:
             if not il.move_id.is_invoice(include_receipts=True):
@@ -387,7 +384,7 @@ class InvoiceLine(models.Model):
     @api.model
     def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes,
                                            price_subtotal, force_computation=False):
-        if not self or self.product_id:
+        if not self or not self.product_id:
             return {}
         else:
             return super()._get_fields_onchange_balance_model(
