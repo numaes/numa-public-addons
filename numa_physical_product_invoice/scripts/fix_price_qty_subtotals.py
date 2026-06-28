@@ -79,7 +79,7 @@ for line in lines:
 # ── 2. Recompute subtotals for changed lines ────────────────────────────────
 
 if updated:
-    updated.with_context(check_move_validity=False)._compute_amount()
+    updated.with_context(check_move_validity=False)._compute_totals()
     _logger.info("[fix_price_qty] Recomputed subtotals for %d lines", len(updated))
 
 # ── 3. Summary ──────────────────────────────────────────────────────────────
