@@ -75,7 +75,7 @@ class InvoiceLine(models.Model):
         # OVERRIDE
         mls = super().create(vals_list)
         for line in mls:
-            line._compute_amount()
+            line._compute_totals()
 
         return mls
 
@@ -133,7 +133,7 @@ class InvoiceLine(models.Model):
             il.total_weight = normalized_qty * il.unit_weight
             il.total_volume = normalized_qty * il.unit_volume
 
-            il._compute_amount()
+            il._compute_totals()
 
     @api.onchange('total_surface', 'total_weight', 'total_volume', 'quantity', 'product_uom_id')
     def compute_price(self):
@@ -143,7 +143,7 @@ class InvoiceLine(models.Model):
 
             if not il.product_id:
                 il.price_qty = il.quantity
-                il._compute_amount()
+                il._compute_totals()
                 continue
 
             normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id) \
@@ -164,7 +164,7 @@ class InvoiceLine(models.Model):
             else:
                 price_qty = normalized_qty
             il.price_qty = price_qty
-            il._compute_amount()
+            il._compute_totals()
 
     @api.depends('price_qty')
     def _compute_totals(self):
