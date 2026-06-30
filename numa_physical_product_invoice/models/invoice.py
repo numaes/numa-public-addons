@@ -12,15 +12,6 @@ UNIT_PER_TYPE = {
     'weight': 'kg',
 }
 
-FIELD_NAME_PER_TYPE = {
-    'length': 'product_length',
-    'width': 'product_width',
-    'height': 'product_height',
-    'surface': 'surface',
-    'volume': 'volume',
-    'weight': 'weight',
-}
-
 
 class Invoice(models.Model):
     _inherit = 'account.move'
@@ -72,12 +63,44 @@ class InvoiceLine(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        # OVERRIDE
         mls = super().create(vals_list)
-        for line in mls:
-            line._compute_totals()
-
+        to_sync = mls.filtered(
+            lambda l: l.move_id.is_invoice(include_receipts=True) and l.product_id
+        )
+        if to_sync:
+            to_sync._sync_price_qty()
+            to_sync._compute_totals()
         return mls
+
+    def _sync_price_qty(self):
+        """Compute price_qty and dimension totals from product dimensions and quantity.
+        Called on programmatic creation (SO/PO invoicing, credit notes) and from onchange handlers.
+        """
+        for il in self:
+            if not il.product_id or not il.product_uom_id:
+                il.price_qty = il.quantity or 1.0
+                continue
+
+            normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id)
+            il.total_surface = normalized_qty * il.unit_surface
+            il.total_weight = normalized_qty * il.unit_weight
+            il.total_volume = normalized_qty * il.unit_volume
+
+            price_type = il.product_id.price_base
+            if price_type == 'length':
+                il.price_qty = il.product_id.product_length * normalized_qty
+            elif price_type == 'width':
+                il.price_qty = il.product_id.product_width * normalized_qty
+            elif price_type == 'height':
+                il.price_qty = il.product_id.product_height * normalized_qty
+            elif price_type == 'surface':
+                il.price_qty = il.total_surface
+            elif price_type == 'weight':
+                il.price_qty = il.total_weight
+            elif price_type == 'volume':
+                il.price_qty = il.total_volume
+            else:
+                il.price_qty = normalized_qty
 
     @api.onchange('product_id')
     def product_id_change(self):
@@ -85,8 +108,8 @@ class InvoiceLine(models.Model):
             if not il.move_id.is_invoice(include_receipts=True):
                 continue
             il.compute_unit_price_uom()
-            il.compute_price()
-            il.compute_totals()
+            il._sync_price_qty()
+            il._compute_totals()
 
     @api.onchange('product_uom_id', 'quantity')
     def product_uom_id_change(self):
@@ -95,10 +118,23 @@ class InvoiceLine(models.Model):
                 continue
             if not il.product_id or not il.product_uom_id:
                 continue
+            il._sync_price_qty()
+            il._compute_totals()
 
-            #il.compute_unit_price_uom()
-            il.compute_price()
-            il.compute_totals()
+    @api.onchange('total_surface', 'total_weight', 'total_volume')
+    def _onchange_dimension_totals(self):
+        """When the user manually edits a dimension total, update price_qty accordingly."""
+        for il in self:
+            if not il.move_id.is_invoice(include_receipts=True) or not il.product_id:
+                continue
+            price_type = il.product_id.price_base
+            if price_type == 'surface':
+                il.price_qty = il.total_surface
+            elif price_type == 'weight':
+                il.price_qty = il.total_weight
+            elif price_type == 'volume':
+                il.price_qty = il.total_volume
+            il._compute_totals()
 
     def compute_unit_price_uom(self):
         uom_model = self.env['uom.uom']
@@ -107,8 +143,6 @@ class InvoiceLine(models.Model):
             if not il.move_id.is_invoice(include_receipts=True):
                 continue
             if il.product_id:
-                normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id) \
-                    if il.product_uom_id else il.quantity
                 if il.product_id.price_base == 'normal':
                     il.unit_price_uom_id = il.product_id.uom_id.id
                 else:
@@ -119,53 +153,6 @@ class InvoiceLine(models.Model):
             else:
                 il.unit_price_uom_id = False
 
-    @api.onchange('quantity', 'product_uom_id')
-    def compute_totals(self):
-        for il in self:
-            if not il.move_id.is_invoice(include_receipts=True):
-                continue
-            if not il.product_id or not il.product_uom_id:
-                continue
-
-            normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id) \
-                if il.product_uom_id else il.quantity
-            il.total_surface = normalized_qty * il.unit_surface
-            il.total_weight = normalized_qty * il.unit_weight
-            il.total_volume = normalized_qty * il.unit_volume
-
-            il._compute_totals()
-
-    @api.onchange('total_surface', 'total_weight', 'total_volume', 'quantity', 'product_uom_id')
-    def compute_price(self):
-        for il in self:
-            if not il.move_id.is_invoice(include_receipts=True):
-                continue
-
-            if not il.product_id:
-                il.price_qty = il.quantity
-                il._compute_totals()
-                continue
-
-            normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id) \
-                             if il.product_uom_id else il.quantity
-            price_type = il.product_id.price_base
-            if price_type == 'length':
-                price_qty = il.unit_length * normalized_qty
-            elif price_type == 'width':
-                price_qty = il.unit_width * normalized_qty
-            elif price_type == 'height':
-                price_qty = il.unit_height * normalized_qty
-            elif price_type == 'surface':
-                price_qty = il.total_surface
-            elif price_type == 'weight':
-                price_qty = il.total_weight
-            elif price_type == 'volume':
-                price_qty = il.total_volume
-            else:
-                price_qty = normalized_qty
-            il.price_qty = price_qty
-            il._compute_totals()
-
     @api.depends('price_qty')
     def _compute_totals(self):
         super()._compute_totals()
@@ -173,7 +160,7 @@ class InvoiceLine(models.Model):
     def _get_fields_onchange_balance(self, quantity=None, discount=None, amount_currency=None, move_type=None, currency=None, taxes=None, price_subtotal=None, force_computation=False):
         self.ensure_one()
         return self._get_fields_onchange_balance_model(
-            quantity=quantity or self.quantity if self.product_id.price_base == 'normal' else self.price_qty,
+            quantity=(quantity or self.quantity) if self.product_id.price_base == 'normal' else self.price_qty,
             discount=discount or self.discount,
             amount_currency=amount_currency or self.amount_currency,
             move_type=move_type or self.move_id.move_type,
@@ -181,20 +168,6 @@ class InvoiceLine(models.Model):
             taxes=taxes or self.tax_ids,
             price_subtotal=price_subtotal or self.price_subtotal,
             force_computation=force_computation,
-        )
-
-    def _get_price_total_and_subtotal(self, price_unit=None, quantity=None, discount=None, currency=None, product=None,
-                                      partner=None, taxes=None, move_type=None):
-        self.ensure_one()
-        return self._get_price_total_and_subtotal_model(
-            price_unit=price_unit or self.price_unit,
-            quantity=self.price_qty,
-            discount=discount or self.discount,
-            currency=currency or self.currency_id,
-            product=product or self.product_id,
-            partner=partner or self.partner_id,
-            taxes=taxes or self.tax_ids,
-            move_type=move_type or self.move_id.move_type,
         )
 
     @api.model
@@ -206,5 +179,3 @@ class InvoiceLine(models.Model):
             return super()._get_fields_onchange_balance_model(
                 quantity, discount, amount_currency, move_type, currency, taxes,
                 price_subtotal, force_computation=force_computation)
-
-
