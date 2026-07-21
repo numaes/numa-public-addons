@@ -22,7 +22,7 @@
             <field name="mode">extension</field>
             <field name="inherit_id" ref="product.product_attribute_view_form" />
             <field name="arch" type="xml">
-                <group name="main_fields" position="inside">
+                <group name="sale_main_fields" position="inside">
                     <field name="code_identifier" />
                     <field name="default_value" />
                     <field name="change_on_create" />
