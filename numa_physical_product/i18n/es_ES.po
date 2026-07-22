@@ -124,7 +124,7 @@ msgstr "Normal, por UdM del producto"
 #. module: numa_physical_product
 #: model_terms:ir.ui.view,arch_db:numa_physical_product.product_template_form_view
 msgid "Physical Characteristics"
-msgstr ""
+msgstr "Características físicas"
 
 #. module: numa_physical_product
 #: model_terms:ir.ui.view,arch_db:numa_physical_product.product_template_form_view
