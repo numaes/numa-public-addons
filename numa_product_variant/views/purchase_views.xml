@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="purchase_order_form_configurator" model="ir.ui.view">
+        <field name="name">purchase.order.form.product.configurator</field>
+        <field name="model">purchase.order</field>
+        <field name="inherit_id" ref="purchase.purchase_order_form"/>
+        <field name="arch" type="xml">
+            <!-- Show the template as the editable product field so the configurator
+                 can trigger; keep product_id as a technical column so onchanges and
+                 downstream logic still work. -->
+            <xpath expr="//field[@name='order_line']/list/field[@name='product_id']" position="before">
+                <field name="is_configurable_product" column_invisible="1"/>
+                <field name="product_template_id"
+                       string="Product"
+                       widget="pol_product_many2one"
+                       readonly="state in ('purchase', 'to approve', 'done', 'cancel') or is_downpayment"
+                       required="not display_type and not is_downpayment"
+                       optional="show"
+                       context="{'partner_id': parent.partner_id, 'quantity': product_qty, 'company_id': parent.company_id}"
+                       domain="[('purchase_ok', '=', True), '|', ('company_id', '=', False), ('company_id', 'parent_of', parent.company_id)]"/>
+            </xpath>
+            <xpath expr="//field[@name='order_line']/list/field[@name='product_id']" position="attributes">
+                <attribute name="column_invisible">1</attribute>
+                <attribute name="required">0</attribute>
+                <attribute name="optional"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>
