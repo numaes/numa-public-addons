@@ -79,6 +79,11 @@ if typing.TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+# Cache de sincronización de secuencia por instancia de registry.
+# id(registry) cambia en cada recarga, por lo que el caché se invalida
+# automáticamente al instalar/actualizar módulos o al reiniciar el servidor.
+_poly_sequence_synced_registries: set = set()
+
 
 # [poly] Per-table physical-column cache (no-migration strategy): used to decide
 # whether a field is the concrete model's OWN column and must therefore never be
@@ -1254,14 +1259,19 @@ class PolyBase(_original_BaseModel):
     def _sync_poly_sequence(self):
         """
         Sincroniza ir_poly_base_id_seq con el ID máximo real de la jerarquía.
-        Usa un bloqueo consultivo para evitar contención en las tablas de datos.
+        Solo se ejecuta una vez por instancia de registry para evitar la contención
+        del advisory lock y el costo de escanear todas las tablas en cada create().
         """
+        registry_id = id(self.pool)
+        if registry_id in _poly_sequence_synced_registries:
+            return
+
         # Lock consultivo basado en el hash del nombre de la secuencia (1347374169)
         # Solo bloquea a otros procesos que intenten sincronizar la misma secuencia.
         self.env.cr.execute("SELECT pg_advisory_xact_lock(1347374169)")
-        
+
         max_id = self._get_max_poly_id()
-        
+
         # Obtenemos el valor actual de la secuencia para evitar setval innecesarios
         try:
             self.env.cr.execute("SELECT last_value FROM ir_poly_base_id_seq")
@@ -1270,13 +1280,15 @@ class PolyBase(_original_BaseModel):
         except Exception:
             # Si la secuencia no existe aún o hay problemas de acceso
             current_seq_val = 0
-        
-        if max_id >= current_seq_val:
-            _logger.info("Sincronizando secuencia ir_poly_base_id_seq a %s para evitar colisiones", max_id + 1)
+
+        if max_id > current_seq_val:
+            _logger.debug("Sincronizando secuencia ir_poly_base_id_seq a %s para evitar colisiones", max_id + 1)
             self.env.cr.execute(SQL(
                 "SELECT setval('ir_poly_base_id_seq', %s, true)",
                 max_id
             ))
+
+        _poly_sequence_synced_registries.add(registry_id)
 
     def check_access(self, operation: str) -> None:
         if getattr(self, '_depend_models', None) is None:
