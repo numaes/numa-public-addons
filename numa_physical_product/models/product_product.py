@@ -134,3 +134,25 @@ class ProductProduct(models.Model):
             self.variant_weight = self.weight_factor * self.surface
         elif self.weight_kind == 'volume':
             self.variant_weight = self.weight_factor * self.volume
+
+    def _get_price_qty(self, quantity, uom=None):
+        """Return the costing/billing quantity for `quantity` units of this product.
+
+        For price_base == 'normal', this is the quantity normalized to the product
+        UoM. For a physical price_base, it is the product's physical magnitude
+        (length/width/height in m, surface in m2, weight in kg, volume in m3)
+        multiplied by the normalized quantity. Centralizes the price_qty scaling
+        used by numa_physical_product_{sale,purchase,invoice} so it can be reused
+        for cost computation (e.g. recursive BoM costing).
+        """
+        self.ensure_one()
+        qty = uom._compute_quantity(quantity, self.uom_id) if uom else quantity
+        magnitude = {
+            'length': self.product_length,
+            'width': self.product_width,
+            'height': self.product_height,
+            'surface': self.surface,
+            'weight': self.weight,
+            'volume': self.volume,
+        }.get(self.price_base)
+        return magnitude * qty if magnitude is not None else qty
