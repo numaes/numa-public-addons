@@ -6,33 +6,6 @@ from odoo import models, fields, api
 _logger = logging.getLogger(__name__)
 
 
-class ProductAttribute(models.Model):
-    _inherit = "product.attribute"
-
-    code_identifier = fields.Char('Code Identifier')
-    default_value = fields.Many2one('product.attribute.value',
-                                    domain="[('id', 'in', value_ids)]")
-    change_on_create = fields.Selection(
-        [('length', 'Length'), ('width', 'Width'), ('height', 'Height')],
-        'Set on variant creation',
-    )
-
-
-class ProductAttributeValue(models.Model):
-    _inherit = "product.attribute.value"
-
-    code_value = fields.Char('Code Value', required=True)
-    value_on_create = fields.Float('Value to set on variant creation')
-    weight_factor = fields.Float('Weight factor', default=1.0)
-
-
-class ProductTemplateAttributeValue(models.Model):
-    _inherit = "product.template.attribute.value"
-
-    code_value = fields.Char('Code Value',
-                             related='product_attribute_value_id.code_value')
-
-
 class ProductCategory(models.Model):
     _inherit = 'product.category'
 
