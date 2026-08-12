@@ -1,6 +1,6 @@
 {
     'name': 'NUMA Product Variant',
-    'version': '18.0.0.3',
+    'version': '18.0.0.4',
     'category': 'Product',
     'description': """
 This module extends the handling of variants on products.
@@ -15,9 +15,11 @@ It adds:
     'website': 'http://www.numaes.com',
     'depends': ['base', 'product', 'numa_physical_product', 'sale', 'purchase'],
     'data': [
+        'security/ir.model.access.csv',
         'data/ir_cron.xml',
         'views/product_views.xml',
         'views/purchase_views.xml',
+        'views/attribute_rule_views.xml',
     ],
     'assets': {
         'web.assets_backend': [

@@ -1,7 +1,8 @@
 import logging
 from typing import List
 
-from odoo import models, fields, api
+from odoo import models, fields, api, _
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -87,6 +88,33 @@ class ProductTemplate(models.Model):
     @api.model
     def default_get(self, fields_list):
         return super().default_get(fields_list)
+
+    attribute_rule_ids = fields.One2many(
+        'product.attribute.rule', 'product_tmpl_id',
+        string='Configuration Rules')
+
+    def _is_combination_possible(self, combination, parent_combination=None,
+                                 ignore_no_variant=False):
+        """Reject combinations violating this template's configuration rules.
+
+        Hooked here rather than in the configurator so the rules hold wherever
+        a combination is validated — the dialog, the variant matrix, and direct
+        variant creation alike.
+        """
+        possible = super()._is_combination_possible(
+            combination, parent_combination=parent_combination,
+            ignore_no_variant=ignore_no_variant)
+        if not possible:
+            return False
+        return not self._violated_attribute_rules(combination)
+
+    def _violated_attribute_rules(self, combination):
+        """Configuration rules violated by a combination of template values."""
+        self.ensure_one()
+        rules = self.env['product.attribute.rule']._rules_for_template(self)
+        if not rules:
+            return rules
+        return rules._violated_by(combination.product_attribute_value_id)
 
     def build_default_code(self, attribute_values: List):
         self.ensure_one()
@@ -195,6 +223,24 @@ class ProductProduct(models.Model):
                         att_value.value_on_create
                     variant.onchange_variant_weight()
                     variant.onchange_variant_dimensions()
+
+    @api.constrains('product_template_attribute_value_ids')
+    def _check_attribute_rules(self):
+        """Reject a variant whose combination violates a configuration rule.
+
+        ``_is_combination_possible`` guards the paths that ask first — the
+        configurator and the matrix — but it only answers yes or no, and a
+        direct ``create`` never asks. This raises, and carries the rule's own
+        message so the user learns why.
+        """
+        for variant in self:
+            violated = variant.product_tmpl_id._violated_attribute_rules(
+                variant.product_template_attribute_value_ids)
+            if violated:
+                raise ValidationError(_(
+                    "%(product)s cannot be configured this way:\n%(reason)s",
+                    product=variant.product_tmpl_id.display_name,
+                    reason=violated._violation_message()))
 
     # === REFERENCE RESOLUTION API === #
     #
