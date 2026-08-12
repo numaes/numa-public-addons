@@ -8,3 +8,4 @@ from . import test_lifecycle
 from . import test_resolution_api
 from . import test_resolve_value_controllers
 from . import test_attribute_rules
+from . import test_open_value_tour

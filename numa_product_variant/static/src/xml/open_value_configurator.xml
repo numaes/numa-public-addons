@@ -8,6 +8,15 @@
     <t t-name="numa_product_variant.ProductTemplateAttributeLine"
        t-inherit="sale.ProductTemplateAttributeLine"
        t-inherit-mode="extension">
+        <!--
+            Core only shows the attribute name when there is more than one
+            predefined value to choose between. An open attribute starts with an
+            empty list, so its control would appear as a bare input box with
+            nothing saying which attribute it belongs to.
+        -->
+        <xpath expr="//label" position="attributes">
+            <attribute name="t-if">showValuesChoice || isSelectedPTAVCustom() || acceptsOpenValue</attribute>
+        </xpath>
         <xpath expr="//div[@name='ptal']/div[1]" position="after">
             <div class="o_ptal_open_value w-100 w-lg-75 mb-3 ms-lg-auto"
                  t-if="acceptsOpenValue">

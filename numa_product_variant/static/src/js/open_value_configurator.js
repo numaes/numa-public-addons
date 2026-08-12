@@ -30,7 +30,28 @@ patch(ProductConfiguratorDialog.prototype, {
         this.resolveValueUrl = "/sale/product_configurator/resolve_value";
         useSubEnv({
             resolveOpenValue: (params) => rpc(this.resolveValueUrl, params),
+            registerOpenValue: (productTmplId, ptavId) =>
+                this._registerOpenValue(productTmplId, ptavId),
         });
+    },
+
+    /**
+     * Make a newly materialised value known to the dialog's exclusion map.
+     *
+     * The map was built by get_values before this value existed, and core
+     * indexes it without a fallback — `exclusions[ptavId]` on a value it has
+     * never seen throws. A value created just now excludes nothing, so an
+     * empty list is the truthful entry.
+     */
+    _registerOpenValue(productTmplId, ptavId) {
+        const product = this.state.products.find(
+            (candidate) => candidate.product_tmpl_id === productTmplId
+        );
+        if (!product) {
+            return;
+        }
+        product.exclusions ??= {};
+        product.exclusions[ptavId] ??= [];
     },
 });
 
@@ -95,6 +116,10 @@ patch(ProductTemplateAttributeLine.prototype, {
                 price_extra: 0,
             });
         }
+        // Must happen before selecting it: the selection recomputes exclusions,
+        // and this value is not in the map the server sent when the dialog
+        // loaded.
+        this.env.registerOpenValue(this.props.productTmplId, result.ptav_id);
         this.env.updateProductTemplateSelectedPTAV(
             this.props.productTmplId, this.props.id, result.ptav_id, false
         );
