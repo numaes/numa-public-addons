@@ -76,6 +76,23 @@ class ProductAttributeValue(models.Model):
                     record=target.display_name,
                     attribute=value.attribute_id.display_name))
 
+    @api.model
+    def _gc_materialized_values(self, limit=1000):
+        """Archive materialised values that ended up unused.
+
+        Never deletes, never touches hand-curated values, never touches a
+        value still used by a product. Returns how many were archived.
+        """
+        candidates = self.with_context(active_test=False).search([
+            ('is_materialized', '=', True),
+            ('active', '=', True),
+            ('pav_attribute_line_ids', '=', False),
+        ], limit=limit)
+        stale = candidates.filtered(lambda value: not value.is_used_on_products)
+        if stale:
+            stale.write({'active': False})
+        return len(stale)
+
     @api.constrains('reference_value_id')
     def _check_no_reference_cycle(self):
         for value in self:

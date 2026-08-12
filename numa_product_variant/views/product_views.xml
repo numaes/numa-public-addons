@@ -26,11 +26,29 @@
                     <field name="code_identifier" />
                     <field name="default_value" />
                     <field name="change_on_create" />
+                    <field name="value_type" />
+                    <field name="reference_model"
+                           invisible="value_type != 'reference'"
+                           required="value_type == 'reference'" />
+                    <field name="reference_domain"
+                           invisible="value_type != 'reference'" />
+                    <field name="allow_additional_values" />
+                    <field name="number_min" invisible="value_type != 'number'" />
+                    <field name="number_max" invisible="value_type != 'number'" />
+                    <field name="number_rounding" invisible="value_type != 'number'" />
+                    <field name="code_format" />
                 </group>
                 <xpath expr="//page/field[@name='value_ids']/list/field[@name='name']" position="before">
                     <field name="code_value"/>
                     <field name="value_on_create"/>
                     <field name="weight_factor"/>
+                    <field name="reference_record"
+                           invisible="parent.value_type != 'reference'"/>
+                    <field name="free_number"
+                           invisible="parent.value_type != 'number'"/>
+                    <field name="free_date"
+                           invisible="parent.value_type != 'date'"/>
+                    <field name="is_materialized" optional="hide"/>
                 </xpath>
             </field>
         </record>
@@ -45,6 +63,9 @@
             <field name="arch" type="xml">
                 <field name="name" position="after">
                     <field name="code_value" />
+                    <field name="reference_record"
+                           string="Reference override"
+                           help="Overrides the attribute value's own reference for this template only."/>
                 </field>
             </field>
         </record>

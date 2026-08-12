@@ -231,6 +231,11 @@ class ProductAttribute(models.Model):
 
         existing = self._find_value(normalized)
         if existing:
+            # The garbage collector may have archived it after a previous use.
+            # Re-entering the same value must revive it rather than leave the
+            # attribute line pointing at an archived record.
+            if not existing.active:
+                existing.write({'active': True})
             return existing
 
         if not self.allow_additional_values:

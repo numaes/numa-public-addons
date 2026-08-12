@@ -1,6 +1,6 @@
 {
     'name': 'NUMA Product Variant',
-    'version': '18.0.0.2',
+    'version': '18.0.0.3',
     'category': 'Product',
     'description': """
 This module extends the handling of variants on products.
@@ -15,6 +15,7 @@ It adds:
     'website': 'http://www.numaes.com',
     'depends': ['base', 'product', 'numa_physical_product', 'sale', 'purchase'],
     'data': [
+        'data/ir_cron.xml',
         'views/product_views.xml',
         'views/purchase_views.xml',
     ],
@@ -22,6 +23,8 @@ It adds:
         'web.assets_backend': [
             'numa_product_variant/static/src/js/purchase_product_configurator_dialog.js',
             'numa_product_variant/static/src/js/purchase_product_field.js',
+            'numa_product_variant/static/src/js/open_value_configurator.js',
+            'numa_product_variant/static/src/xml/open_value_configurator.xml',
         ],
     },
     'demo_xml': [],
