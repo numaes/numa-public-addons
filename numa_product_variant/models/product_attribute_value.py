@@ -32,6 +32,33 @@ class ProductAttributeValue(models.Model):
     free_number = fields.Float(string='Numeric Value')
     free_date = fields.Date(string='Date Value')
 
+    def init(self):
+        """Partial unique indexes backing deterministic materialisation.
+
+        These are what make the savepoint-and-retry in ``_get_or_create_value``
+        correct under concurrency: without a database-level guarantee, two
+        simultaneous configurators would each create their own value.
+        """
+        super_init = getattr(super(), 'init', None)
+        if super_init:
+            super_init()
+        self.env.cr.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                product_attribute_value_canonical_key_uniq
+            ON product_attribute_value (attribute_id, canonical_key)
+            WHERE canonical_key IS NOT NULL
+        """)
+        self.env.cr.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS
+                product_attribute_value_reference_uniq
+            ON product_attribute_value (
+                attribute_id, reference_model,
+                COALESCE(reference_template_id, 0),
+                COALESCE(reference_variant_id, 0),
+                COALESCE(reference_value_id, 0))
+            WHERE reference_model IS NOT NULL
+        """)
+
     @api.constrains('reference_model', 'reference_template_id',
                     'reference_variant_id', 'reference_value_id')
     def _check_reference_domain(self):
