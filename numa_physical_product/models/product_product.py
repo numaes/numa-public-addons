@@ -49,6 +49,7 @@ class ProductProduct(models.Model):
     variant_height = fields.Float(string='Variant Height [m]')
     variant_length = fields.Float(string='Variant Length [m]')
 
+    @api.depends('variant_weight_factor', 'product_tmpl_id.weight_factor')
     def get_weight_factor(self):
         for product in self:
             product.weight_factor = product.variant_weight_factor if product.variant_weight_factor != 0 else \
@@ -58,6 +59,7 @@ class ProductProduct(models.Model):
         for product in self:
             product.variant_weight_factor = product.weight_factor
 
+    @api.depends('variant_weight', 'product_tmpl_id.weight')
     def get_weight(self):
         for product in self:
             product.weight = product.variant_weight if product.variant_weight != 0 else \
@@ -67,6 +69,7 @@ class ProductProduct(models.Model):
         for product in self:
             product.variant_weight = product.weight
 
+    @api.depends('variant_volume', 'product_tmpl_id.volume')
     def get_volume(self):
         for product in self:
             product.volume = product.variant_volume if product.variant_volume != 0 else \
@@ -76,6 +79,7 @@ class ProductProduct(models.Model):
         for product in self:
             product.variant_volume = product.volume
 
+    @api.depends('variant_surface', 'product_tmpl_id.surface')
     def get_surface(self):
         for product in self:
             product.surface = product.variant_surface if product.variant_surface != 0 else \
@@ -85,6 +89,7 @@ class ProductProduct(models.Model):
         for product in self:
             product.variant_surface = product.surface
 
+    @api.depends('variant_length', 'product_tmpl_id.product_length')
     def get_length(self):
         for product in self:
             product.product_length = product.variant_length if product.variant_length != 0 else \
@@ -94,6 +99,7 @@ class ProductProduct(models.Model):
         for product in self:
             product.variant_length = product.product_length
 
+    @api.depends('variant_width', 'product_tmpl_id.product_width')
     def get_width(self):
         for product in self:
             product.product_width = product.variant_width if product.variant_width != 0 else \
@@ -103,6 +109,7 @@ class ProductProduct(models.Model):
         for product in self:
             product.variant_width = product.product_width
 
+    @api.depends('variant_height', 'product_tmpl_id.product_height')
     def get_height(self):
         for product in self:
             product.product_height = product.variant_height if product.variant_height != 0 else \

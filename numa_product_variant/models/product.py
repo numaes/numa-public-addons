@@ -213,6 +213,10 @@ class ProductProduct(models.Model):
         already had.
         """
         for variant in self:
+            applied = False
+            # Write every dimension first, then recompute once. Recomputing
+            # after each one reads a half-updated variant: the derived
+            # dimensions would be computed from a width that is still zero.
             for ptav in variant.product_template_attribute_value_ids:
                 change_on_create = ptav.attribute_id.change_on_create
                 if not change_on_create:
@@ -221,8 +225,10 @@ class ProductProduct(models.Model):
                 if att_value.value_on_create:
                     variant['variant_' + change_on_create] = \
                         att_value.value_on_create
-                    variant.onchange_variant_weight()
-                    variant.onchange_variant_dimensions()
+                    applied = True
+            if applied:
+                variant.onchange_variant_weight()
+                variant.onchange_variant_dimensions()
 
     @api.constrains('product_template_attribute_value_ids')
     def _check_attribute_rules(self):
