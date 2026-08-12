@@ -1,4 +1,5 @@
-from odoo import api, models
+from odoo import api, models, _
+from odoo.exceptions import ValidationError
 
 
 class ProductTemplateAttributeLine(models.Model):
@@ -30,7 +31,24 @@ class ProductTemplateAttributeLine(models.Model):
         creation completely untouched.
         """
         self.ensure_one()
-        value = self.attribute_id._get_or_create_value(payload)
+        return self._ensure_ptav(self.attribute_id._get_or_create_value(payload))
+
+    def _ensure_ptav(self, value):
+        """Return the template attribute value for an existing attribute value.
+
+        Adds the value to this line when missing and reactivates an archived
+        template value. Use this rather than ``_get_or_create_ptav`` when the
+        value already exists — a hand-curated value carries no
+        ``canonical_key``, so it cannot be looked up from a payload.
+        """
+        self.ensure_one()
+        if value.attribute_id != self.attribute_id:
+            raise ValidationError(_(
+                "Value %(value)s belongs to attribute %(value_attribute)s, "
+                "not to %(line_attribute)s.",
+                value=value.display_name,
+                value_attribute=value.attribute_id.display_name,
+                line_attribute=self.attribute_id.display_name))
         if value not in self.value_ids:
             self.write({'value_ids': [(4, value.id)]})
         ptav = self.product_template_value_ids.filtered(
