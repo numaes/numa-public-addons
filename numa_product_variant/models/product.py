@@ -6,33 +6,6 @@ from odoo import models, fields, api
 _logger = logging.getLogger(__name__)
 
 
-class ProductAttribute(models.Model):
-    _inherit = "product.attribute"
-
-    code_identifier = fields.Char('Code Identifier')
-    default_value = fields.Many2one('product.attribute.value',
-                                    domain="[('id', 'in', value_ids)]")
-    change_on_create = fields.Selection(
-        [('length', 'Length'), ('width', 'Width'), ('height', 'Height')],
-        'Set on variant creation',
-    )
-
-
-class ProductAttributeValue(models.Model):
-    _inherit = "product.attribute.value"
-
-    code_value = fields.Char('Code Value', required=True)
-    value_on_create = fields.Float('Value to set on variant creation')
-    weight_factor = fields.Float('Weight factor', default=1.0)
-
-
-class ProductTemplateAttributeValue(models.Model):
-    _inherit = "product.template.attribute.value"
-
-    code_value = fields.Char('Code Value',
-                             related='product_attribute_value_id.code_value')
-
-
 class ProductCategory(models.Model):
     _inherit = 'product.category'
 
@@ -168,18 +141,124 @@ class ProductProduct(models.Model):
                 vals['default_code'] = template.build_default_code(ptav_ids)
 
         new_variants = super().create(vals_list)
-
-        for variant in new_variants:
-            for ptav in variant.product_template_attribute_value_ids:
-                if ptav.attribute_id.change_on_create:
-                    att_value = ptav.product_attribute_value_id
-                    if att_value.value_on_create:
-                        variant['variant_' + ptav.attribute_line_id.attribute_id.change_on_create] = \
-                            att_value.value_on_create
-                        variant.onchange_variant_weight()
-                        variant.onchange_variant_dimensions()
+        new_variants._apply_attribute_dimensions()
 
         return new_variants
+
+    def write(self, vals):
+        """Re-apply the attribute effects when the combination changes.
+
+        A variant does not only get its values at creation time. Adding a value
+        to an attribute line that already has variants makes Odoo attach the
+        new template attribute value to them, and materialising an open value
+        does exactly that. Without this, such a variant would keep the
+        ``default_code`` and the dimensions it had under its previous
+        combination.
+        """
+        res = super().write(vals)
+        if 'product_template_attribute_value_ids' in vals:
+            self._rebuild_default_code()
+            self._apply_attribute_dimensions()
+        return res
+
+    def _rebuild_default_code(self):
+        """Recompose ``default_code`` from the current combination.
+
+        ``default_code`` is entirely derived in this module — the template form
+        even hides it in favour of ``base_code`` — so recomposing it when the
+        combination changes is consistent rather than destructive.
+        """
+        for variant in self:
+            template = variant.product_tmpl_id
+            if not template.base_code:
+                continue
+            code = template.build_default_code(
+                variant.product_template_attribute_value_ids.ids)
+            if code and code != variant.default_code:
+                variant.default_code = code
+
+    def _apply_attribute_dimensions(self):
+        """Apply the ``change_on_create`` dimensions carried by the values.
+
+        A free numeric attribute feeds ``value_on_create``, so an arbitrary cut
+        length reaches the variant dimension through the mechanism this module
+        already had.
+        """
+        for variant in self:
+            for ptav in variant.product_template_attribute_value_ids:
+                change_on_create = ptav.attribute_id.change_on_create
+                if not change_on_create:
+                    continue
+                att_value = ptav.product_attribute_value_id
+                if att_value.value_on_create:
+                    variant['variant_' + change_on_create] = \
+                        att_value.value_on_create
+                    variant.onchange_variant_weight()
+                    variant.onchange_variant_dimensions()
+
+    # === REFERENCE RESOLUTION API === #
+    #
+    # The surface downstream modules consume. Deliberately small and stable:
+    # it answers "what material is this made of" and "which base variants are
+    # compatible", and stops there. Choosing among the candidates is a
+    # bill-of-materials decision, not a property of the product.
+
+    def get_attribute_reference(self, attribute):
+        """Record referenced by this variant's value of ``attribute``.
+
+        Returns an empty recordset when the attribute is not a reference
+        attribute or carries no reference.
+        """
+        self.ensure_one()
+        ptav = self.product_template_attribute_value_ids.filtered(
+            lambda value: value.attribute_id == attribute)
+        if not ptav:
+            return self.env['product.template'].browse()
+        return ptav[0]._get_effective_reference()
+
+    def get_attribute_references(self, model=None):
+        """Every reference carried by this variant, keyed by attribute.
+
+        ``model`` restricts the result to references of that model.
+        """
+        self.ensure_one()
+        result = {}
+        for ptav in self.product_template_attribute_value_ids:
+            if ptav.attribute_id.value_type != 'reference':
+                continue
+            target = ptav._get_effective_reference()
+            if not target:
+                continue
+            if model and target._name != model:
+                continue
+            result[ptav.attribute_id] = target
+        return result
+
+    def find_matching_variants(self, base_template):
+        """Variants of ``base_template`` sharing this variant's attribute values.
+
+        Attributes present on the base template but absent here — strip
+        length, sheet size — are left unconstrained, so this returns a
+        candidate set rather than a single variant. Pure mechanism: it returns
+        candidates, it does not choose.
+        """
+        self.ensure_one()
+        own_values = self.product_template_attribute_value_ids.mapped(
+            'product_attribute_value_id')
+        shared_attributes = base_template.attribute_line_ids.attribute_id & \
+            self.product_template_attribute_value_ids.attribute_id
+
+        candidates = base_template.product_variant_ids
+        for attribute in shared_attributes:
+            expected = own_values.filtered(
+                lambda value: value.attribute_id == attribute)
+            if not expected:
+                continue
+            candidates = candidates.filtered(
+                lambda variant: expected <= variant
+                .product_template_attribute_value_ids
+                .mapped('product_attribute_value_id'))
+        return candidates
 
     @api.onchange('weight_kind', 'weight_factor', 'surface', 'product_width',
                   'product_height', 'product_length', 'volume')

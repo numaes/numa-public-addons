@@ -1,3 +1,5 @@
+from odoo import _
+from odoo.exceptions import UserError
 from odoo.http import request, route
 from odoo.addons.sale.controllers.product_configurator import (
     SaleProductConfiguratorController,
@@ -69,3 +71,75 @@ class PurchaseProductConfiguratorController(SaleProductConfiguratorController):
                 basic['display_name'] = f"{basic['display_name']} ({combination_name})"
         basic['price'] = 0.0
         return basic
+
+
+class ProductConfiguratorValueResolver(SaleProductConfiguratorController):
+    """Translate an open attribute value into a template attribute value.
+
+    The whole configurator speaks in template attribute value ids: get_values
+    returns them, the OWL dialog holds the selected ones, and create_product
+    receives them. Materialising an open value into one therefore keeps the
+    rest of the flow — combination update, exclusions, pricing, variant
+    creation — completely untouched.
+    """
+
+    def _get_product_information(self, *args, **kwargs):
+        """Enrich each attribute line with its typing metadata.
+
+        The OWL component cannot decide which open-value control to render
+        without knowing the attribute's value type, so it travels alongside the
+        display type core already sends.
+        """
+        values = super()._get_product_information(*args, **kwargs)
+        lines = values.get('attribute_lines') or []
+        if not lines:
+            return values
+        records = request.env['product.template.attribute.line'].browse(
+            [line['id'] for line in lines])
+        attributes = {record.id: record.attribute_id for record in records}
+        for line in lines:
+            attribute = attributes.get(line['id'])
+            if not attribute:
+                continue
+            line['attribute'].update({
+                'value_type': attribute.value_type,
+                'allow_additional_values': attribute.allow_additional_values,
+                'reference_model': attribute.reference_model or False,
+                'reference_domain': attribute.reference_domain or '[]',
+                'number_min': attribute.number_min,
+                'number_max': attribute.number_max,
+                'number_rounding': attribute.number_rounding,
+            })
+        return values
+
+    def _resolve_value(self, product_template_id, ptal_id, payload):
+        line = request.env['product.template.attribute.line'].browse(ptal_id)
+        line.check_access('read')
+        if line.product_tmpl_id.id != product_template_id:
+            raise UserError(_(
+                "Attribute line %(line)s does not belong to this product.",
+                line=ptal_id))
+        normalized = dict(payload or {})
+        reference = normalized.get('reference')
+        if isinstance(reference, list):
+            normalized['reference'] = (reference[0], reference[1])
+        ptav = line.sudo()._get_or_create_ptav(normalized)
+        return {
+            'ptav_id': ptav.id,
+            'name': ptav.name,
+            'code_value': ptav.code_value,
+        }
+
+    @route(route='/sale/product_configurator/resolve_value',
+           type='json', auth='user', methods=['POST'])
+    def sale_product_configurator_resolve_value(
+            self, product_template_id, ptal_id, payload, **kwargs):
+        """Materialise an open value for the sales configurator."""
+        return self._resolve_value(product_template_id, ptal_id, payload)
+
+    @route(route='/purchase/product_configurator/resolve_value',
+           type='json', auth='user', methods=['POST'])
+    def purchase_product_configurator_resolve_value(
+            self, product_template_id, ptal_id, payload, **kwargs):
+        """Materialise an open value for the purchase configurator."""
+        return self._resolve_value(product_template_id, ptal_id, payload)

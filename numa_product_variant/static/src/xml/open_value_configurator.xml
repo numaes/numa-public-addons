@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+    <!--
+        Add the open-value control beside the predefined list, not instead of
+        it: a curated list of suggestions and free entry must coexist.
+    -->
+    <t t-name="numa_product_variant.ProductTemplateAttributeLine"
+       t-inherit="sale.ProductTemplateAttributeLine"
+       t-inherit-mode="extension">
+        <xpath expr="//div[@name='ptal']/div[1]" position="after">
+            <div class="o_ptal_open_value w-100 w-lg-75 mb-3 ms-lg-auto"
+                 t-if="acceptsOpenValue">
+                <input t-if="openValueType === 'number'"
+                       class="o_input w-100"
+                       type="number"
+                       t-att-min="props.attribute.number_min or undefined"
+                       t-att-max="props.attribute.number_max or undefined"
+                       t-att-step="props.attribute.number_rounding or undefined"
+                       t-on-change="onOpenNumberConfirmed"
+                       placeholder="Enter a value"/>
+                <input t-elif="openValueType === 'date'"
+                       class="o_input w-100"
+                       type="date"
+                       t-on-change="onOpenDateConfirmed"/>
+                <Many2XAutocomplete t-elif="openValueType === 'reference'"
+                       resModel="props.attribute.reference_model"
+                       fieldString="props.attribute.name"
+                       activeActions="openReferenceActions"
+                       getDomain="() => this.openReferenceDomain"
+                       update="(records) => this.onOpenReferenceSelected(records)"
+                       quickCreate="null"
+                       value="''"/>
+                <input t-else=""
+                       class="o_input w-100"
+                       type="text"
+                       t-on-change="onOpenTextConfirmed"
+                       placeholder="Enter a value"/>
+            </div>
+        </xpath>
+    </t>
+
+</templates>
