@@ -83,6 +83,7 @@ _logger = logging.getLogger(__name__)
 # id(registry) cambia en cada recarga, por lo que el caché se invalida
 # automáticamente al instalar/actualizar módulos o al reiniciar el servidor.
 _poly_sequence_synced_registries: set = set()
+_poly_table_sequence_synced: set = set()
 
 
 # [poly] Per-table physical-column cache (no-migration strategy): used to decide
@@ -1307,6 +1308,59 @@ class PolyBase(_original_BaseModel):
             ))
 
         _poly_sequence_synced_registries.add(registry_id)
+
+    def _sync_table_id_sequence_once(self):
+        """
+        Sincroniza una sola vez por registry+tabla la secuencia física ``id``
+        del modelo actual para evitar colisiones por secuencias atrasadas en
+        bases restauradas/migradas.
+        """
+        table = getattr(self, '_table', None)
+        if not table:
+            return
+
+        registry_key = (id(self.pool), table)
+        if registry_key in _poly_table_sequence_synced:
+            return
+
+        # Lock consultivo por tabla para evitar setval concurrentes.
+        # hashtext() es estable dentro de la base y suficiente para este uso.
+        self.env.cr.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [f'poly_table_seq:{table}'])
+
+        if not sql.table_exists(self.env.cr, table):
+            _poly_table_sequence_synced.add(registry_key)
+            return
+
+        self.env.cr.execute("SELECT pg_get_serial_sequence(%s, 'id')", [table])
+        row = self.env.cr.fetchone()
+        seq_name = row and row[0]
+        if not seq_name:
+            _poly_table_sequence_synced.add(registry_key)
+            return
+
+        if '.' in seq_name:
+            seq_schema, seq_rel = seq_name.split('.', 1)
+        else:
+            seq_schema, seq_rel = 'public', seq_name
+
+        self.env.cr.execute(SQL(
+            "SELECT COALESCE(MAX(id), 0) FROM %s",
+            SQL.identifier(table)
+        ))
+        res = self.env.cr.fetchone()
+        max_id = (res and res[0]) or 0
+
+        self.env.cr.execute(SQL(
+            "SELECT last_value FROM %s",
+            SQL.identifier(seq_schema, seq_rel)
+        ))
+        seq_res = self.env.cr.fetchone()
+        current_seq_val = (seq_res and seq_res[0]) or 0
+
+        if max_id > current_seq_val:
+            self.env.cr.execute("SELECT setval(%s, %s, true)", [seq_name, max_id])
+
+        _poly_table_sequence_synced.add(registry_key)
 
     def check_access(self, operation: str) -> None:
         if getattr(self, '_depend_models', None) is None:
@@ -3133,6 +3187,16 @@ class PolyBase(_original_BaseModel):
         _is_poly = _poly_is_polymorphic(self)
         _logger.debug('[poly] create() called for %s, is_poly=%s', self._name, _is_poly)
         if self._name == 'ir.poly_base' or not _is_poly:
+            # Defensa global: en modelos no-polimórficos (o antes de que el
+            # wiring poly esté activo), asegurar que la secuencia física de la
+            # tabla no esté por detrás del MAX(id). Se hace una sola vez por
+            # tabla/registry para no impactar rendimiento.
+            if self._name != 'ir.poly_base':
+                try:
+                    self._sync_table_id_sequence_once()
+                except Exception:
+                    pass
+
             # Strip explicit IDs that already exist in the table. This can
             # happen when Odoo's copy() (e.g. recurring task sub-task copy)
             # accidentally forwards the source record's id in the default
