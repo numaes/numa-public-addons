@@ -1230,31 +1230,38 @@ class PolyBase(_original_BaseModel):
 
     def _get_max_poly_id(self):
         """
-        Calcula el ID máximo entre todas las tablas participantes en la jerarquía polimórfica.
+        Calcula el ID máximo global de la jerarquía polimórfica.
+
+        En numa_poly el id canónico se genera desde ``ir.poly_base`` y se comparte
+        por todos los modelos polimórficos; por eso el máximo relevante es el de
+        ``ir_poly_base.id``.
         """
-        all_bases = self._get_all_poly_bases()
-        max_id = 0
-        
-        for model_name in all_bases:
-            if model_name == 'base':
-                continue
-            model = self.env.get(model_name)
-            if model is not None and getattr(model, "_table", None) and getattr(model, "_storage", True):
-                try:
-                    # Double-check table existence in Odoo's registry/DB before querying
-                    if not sql.table_exists(self.env.cr, model._table):
-                        continue
-                        
-                    self.env.cr.execute(SQL(
-                        "SELECT MAX(id) FROM %s",
-                        SQL.identifier(model._table)
-                    ))
-                    res = self.env.cr.fetchone()
-                    if res and res[0]:
-                        max_id = max(max_id, res[0])
-                except Exception:
+        try:
+            self.env.cr.execute("SELECT COALESCE(MAX(id), 0) FROM ir_poly_base")
+            res = self.env.cr.fetchone()
+            return (res and res[0]) or 0
+        except Exception:
+            # Fallback defensivo para instalaciones parciales/migraciones.
+            all_bases = self._get_all_poly_bases()
+            max_id = 0
+            for model_name in all_bases:
+                if model_name == 'base':
                     continue
-        return max_id
+                model = self.env.get(model_name)
+                if model is not None and getattr(model, "_table", None) and getattr(model, "_storage", True):
+                    try:
+                        if not sql.table_exists(self.env.cr, model._table):
+                            continue
+                        self.env.cr.execute(SQL(
+                            "SELECT MAX(id) FROM %s",
+                            SQL.identifier(model._table)
+                        ))
+                        res = self.env.cr.fetchone()
+                        if res and res[0]:
+                            max_id = max(max_id, res[0])
+                    except Exception:
+                        continue
+            return max_id
 
     def _sync_poly_sequence(self):
         """
@@ -3298,12 +3305,6 @@ class PolyBase(_original_BaseModel):
                         _('You are trying to create a %s with explicit id %d. It exists already!') %
                         (self._name, data['id'])
                     )
-
-        # SINCRONIZACIÓN PREVENTIVA:
-        # Si hay registros en el lote que requieren generación de ID, sincronizamos
-        # la secuencia una sola vez para todo el lote usando el bloqueo consultivo.
-        if any('id' not in data for data in data_list):
-            self._sync_poly_sequence()
 
         # [poly] CLEANUP VALS: Ensure we only pass fields that exist in the model
         # This is critical for Odoo 18 which is very strict about unknown fields in create()
