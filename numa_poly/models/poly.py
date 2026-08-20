@@ -1232,36 +1232,42 @@ class PolyBase(_original_BaseModel):
         """
         Calcula el ID máximo global de la jerarquía polimórfica.
 
-        En numa_poly el id canónico se genera desde ``ir.poly_base`` y se comparte
-        por todos los modelos polimórficos; por eso el máximo relevante es el de
-        ``ir_poly_base.id``.
+        El valor canónico lo emite ``ir.poly_base``, pero para bases históricas
+        o migradas puede haber IDs mayores en tablas polimórficas concretas.
+        Por eso se toma el máximo entre ``ir_poly_base`` y todas las tablas
+        participantes visibles en la jerarquía actual.
         """
+        max_id = 0
+
+        # 1) Referencia canónica: ir_poly_base
         try:
             self.env.cr.execute("SELECT COALESCE(MAX(id), 0) FROM ir_poly_base")
             res = self.env.cr.fetchone()
-            return (res and res[0]) or 0
+            max_id = max(max_id, (res and res[0]) or 0)
         except Exception:
-            # Fallback defensivo para instalaciones parciales/migraciones.
-            all_bases = self._get_all_poly_bases()
-            max_id = 0
-            for model_name in all_bases:
-                if model_name == 'base':
+            pass
+
+        # 2) Defensa para migraciones: cualquier tabla de la jerarquía
+        all_bases = self._get_all_poly_bases()
+        for model_name in all_bases:
+            if model_name == 'base':
+                continue
+            model = self.env.get(model_name)
+            if model is None or not getattr(model, "_table", None) or not getattr(model, "_storage", True):
+                continue
+            try:
+                if not sql.table_exists(self.env.cr, model._table):
                     continue
-                model = self.env.get(model_name)
-                if model is not None and getattr(model, "_table", None) and getattr(model, "_storage", True):
-                    try:
-                        if not sql.table_exists(self.env.cr, model._table):
-                            continue
-                        self.env.cr.execute(SQL(
-                            "SELECT MAX(id) FROM %s",
-                            SQL.identifier(model._table)
-                        ))
-                        res = self.env.cr.fetchone()
-                        if res and res[0]:
-                            max_id = max(max_id, res[0])
-                    except Exception:
-                        continue
-            return max_id
+                self.env.cr.execute(SQL(
+                    "SELECT COALESCE(MAX(id), 0) FROM %s",
+                    SQL.identifier(model._table)
+                ))
+                res = self.env.cr.fetchone()
+                max_id = max(max_id, (res and res[0]) or 0)
+            except Exception:
+                continue
+
+        return max_id
 
     def _sync_poly_sequence(self):
         """
