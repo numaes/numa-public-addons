@@ -1230,12 +1230,11 @@ class PolyBase(_original_BaseModel):
 
     def _get_max_poly_id(self):
         """
-        Calcula el ID máximo global de la jerarquía polimórfica.
+        Calcula el ID máximo global de TODO el universo polimórfico.
 
-        El valor canónico lo emite ``ir.poly_base``, pero para bases históricas
-        o migradas puede haber IDs mayores en tablas polimórficas concretas.
-        Por eso se toma el máximo entre ``ir_poly_base`` y todas las tablas
-        participantes visibles en la jerarquía actual.
+        No debe limitarse a la jerarquía de ``self._name`` porque el hook puede
+        dispararse desde cualquier modelo polimórfico y, si se usa un subconjunto,
+        la secuencia puede quedar por detrás de otras tablas (p.ej. ``res_partner``).
         """
         max_id = 0
 
@@ -1247,20 +1246,26 @@ class PolyBase(_original_BaseModel):
         except Exception:
             pass
 
-        # 2) Defensa para migraciones: cualquier tabla de la jerarquía
-        all_bases = self._get_all_poly_bases()
-        for model_name in all_bases:
-            if model_name == 'base':
+        # 2) Defensa para migraciones: recorrer todas las tablas de modelos
+        # polimórficos registradas en la instancia actual.
+        candidate_models = {'ir.poly_base'}
+        for model_name, model in self.env.registry.models.items():
+            if getattr(model, '_depend_models', None) is not None:
+                candidate_models.add(model_name)
+
+        for model_name in candidate_models:
+            model = self.env.registry.models.get(model_name)
+            if model is None:
                 continue
-            model = self.env.get(model_name)
-            if model is None or not getattr(model, "_table", None) or not getattr(model, "_storage", True):
+            table = getattr(model, '_table', None)
+            if not table or not getattr(model, '_storage', True):
                 continue
             try:
-                if not sql.table_exists(self.env.cr, model._table):
+                if not sql.table_exists(self.env.cr, table):
                     continue
                 self.env.cr.execute(SQL(
                     "SELECT COALESCE(MAX(id), 0) FROM %s",
-                    SQL.identifier(model._table)
+                    SQL.identifier(table)
                 ))
                 res = self.env.cr.fetchone()
                 max_id = max(max_id, (res and res[0]) or 0)
@@ -1881,8 +1886,9 @@ class PolyBase(_original_BaseModel):
             except Exception:
                 pass
 
-        # Only perform actions for polymorphic models
-        if getattr(self, '_depend_models', None) is not None:
+        # Ejecutar una sola vez desde el modelo base para evitar sincronizar
+        # con subconjuntos de jerarquía según el orden de hooks.
+        if self._name == 'ir.poly_base':
             # Ensure ir.poly_base sequence starts AFTER the max ID of any participant table
             try:
                 self._sync_poly_sequence()
