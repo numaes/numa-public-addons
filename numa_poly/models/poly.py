@@ -3455,6 +3455,13 @@ class PolyBase(_original_BaseModel):
             except Exception:
                 _poly_leaf_cols = set()
 
+        # En modelos polimórficos, si hay altas sin id explícito, asegurar una vez
+        # por registry que la secuencia global de ir.poly_base esté alineada.
+        # Evita colisiones de PK cuando el proceso entra directamente por la rama
+        # polimórfica (ej. creación de res.partner desde res.users).
+        if any('id' not in data for data in data_list):
+            self._sync_poly_sequence()
+
         # Process each record to create
         for current_idx, data in enumerate(data_list):
             # Handle explicit ID or create a new one via ir.poly_base
