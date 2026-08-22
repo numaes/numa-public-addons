@@ -2469,6 +2469,16 @@ class PolyBase(_original_BaseModel):
                                           name, cls._name)
                              clean_args['selection'] = []
 
+                    # [poly] RELATED FIELDS NORMALIZATION:
+                    # Odoo ignora atributos de definición como selection/selection_add/default
+                    # en campos related, y emite warnings durante carga de registry.
+                    # Para evitar ruido y mantener definiciones limpias, no propagar esos
+                    # atributos cuando reconstruimos un campo como related.
+                    if clean_args.get('related'):
+                        clean_args.pop('selection', None)
+                        clean_args.pop('selection_add', None)
+                        clean_args.pop('default', None)
+
                     try:
                         f_clone = f_type(**clean_args)
                         f_clone.name = name # [poly] Odoo 18: ensure name is set early
@@ -2491,6 +2501,16 @@ class PolyBase(_original_BaseModel):
                 if args:
                     f_clone._args = dict(args)
                     f_clone._args__ = dict(args)
+
+                # Para campos related, evitar metadata conflictiva en _args/_args__
+                # que puede reinyectar selection/default y provocar warnings.
+                if getattr(f_clone, 'related', None):
+                    for _container_name in ('_args', '_args__'):
+                        container = getattr(f_clone, _container_name, None)
+                        if isinstance(container, dict):
+                            container.pop('selection', None)
+                            container.pop('selection_add', None)
+                            container.pop('default', None)
                 
                 # Odoo 18: MANDATORY: Ensure field name is set on the clone immediately
                 f_clone.name = name
@@ -2526,6 +2546,22 @@ class PolyBase(_original_BaseModel):
                 # [poly] SPECIAL: If it's a related field, we MUST clear its 'related_sudo'
                 # or similar caches to force re-evaluation if model_name changed.
                 if hasattr(f_clone, 'related'):
+                    # Evitar warnings de atributos ignorados en campos related
+                    # (selection/selection_add/default) al completar setup.
+                    for _attr in ('selection', 'selection_add', 'default'):
+                        try:
+                            if hasattr(f_clone, _attr):
+                                setattr(f_clone, _attr, None)
+                        except Exception:
+                            pass
+                    try:
+                        attrs = getattr(f_clone, '_attrs', None)
+                        if isinstance(attrs, dict):
+                            attrs.pop('selection', None)
+                            attrs.pop('selection_add', None)
+                            attrs.pop('default', None)
+                    except Exception:
+                        pass
                     f_clone._setup_done = False # Force setup
                 
                 # 3. Odoo 18: Ensure field is in the registry class (proxy) if it exists
@@ -2963,8 +2999,9 @@ class PolyBase(_original_BaseModel):
             if field_type in ['many2one', 'many2many', 'one2many']:
                 field_kwargs['comodel_name'] = comodel
                 
-            if field_type == 'selection':
-                field_kwargs['selection'] = description.selection
+            # En fields.Selection relacionados, Odoo obtiene opciones desde el
+            # campo origen. Pasar `selection` acá genera warnings de atributo
+            # ignorado para related.
             
             if field_type == 'many2many':
                 # [poly] For Many2many related fields, Odoo 18 tries to validate the table.
@@ -3067,6 +3104,14 @@ class PolyBase(_original_BaseModel):
             for fname, field in list(base._fields.items()):
                 if fname in _POLY_TECHNICAL_FIELDS:
                     continue
+                excluded_related = getattr(cls, '_poly_exclude_related_fields', None) or set()
+                if fname in excluded_related:
+                    continue
+                # Respetar campos declarados explícitamente en la clase destino
+                # para no pisar overrides locales con inyección poly.
+                local_decl = cls.__dict__.get(fname)
+                if isinstance(local_decl, fields.Field):
+                    continue
                 if fname in cls._fields:
                     existing = cls._fields[fname]
                     # Skip only if already correctly injected by poly (related and non-stored).
@@ -3108,6 +3153,31 @@ class PolyBase(_original_BaseModel):
                 new_field.store = False
                 new_field.compute = None
                 new_field.inverse = None
+                if getattr(new_field, 'type', None) == 'selection':
+                    # Reconstruir Selection related sin `selection` explícita
+                    # para evitar warnings de atributo ignorado.
+                    new_field = fields.Selection(
+                        string=getattr(field, 'string', None),
+                        related='{}.{}'.format(link, origin_fname),
+                        readonly=getattr(field, 'readonly', True),
+                        store=False,
+                        help=getattr(field, 'help', None),
+                    )
+                # Evitar warnings de atributos ignorados en campos related.
+                for _attr in ('selection', 'selection_add', 'default'):
+                    try:
+                        if hasattr(new_field, _attr):
+                            setattr(new_field, _attr, None)
+                    except Exception:
+                        pass
+                try:
+                    attrs = getattr(new_field, '_attrs', None)
+                    if isinstance(attrs, dict):
+                        attrs.pop('selection', None)
+                        attrs.pop('selection_add', None)
+                        attrs.pop('default', None)
+                except Exception:
+                    pass
                 new_field._setup_done = False
                 try:
                     new_field._poly_injected = True
@@ -3134,6 +3204,28 @@ class PolyBase(_original_BaseModel):
                     redirected = copy.copy(field)
                     redirected.related = new_related
                     redirected.store = False
+                    if getattr(redirected, 'type', None) == 'selection':
+                        redirected = fields.Selection(
+                            string=getattr(field, 'string', None),
+                            related=new_related,
+                            readonly=getattr(field, 'readonly', True),
+                            store=False,
+                            help=getattr(field, 'help', None),
+                        )
+                    for _attr in ('selection', 'selection_add', 'default'):
+                        try:
+                            if hasattr(redirected, _attr):
+                                setattr(redirected, _attr, None)
+                        except Exception:
+                            pass
+                    try:
+                        attrs = getattr(redirected, '_attrs', None)
+                        if isinstance(attrs, dict):
+                            attrs.pop('selection', None)
+                            attrs.pop('selection_add', None)
+                            attrs.pop('default', None)
+                    except Exception:
+                        pass
                     redirected._setup_done = False
                     try:
                         redirected._poly_injected = True
