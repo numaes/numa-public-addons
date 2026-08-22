@@ -1251,8 +1251,11 @@ class PolyBase(_original_BaseModel):
         # polimórficos registradas en la instancia actual.
         candidate_models = {'ir.poly_base'}
         for model_name, model in self.env.registry.models.items():
-            if getattr(model, '_depend_models', None) is not None:
-                candidate_models.add(model_name)
+            try:
+                if model_name != 'ir.poly_base' and _poly_is_polymorphic(model):
+                    candidate_models.add(model_name)
+            except Exception:
+                continue
 
         for model_name in candidate_models:
             model = self.env.registry.models.get(model_name)
