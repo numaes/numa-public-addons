@@ -7,10 +7,12 @@
             <field name="model">crm.lead</field>
             <field name="inherit_id" ref="crm.crm_lead_view_form"/>
             <field name="arch" type="xml">
-                <!-- Add bot_id field in header -->
+                <!-- Add bot_id field + Assign Bot button in header -->
                 <field name="user_id" position="after">
                     <field name="bot_id" widget="many2one" options="{'no_create': True}"/>
                     <field name="has_fsm" invisible="1"/>
+                    <button name="action_assign_bot" type="object" string="Assign Bot"
+                            class="oe_link" invisible="bot_id"/>
                 </field>
 
                 <!-- Add FSM Control Notebook Page -->
@@ -75,16 +77,6 @@
                         </group>
                     </page>
                 </notebook>
-
-                <!-- Add Assign Bot button in header if no bot assigned -->
-                <button name="action_assign_bot" 
-                        type="object" 
-                        string="Assign Bot" 
-                        class="oe_link"
-                        invisible="bot_id or not definition_id"
-                        position="attributes">
-                    <attribute name="invisible">bot_id</attribute>
-                </button>
             </field>
         </record>
 
@@ -92,7 +84,7 @@
         <record id="view_crm_lead_tree_fsm" model="ir.ui.view">
             <field name="name">crm.lead.tree.fsm</field>
             <field name="model">crm.lead</field>
-            <field name="inherit_id" ref="crm.crm_lead_view_tree"/>
+            <field name="inherit_id" ref="crm.crm_case_tree_view_leads"/>
             <field name="arch" type="xml">
                 <field name="name" position="after">
                     <field name="bot_id" optional="hide"/>
@@ -105,13 +97,13 @@
         <record id="view_crm_lead_search_fsm" model="ir.ui.view">
             <field name="name">crm.lead.search.fsm</field>
             <field name="model">crm.lead</field>
-            <field name="inherit_id" ref="crm.crm_lead_view_search"/>
+            <field name="inherit_id" ref="crm.view_crm_case_leads_filter"/>
             <field name="arch" type="xml">
                 <field name="name" position="after">
                     <field name="bot_id"/>
                     <field name="has_fsm"/>
                 </field>
-                <filter name="my_leads" position="after">
+                <filter name="assigned_to_me" position="after">
                     <filter string="With Active FSM" name="has_fsm" domain="[('has_fsm', '=', True)]"/>
                     <filter string="With Bot" name="has_bot" domain="[('bot_id', '!=', False)]"/>
                 </filter>

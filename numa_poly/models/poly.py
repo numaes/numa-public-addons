@@ -5733,6 +5733,79 @@ def _poly_registry_setup_models(self, cr):
             except Exception as _sync_err:
                 _logger.warning('[poly] Pre-setup sync failed for %s: %s', _sync_name, _sync_err)
 
+    # [poly] Pre-setup base dedup: drop redundant ANCESTOR bases that precede their own subclass
+    # in a model's __base_classes.  This happens when a model inherits a polymorphic base that
+    # ALSO provides a mixin the model already lists directly.  Example:
+    #   crm.lead  _inherit = ['crm.lead', 'fsm.instance']
+    # crm.lead brings mail.activity.mixin (and mail.thread); fsm.instance IS a mail.activity.mixin
+    # (numa_fsm: _inherit=['mail.thread','mail.activity.mixin']).  Odoo builds crm.lead's bases as
+    #   [..., mail.activity.mixin, ..., fsm.instance, base]
+    # i.e. the mixin BEFORE its own subclass fsm.instance.  While fsm.instance's own __bases__ is
+    # still just its definition class the C3 MRO is consistent, so crm.lead builds fine.  But when
+    # _prepare_setup later promotes fsm.instance.__bases__ to include mail.activity.mixin,
+    # fsm.instance retroactively becomes a subclass that PRECEDES its ancestor in crm.lead's base
+    # list, and Python can no longer linearize crm.lead -> "Cannot create a consistent MRO"
+    # cascade error (raised while assigning fsm.instance.__bases__).
+    #
+    # Removing the redundant ancestor (still reachable through the subclass, so behavior is
+    # unchanged) makes the MRO consistent.  We only drop a base B when a LATER base C in the SAME
+    # list will inherit B, so well-ordered models are left untouched.
+    #
+    # CRUCIAL: at this point fsm.instance's __bases__ is still just its definition class -- it is
+    # NOT YET a subclass of mail.activity.mixin (that only happens when _prepare_setup promotes its
+    # __bases__ to __base_classes).  So we cannot use issubclass() on the *current* classes; we must
+    # look at where each class WILL land, i.e. the transitive closure of its __base_classes.
+    _future_anc_cache = {}
+
+    def _poly_future_ancestors(_c):
+        _cached = _future_anc_cache.get(_c)
+        if _cached is not None:
+            return _cached
+        _acc = set()
+        _future_anc_cache[_c] = _acc  # guard against cycles
+        _cbases = getattr(_c, '_BaseModel__base_classes', None) or getattr(_c, '__bases__', ())
+        for _pb in _cbases:
+            if not isinstance(_pb, type) or _pb is _c:
+                continue
+            _acc.add(_pb)
+            _acc |= _poly_future_ancestors(_pb)
+        return _acc
+
+    for _norm_name, _norm_cls in list(self.items()):
+        if not isinstance(_norm_cls, type):
+            continue
+        _bcc = getattr(_norm_cls, '_BaseModel__base_classes', None)
+        if not _bcc or len(_bcc) < 2:
+            continue
+        _bcc_list = list(_bcc)
+        _drop = set()
+        for _i, _b in enumerate(_bcc_list):
+            if not isinstance(_b, type):
+                continue
+            for _j in range(_i + 1, len(_bcc_list)):
+                _c = _bcc_list[_j]
+                if _c is _b or not isinstance(_c, type):
+                    continue
+                if _b in _poly_future_ancestors(_c):  # C will inherit B -> B is a redundant ancestor
+                    _drop.add(_i)
+                    break
+        if not _drop:
+            continue
+        _new_bcc = tuple(_b for _i, _b in enumerate(_bcc_list) if _i not in _drop)
+        if not _new_bcc or _new_bcc == tuple(_bcc_list):
+            continue
+        _logger.debug(
+            '[poly] Pre-setup base dedup: %s drops %s',
+            _norm_name,
+            [getattr(_bcc_list[_i], '_name', getattr(_bcc_list[_i], '__name__', '?')) for _i in _drop],
+        )
+        try:
+            _norm_cls._BaseModel__base_classes = _new_bcc
+            if tuple(_norm_cls.__bases__) == tuple(_bcc_list):
+                _norm_cls.__bases__ = _new_bcc
+        except Exception as _norm_err:  # noqa: BLE001
+            _logger.warning('[poly] Pre-setup base dedup failed for %s: %s', _norm_name, _norm_err)
+
     # [poly] Diagnostic: intercept _prepare_setup to catch the exact __bases__ assignment that fails.
     _original_prepare_setup = _original_BaseModel._prepare_setup
 
