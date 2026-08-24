@@ -107,12 +107,14 @@ class TestStructure(PolyTestCommon):
         # test path search using polymorphic links
 
         assert t4_1 == t4_model.search([('a3', '=', 'D3')])
-        # a3 esta "sobrecargado" en test4 pero es el mismo campo delegado que test2_id.a3
-        # (estilo _inherits) -> comparten valor. Tras reescribir a3 a 'D3', buscar por el valor
-        # VIEJO 'C3' via el link no encuentra nada; por el valor ACTUAL 'D3' si encuentra.
-        # (El assert original `== search('C3')` contradecia su propio comentario "should fail".)
-        assert not t4_model.search([('test2_id.a3', '=', 'C3')])
-        assert t4_1 == t4_model.search([('test2_id.a3', '=', 'D3')])
+        # a3 esta "sobrecargado" en test4: tiene almacenamiento PROPIO en la hoja (diseno fcf48c1:
+        # los campos declarados por el concreto van a SU columna, no se comparten como related con
+        # la base). Por eso t4_1.a3 lee la columna de test4 (reescrita a 'D3'), pero el valor que ve
+        # el link test2_id.a3 es el que create propago a la base test2 en la creacion ('C3'), y NO
+        # cambia al escribir t4_1.a3 (write solo toca la hoja). => el diamante y su base pueden
+        # divergir en un campo sobrecargado; buscar por test2_id.a3=='C3' SI encuentra, 'D3' NO.
+        assert t4_1 == t4_model.search([('test2_id.a3', '=', 'C3')])
+        assert not t4_model.search([('test2_id.a3', '=', 'D3')])
 
         t1_1.set_a1()
         assert t1_1.a1 == 'Set by test1'
