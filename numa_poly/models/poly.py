@@ -816,6 +816,69 @@ def poly_many2one_convert_to_read(self, value, record, use_display_name=True):
             return False
 
 
+def _poly_hierarchy_names(model):
+    """Nombres de la jerarquía poly de ``model``: los ``_name`` de sus bases poly (las que
+    declaran ``_depend_models``) más las claves de esos ``_depend_models`` (los ancestros con
+    PK compartida). Ej.: persona.fisica -> {'persona.fisica', 'res.partner'}."""
+    names = set()
+    for base in _poly_get_safe_mro(model if isinstance(model, type) else type(model)):
+        if '_depend_models' in base.__dict__:
+            bname = getattr(base, '_name', None)
+            if bname:
+                names.add(bname)
+            for k in (base.__dict__.get('_depend_models') or {}):
+                names.add(k)
+    return names
+
+
+def _poly_value_is_subtype_of_comodel(value_name, comodel_name, pool):
+    """True si ``value_name`` es un subtipo poly cuya jerarquía incluye ``comodel_name`` como
+    base ancestro (PK compartida). En ese caso ``value.id`` es un id válido del comodel, así que
+    asignar el subtipo a un Many2one que apunta a la base es correcto (mismo registro)."""
+    if value_name == comodel_name:
+        return True
+    model = pool.get(value_name)
+    if model is None:
+        return False
+    return comodel_name in _poly_hierarchy_names(model)
+
+
+def _poly_same_hierarchy(name_a, name_b, pool):
+    """True si ``name_a`` y ``name_b`` pertenecen a la MISMA jerarquía poly (comparten PK / mismo
+    id): uno es base ancestro del otro, o comparten una base poly común. Simétrico. Como el id es
+    único en toda la jerarquía (misma secuencia ir_poly_base), comparar por id entre sus miembros
+    es seguro."""
+    if name_a == name_b:
+        return True
+    a = pool.get(name_a)
+    b = pool.get(name_b)
+    if a is None or b is None:
+        return False
+    na = _poly_hierarchy_names(a)
+    nb = _poly_hierarchy_names(b)
+    return (name_b in na) or (name_a in nb) or bool(na & nb)
+
+
+_original_Many2one_convert_to_cache = odoo.fields.Many2one.convert_to_cache
+
+def poly_many2one_convert_to_cache(self, value, record, validate=True):
+    """[poly] Permite asignar a un Many2one un registro de un SUBTIPO poly cuando el comodel es
+    su base ancestro (mismo id por PK compartida). El core rechaza ``value._name != comodel_name``
+    con "Wrong value for ...", pero el caso legítimo es un campo autorreferencial de la base
+    (p. ej. ``res.partner.commercial_partner_id`` / ``parent_id``) que Odoo computa sobre un
+    subtipo (persona.fisica) haciendo ``rec.field = rec``: ``rec`` es el subtipo pero su id es un
+    id válido de la base. Reexpresamos el value como recordset del comodel y delegamos al core
+    (que mantiene la lógica de ``delegate``/NewId). El camino normal (mismo modelo) no se toca."""
+    if (validate and self.comodel_name and isinstance(value, BaseModel)
+            and value._name != self.comodel_name and len(value) <= 1):
+        try:
+            if _poly_value_is_subtype_of_comodel(value._name, self.comodel_name, record.pool):
+                value = record.env[self.comodel_name].browse(value._ids)
+        except Exception:  # noqa: BLE001 — ante cualquier duda, delegar al core (que validará)
+            pass
+    return _original_Many2one_convert_to_cache(self, value, record, validate=validate)
+
+
 def poly_many2many_read(self, records):
     """
     Monkey-patch for Many2many.read to allow reading related many2many fields.
@@ -4886,6 +4949,7 @@ if PolyBase not in odoo.models.Model.__bases__:
 # Keep only the BaseModel alias for backward-compat isinstance checks.
 odoo.models.BaseModel = PolyBase
 odoo.fields.Many2one.convert_to_read = poly_many2one_convert_to_read
+odoo.fields.Many2one.convert_to_cache = poly_many2one_convert_to_cache
 odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
 
@@ -5218,6 +5282,55 @@ def poly_BaseModel_repr(self):
     except Exception:
         return "BaseModel()"
 odoo.models.BaseModel.__repr__ = poly_BaseModel_repr
+
+# PATCH: BaseModel.__contains__ poly-aware — permite ``record in recordset`` entre modelos
+# poly-hermanos (comparten PK / mismo id en la jerarquía). El core exige ``self._name ==
+# item._name`` y si no levanta 'inconsistent models'; pero un subtipo (persona.fisica) y su base
+# (res.partner) son el MISMO registro por id. Caso real: account_peppol._compute_peppol_endpoint
+# hace ``persona.fisica._origin in res.partner(...)`` al computar sobre el subtipo. Se compara por
+# id sólo si son de la misma jerarquía poly; el camino normal (mismo modelo o str) no se toca.
+_original_BaseModel_contains = odoo.models.BaseModel.__contains__
+
+def poly_BaseModel_contains(self, item):
+    item_name = getattr(item, '_name', None)
+    if item_name is not None and item_name != self._name:
+        try:
+            if _poly_same_hierarchy(item_name, self._name, self.pool):
+                return len(item) == 1 and item.id in self._ids
+        except Exception:  # noqa: BLE001 — ante cualquier duda, delegar al core (que validará)
+            pass
+    return _original_BaseModel_contains(self, item)
+odoo.models.BaseModel.__contains__ = poly_BaseModel_contains
+
+
+def _poly_coerce_operand(self, other):
+    """Si ``other`` es un recordset de un modelo poly-hermano de ``self`` (misma jerarquía / PK
+    compartida), lo reexpresa como recordset del modelo de ``self`` (mismo id) para que las
+    operaciones de conjunto del core no rechacen por 'inconsistent models'. Si no aplica (modelo
+    ajeno o no-recordset), devuelve ``other`` intacto y el core valida/rechaza como siempre."""
+    other_name = getattr(other, '_name', None)
+    if other_name is not None and other_name != self._name:
+        try:
+            if _poly_same_hierarchy(other_name, self._name, self.pool):
+                return self.browse(other._ids)
+        except Exception:  # noqa: BLE001
+            pass
+    return other
+
+# PATCH: operadores de conjunto poly-aware. self - other (__sub__) y self & other (__and__)
+# devuelven SIEMPRE un subconjunto de self (los ids de other sólo se usan como test de
+# pertenencia), así que reexpresar other al modelo de self (mismo id por PK compartida) es
+# seguro y da el resultado correcto. Caso real: lógica de followers/recipients del chatter que
+# resta un res.partner de un recordset del subtipo poly. No se tocan union/concat/__eq__.
+_original_BaseModel_sub = odoo.models.BaseModel.__sub__
+def poly_BaseModel_sub(self, other):
+    return _original_BaseModel_sub(self, _poly_coerce_operand(self, other))
+odoo.models.BaseModel.__sub__ = poly_BaseModel_sub
+
+_original_BaseModel_and = odoo.models.BaseModel.__and__
+def poly_BaseModel_and(self, other):
+    return _original_BaseModel_and(self, _poly_coerce_operand(self, other))
+odoo.models.BaseModel.__and__ = poly_BaseModel_and
 
 # PATCH: Field.resolve_depends to ignore missing polymorphic fields during build
 _original_Field_resolve_depends = odoo.fields.Field.resolve_depends
