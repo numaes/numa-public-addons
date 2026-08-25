@@ -79,6 +79,35 @@ if typing.TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+
+class _PolyRelatedFieldNoiseFilter(logging.Filter):
+    """Silencia warnings BENIGNOS que la inyección de campos related de numa_poly produce de forma
+    inherente y masiva, ensuciando el log.
+
+    Un subtipo poly hereda por MRO las definiciones de campos de su base (Selection con `selection`,
+    campos con `default`), y numa_poly superpone una versión `related`. Odoo entonces avisa que
+    selection/selection_add/default se ignoran en el campo related — es correcto y esperado (el valor
+    sale del origen), pero se emite una vez por campo/modelo (decenas de líneas). No se puede evitar
+    en el origen sin romper la herencia poly (el warning mira `_base_fields`, la def del base en el
+    MRO). Se filtran SÓLO estos 3 mensajes de `odoo.fields`."""
+
+    _NOISE = (
+        'selection attribute will be ignored as the field is related',
+        'selection_add attribute will be ignored as the field is related',
+        'Redundant default on',
+    )
+
+    def filter(self, record):  # noqa: A003
+        try:
+            msg = record.getMessage()
+        except Exception:  # noqa: BLE001
+            return True
+        return not any(n in msg for n in self._NOISE)
+
+
+# Se instala una sola vez a nivel de import (activo durante setup_models, que es cuando se emiten).
+logging.getLogger('odoo.fields').addFilter(_PolyRelatedFieldNoiseFilter())
+
 # Cache de sincronización de secuencia por instancia de registry.
 # id(registry) cambia en cada recarga, por lo que el caché se invalida
 # automáticamente al instalar/actualizar módulos o al reiniciar el servidor.
