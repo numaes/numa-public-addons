@@ -80,6 +80,29 @@ if typing.TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 
+def poly_selection_value_is_valid(field, value):
+    """
+    Whether `value` is acceptable for a Selection-like field on this model.
+
+    `fields.Reference` subclasses `fields.Selection`, but its stored value is
+    ``"model,id"`` while its selection keys are bare model names. Comparing the two
+    directly rejects every well-formed reference, so a Reference is validated on its
+    model part alone. Anything whose selection is not a plain list (a callable, or a
+    selection built at runtime) is left alone: there is nothing to check it against.
+    """
+    selection = field.selection
+    if not isinstance(selection, list):
+        return True
+    valid_keys = {entry[0] for entry in selection}
+    if not valid_keys:
+        return True
+    if isinstance(field, fields.Reference):
+        if not isinstance(value, str) or ',' not in value:
+            return False
+        return value.split(',', 1)[0] in valid_keys
+    return value in valid_keys
+
+
 class _PolyRelatedFieldNoiseFilter(logging.Filter):
     """Silencia warnings BENIGNOS que la inyección de campos related de numa_poly produce de forma
     inherente y masiva, ensuciando el log.
@@ -3410,14 +3433,12 @@ class PolyBase(_original_BaseModel):
                         if (v is not False and v is not None
                                 and k in self._fields):
                             f = self._fields[k]
-                            if isinstance(f, fields.Selection) and isinstance(f.selection, list):
-                                valid_keys = {sel[0] for sel in f.selection}
-                                if valid_keys and v not in valid_keys:
-                                    _logger.warning(
-                                        "[poly] Filtering out Selection field %s=%r from %s create: not a valid value %s",
-                                        k, v, self._name, valid_keys
-                                    )
-                                    continue
+                            if isinstance(f, fields.Selection) and not poly_selection_value_is_valid(f, v):
+                                _logger.warning(
+                                    "[poly] Filtering out Selection field %s=%r from %s create: not a valid value %s",
+                                    k, v, self._name, {sel[0] for sel in f.selection}
+                                )
+                                continue
                         clean_vals[k] = v
                     clean_list.append(clean_vals)
                 data_list = clean_list
@@ -3593,14 +3614,14 @@ class PolyBase(_original_BaseModel):
 
                     if (v is not False and v is not None
                             and isinstance(f, fields.Selection)
-                            and k not in poly_links):
-                         valid_keys = {sel[0] for sel in (f.selection if isinstance(f.selection, list) else [])}
-                         if valid_keys and v not in valid_keys:
-                              _logger.warning(
-                                   "[poly] Filtering out Selection field %s=%r from %s create: not a valid value %s",
-                                   k, v, self._name, valid_keys
-                              )
-                              continue
+                            and k not in poly_links
+                            and not poly_selection_value_is_valid(f, v)):
+                         _logger.warning(
+                              "[poly] Filtering out Selection field %s=%r from %s create: not a valid value %s",
+                              k, v, self._name,
+                              {sel[0] for sel in (f.selection if isinstance(f.selection, list) else [])}
+                         )
+                         continue
 
                     if f.related and not f.store and k not in poly_links and not f.required:
                          _logger.debug("[poly] Filtering out polluted related field %s from create on %s", k, self._name)
