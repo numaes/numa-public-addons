@@ -255,3 +255,75 @@ class TestPolyMissingBaseIsSurvivable(TransactionCase):
         self.env.flush_all()
         self.env.invalidate_all()
         self.assertEqual(task.pln_constraint_type, 'alap')
+
+@tagged('post_install', '-at_install')
+class TestPolyBackfillAtScale(TransactionCase):
+    """A table too large to migrate inline must not hold a deployment open."""
+
+    def setUp(self):
+        super().setUp()
+        if 'numa.planning.node' not in self.env:
+            self.skipTest("numa_planning_project is not installed")
+        self.Task = self.env['project.task']
+        self.Param = self.env['ir.config_parameter'].sudo()
+        self.project = self.env['project.project'].create({'name': 'At Scale'})
+
+    def _orphan_tasks(self, count):
+        tasks = self.Task.create([
+            {'name': 'Legacy %s' % i, 'project_id': self.project.id}
+            for i in range(count)])
+        self.env.flush_all()
+        self.env.cr.execute(
+            "DELETE FROM numa_planning_node WHERE id IN %s", (tuple(tasks.ids),))
+        self.env.cr.execute(
+            "DELETE FROM ir_poly_base WHERE id IN %s", (tuple(tasks.ids),))
+        self.env.invalidate_all()
+        return tasks
+
+    def test_01_counts_what_is_missing(self):
+        self._orphan_tasks(3)
+        self.assertGreaterEqual(self.Task._poly_backfill_count_missing(), 3)
+
+    def test_02_the_inline_limit_is_configurable(self):
+        self.assertEqual(self.Task._poly_backfill_inline_limit(),
+                         self.Task._poly_backfill_inline_limit())
+        self.Param.set_param('numa_poly.backfill_inline_limit', '7')
+        self.assertEqual(self.Task._poly_backfill_inline_limit(), 7)
+        self.Param.set_param('numa_poly.backfill_inline_limit', 'nonsense')
+        self.assertGreater(self.Task._poly_backfill_inline_limit(), 0,
+                           "A bad parameter must fall back, not crash the upgrade.")
+
+    def test_03_deferred_models_are_remembered_and_forgotten(self):
+        self.Task._poly_backfill_defer()
+        self.assertIn('project.task',
+                      self.Param.get_param('numa_poly.backfill_deferred_models'))
+        self.Task._poly_backfill_undefer()
+        self.assertNotIn('project.task',
+                         self.Param.get_param('numa_poly.backfill_deferred_models') or '')
+
+    def test_04_the_cron_drains_a_deferred_model(self):
+        tasks = self._orphan_tasks(4)
+        self.Task._poly_backfill_defer()
+
+        self.env['ir.poly_base']._cron_poly_backfill_pending(batch_size=2)
+
+        self.env.cr.execute(
+            "SELECT count(*) FROM numa_planning_node WHERE id IN %s", (tuple(tasks.ids),))
+        self.assertEqual(self.env.cr.fetchone()[0], 4,
+                         "The cron must finish what the upgrade deferred.")
+        self.assertNotIn('project.task',
+                         self.Param.get_param('numa_poly.backfill_deferred_models') or '',
+                         "And drop the model once there is nothing left.")
+
+    def test_05_a_batch_limit_leaves_the_rest_for_the_next_run(self):
+        tasks = self._orphan_tasks(5)
+        self.Task._poly_backfill_base_rows(batch_size=2, limit=2)
+
+        self.env.cr.execute(
+            "SELECT count(*) FROM numa_planning_node WHERE id IN %s", (tuple(tasks.ids),))
+        done = self.env.cr.fetchone()[0]
+        self.assertEqual(done, 2, "A limited run must stop where it was told to.")
+        self.Task._poly_backfill_base_rows()
+        self.env.cr.execute(
+            "SELECT count(*) FROM numa_planning_node WHERE id IN %s", (tuple(tasks.ids),))
+        self.assertEqual(self.env.cr.fetchone()[0], 5, "And the rest must follow later.")

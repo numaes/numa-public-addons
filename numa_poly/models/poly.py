@@ -518,6 +518,13 @@ _original_One2many_get = odoo.fields.One2many.__get__
 
 _POLY_MISSING_BASE_WARNED = set()
 
+# Above this many missing rows the backfill is not run during the upgrade. A table with
+# millions of rows must not hold a deployment open; the work is left to the cron, which
+# is batched and can be interrupted.
+POLY_BACKFILL_INLINE_LIMIT = 50000
+POLY_BACKFILL_LIMIT_PARAM = 'numa_poly.backfill_inline_limit'
+POLY_BACKFILL_DEFERRED_PARAM = 'numa_poly.backfill_deferred_models'
+
 
 def _poly_missing_base_is_tolerable(field, record):
     """Whether a MissingError here is the absent-base-row case rather than a real one."""
@@ -2182,6 +2189,24 @@ class PolyBase(_original_BaseModel):
         runs against a registry that is finished and usable, can be batched, and picks up
         where it left off if it is interrupted.
         """
+        # Models whose backfill was too big to run during the upgrade: do a batch of
+        # inserts per tick, so a very large table is migrated over several runs instead
+        # of holding a deployment open.
+        Param = self.env['ir.config_parameter'].sudo()
+        deferred = [n for n in (Param.get_param(POLY_BACKFILL_DEFERRED_PARAM) or '').split(',') if n]
+        for model_name in deferred:
+            if model_name not in self.env:
+                continue
+            model = self.env[model_name].sudo()
+            try:
+                model._poly_backfill_base_rows(batch_size=batch_size, limit=batch_size * 10)
+                if not model._poly_backfill_count_missing():
+                    model._poly_backfill_undefer()
+            except Exception:
+                _logger.exception(
+                    "[poly] deferred backfill failed for %s; it stays on the list.",
+                    model_name)
+
         self.env.cr.execute(
             "SELECT DISTINCT res_model FROM numa_poly_backfill WHERE post_pending = true")
         model_names = [row[0] for row in self.env.cr.fetchall()]
@@ -2234,6 +2259,49 @@ class PolyBase(_original_BaseModel):
                          self._name, processed)
         return processed
 
+    @api.model
+    def _poly_backfill_defer(self):
+        """Note that this model still owes a backfill, so the cron can pick it up."""
+        Param = self.env['ir.config_parameter'].sudo()
+        deferred = {n for n in (Param.get_param(POLY_BACKFILL_DEFERRED_PARAM) or '').split(',') if n}
+        if self._name not in deferred:
+            deferred.add(self._name)
+            Param.set_param(POLY_BACKFILL_DEFERRED_PARAM, ','.join(sorted(deferred)))
+
+    @api.model
+    def _poly_backfill_undefer(self):
+        """Drop this model from the deferred list once it has nothing left to fill."""
+        Param = self.env['ir.config_parameter'].sudo()
+        deferred = {n for n in (Param.get_param(POLY_BACKFILL_DEFERRED_PARAM) or '').split(',') if n}
+        if self._name in deferred:
+            deferred.discard(self._name)
+            Param.set_param(POLY_BACKFILL_DEFERRED_PARAM, ','.join(sorted(deferred)))
+
+    @api.model
+    def _poly_backfill_inline_limit(self):
+        """How many missing rows this model will backfill during an upgrade."""
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            POLY_BACKFILL_LIMIT_PARAM)
+        try:
+            return int(param) if param else POLY_BACKFILL_INLINE_LIMIT
+        except (TypeError, ValueError):
+            return POLY_BACKFILL_INLINE_LIMIT
+
+    @api.model
+    def _poly_backfill_count_missing(self):
+        """How many rows of this model have no row in the first base of their chain."""
+        chain = list(self._poly_get_depend_models().keys())
+        if not chain:
+            return 0
+        base = self.env[chain[0]] if chain[0] in self.env else None
+        if base is None or not base._table:
+            return 0
+        self.env.cr.execute(SQL(
+            "SELECT count(*) FROM %s c LEFT JOIN %s b ON b.id = c.id WHERE b.id IS NULL",
+            SQL.identifier(self._table), SQL.identifier(base._table),
+        ))
+        return self.env.cr.fetchone()[0]
+
     def init(self):
         """
         Fill in the polymorphic rows that pre-existing records are missing.
@@ -2250,6 +2318,20 @@ class PolyBase(_original_BaseModel):
         if not _poly_is_polymorphic(self):
             return
         try:
+            pending = self._poly_backfill_count_missing()
+            if pending > self._poly_backfill_inline_limit():
+                # Deliberately not done here: this runs inside the upgrade, and a table
+                # this size would hold the deployment open for as long as it takes. The
+                # cron picks it up in batches; until it does, reads answer defaults and
+                # writes materialise their own row, so nothing is lost in the meantime.
+                _logger.warning(
+                    "[poly] %s has %s record(s) without their polymorphic rows, above "
+                    "the %s inline limit. Deferred to the '%s' cron; run "
+                    "_poly_backfill_base_rows() by hand to do it now.",
+                    self._name, pending, self._poly_backfill_inline_limit(),
+                    'Polymorphic: finish backfilled records')
+                self._poly_backfill_defer()
+                return
             created = self._poly_backfill_base_rows()
         except Exception:
             # A failed backfill must not take the whole upgrade down: the records stay
