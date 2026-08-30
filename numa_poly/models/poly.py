@@ -165,6 +165,55 @@ def _poly_sql_param(value):
     return value
 
 
+def _poly_force_related(field, related_path):
+    """
+    Make `field` a non-stored related field, and make it stay one.
+
+    Odoo rebuilds every field attribute from the declaration dict (`_args__`)
+    each time it sets a field up, so assigning `store`/`compute` on the object
+    holds only until the next `_setup_attrs`. It held for a base field declared
+    plainly -- nothing in its declaration mentions `store`, and `_get_attrs`
+    defaults a related field to `store=False` -- and did not hold for one
+    declared `compute=..., store=True`, whose values came straight back. The
+    concrete model then kept a physical column for a value that lives on the
+    base, with the base's compute method attached to it, and which answer you
+    got depended on whether that pass happened to re-run: it does during an
+    upgrade and does not on a cold registry load.
+
+    Saying it in the declaration is what makes the result the same however many
+    times Odoo sets the field up. The dict is replaced rather than mutated:
+    `copy.copy` on a field shares it with the original, and a field reached
+    through the MRO *is* the base model's own, which must not be rewritten.
+    """
+    args = getattr(field, '_args__', None)
+    if args:
+        # Odoo frees `_args__` once a top-level field is set up, and a field whose
+        # declaration is gone is never rebuilt from it -- that is why assigning
+        # `store` on the object was enough for the fields copied out of an
+        # already-set-up base. Where the declaration is still live, which is the
+        # case for the fields Odoo builds for the concrete class through the MRO,
+        # it has the last word and has to be told.
+        #
+        # `store` and nothing else. `related` itself must stay out: declaring it
+        # switches on `_get_attrs`'s related branch, which forces `readonly=True`,
+        # and a readonly related field gets no `_inverse_related` -- writes to it
+        # are then accepted and discarded, which is the failure this whole module
+        # exists to prevent. `compute`, `inverse` and `search` stay out for the
+        # same reason: they belong to `setup_related`, which installs them every
+        # time it runs, and a later `_setup_attrs` would null them again.
+        args = dict(args)
+        args['store'] = False
+        field._args__ = args
+        field.args = args  # Odoo keeps `args` as an alias of `_args__`
+    field.related = related_path
+    field.store = False
+    field.compute = None
+    field.compute_sudo = None
+    field.inverse = None
+    field.search = None
+    return field
+
+
 def _poly_leaf_columns(cr, table):
     """Set of physical columns of `table` (cached). Empty on any error/missing table."""
     cols = _POLY_LEAF_COLUMNS.get(table)
@@ -3892,11 +3941,8 @@ class PolyBase(_original_BaseModel):
                     continue
                 link = _poly_ensure_poly_ref(cls, origin_model, dep_map)
 
-                new_field = copy.copy(field)
-                new_field.related = '{}.{}'.format(link, origin_fname)
-                new_field.store = False
-                new_field.compute = None
-                new_field.inverse = None
+                new_field = _poly_force_related(
+                    copy.copy(field), '{}.{}'.format(link, origin_fname))
                 if getattr(new_field, 'type', None) == 'selection':
                     # Reconstruir Selection related sin `selection` explícita
                     # para evitar warnings de atributo ignorado.
@@ -5839,16 +5885,8 @@ def poly_BaseModel_add_field(self, name, field):
             if _keep_own:
                 return _original_BaseModel_add_field(self, name, field)
             # Forzamos los atributos del objeto field directamente antes de que Odoo lo registre
-            field.related = _target_related
-            field.store = False
-            field.compute = None
-            field.compute_sudo = None
-            field.inverse = None
-            field.search = None
+            _poly_force_related(field, _target_related)
             field.automatic = True
-            if hasattr(field, '_args'):
-                field._args['related'] = _target_related
-                field._args['store'] = False
 
             # [poly] REMOVED delattr logic: Odoo 18 manages its descriptors.
             # Mutating the field object is enough.
@@ -5930,15 +5968,7 @@ def poly_Field_setup(self, model):
             if not self.related or self.related != _target_related or self.store:
                 _logger.debug("[poly] INTERCEPTING setup for %s.%s: forcing related=%s, store=False", 
                                model._name, f_name, _target_related)
-                self.related = _target_related
-                self.store = False
-                self.compute = None
-                self.compute_sudo = None
-                self.inverse = None
-                self.search = None
-                if hasattr(self, '_args'):
-                    self._args['related'] = _target_related
-                    self._args['store'] = False
+                _poly_force_related(self, _target_related)
                 
                 # [poly] REMOVED delattr logic: Odoo 18 manages its descriptors.
                 # Mutating the field object is enough.
