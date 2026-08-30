@@ -22,6 +22,19 @@ class TestPolyBackfill(TransactionCase):
             self.skipTest("numa_planning_project is not installed")
         self.Node = self.env['numa.planning.node']
         self.project = self.env['project.project'].create({'name': 'Backfill Project'})
+        self._reopen_pairs()
+
+    def _reopen_pairs(self):
+        """
+        Put project.task back in the state the migration is for.
+
+        The suite runs after installation, by which point the pairs are closed and the
+        backfill deliberately refuses to scan them again. Clearing them is how a test
+        says "a module has just added this base to a model that already holds records" —
+        the only situation in which reconstruction happens at all.
+        """
+        self.env['numa.poly.backfill.pair'].sudo().search(
+            [('concrete_model', '=', 'project.task')]).unlink()
 
     def _orphan(self, tasks):
         """Strip the polymorphic rows, leaving what a pre-existing record looks like."""
@@ -316,6 +329,19 @@ class TestPolyBackfillAtScale(TransactionCase):
         self.Task = self.env['project.task']
         self.Param = self.env['ir.config_parameter'].sudo()
         self.project = self.env['project.project'].create({'name': 'At Scale'})
+        self._reopen_pairs()
+
+    def _reopen_pairs(self):
+        """
+        Put project.task back in the state the migration is for.
+
+        The suite runs after installation, by which point the pairs are closed and the
+        backfill deliberately refuses to scan them again. Clearing them is how a test
+        says "a module has just added this base to a model that already holds records" —
+        the only situation in which reconstruction happens at all.
+        """
+        self.env['numa.poly.backfill.pair'].sudo().search(
+            [('concrete_model', '=', 'project.task')]).unlink()
 
     def _orphan_tasks(self, count):
         tasks = self.Task.create([
@@ -376,3 +402,117 @@ class TestPolyBackfillAtScale(TransactionCase):
         self.env.cr.execute(
             "SELECT count(*) FROM numa_planning_node WHERE id IN %s", (tuple(tasks.ids),))
         self.assertEqual(self.env.cr.fetchone()[0], 5, "And the rest must follow later.")
+
+@tagged('post_install', '-at_install')
+class TestPolyBackfillIsOncePerPair(TransactionCase):
+    """
+    Reconstruction has a precise trigger: a module adds a base to a model that already
+    holds records. For a given (concrete, base) pair that happens once. Later upgrades
+    must find the work done and cost nothing; adding a *new* base later reconstructs
+    only that pair.
+    """
+
+    def setUp(self):
+        super().setUp()
+        if 'numa.planning.node' not in self.env:
+            self.skipTest("numa_planning_project is not installed")
+        self.Task = self.env['project.task']
+        self.Pair = self.env['numa.poly.backfill.pair']
+        self.project = self.env['project.project'].create({'name': 'Once Per Pair'})
+        # The suite runs after installation, when the pairs are already closed.
+        self.Pair.sudo().search([('concrete_model', '=', 'project.task')]).unlink()
+
+    def _orphan_task(self):
+        task = self.Task.create({'name': 'Legacy', 'project_id': self.project.id})
+        self.env.flush_all()
+        self.env.cr.execute("DELETE FROM numa_planning_node WHERE id = %s", (task.id,))
+        self.env.cr.execute("DELETE FROM ir_poly_base WHERE id = %s", (task.id,))
+        self.env.invalidate_all()
+        return task
+
+    def _pair(self, base_model='numa.planning.node'):
+        return self.Pair.search([('concrete_model', '=', 'project.task'),
+                                 ('base_model', '=', base_model)], limit=1)
+
+    def test_01_a_completed_pair_is_recorded(self):
+        self._orphan_task()
+        self.Task._poly_backfill_base_rows()
+
+        pair = self._pair()
+        self.assertEqual(pair.state, 'done')
+        self.assertTrue(pair.completed_on)
+        self.assertGreaterEqual(pair.records_created, 1)
+
+    def test_02_a_closed_pair_is_not_scanned_again(self):
+        """
+        The point of recording the pair: a later upgrade must not re-do a one-off event.
+        A record orphaned afterwards is deliberately *not* repaired here — create()
+        maintains new records, and anything inserted behind the ORM is caught on read
+        and on write instead.
+        """
+        self._orphan_task()
+        self.Task._poly_backfill_base_rows()
+        self.assertEqual(self._pair().state, 'done')
+
+        late = self._orphan_task()
+        created = self.Task._poly_backfill_base_rows()
+
+        self.assertFalse(created.get('numa.planning.node'),
+                         "A closed pair must not be scanned again.")
+        self.env.cr.execute(
+            "SELECT count(*) FROM numa_planning_node WHERE id = %s", (late.id,))
+        self.assertEqual(self.env.cr.fetchone()[0], 0)
+
+    def test_03_a_targeted_repair_ignores_the_pair_state(self):
+        """A write onto a record with no base row must still work after the migration."""
+        self._orphan_task()
+        self.Task._poly_backfill_base_rows()
+        late = self._orphan_task()
+
+        late.write({'pln_constraint_type': 'alap'})
+        self.env.flush_all()
+        self.env.invalidate_all()
+
+        self.env.cr.execute(
+            "SELECT count(*) FROM numa_planning_node WHERE id = %s", (late.id,))
+        self.assertEqual(self.env.cr.fetchone()[0], 1)
+        self.assertEqual(late.pln_constraint_type, 'alap')
+
+    def test_04_a_targeted_repair_does_not_close_a_pair(self):
+        late = self._orphan_task()
+        self.Task._poly_backfill_base_rows(only_ids=[late.id])
+
+        self.assertNotEqual(self._pair().state, 'done',
+                            "One record repaired says nothing about the rest.")
+
+    def test_05_reopening_a_pair_reconstructs_only_that_one(self):
+        """Adding a base later must not drag the bases already done back through it."""
+        self._orphan_task()
+        self.Task._poly_backfill_base_rows()
+        self.assertFalse(self.Task._poly_backfill_pending_pairs())
+
+        # Stand in for a module that has just added this base to the model.
+        self._pair().unlink()
+        self.assertEqual(self.Task._poly_backfill_pending_pairs(),
+                         ['numa.planning.node'])
+        self.assertEqual(self._pair('ir.poly_base').state, 'done',
+                         "The base that was already done stays done.")
+
+        late = self._orphan_task()
+        self.Task._poly_backfill_base_rows()
+        self.env.cr.execute(
+            "SELECT count(*) FROM numa_planning_node WHERE id = %s", (late.id,))
+        self.assertEqual(self.env.cr.fetchone()[0], 1)
+
+    def test_06_counting_skips_closed_pairs(self):
+        """The count that decides inline vs deferred must not price a finished job."""
+        self._orphan_task()
+        self.Task._poly_backfill_base_rows()
+        self.assertEqual(self.Task._poly_backfill_count_missing(), 0)
+
+        self._orphan_task()
+        self.assertEqual(self.Task._poly_backfill_count_missing(), 0,
+                         "Closed pairs are not re-counted.")
+        self.assertGreaterEqual(
+            self.Task._poly_backfill_count_missing('numa.planning.node'), 1,
+            "But an explicit base can still be asked directly.")

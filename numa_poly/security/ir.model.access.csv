@@ -2,3 +2,5 @@ id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_poly_base,General access Polymorphic Base,model_ir_poly_base,,1,1,1,1
 access_numa_poly_backfill_user,numa.poly.backfill.user,model_numa_poly_backfill,base.group_user,1,0,0,0
 access_numa_poly_backfill_manager,numa.poly.backfill.manager,model_numa_poly_backfill,base.group_system,1,1,1,1
+access_numa_poly_backfill_pair_user,numa.poly.backfill.pair.user,model_numa_poly_backfill_pair,base.group_user,1,0,0,0
+access_numa_poly_backfill_pair_manager,numa.poly.backfill.pair.manager,model_numa_poly_backfill_pair,base.group_system,1,1,1,1

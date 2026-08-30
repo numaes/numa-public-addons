@@ -796,6 +796,41 @@ _original_TransientModel = odoo.models.TransientModel
 _original_Many2many_setup_nonrelated = odoo.fields.Many2many.setup_nonrelated
 _original_Many2many_read = odoo.fields.Many2many.read
 
+class PolyBackfillPair(models.Model):
+    """
+    Which (concrete model, base model) pairs have already been reconstructed.
+
+    Reconstruction is a one-off event with a precise trigger: a module adds a base to a
+    model that already holds records. That happens at the start of a project, or when a
+    feature is bolted onto something already running — but for a given pair it happens
+    exactly once. Every later upgrade finds those records complete, because from then on
+    ``create`` maintains them.
+
+    Recording the pair is what turns that fact into behaviour. Without it the migration
+    re-scans every concrete table against every base on every upgrade, forever, paying
+    the full cost of a one-off event each time. Adding a *new* base later reconstructs
+    only that pair; the ones already done are not touched.
+    """
+    _name = 'numa.poly.backfill.pair'
+    _description = 'Polymorphic Backfill State'
+    _order = 'concrete_model, base_model'
+    _rec_name = 'concrete_model'
+
+    concrete_model = fields.Char('Concrete Model', required=True, index=True)
+    base_model = fields.Char('Base Model', required=True, index=True)
+    state = fields.Selection([
+        ('pending', 'Pending'),
+        ('done', 'Done'),
+    ], string='State', default='pending', required=True, index=True)
+    records_created = fields.Integer('Rows Created', default=0)
+    completed_on = fields.Datetime('Completed On')
+
+    _sql_constraints = [
+        ('numa_poly_backfill_pair_unique', 'unique(concrete_model, base_model)',
+         'A concrete model and base pair is reconstructed once.'),
+    ]
+
+
 class PolyBackfill(models.Model):
     """
     What the migration filled in, and what it still owes.
@@ -2060,12 +2095,54 @@ class PolyBase(_original_BaseModel):
         if 'ir.poly_base' not in chain:
             chain.insert(0, 'ir.poly_base')
 
+        # A targeted repair (a write onto a record whose base row is missing) is not a
+        # migration: it must run whatever the pair's state says, and must not declare it
+        # finished on the strength of one record.
+        targeted = only_ids is not None
+
         for base_model_name in chain:
             if base_model_name == self._name or base_model_name not in self.env:
                 continue
-            created[base_model_name] = self._poly_backfill_one_base(
+            if not targeted and self._poly_backfill_pair_state(base_model_name) == 'done':
+                continue
+            count = self._poly_backfill_one_base(
                 base_model_name, batch_size=batch_size, limit=limit, only_ids=only_ids)
+            created[base_model_name] = count
+            if not targeted and not self._poly_backfill_count_missing(base_model_name):
+                self._poly_backfill_mark_pair_done(base_model_name, count)
         return created
+
+    @api.model
+    def _poly_backfill_pair_state(self, base_model_name):
+        """'done' once this model's records have all been given their `base` rows."""
+        pair = self.env['numa.poly.backfill.pair'].sudo().search([
+            ('concrete_model', '=', self._name),
+            ('base_model', '=', base_model_name),
+        ], limit=1)
+        return pair.state if pair else False
+
+    @api.model
+    def _poly_backfill_mark_pair_done(self, base_model_name, records_created=0):
+        """Close a pair, so no later upgrade pays for it again."""
+        Pair = self.env['numa.poly.backfill.pair'].sudo()
+        values = {
+            'state': 'done',
+            'completed_on': fields.Datetime.now(),
+        }
+        pair = Pair.search([
+            ('concrete_model', '=', self._name),
+            ('base_model', '=', base_model_name),
+        ], limit=1)
+        if pair:
+            values['records_created'] = pair.records_created + records_created
+            pair.write(values)
+        else:
+            values.update({
+                'concrete_model': self._name,
+                'base_model': base_model_name,
+                'records_created': records_created,
+            })
+            Pair.create(values)
 
     @api.model
     def _poly_backfill_one_base(self, base_model_name, batch_size=1000, limit=None,
@@ -2294,19 +2371,39 @@ class PolyBase(_original_BaseModel):
             return POLY_BACKFILL_INLINE_LIMIT
 
     @api.model
-    def _poly_backfill_count_missing(self):
-        """How many rows of this model have no row in the first base of their chain."""
-        chain = list(self._poly_get_depend_models().keys())
-        if not chain:
-            return 0
-        base = self.env[chain[0]] if chain[0] in self.env else None
-        if base is None or not base._table:
-            return 0
-        self.env.cr.execute(SQL(
-            "SELECT count(*) FROM %s c LEFT JOIN %s b ON b.id = c.id WHERE b.id IS NULL",
-            SQL.identifier(self._table), SQL.identifier(base._table),
-        ))
-        return self.env.cr.fetchone()[0]
+    def _poly_backfill_count_missing(self, base_model_name=None):
+        """
+        How many rows of this model still lack their base row.
+
+        With no base given, only the pairs that have not been closed are counted: once a
+        pair is done, `create` maintains it, and re-counting it on every upgrade is the
+        cost this whole mechanism exists to pay only once.
+        """
+        if base_model_name is not None:
+            bases = [base_model_name]
+        else:
+            bases = [name for name in self._poly_get_depend_models().keys()
+                     if name != self._name and name in self.env
+                     and self._poly_backfill_pair_state(name) != 'done']
+        total = 0
+        for name in bases:
+            base = self.env[name] if name in self.env else None
+            if base is None or not base._table:
+                continue
+            self.env.cr.execute(SQL(
+                "SELECT count(*) FROM %s c LEFT JOIN %s b ON b.id = c.id "
+                "WHERE b.id IS NULL",
+                SQL.identifier(self._table), SQL.identifier(base._table),
+            ))
+            total += self.env.cr.fetchone()[0]
+        return total
+
+    @api.model
+    def _poly_backfill_pending_pairs(self):
+        """Bases of this model that have not been reconstructed yet."""
+        return [name for name in self._poly_get_depend_models().keys()
+                if name != self._name and name in self.env
+                and self._poly_backfill_pair_state(name) != 'done']
 
     def init(self):
         """
@@ -2324,6 +2421,11 @@ class PolyBase(_original_BaseModel):
         if not _poly_is_polymorphic(self):
             return
         try:
+            if not self._poly_backfill_pending_pairs():
+                # Every base of this model has already been reconstructed; from here on
+                # create() keeps them complete. This is the common path on every upgrade
+                # after the first, and it must cost nothing.
+                return
             pending = self._poly_backfill_count_missing()
             if pending > self._poly_backfill_inline_limit():
                 # Deliberately not done here: this runs inside the upgrade, and a table
