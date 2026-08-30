@@ -7,6 +7,8 @@ without its base rows. The symptom people report is a MissingError on read, but 
 quiet failures are the dangerous ones: a search on a base field returns nothing, and a
 write to one is accepted and discarded. Neither announces itself.
 """
+from unittest.mock import patch
+
 from odoo.tests import tagged, TransactionCase
 
 from ..models.poly import _POLY_LEAF_COLUMNS as _poly_leaf_columns_cache
@@ -516,3 +518,66 @@ class TestPolyBackfillIsOncePerPair(TransactionCase):
         self.assertGreaterEqual(
             self.Task._poly_backfill_count_missing('numa.planning.node'), 1,
             "But an explicit base can still be asked directly.")
+
+
+@tagged('post_install', '-at_install')
+class TestPolyBackfillFailureIsSurvivable(TransactionCase):
+    """
+    `init()` promises that a failed backfill does not take the upgrade down.
+
+    It could not keep that promise: the statement that fails aborts the transaction, so
+    every query after it -- the rest of the module loading -- died with
+    InFailedSqlTransaction and the registry never came up. The `except` swallowed the
+    real error and the deployment stopped anyway, one traceback later.
+    """
+
+    def setUp(self):
+        super().setUp()
+        if 'numa.planning.node' not in self.env:
+            self.skipTest("numa_planning_project is not installed")
+        self.Task = self.env['project.task']
+        self.project = self.env['project.project'].create({'name': 'Survivable'})
+        self.env['numa.poly.backfill.pair'].sudo().search(
+            [('concrete_model', '=', 'project.task')]).unlink()
+
+    def _orphan_task(self):
+        task = self.Task.create({'name': 'Legacy', 'project_id': self.project.id})
+        self.env.flush_all()
+        self.env.cr.execute(
+            "DELETE FROM numa_planning_node WHERE id = %s", (task.id,))
+        self.env.cr.execute("DELETE FROM ir_poly_base WHERE id = %s", (task.id,))
+        self.env.invalidate_all()
+        return task
+
+    def test_01_a_failing_backfill_leaves_the_cursor_usable(self):
+        self._orphan_task()
+
+        def boom(model, *args, **kwargs):
+            # A type mismatch on a real column, which is how this surfaced in
+            # production: a jsonb column handed the boolean False.
+            model.env.cr.execute(
+                "INSERT INTO numa_planning_node (id, name) VALUES (%s, %s)",
+                (-1, {'not': 'a name'}))
+
+        with patch.object(type(self.Task), '_poly_backfill_base_rows', boom):
+            self.Task.init()
+
+        self.env.cr.execute("SELECT 1")
+        self.assertEqual(self.env.cr.fetchone()[0], 1,
+                         "The upgrade must be able to keep running after this.")
+
+    def test_02_nothing_of_the_failed_attempt_is_left_behind(self):
+        self._orphan_task()
+
+        def boom(model, *args, **kwargs):
+            model.env.cr.execute(
+                "INSERT INTO numa_planning_node (id, name) VALUES (%s, %s)",
+                (-1, 'half done'))
+            raise ValueError("the next base blew up")
+
+        with patch.object(type(self.Task), '_poly_backfill_base_rows', boom):
+            self.Task.init()
+
+        self.env.cr.execute("SELECT count(*) FROM numa_planning_node WHERE id = -1")
+        self.assertEqual(self.env.cr.fetchone()[0], 0,
+                         "A half-finished backfill is rolled back with the savepoint.")

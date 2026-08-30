@@ -57,6 +57,8 @@ from collections import OrderedDict, defaultdict
 import typing
 import json
 
+from psycopg2.extras import Json as PsycopgJson
+
 # Odoo imports
 import odoo
 from odoo import api, models, fields, _, Command
@@ -147,6 +149,20 @@ _POLY_LEAF_COLUMNS = {}
 # Odoo's test framework flags as an "unexpected attribute" leak). Cleared on every
 # registry rebuild together with the schema caches.
 _POLY_NATIVE_FNAMES = {}
+
+
+def _poly_sql_param(value):
+    """
+    Make `value` something psycopg2 can send as an INSERT parameter.
+
+    A jsonb column reads back as a plain ``dict``/``list``, and psycopg2 has no adapter
+    for either on the way in: copying such a column straight from a concrete row to its
+    base row fails with "can't adapt type 'dict'". Values already converted by the ORM
+    (``convert_to_column_insert`` hands back a ``Json`` wrapper) pass through untouched.
+    """
+    if isinstance(value, (dict, list)):
+        return PsycopgJson(value)
+    return value
 
 
 def _poly_leaf_columns(cr, table):
@@ -2061,10 +2077,19 @@ class PolyBase(_original_BaseModel):
         statics = {}
         if candidates:
             for fname, value in base.default_get(candidates).items():
-                if fname not in base_columns or value is None:
+                if fname not in base_columns:
                     continue
                 field = base._fields.get(fname)
-                if field is not None and field.type in ('one2many', 'many2many'):
+                if field is None or field.type in ('one2many', 'many2many'):
+                    continue
+                # default_get answers in the *write* format, which is not what a column
+                # takes. The two differ for every field that stores something other than
+                # a scalar, and a Json field is the loud case: its empty default comes
+                # back as False, and Postgres refuses a boolean for a jsonb column. Use
+                # the conversion create() itself uses, so translated Char (jsonb),
+                # company-dependent columns and Monetary rounding are right too.
+                value = field.convert_to_column_insert(value, base)
+                if value is None:
                     continue
                 statics[fname] = value
         return statics, copied
@@ -2205,7 +2230,8 @@ class PolyBase(_original_BaseModel):
                     if column in base_columns:
                         values.setdefault(column, stamp)
 
-                usable = {k: v for k, v in values.items() if k in base_columns or k == 'id'}
+                usable = {k: _poly_sql_param(v) for k, v in values.items()
+                          if k in base_columns or k == 'id'}
                 cr.execute(SQL(
                     "INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (id) DO NOTHING",
                     SQL.identifier(base_table),
@@ -2282,7 +2308,12 @@ class PolyBase(_original_BaseModel):
                 continue
             model = self.env[model_name].sudo()
             try:
-                model._poly_backfill_base_rows(batch_size=batch_size, limit=batch_size * 10)
+                # Same reason as in init(): without the savepoint one bad model aborts
+                # the transaction, and the models after it -- and the post-processing
+                # sweep below -- fail on a cursor that can no longer run anything.
+                with self.env.cr.savepoint():
+                    model._poly_backfill_base_rows(
+                        batch_size=batch_size, limit=batch_size * 10)
                 if not model._poly_backfill_count_missing():
                     model._poly_backfill_undefer()
             except Exception:
@@ -2440,7 +2471,13 @@ class PolyBase(_original_BaseModel):
                     'Polymorphic: finish backfilled records')
                 self._poly_backfill_defer()
                 return
-            created = self._poly_backfill_base_rows()
+            # The savepoint is what lets the `except` below keep its promise. A
+            # statement that fails aborts the whole transaction, so without it every
+            # query after this point -- the rest of the upgrade -- dies with
+            # InFailedSqlTransaction and the registry never loads. Rolling back to the
+            # savepoint also clears what the attempt left in the cache.
+            with self.env.cr.savepoint():
+                created = self._poly_backfill_base_rows()
         except Exception:
             # A failed backfill must not take the whole upgrade down: the records stay
             # readable through the concrete model and the migration can be re-run.
