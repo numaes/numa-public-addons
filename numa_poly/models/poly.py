@@ -741,6 +741,51 @@ _original_TransientModel = odoo.models.TransientModel
 _original_Many2many_setup_nonrelated = odoo.fields.Many2many.setup_nonrelated
 _original_Many2many_read = odoo.fields.Many2many.read
 
+class PolyBackfill(models.Model):
+    """
+    What the migration filled in, and what it still owes.
+
+    Deliberately a table of its own rather than flags on ``ir.poly_base``: a field there
+    is injected into every concrete model of the chain, and a technical marker has no
+    business appearing on ``project.task``. Keyed by (model, id) it also gives the sweep
+    exactly the scope it needs — a polymorphic record has a row in every table of its
+    chain, and only the concrete model knows how to finish the job.
+
+    It doubles as the review list the migration owes a user: these records hold defaults
+    derived from pre-existing data, not values anybody entered.
+    """
+    _name = 'numa.poly.backfill'
+    _description = 'Polymorphic Backfill Ledger'
+    _order = 'backfilled_on desc, id desc'
+    _rec_name = 'res_model'
+
+    res_model = fields.Char('Model', required=True, index=True)
+    res_id = fields.Integer('Record ID', required=True, index=True)
+    backfilled_on = fields.Datetime('Backfilled On', required=True, index=True)
+    post_pending = fields.Boolean(
+        'Post-Processing Pending', index=True,
+        help="The rows exist but the work that needs a fully loaded registry — "
+             "rebuilding links, recomputing groupings — has not run yet.")
+    reviewed = fields.Boolean(
+        'Reviewed',
+        help="Tick once a person has confirmed the values the migration guessed.")
+
+    _sql_constraints = [
+        ('numa_poly_backfill_unique', 'unique(res_model, res_id)',
+         'A record can only be backfilled once.'),
+    ]
+
+    def action_open_record(self):
+        """Jump to the record this entry is about, to correct what was guessed."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': self.res_model,
+            'res_id': self.res_id,
+            'view_mode': 'form',
+        }
+
+
 class IrPolyBase(models.Model):
     """
     Base model for all polymorphic models in the system.
@@ -1858,6 +1903,309 @@ class PolyBase(_original_BaseModel):
     def _setup_poly_fields(cls, self):
         """Deprecated: field injection is now handled in _setup_base via _build_poly_fields."""
         pass
+
+    # ------------------------------------------------------------------
+    # Backfill of pre-existing rows
+    # ------------------------------------------------------------------
+    def _poly_backfill_values(self, base_model_name, concrete_ids):
+        """
+        Extra column values for the base rows about to be created for `concrete_ids`.
+
+        Override in a module that knows what the legacy data means. The generic
+        migration can only fill declared defaults and copy same-named columns, which
+        keeps a record readable but says nothing about it; a bridge knows that a task's
+        ``allocated_hours`` is the planning effort and that its deadline is a scheduling
+        constraint, and can carry that across instead of leaving a zero for somebody to
+        find later.
+
+        :return: ``{concrete_id: {column_name: value}}``. Columns that do not exist on
+            the base table are ignored, so an override is safe across versions.
+        """
+        return {}
+
+    def _poly_backfill_post(self, base_model_name, concrete_ids):
+        """
+        Run after the base rows for `concrete_ids` exist.
+
+        Some of what a record gains on create is not a column: links between records,
+        a computed grouping, a ledger entry. Override this to reproduce it. The base
+        rows are already committed to the cursor by the time it runs, so the ORM can be
+        used normally.
+        """
+        return None
+
+    @api.model
+    def _poly_backfill_columns(self, base_model_name):
+        """
+        Column values shared by every base row this model backfills.
+
+        Two sources, in order: the static default declared on each stored base field,
+        and — for a column the concrete table also has — the concrete row itself. The
+        second is what keeps a NOT NULL column like ``name`` satisfied without inventing
+        a placeholder, and it means the base row starts out agreeing with the record it
+        belongs to.
+        """
+        base = self.env[base_model_name]
+        base_columns = _poly_leaf_columns(self.env.cr, base._table)
+        concrete_columns = _poly_leaf_columns(self.env.cr, self._table)
+
+        candidates, copied = [], {}
+        for fname, field in base._fields.items():
+            if fname not in base_columns or fname == 'id':
+                continue
+            if fname in concrete_columns and fname in self._fields:
+                # The concrete row already answers this one; copying it keeps a NOT NULL
+                # column like `name` satisfied and starts the base row agreeing with the
+                # record it belongs to.
+                copied[fname] = fname
+                continue
+            if getattr(field, 'default', None) is not None:
+                candidates.append(fname)
+
+        # Ask the ORM for the defaults rather than reading Field.default: Odoo wraps a
+        # declared default in a callable, so poking at the attribute silently produced
+        # empty columns where the model says 'asap' or True.
+        statics = {}
+        if candidates:
+            for fname, value in base.default_get(candidates).items():
+                if fname not in base_columns or value is None:
+                    continue
+                field = base._fields.get(fname)
+                if field is not None and field.type in ('one2many', 'many2many'):
+                    continue
+                statics[fname] = value
+        return statics, copied
+
+    @api.model
+    def _poly_backfill_base_rows(self, batch_size=1000, limit=None):
+        """
+        Give every pre-existing row of this model the polymorphic rows it is missing.
+
+        Installing a polymorphic module on a database that already holds records leaves
+        those records without their base rows. The symptom people notice is a
+        MissingError on read, but the two quiet failures matter more: a search on a base
+        field silently returns nothing, and a write to one is accepted and discarded.
+        Neither announces itself, so the only safe transition is to make the missing rows
+        exist.
+
+        Idempotent by construction — it only ever inserts ids the base table does not
+        have — so it is safe to re-run, and safe to interrupt.
+
+        :return: ``{base_model_name: rows_created}``
+        """
+        created = {}
+        if not self._auto or not self._table:
+            return created
+
+        # Deepest base first: a row cannot reference a base that is not there yet.
+        chain = [name for name in reversed(list(self._poly_get_depend_models().keys()))]
+        if 'ir.poly_base' not in chain:
+            chain.insert(0, 'ir.poly_base')
+
+        for base_model_name in chain:
+            if base_model_name == self._name or base_model_name not in self.env:
+                continue
+            created[base_model_name] = self._poly_backfill_one_base(
+                base_model_name, batch_size=batch_size, limit=limit)
+        return created
+
+    @api.model
+    def _poly_backfill_one_base(self, base_model_name, batch_size=1000, limit=None):
+        """Insert the rows missing from one base table. See _poly_backfill_base_rows."""
+        cr = self.env.cr
+        base = self.env[base_model_name]
+        base_table, concrete_table = base._table, self._table
+        base_columns = _poly_leaf_columns(cr, base_table)
+        if not base_columns:
+            return 0
+
+        statics, copied = self._poly_backfill_columns(base_model_name)
+        stamp = fields.Datetime.now()
+        model_id = None
+        if 'concrete_model_id' in base_columns:
+            model_id = self.env['ir.model']._get_id(self._name)
+
+        total = 0
+        while True:
+            cr.execute(SQL(
+                """
+                SELECT c.id FROM %s c
+                LEFT JOIN %s b ON b.id = c.id
+                WHERE b.id IS NULL
+                ORDER BY c.id
+                LIMIT %s
+                """,
+                SQL.identifier(concrete_table), SQL.identifier(base_table),
+                batch_size if not limit else min(batch_size, limit - total),
+            ))
+            missing = [row[0] for row in cr.fetchall()]
+            if not missing:
+                break
+
+            overrides = self._poly_backfill_values(base_model_name, missing) or {}
+            rows = self._poly_backfill_read_source(missing, copied)
+
+            for concrete_id in missing:
+                values = {'id': concrete_id}
+                values.update(statics)
+                values.update(rows.get(concrete_id, {}))
+                for column, value in (overrides.get(concrete_id) or {}).items():
+                    if column in base_columns:
+                        values[column] = value
+                if model_id and 'concrete_model_id' in base_columns:
+                    values.setdefault('concrete_model_id', model_id)
+                for column in ('create_uid', 'write_uid'):
+                    if column in base_columns:
+                        values.setdefault(column, SUPERUSER_ID)
+                for column in ('create_date', 'write_date'):
+                    if column in base_columns:
+                        values.setdefault(column, stamp)
+
+                usable = {k: v for k, v in values.items() if k in base_columns or k == 'id'}
+                cr.execute(SQL(
+                    "INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (id) DO NOTHING",
+                    SQL.identifier(base_table),
+                    SQL(', ').join(SQL.identifier(c) for c in usable),
+                    SQL(', ').join(SQL('%s', v) for v in usable.values()),
+                ))
+            self._poly_backfill_ledger(missing, stamp)
+            total += len(missing)
+            _logger.info("[poly] backfill %s -> %s: %s row(s)",
+                         self._name, base_model_name, total)
+            if limit and total >= limit:
+                break
+
+        if total:
+            self.env.invalidate_all()
+            self._sync_poly_sequence()
+        return total
+
+    @api.model
+    def _poly_backfill_read_source(self, concrete_ids, copied):
+        """Read the same-named columns off the concrete rows, keyed by id."""
+        if not copied or not concrete_ids:
+            return {}
+        columns = sorted(set(copied.values()))
+        self.env.cr.execute(SQL(
+            "SELECT id, %s FROM %s WHERE id IN %s",
+            SQL(', ').join(SQL.identifier(c) for c in columns),
+            SQL.identifier(self._table),
+            tuple(concrete_ids),
+        ))
+        result = {}
+        for row in self.env.cr.fetchall():
+            result[row[0]] = {
+                base_column: row[1 + columns.index(source_column)]
+                for base_column, source_column in copied.items()
+            }
+        return result
+
+    @api.model
+    def _poly_backfill_ledger(self, concrete_ids, stamp):
+        """Record what was backfilled, and that it still owes post-processing."""
+        Ledger = self.env['numa.poly.backfill'].sudo()
+        known = set(Ledger.search([
+            ('res_model', '=', self._name), ('res_id', 'in', concrete_ids),
+        ]).mapped('res_id'))
+        fresh = [cid for cid in concrete_ids if cid not in known]
+        if fresh:
+            Ledger.create([{
+                'res_model': self._name,
+                'res_id': cid,
+                'backfilled_on': stamp,
+                'post_pending': True,
+            } for cid in fresh])
+
+    @api.model
+    def _cron_poly_backfill_pending(self, batch_size=500):
+        """
+        Finish the post-processing the backfill deferred, for every model that has any.
+
+        Driven by a cron rather than by a registry hook on purpose. ``init`` runs while
+        the schema is still being built, and the hooks that fire during registry load are
+        no better: reading a many2many there returns nothing instead of failing, which
+        produced base rows with no dependency links and no error to show for it. A cron
+        runs against a registry that is finished and usable, can be batched, and picks up
+        where it left off if it is interrupted.
+        """
+        self.env.cr.execute(
+            "SELECT DISTINCT res_model FROM numa_poly_backfill WHERE post_pending = true")
+        model_names = [row[0] for row in self.env.cr.fetchall()]
+        if not model_names:
+            return 0
+
+        processed = 0
+        for model_name in model_names:
+            if model_name not in self.env:
+                continue
+            try:
+                processed += self.env[model_name].sudo()._poly_backfill_run_pending(
+                    batch_size=batch_size)
+            except Exception:
+                # One model's mapping must not strand every other model's records; the
+                # flag stays set and the next run retries this one.
+                _logger.exception(
+                    "[poly] backfill post-processing failed for %s; its records stay "
+                    "flagged for the next run.", model_name)
+        return processed
+
+    @api.model
+    def _poly_backfill_run_pending(self, batch_size=500):
+        """
+        Run the post-processing the backfill deferred, and clear the flag.
+
+        ``init`` cannot do it: it runs while the registry is still loading, and reading a
+        many2many there returns nothing instead of failing — which is how a first attempt
+        produced base rows with no dependency links and no error to show for it. The flag
+        set during the insert is what makes the work recoverable rather than lost when
+        that boot ends.
+        """
+        Ledger = self.env['numa.poly.backfill'].sudo()
+        processed = 0
+        while True:
+            entries = Ledger.search(
+                [('res_model', '=', self._name), ('post_pending', '=', True)],
+                order='res_id', limit=batch_size)
+            if not entries:
+                break
+            pending = entries.mapped('res_id')
+            records = self.browse(pending).exists()
+            for base_model_name in self._poly_get_depend_models().keys():
+                if base_model_name in self.env:
+                    records._poly_backfill_post(base_model_name, records.ids)
+            entries.write({'post_pending': False})
+            processed += len(pending)
+        if processed:
+            _logger.info("[poly] %s: post-processed %s backfilled record(s)",
+                         self._name, processed)
+        return processed
+
+    def init(self):
+        """
+        Fill in the polymorphic rows that pre-existing records are missing.
+
+        Odoo calls this after the table has been created or updated, which is the first
+        moment the base tables and their columns are all in place. Installing a
+        polymorphic module on a populated database is otherwise a silent data hazard:
+        searches on base fields return nothing and writes to them are discarded, neither
+        with an error.
+        """
+        super().init()
+        if getattr(self, '_name', None) == 'ir.poly_base':
+            return
+        if not _poly_is_polymorphic(self):
+            return
+        try:
+            created = self._poly_backfill_base_rows()
+        except Exception:
+            # A failed backfill must not take the whole upgrade down: the records stay
+            # readable through the concrete model and the migration can be re-run.
+            _logger.exception("[poly] backfill failed for %s; re-run "
+                              "_poly_backfill_base_rows() once the cause is fixed.",
+                              self._name)
+            return
+        if any(created.values()):
+            _logger.info("[poly] %s: backfilled %s", self._name, created)
 
     def _auto_init(self):
         """

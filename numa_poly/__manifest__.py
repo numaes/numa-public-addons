@@ -12,6 +12,7 @@
         'web',
     ],
     'data': [
+        'data/poly_backfill_cron.xml',
         'security/security.xml',
         'security/ir.model.access.csv',
     ],
