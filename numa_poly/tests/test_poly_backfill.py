@@ -9,6 +9,8 @@ write to one is accepted and discarded. Neither announces itself.
 """
 from odoo.tests import tagged, TransactionCase
 
+from ..models.poly import _POLY_LEAF_COLUMNS as _poly_leaf_columns_cache
+
 
 @tagged('post_install', '-at_install')
 class TestPolyBackfill(TransactionCase):
@@ -93,6 +95,53 @@ class TestPolyBackfill(TransactionCase):
         self.env.cr.execute(
             "SELECT name FROM numa_planning_node WHERE id = %s", (task.id,))
         self.assertEqual(self.env.cr.fetchone()[0], 'Legacy with a name')
+
+    def _shadow_column(self, value=None):
+        """
+        Give project_task a physical `pln_constraint_type` column, as databases
+        migrated from older versions of the bridge actually have.
+
+        The DDL rolls back with the test transaction. It is created here rather than
+        skipped over because the rule it exercises is what a real customer database
+        depends on: without it every migrated task came out with no scheduling
+        constraint instead of ASAP.
+        """
+        self.env.cr.execute(
+            "ALTER TABLE project_task ADD COLUMN IF NOT EXISTS pln_constraint_type varchar")
+        # The column cache is module-level and outlives the transaction that rolls the
+        # DDL back, so it has to be dropped on the way in *and* on the way out — a stale
+        # entry makes every later test SELECT a column that no longer exists.
+        _poly_leaf_columns_cache.pop('project_task', None)
+        self.addCleanup(_poly_leaf_columns_cache.pop, 'project_task', None)
+        task = self.Task.create({'name': 'Shadowed', 'project_id': self.project.id})
+        self.env.flush_all()
+        if value is not None:
+            self.env.cr.execute(
+                "UPDATE project_task SET pln_constraint_type = %s WHERE id = %s",
+                (value, task.id))
+        self.env.cr.execute("DELETE FROM numa_planning_node WHERE id = %s", (task.id,))
+        self.env.cr.execute("DELETE FROM ir_poly_base WHERE id = %s", (task.id,))
+        self.env.invalidate_all()
+        return task
+
+    def _node_constraint(self, task):
+        self.env.cr.execute(
+            "SELECT pln_constraint_type FROM numa_planning_node WHERE id = %s",
+            (task.id,))
+        row = self.env.cr.fetchone()
+        return row[0] if row else None
+
+    def test_05b_an_empty_concrete_column_does_not_beat_the_default(self):
+        """Copying a NULL used to silently drop the default the model declares."""
+        task = self._shadow_column()
+        self.Task._poly_backfill_base_rows()
+        self.assertEqual(self._node_constraint(task), 'asap')
+
+    def test_05c_a_filled_concrete_column_wins_over_the_default(self):
+        """The other direction: real data must not be replaced by a default."""
+        task = self._shadow_column(value='alap')
+        self.Task._poly_backfill_base_rows()
+        self.assertEqual(self._node_constraint(task), 'alap')
 
     def test_06_backfilled_records_are_recorded_for_review(self):
         task = self._orphan_task()

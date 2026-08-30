@@ -2013,7 +2013,10 @@ class PolyBase(_original_BaseModel):
                 # column like `name` satisfied and starts the base row agreeing with the
                 # record it belongs to.
                 copied[fname] = fname
-                continue
+                # Fall through: still collect its default. On a legacy row the concrete
+                # column is usually empty, and copying that NULL would drop the default
+                # the model declares — observed on a real customer database, where every
+                # migrated task ended up with no scheduling constraint instead of ASAP.
             if getattr(field, 'default', None) is not None:
                 candidates.append(fname)
 
@@ -2109,7 +2112,10 @@ class PolyBase(_original_BaseModel):
             for concrete_id in missing:
                 values = {'id': concrete_id}
                 values.update(statics)
-                values.update(rows.get(concrete_id, {}))
+                # A copied NULL means the legacy row never answered this question, so
+                # the declared default stands; anything else overrides it.
+                values.update({k: v for k, v in rows.get(concrete_id, {}).items()
+                               if v is not None})
                 for column, value in (overrides.get(concrete_id) or {}).items():
                     if column in base_columns:
                         values[column] = value
