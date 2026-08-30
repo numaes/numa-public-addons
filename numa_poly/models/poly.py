@@ -516,6 +516,44 @@ _original_Field_set = odoo.fields.Field.__set__
 _original_Relational_get = odoo.fields._Relational.__get__
 _original_One2many_get = odoo.fields.One2many.__get__
 
+_POLY_MISSING_BASE_WARNED = set()
+
+
+def _poly_missing_base_is_tolerable(field, record):
+    """Whether a MissingError here is the absent-base-row case rather than a real one."""
+    try:
+        if not record._ids or len(record._ids) != 1:
+            return False
+        return _poly_is_polymorphic(record) or bool(record._poly_get_depend_models())
+    except Exception:
+        return False
+
+
+def _poly_warn_missing_base_once(field, record):
+    """One warning per model and field, not one per record read."""
+    key = (getattr(field, 'model_name', None), getattr(field, 'name', None))
+    if key in _POLY_MISSING_BASE_WARNED:
+        return
+    _POLY_MISSING_BASE_WARNED.add(key)
+    _logger.warning(
+        "[poly] %s.%s read on a record whose polymorphic base row is missing; "
+        "answering with the field default. Run _poly_backfill_base_rows() on %s to "
+        "give these records their rows.", key[0], key[1], key[0])
+
+
+def _poly_field_default_value(field, record):
+    """The field's declared default, in record form."""
+    try:
+        default = field.default
+        value = default(record) if callable(default) else default
+        return field.convert_to_record(field.convert_to_cache(value, record), record)
+    except Exception:
+        try:
+            return field.convert_to_record(False, record)
+        except Exception:
+            return False
+
+
 def _poly_Field_get(self, record, owner=None):
     """
     [poly] Monkey patch for Field.__get__ to handle edge cases in Odoo 18.
@@ -554,6 +592,16 @@ def _poly_Field_get(self, record, owner=None):
 
     try:
         return _original_Field_get(self, record, owner=owner)
+    except MissingError:
+        # The concrete row exists but its polymorphic base row does not: a record that
+        # predates the module and has not been backfilled, or one inserted by raw SQL.
+        # Raising here turns every read of an untouched legacy record into a crash, so
+        # answer with the field's default — and say so once, because a default that
+        # nobody chose should not pass for data.
+        if _poly_missing_base_is_tolerable(self, record):
+            _poly_warn_missing_base_once(self, record)
+            return _poly_field_default_value(self, record)
+        raise
     except KeyError as e:
         # [poly] Odoo 18: Protect against KeyError in field_computed during boot or technical operations.
         # This specifically handles 'res.users.tz' and other computed fields that might be 
@@ -1977,7 +2025,7 @@ class PolyBase(_original_BaseModel):
         return statics, copied
 
     @api.model
-    def _poly_backfill_base_rows(self, batch_size=1000, limit=None):
+    def _poly_backfill_base_rows(self, batch_size=1000, limit=None, only_ids=None):
         """
         Give every pre-existing row of this model the polymorphic rows it is missing.
 
@@ -2006,11 +2054,12 @@ class PolyBase(_original_BaseModel):
             if base_model_name == self._name or base_model_name not in self.env:
                 continue
             created[base_model_name] = self._poly_backfill_one_base(
-                base_model_name, batch_size=batch_size, limit=limit)
+                base_model_name, batch_size=batch_size, limit=limit, only_ids=only_ids)
         return created
 
     @api.model
-    def _poly_backfill_one_base(self, base_model_name, batch_size=1000, limit=None):
+    def _poly_backfill_one_base(self, base_model_name, batch_size=1000, limit=None,
+                                only_ids=None):
         """Insert the rows missing from one base table. See _poly_backfill_base_rows."""
         cr = self.env.cr
         base = self.env[base_model_name]
@@ -2027,15 +2076,20 @@ class PolyBase(_original_BaseModel):
 
         total = 0
         while True:
+            scope = SQL("")
+            if only_ids is not None:
+                if not only_ids:
+                    break
+                scope = SQL("AND c.id IN %s", tuple(only_ids))
             cr.execute(SQL(
                 """
                 SELECT c.id FROM %s c
                 LEFT JOIN %s b ON b.id = c.id
-                WHERE b.id IS NULL
+                WHERE b.id IS NULL %s
                 ORDER BY c.id
                 LIMIT %s
                 """,
-                SQL.identifier(concrete_table), SQL.identifier(base_table),
+                SQL.identifier(concrete_table), SQL.identifier(base_table), scope,
                 batch_size if not limit else min(batch_size, limit - total),
             ))
             missing = [row[0] for row in cr.fetchall()]
@@ -4432,6 +4486,22 @@ class PolyBase(_original_BaseModel):
                 return
         return super()._compute_field_value(field)
 
+    def _poly_ensure_base_rows_for_write(self, vals):
+        """
+        Create the base rows these records are missing, when the write needs them.
+
+        Cheap on the hot path: a write that only touches the model's own fields returns
+        immediately, and the existence check only runs for the rest.
+        """
+        if not self or not vals:
+            return
+        native = self._poly_native_field_names()
+        if all(key in native or key not in self._fields for key in vals):
+            return
+        if not self._poly_get_depend_models():
+            return
+        self._poly_backfill_base_rows(only_ids=list(self._ids))
+
     def write(self, vals):
         """
         Override write to intercept and merge poly_payload data.
@@ -4441,6 +4511,16 @@ class PolyBase(_original_BaseModel):
 
         if not _poly_is_polymorphic(self):
             return super().write(vals)
+
+        # A write to a field that lives on a base row is discarded when that row does not
+        # exist — silently, returning True. Give the records their rows first, so the
+        # value has somewhere to land.
+        try:
+            self._poly_ensure_base_rows_for_write(vals)
+        except Exception:
+            _logger.exception(
+                "[poly] could not create the missing base rows for a write on %s; "
+                "values aimed at a base model may be lost.", self._name)
 
         # Make a copy to avoid mutating the original
         processed_vals = vals.copy()

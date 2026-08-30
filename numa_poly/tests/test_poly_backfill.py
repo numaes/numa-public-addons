@@ -185,3 +185,73 @@ class TestPolyBackfill(TransactionCase):
         ]).post_pending, "The flag must survive an unrelated model's sweep.")
 
         self.assertGreaterEqual(self.Task._poly_backfill_run_pending(), 1)
+
+@tagged('post_install', '-at_install')
+class TestPolyMissingBaseIsSurvivable(TransactionCase):
+    """
+    Even with the migration in place there will always be rows created outside the ORM.
+    Neither a read nor a write may fail quietly on one.
+    """
+
+    def setUp(self):
+        super().setUp()
+        if 'numa.planning.node' not in self.env:
+            self.skipTest("numa_planning_project is not installed")
+        self.Task = self.env['project.task']
+        self.project = self.env['project.project'].create({'name': 'Survivable'})
+
+    def _orphan_task(self, **values):
+        task = self.Task.create(dict({'name': 'Legacy', 'project_id': self.project.id},
+                                     **values))
+        self.env.flush_all()
+        self.env.cr.execute("DELETE FROM numa_planning_node WHERE id = %s", (task.id,))
+        self.env.cr.execute("DELETE FROM ir_poly_base WHERE id = %s", (task.id,))
+        self.env.invalidate_all()
+        return task
+
+    def test_01_reading_a_base_field_answers_the_default(self):
+        task = self._orphan_task()
+        # Used to raise MissingError and take the whole page down with it.
+        self.assertEqual(task.pln_constraint_type, 'asap')
+        self.assertTrue(task.pln_allow_split)
+
+    def test_02_reading_does_not_invent_the_row(self):
+        """A read must stay a read: no write, no transaction surprise."""
+        task = self._orphan_task()
+        task.pln_constraint_type
+        self.env.cr.execute(
+            "SELECT count(*) FROM numa_planning_node WHERE id = %s", (task.id,))
+        self.assertEqual(self.env.cr.fetchone()[0], 0)
+
+    def test_03_writing_a_base_field_materialises_the_row(self):
+        task = self._orphan_task()
+
+        task.write({'pln_constraint_type': 'alap'})
+        self.env.flush_all()
+        self.env.invalidate_all()
+
+        self.env.cr.execute(
+            "SELECT count(*) FROM numa_planning_node WHERE id = %s", (task.id,))
+        self.assertEqual(self.env.cr.fetchone()[0], 1,
+                         "The write used to be accepted and discarded.")
+        self.assertEqual(task.pln_constraint_type, 'alap',
+                         "And the value must actually be there afterwards.")
+
+    def test_04_writing_only_native_fields_creates_nothing(self):
+        """The guard must not turn every write into a migration."""
+        task = self._orphan_task()
+
+        task.write({'name': 'Renamed'})
+        self.env.flush_all()
+
+        self.env.cr.execute(
+            "SELECT count(*) FROM numa_planning_node WHERE id = %s", (task.id,))
+        self.assertEqual(self.env.cr.fetchone()[0], 0)
+        self.assertEqual(task.name, 'Renamed')
+
+    def test_05_a_healthy_record_is_unaffected(self):
+        task = self.Task.create({'name': 'Healthy', 'project_id': self.project.id})
+        task.write({'pln_constraint_type': 'alap'})
+        self.env.flush_all()
+        self.env.invalidate_all()
+        self.assertEqual(task.pln_constraint_type, 'alap')
