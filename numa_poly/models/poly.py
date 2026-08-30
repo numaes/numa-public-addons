@@ -5824,15 +5824,14 @@ def poly_BaseModel_add_field(self, name, field):
         if _target_related:
             # [poly] No-migration strategy: NEVER shadow a field the concrete (core)
             # model OWNS with a related-to-base version (legacy rows are read as the core
-            # model; only new rows get the full poly structure). Keep the concrete's own
-            # field when it has its own physical column, or when its type differs from the
-            # dependent base field (the latter would also crash registry setup).
+            # model; only new rows get the full poly structure). Ownership is what the
+            # model DECLARES, not what its table happens to still have: a column left
+            # behind by an earlier version of a bridge -- project_task.pln_constraint_type,
+            # from before the planning fields moved to numa.planning.node -- is not owned
+            # by anybody, and reading it gives an answer the base disagrees with.
+            # Keep the concrete's own field when it declares it, or when its type differs
+            # from the dependent base field (the latter would also crash registry setup).
             _keep_own = name in model_class._poly_native_field_names()
-            if not _keep_own:
-                try:
-                    _keep_own = name in _poly_leaf_columns(self.env.cr, self._table)
-                except Exception:
-                    pass
             if not _keep_own and _base_field is not None:
                 _ftype = getattr(field, 'type', None)
                 if _ftype and _ftype != getattr(_base_field, 'type', None):
@@ -5916,10 +5915,10 @@ def poly_Field_setup(self, model):
             # poly structure. Shadowing breaks reads of legacy rows (MissingError, no
             # base record) and, where the types differ (e.g. POL.name Text vs
             # node.name Char), crashes registry setup. Keep the concrete's own field when
-            # it has its own physical column, or when its type differs from the base.
+            # it DECLARES it, or when its type differs from the base -- not merely because
+            # the table still carries a column, which a bridge's earlier version can leave
+            # behind long after the data moved to the base.
             _keep_own = f_name in model_class._poly_native_field_names()
-            if not _keep_own:
-                _keep_own = f_name in _poly_leaf_columns(model.env.cr, model._table)
             if not _keep_own and _base_field is not None:
                 _self_type = getattr(self, 'type', None)
                 if _self_type and _self_type != getattr(_base_field, 'type', None):
