@@ -194,19 +194,32 @@ def _poly_force_related(field, related_path):
         # case for the fields Odoo builds for the concrete class through the MRO,
         # it has the last word and has to be told.
         #
-        # `store` and nothing else. `related` itself must stay out: declaring it
-        # switches on `_get_attrs`'s related branch, which forces `readonly=True`,
-        # and a readonly related field gets no `_inverse_related` -- writes to it
-        # are then accepted and discarded, which is the failure this whole module
-        # exists to prevent. `compute`, `inverse` and `search` stay out for the
-        # same reason: they belong to `setup_related`, which installs them every
-        # time it runs, and a later `_setup_attrs` would null them again.
+        # `store` and `precompute`, and nothing else. `related` itself must stay
+        # out: declaring it switches on `_get_attrs`'s related branch, which forces
+        # `readonly=True`, and a readonly related field gets no `_inverse_related`
+        # -- writes to it are then accepted and discarded, which is the failure this
+        # whole module exists to prevent. `compute`, `inverse` and `search` stay out
+        # for the same reason: they belong to `setup_related`, which installs them
+        # every time it runs, and a later `_setup_attrs` would null them again.
+        #
+        # `precompute` rides along because it only ever means something on a stored
+        # field, and the declaration we are copying may well carry it: the field
+        # this runs on is frequently a stored compute -- `res.partner.user_id` is
+        # declared `compute=..., store=True, precompute=True`. Turning `store` off
+        # while leaving `precompute` on leaves a combination Odoo does not accept,
+        # and it says so with a `UserWarning` for every concrete model in the
+        # hierarchy on every registry load. It is only noise, but it is noise that
+        # scrolls a real problem off the screen. Unlike the attributes above, this
+        # one has no behaviour attached to it once `store` is False, so declaring
+        # it costs nothing.
         args = dict(args)
         args['store'] = False
+        args['precompute'] = False
         field._args__ = args
         field.args = args  # Odoo keeps `args` as an alias of `_args__`
     field.related = related_path
     field.store = False
+    field.precompute = False
     field.compute = None
     field.compute_sudo = None
     field.inverse = None
