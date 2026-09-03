@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!--
+        El operador `within` de Odoo 18 ya genera un dominio RELATIVO (expresiones con
+        context_today() + relativedelta), que el favorito guarda sin evaluar y recalcula en cada
+        uso. Lo que falta no es la funcionalidad, es el cartel: el operador se llama "is within" y
+        la fila de edición muestra sólo un número y una unidad ("-1  months"), sin decir en ningún
+        lado respecto de QUÉ se cuenta ni que el filtro guardado se va a recalcular.
+
+        Se agrega esa información donde el usuario está mirando. Nada de lógica: es un texto.
+
+        El ancla del xpath es el contenedor flex de `web.TreeEditor.Within`. La herencia de
+        plantillas OWL se aplica del lado del cliente (core/templates.js -> applyInheritance), y
+        ahí `hasclass()` está soportado igual que en las vistas.
+
+        `data-tooltip` y no `title`: OWL traduce el texto de las plantillas con translateFn y sólo
+        los atributos de `translatableAttributes`, que en Odoo es exactamente ["data-tooltip"]
+        (web/static/src/env.js). Un `title` quedaría sin traducir.
+    -->
+    <t t-name="numa_web_relative_dates.WithinHint"
+       t-inherit="web.TreeEditor.Within"
+       t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('d-flex')]" position="inside">
+            <!-- El texto va PEGADO a las etiquetas, sin saltos de línea: el bundle marca cada
+                 plantilla con xml:space="preserve", así que cualquier indentación entraría en el
+                 nodo de texto y el msgid dejaría de coincidir con el del .po. -->
+            <small class="text-muted text-nowrap o_numa_within_hint"
+                   data-tooltip="This filter is relative: the range is counted from today, and it is recalculated every time the filter runs. Saving it as a favourite keeps it relative — it will not freeze on today's date.">from today</small>
+        </xpath>
+    </t>
+
+</templates>
