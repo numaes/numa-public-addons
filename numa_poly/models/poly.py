@@ -4912,6 +4912,13 @@ class PolyBase(_original_BaseModel):
                     self._sync_table_id_sequence_once()
                 except Exception:
                     pass
+                try:
+                    self._poly_reserve_base_ids(data_list)
+                except Exception:
+                    _logger.exception(
+                        "[poly] could not reserve a shared id for a new %s; it may "
+                        "land on an id the hierarchy above it already holds.",
+                        self._name)
 
             # Reject explicit IDs that already exist in the table.  Creating a row with an
             # already-taken primary key is an error (same contract as the polymorphic branch
@@ -5626,6 +5633,34 @@ class PolyBase(_original_BaseModel):
     def _poly_forget_transition_state(self):
         """Ask again — a pair was reopened, or the backfill just moved rows."""
         _POLY_TRANSITION_FINISHED.discard((id(self.pool), self._name))
+
+    @api.model
+    def _poly_reserve_base_ids(self, data_list):
+        """Give a standalone record of a polymorphic base an id from the shared allocator.
+
+        A base is a model in its own right, and its own ``create`` drew from its own
+        sequence — starting at 1, straight into the ids the hierarchy above it already
+        held. That is how a demo ``numa.planning.resource`` came to share a row with
+        ``res.partner`` 1: the two are one primary key, so writing the partner's name
+        renamed the resource, and the resource's availability periods belonged to the
+        partner. The scheduling problem built from it asked a resource with no
+        availability to do 112 hours of work, and CP-SAT correctly called it infeasible.
+
+        The other half of the same rule is already in ``_get_max_poly_id``, which makes a
+        polymorphic record skip the ids a base has spent. This is the direction that was
+        missing: one ``nextval`` makes the collision impossible instead of merely
+        detectable afterwards.
+        """
+        if not _poly_subtype_names(self._name, self.pool):
+            return
+        missing = [vals for vals in data_list if not vals.get('id')]
+        if not missing:
+            return
+        self._sync_poly_sequence()
+        cr = self.env.cr
+        for vals in missing:
+            cr.execute("SELECT nextval('ir_poly_base_id_seq')")
+            vals['id'] = cr.fetchone()[0]
 
     @api.model
     def _poly_base_rows_present(self, ids):
