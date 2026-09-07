@@ -301,8 +301,19 @@ class TestPolyMissingBaseIsSurvivable(TransactionCase):
         self.assertEqual(task.pln_constraint_type, 'alap',
                          "And the value must actually be there afterwards.")
 
-    def test_04_writing_only_native_fields_creates_nothing(self):
-        """The guard must not turn every write into a migration."""
+    def test_04_writing_only_native_fields_completes_the_record_too(self):
+        """
+        This used to assert the opposite, on the reasoning that a write which needs
+        nothing from the base row should not pay for a migration. The reasoning was
+        wrong: what needs the row is rarely the write itself but what runs after it. A
+        ``purchase.order.line.write({'date_planned': ...})`` — every field native —
+        creates an allocation pointing at the line's node row, and took production down
+        with a ForeignKeyViolation.
+
+        The cost the old test was protecting is now handled where it belongs, by
+        ``_poly_transition_finished``: a database whose reconstruction is over does not
+        reach this code at all. See tests/test_poly_incomplete_records.py.
+        """
         task = self._orphan_task()
 
         task.write({'name': 'Renamed'})
@@ -310,7 +321,7 @@ class TestPolyMissingBaseIsSurvivable(TransactionCase):
 
         self.env.cr.execute(
             "SELECT count(*) FROM numa_planning_node WHERE id = %s", (task.id,))
-        self.assertEqual(self.env.cr.fetchone()[0], 0)
+        self.assertEqual(self.env.cr.fetchone()[0], 1)
         self.assertEqual(task.name, 'Renamed')
 
     def test_05_a_healthy_record_is_unaffected(self):

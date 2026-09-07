@@ -150,6 +150,56 @@ _POLY_LEAF_COLUMNS = {}
 # registry rebuild together with the schema caches.
 _POLY_NATIVE_FNAMES = {}
 
+# Models whose reconstruction is over, keyed by (registry id, model name). From then on
+# `create` keeps every record complete, so the safety net that materialises missing base
+# rows on write has nothing to do and must cost nothing to skip. Answered from the
+# backfill pairs the first time and remembered for the life of the registry.
+_POLY_TRANSITION_FINISHED: set = set()
+
+# Which concrete models sit on a given base, and which many2one fields of a model point
+# at such a base. Both derive from the schema alone, so they are computed once per
+# registry; they exist so that a model with no such field pays a dict lookup and nothing
+# more on every create and write.
+_POLY_SUBTYPES: dict = {}
+_POLY_BASE_REFERENCE_FIELDS: dict = {}
+
+# How costly it is to renumber a model, so that when two legacy tables hold the same id
+# the one half the database points at is not the one that moves. See
+# PolyBase._poly_renumber_rank.
+_POLY_RENUMBER_RANK: dict = {}
+
+# The polymorphic chain above a model, and the concrete models whose base rows a model
+# may use. Both walk the dependency graph, both are asked on the write path by the
+# ownership probe, and both are fixed once the registry is built.
+_POLY_ANCESTORS: dict = {}
+_POLY_ACCEPTABLE_OWNERS: dict = {}
+
+
+def _poly_subtype_names(base_model_name, pool):
+    """The polymorphic models whose chain includes ``base_model_name``.
+
+    Empty for a model nothing sits on — which is the answer for almost every comodel,
+    and the reason the reference check costs nothing in general.
+    """
+    if not base_model_name or base_model_name == 'ir.poly_base':
+        return ()
+    key = (id(pool), base_model_name)
+    cached = _POLY_SUBTYPES.get(key)
+    if cached is not None:
+        return cached
+    names = []
+    for name in pool.models:
+        if name == base_model_name:
+            continue
+        try:
+            if base_model_name in _poly_ancestor_names(name, pool):
+                names.append(name)
+        except Exception:  # noqa: BLE001 — an unbuilt class must not break the scan
+            continue
+    cached = tuple(sorted(names))
+    _POLY_SUBTYPES[key] = cached
+    return cached
+
 
 def _poly_sql_param(value):
     """
@@ -602,6 +652,7 @@ _POLY_MISSING_BASE_WARNED = set()
 POLY_BACKFILL_INLINE_LIMIT = 50000
 POLY_BACKFILL_LIMIT_PARAM = 'numa_poly.backfill_inline_limit'
 POLY_BACKFILL_DEFERRED_PARAM = 'numa_poly.backfill_deferred_models'
+POLY_RENUMBER_COLLISIONS_PARAM = 'numa_poly.renumber_collisions'
 
 
 def _poly_missing_base_is_tolerable(field, record):
@@ -898,9 +949,14 @@ class PolyBackfillPair(models.Model):
     base_model = fields.Char('Base Model', required=True, index=True)
     state = fields.Selection([
         ('pending', 'Pending'),
+        ('blocked', 'Blocked by ID Collisions'),
         ('done', 'Done'),
     ], string='State', default='pending', required=True, index=True)
     records_created = fields.Integer('Rows Created', default=0)
+    collisions = fields.Integer(
+        'ID Collisions', default=0,
+        help="Rows whose id already belongs to a different concrete model. Their base "
+             "row cannot be built while they keep that id; see _poly_renumber_colliding.")
     completed_on = fields.Datetime('Completed On')
 
     _sql_constraints = [
@@ -1010,6 +1066,54 @@ class IrPolyBase(models.Model):
         """
         return []
 
+    @api.model
+    def _poly_collision_census(self, sample=1000):
+        """
+        Every polymorphic model holding records whose ids are not theirs, and what has
+        them.
+
+        The first thing to run on an unfamiliar database that behaves as though half its
+        polymorphic records were not there. Each entry is
+        ``{concrete_model, count, ids, claimed_by}``; ``ids`` is capped at ``sample`` so
+        the report stays readable on a large table, ``count`` is not.
+        """
+        census = []
+        for model_name in sorted(self.env.registry.models):
+            model = self.env.get(model_name)
+            if model is None or model_name == 'ir.poly_base':
+                continue
+            try:
+                if not _poly_is_polymorphic(model) or not model._auto or not model._table:
+                    continue
+                ids = model._poly_colliding_ids()
+            except Exception:  # noqa: BLE001 — one broken model must not hide the rest
+                _logger.exception("[poly] collision census failed for %s", model_name)
+                continue
+            if not ids:
+                continue
+            shown = ids[:sample]
+            census.append({
+                'concrete_model': model_name,
+                'count': len(ids),
+                'ids': shown,
+                'claimed_by': model._poly_id_conflicts(shown),
+            })
+        return census
+
+    @api.model
+    def _poly_log_collision_census(self):
+        """Write the census to the log, for a deployment with no shell to hand."""
+        census = self._poly_collision_census(sample=5)
+        if not census:
+            _logger.info("[poly] collision census: every polymorphic record owns its id.")
+            return census
+        for entry in census:
+            examples = ', '.join(
+                '%s->%s' % (i, entry['claimed_by'].get(i, '?')) for i in entry['ids'])
+            _logger.warning("[poly] %s: %s record(s) cannot claim their id (%s)",
+                            entry['concrete_model'], entry['count'], examples)
+        return census
+
     def as_concrete_model(self):
         """
         Convert this base record to its concrete model representation.
@@ -1093,6 +1197,67 @@ def _poly_same_hierarchy(name_a, name_b, pool):
     na = _poly_hierarchy_names(a)
     nb = _poly_hierarchy_names(b)
     return (name_b in na) or (name_a in nb) or bool(na & nb)
+
+
+def _poly_ancestor_names(model_name, pool):
+    """``model_name`` and every polymorphic base above it, transitively.
+
+    A polymorphic record has one row per table of its chain, all under the same primary
+    key, so its id is a valid id of every model in this set — and a base row carrying
+    that id is that record's own row.
+
+    Cached per registry: this is on the write path, through the ownership probe, and
+    walking the dependency graph on every write of every polymorphic model is not
+    something the answer's stability justifies.
+    """
+    key = (id(pool), model_name)
+    cached = _POLY_ANCESTORS.get(key)
+    if cached is not None:
+        return cached
+    seen, stack = set(), [model_name]
+    while stack:
+        name = stack.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        cls = pool.get(name)
+        if cls is None:
+            continue
+        try:
+            stack.extend(_poly_collect_depend_models(cls).keys())
+        except Exception:  # noqa: BLE001 — an unbuilt class must not break a scan
+            continue
+    seen.add('ir.poly_base')
+    _POLY_ANCESTORS[key] = seen
+    return seen
+
+
+def _poly_base_row_is_usable(owner_name, model_name, pool):
+    """
+    True when a base row recorded as belonging to ``owner_name`` is ``model_name``'s row.
+
+    Ownership is not equality. The leaf of a chain owns the rows of all its bases, and a
+    row still labelled with one of those bases is the same record seen less specifically.
+    What is *not* the same record is a second model that merely holds the same id:
+    ``project.task`` and ``purchase.order.line`` both sit on ``numa.planning.node``, but
+    task 5 and line 5 are two records, and reading that as ownership is the mistake that
+    left 37 of 210 records without a base row on the first customer database.
+    """
+    if not owner_name or owner_name == model_name:
+        return True
+    return (model_name in _poly_ancestor_names(owner_name, pool)
+            or owner_name in _poly_ancestor_names(model_name, pool))
+
+
+def _poly_id_owners(cr, ids):
+    """``{id: concrete model name}`` for the ids that ``ir.poly_base`` already knows."""
+    if not ids:
+        return {}
+    cr.execute(
+        "SELECT b.id, m.model FROM ir_poly_base b "
+        "JOIN ir_model m ON m.id = b.concrete_model_id WHERE b.id IN %s",
+        (tuple(ids),))
+    return dict(cr.fetchall())
 
 
 _original_Many2one_convert_to_cache = odoo.fields.Many2one.convert_to_cache
@@ -1576,12 +1741,19 @@ class PolyBase(_original_BaseModel):
             pass
 
         # 2) Defensa para migraciones: recorrer todas las tablas de modelos
-        # polimórficos registradas en la instancia actual.
+        # polimórficos registradas en la instancia actual, MÁS las de sus bases.
+        #
+        # Una base participa de la jerarquía pero es además un modelo por derecho propio:
+        # puede tener registros no polimórficos creados directamente, que consumen ids de
+        # su propia secuencia. Esos ids quedan inutilizables para la jerarquía, así que el
+        # id de un registro polimórfico debe estar por encima del máximo de TODAS las
+        # tablas involucradas, no sólo de las de los modelos polimórficos.
         candidate_models = {'ir.poly_base'}
         for model_name, model in self.env.registry.models.items():
             try:
                 if model_name != 'ir.poly_base' and _poly_is_polymorphic(model):
                     candidate_models.add(model_name)
+                    candidate_models.update(_poly_ancestor_names(model_name, self.pool))
             except Exception:
                 continue
 
@@ -2103,6 +2275,62 @@ class PolyBase(_original_BaseModel):
         return None
 
     @api.model
+    def _poly_backfill_required_fields(self, base_model_name):
+        """
+        ``{column: field}`` for the base columns Postgres will not accept as NULL.
+
+        A legacy row often cannot answer one of these: the column is NOT NULL, the model
+        declares no default, and the concrete row's own copy of it is empty — which is
+        how a set of conversation drivers whose ``name`` had never been filled in stopped
+        the reconstruction of their whole model. There is no honest value to write there,
+        but the alternative to a placeholder is not a cleaner row: it is no row at all,
+        and a record that stays half built for good.
+        """
+        base = self.env.get(base_model_name)
+        if base is None or not base._table:
+            return {}
+        self.env.cr.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = %s AND is_nullable = 'NO'", (base._table,))
+        names = {row[0] for row in self.env.cr.fetchall()}
+        names -= {'id'} | set(LOG_ACCESS_COLUMNS)
+        return {name: base._fields[name] for name in sorted(names)
+                if name in base._fields and base._fields[name].store}
+
+    @api.model
+    def _poly_backfill_fallback_value(self, field, concrete_id):
+        """A value a NOT NULL column will take when the record has none to give.
+
+        Deliberately recognisable rather than plausible — a placeholder that reads like
+        real data is worse than one that says where it came from. ``None`` for anything
+        relational: a required many2one cannot be guessed, and stopping is the right
+        answer there.
+        """
+        if field.type in ('char', 'text', 'html'):
+            value = '%s,%s' % (self._name, concrete_id)
+        elif field.type == 'selection':
+            selection = field.selection
+            if not isinstance(selection, list):
+                try:
+                    selection = field._description_selection(self.env)
+                except Exception:  # noqa: BLE001 — an unresolvable selection has no value
+                    return None
+            value = selection[0][0] if selection else None
+        elif field.type in ('integer', 'float', 'monetary'):
+            value = 0
+        elif field.type == 'boolean':
+            value = False
+        elif field.type == 'date':
+            value = fields.Date.today()
+        elif field.type == 'datetime':
+            value = fields.Datetime.now()
+        else:
+            return None
+        if value is None:
+            return None
+        return field.convert_to_column_insert(value, self.env[field.model_name])
+
+    @api.model
     def _poly_backfill_columns(self, base_model_name):
         """
         Column values shared by every base row this model backfills.
@@ -2171,16 +2399,29 @@ class PolyBase(_original_BaseModel):
         Idempotent by construction — it only ever inserts ids the base table does not
         have — so it is safe to re-run, and safe to interrupt.
 
+        A row whose id already belongs to a *different* concrete model is left alone and
+        counted instead: its base row cannot be built while it keeps that id, and
+        overwriting the row that is there would take the other record's identity away.
+        The pair then stays open, so the next run tries again — after
+        ``_poly_renumber_colliding`` has moved those rows out of the way.
+
         :return: ``{base_model_name: rows_created}``
         """
         created = {}
         if not self._auto or not self._table:
             return created
 
-        # Deepest base first: a row cannot reference a base that is not there yet.
-        chain = [name for name in reversed(list(self._poly_get_depend_models().keys()))]
-        if 'ir.poly_base' not in chain:
-            chain.insert(0, 'ir.poly_base')
+        chain = self._poly_chain_bases()
+
+        # A record whose id belongs to somebody else cannot be reconstructed in place.
+        # Move it out of the way first, so the pass below has nothing left to skip.
+        # Only during a migration: renumbering a record while a caller is holding it
+        # would pull the id out from under them, which is why a targeted repair raises
+        # instead (see _poly_ensure_base_rows).
+        if only_ids is None and self._poly_renumber_enabled():
+            colliding = self._poly_colliding_ids()
+            if colliding:
+                self._poly_renumber_colliding(colliding)
 
         # A targeted repair (a write onto a record whose base row is missing) is not a
         # migration: it must run whatever the pair's state says, and must not declare it
@@ -2192,11 +2433,17 @@ class PolyBase(_original_BaseModel):
                 continue
             if not targeted and self._poly_backfill_pair_state(base_model_name) == 'done':
                 continue
-            count = self._poly_backfill_one_base(
+            count, blocked = self._poly_backfill_one_base(
                 base_model_name, batch_size=batch_size, limit=limit, only_ids=only_ids)
             created[base_model_name] = count
-            if not targeted and not self._poly_backfill_count_missing(base_model_name):
+            if targeted:
+                continue
+            if blocked:
+                self._poly_backfill_mark_pair_blocked(base_model_name, count, blocked)
+            elif not self._poly_backfill_count_missing(base_model_name):
                 self._poly_backfill_mark_pair_done(base_model_name, count)
+        if created:
+            self._poly_forget_transition_state()
         return created
 
     @api.model
@@ -2209,11 +2456,44 @@ class PolyBase(_original_BaseModel):
         return pair.state if pair else False
 
     @api.model
+    def _poly_backfill_mark_pair_blocked(self, base_model_name, records_created,
+                                         blocked_ids):
+        """
+        Record that a pair cannot finish, and why.
+
+        Deliberately not ``done``. A closed pair is never scanned again, and closing one
+        over records that still have no base row is how a broken transition came to look
+        like a finished one: the pairs all said done while a third of the records had
+        lost their identity to somebody else's id.
+        """
+        Pair = self.env['numa.poly.backfill.pair'].sudo()
+        values = {'state': 'blocked', 'collisions': len(blocked_ids)}
+        pair = Pair.search([
+            ('concrete_model', '=', self._name),
+            ('base_model', '=', base_model_name),
+        ], limit=1)
+        if pair:
+            values['records_created'] = pair.records_created + records_created
+            pair.write(values)
+        else:
+            values.update({
+                'concrete_model': self._name,
+                'base_model': base_model_name,
+                'records_created': records_created,
+            })
+            Pair.create(values)
+        _logger.warning(
+            "[poly] %s -> %s: %s record(s) cannot be reconstructed, their ids belong to "
+            "another model. The pair stays open; run _poly_renumber_colliding().",
+            self._name, base_model_name, len(blocked_ids))
+
+    @api.model
     def _poly_backfill_mark_pair_done(self, base_model_name, records_created=0):
         """Close a pair, so no later upgrade pays for it again."""
         Pair = self.env['numa.poly.backfill.pair'].sudo()
         values = {
             'state': 'done',
+            'collisions': 0,
             'completed_on': fields.Datetime.now(),
         }
         pair = Pair.search([
@@ -2232,43 +2512,126 @@ class PolyBase(_original_BaseModel):
             Pair.create(values)
 
     @api.model
+    def _poly_chain_bases(self):
+        """Every base of this model, deepest first, with ``ir.poly_base`` at the front.
+
+        The order is the order the rows have to be built in: a base row cannot reference
+        a base that is not there yet, and ``ir.poly_base`` is where the id is claimed, so
+        nothing above it can be settled before it.
+        """
+        chain = [name for name in reversed(list(self._poly_get_depend_models().keys()))
+                 if name != 'ir.poly_base']
+        return ['ir.poly_base'] + chain
+
+    @api.model
+    def _poly_id_conflicts(self, ids):
+        """
+        ``{id: what already holds it}`` for the ids this model cannot claim.
+
+        There are two ways an id is taken. A *different concrete model* may own it in
+        ``ir.poly_base`` — two legacy tables both numbering from 1 produce that by the
+        thousand. Or a *base* may hold a standalone row under it: a base of a polymorphic
+        model is a model in its own right, its own records come from its own sequence,
+        and an id it has already spent is not available to the hierarchy above it.
+
+        Either way the row cannot be built without taking an existing record's identity
+        away, which is why these ids are reported rather than overwritten.
+        """
+        if not ids:
+            return {}
+        cr, pool = self.env.cr, self.pool
+        ids = list(ids)
+        conflicts = {}
+        owners = _poly_id_owners(cr, ids)
+        for record_id, owner in owners.items():
+            if not _poly_base_row_is_usable(owner, self._name, pool):
+                conflicts[record_id] = owner
+
+        # An id with no polymorphic owner belongs to no record of this hierarchy, so a
+        # row already sitting on it in one of the bases is somebody else's.
+        unowned = [i for i in ids if i not in owners and i not in conflicts]
+        if unowned:
+            for base_model_name in self._poly_chain_bases():
+                if base_model_name in ('ir.poly_base', self._name) or base_model_name not in self.env:
+                    continue
+                base_table = self.env[base_model_name]._table
+                if not base_table or not _poly_leaf_columns(cr, base_table):
+                    continue
+                cr.execute(SQL("SELECT id FROM %s WHERE id IN %s",
+                               SQL.identifier(base_table), tuple(unowned)))
+                for (taken,) in cr.fetchall():
+                    conflicts.setdefault(taken, base_model_name)
+        return conflicts
+
+    @api.model
     def _poly_backfill_one_base(self, base_model_name, batch_size=1000, limit=None,
                                 only_ids=None):
-        """Insert the rows missing from one base table. See _poly_backfill_base_rows."""
+        """
+        Insert the rows missing from one base table. See _poly_backfill_base_rows.
+
+        :return: ``(rows_created, ids_that_could_not_be_claimed)``
+        """
         cr = self.env.cr
         base = self.env[base_model_name]
         base_table, concrete_table = base._table, self._table
         base_columns = _poly_leaf_columns(cr, base_table)
         if not base_columns:
-            return 0
+            return 0, set()
 
         statics, copied = self._poly_backfill_columns(base_model_name)
+        required = self._poly_backfill_required_fields(base_model_name)
         stamp = fields.Datetime.now()
         model_id = None
         if 'concrete_model_id' in base_columns:
             model_id = self.env['ir.model']._get_id(self._name)
 
+        acceptable = self._poly_acceptable_owner_ids()
         total = 0
+        blocked = set()
+        # Paginate on the id rather than on "what is still missing": a blocked row never
+        # leaves the result set, and re-reading the same page would spin forever.
+        after_id = 0
         while True:
             scope = SQL("")
             if only_ids is not None:
                 if not only_ids:
                     break
                 scope = SQL("AND c.id IN %s", tuple(only_ids))
+            # "Missing" is not the only thing that needs looking at. A row whose base
+            # row is *present but somebody else's* is the failure this pass exists to
+            # catch, and asking only `b.id IS NULL` walks straight past it — which is how
+            # the ir.poly_base pair kept closing itself as done over records that had
+            # never owned their id.
             cr.execute(SQL(
                 """
                 SELECT c.id FROM %s c
                 LEFT JOIN %s b ON b.id = c.id
-                WHERE b.id IS NULL %s
+                LEFT JOIN ir_poly_base p ON p.id = c.id
+                WHERE c.id > %s %s
+                  AND (b.id IS NULL OR p.id IS NULL OR p.concrete_model_id NOT IN %s)
                 ORDER BY c.id
                 LIMIT %s
                 """,
-                SQL.identifier(concrete_table), SQL.identifier(base_table), scope,
+                SQL.identifier(concrete_table), SQL.identifier(base_table), after_id,
+                scope, tuple(acceptable) or (0,),
                 batch_size if not limit else min(batch_size, limit - total),
             ))
-            missing = [row[0] for row in cr.fetchall()]
-            if not missing:
+            candidates = [row[0] for row in cr.fetchall()]
+            if not candidates:
                 break
+            after_id = candidates[-1]
+
+            conflicts = self._poly_id_conflicts(candidates)
+            if conflicts:
+                blocked.update(conflicts)
+                for record_id, holder in sorted(conflicts.items())[:5]:
+                    _logger.warning(
+                        "[poly] %s id %s cannot be reconstructed: %s already holds that "
+                        "id. Run _poly_renumber_colliding() to move it.",
+                        self._name, record_id, holder)
+            missing = [i for i in candidates if i not in conflicts]
+            if not missing:
+                continue
 
             overrides = self._poly_backfill_values(base_model_name, missing) or {}
             rows = self._poly_backfill_read_source(missing, copied)
@@ -2291,6 +2654,19 @@ class PolyBase(_original_BaseModel):
                 for column in ('create_date', 'write_date'):
                     if column in base_columns:
                         values.setdefault(column, stamp)
+                # Last: a NOT NULL column nothing above could answer. Without this the
+                # INSERT is rejected and the record is never reconstructed at all.
+                for column, field in required.items():
+                    if values.get(column) is not None or column not in base_columns:
+                        continue
+                    fallback = self._poly_backfill_fallback_value(field, concrete_id)
+                    if fallback is None:
+                        continue
+                    _logger.warning(
+                        "[poly] %s %s: %s.%s is required and the record has no value "
+                        "for it; wrote a placeholder. See the backfill ledger.",
+                        self._name, concrete_id, base_model_name, column)
+                    values[column] = fallback
 
                 usable = {k: _poly_sql_param(v) for k, v in values.items()
                           if k in base_columns or k == 'id'}
@@ -2310,7 +2686,7 @@ class PolyBase(_original_BaseModel):
         if total:
             self.env.invalidate_all()
             self._sync_poly_sequence()
-        return total
+        return total, blocked
 
     @api.model
     def _poly_backfill_read_source(self, concrete_ids, copied):
@@ -2382,6 +2758,13 @@ class PolyBase(_original_BaseModel):
                 _logger.exception(
                     "[poly] deferred backfill failed for %s; it stays on the list.",
                     model_name)
+
+        # A deployment that never opens a shell still has to hear about a model whose
+        # records cannot claim their ids: the pair stays open, and nothing else says so.
+        try:
+            self.env['ir.poly_base']._poly_log_collision_census()
+        except Exception:  # noqa: BLE001 — a report must not stop the work it reports on
+            _logger.exception("[poly] collision census failed")
 
         self.env.cr.execute(
             "SELECT DISTINCT res_model FROM numa_poly_backfill WHERE post_pending = true")
@@ -2492,9 +2875,335 @@ class PolyBase(_original_BaseModel):
         return total
 
     @api.model
+    def _poly_acceptable_owner_ids(self):
+        """``ir.model`` ids of the concrete models whose base rows are also this one's.
+
+        The model itself, the bases above it — a record's row in a base is its own row —
+        and every model below it, since a leaf owns the whole chain it sits on.
+        """
+        key = (id(self.pool), self._name)
+        cached = _POLY_ACCEPTABLE_OWNERS.get(key)
+        if cached is not None:
+            return cached
+        names = set(_poly_ancestor_names(self._name, self.pool))
+        for model_name in self.env.registry.models:
+            try:
+                if self._name in _poly_ancestor_names(model_name, self.pool):
+                    names.add(model_name)
+            except Exception:  # noqa: BLE001 — an unbuilt class must not break a scan
+                continue
+        IrModel = self.env['ir.model'].sudo()
+        model_ids = []
+        for name in sorted(names):
+            if name in self.env:
+                model_ids.append(IrModel._get_id(name))
+        _POLY_ACCEPTABLE_OWNERS[key] = model_ids
+        return model_ids
+
+    @api.model
+    def _poly_colliding_ids(self, base_model_name=None, limit=None):
+        """
+        Rows of this model whose id is not theirs to claim.
+
+        Split from "missing" on purpose: a missing row is inserted and the record is
+        whole again, while a colliding row cannot be inserted at all — the id belongs to
+        another record, and the only way out is to renumber.
+        """
+        cr = self.env.cr
+        if not self._table or not _poly_leaf_columns(cr, self._table):
+            return []
+        acceptable = self._poly_acceptable_owner_ids()
+        found = []
+
+        # Owned by a concrete model that is not in this record's chain.
+        cr.execute(SQL(
+            "SELECT c.id FROM %s c JOIN ir_poly_base p ON p.id = c.id "
+            "WHERE p.concrete_model_id NOT IN %s ORDER BY c.id %s",
+            SQL.identifier(self._table), tuple(acceptable) or (0,),
+            SQL("LIMIT %s", limit) if limit else SQL(""),
+        ))
+        found.extend(row[0] for row in cr.fetchall())
+
+        # Held by a standalone record of a base: no polymorphic owner, but the row is
+        # already there, so the id was spent outside the hierarchy.
+        bases = [base_model_name] if base_model_name else self._poly_chain_bases()
+        for name in bases:
+            if name in ('ir.poly_base', self._name) or name not in self.env:
+                continue
+            base_table = self.env[name]._table
+            if not base_table or not _poly_leaf_columns(cr, base_table):
+                continue
+            cr.execute(SQL(
+                "SELECT c.id FROM %s c JOIN %s b ON b.id = c.id "
+                "LEFT JOIN ir_poly_base p ON p.id = c.id "
+                "WHERE p.id IS NULL ORDER BY c.id %s",
+                SQL.identifier(self._table), SQL.identifier(base_table),
+                SQL("LIMIT %s", limit) if limit else SQL(""),
+            ))
+            found.extend(row[0] for row in cr.fetchall())
+
+        ordered = sorted(set(found))
+        return ordered[:limit] if limit else ordered
+
+    @api.model
+    def _poly_backfill_count_colliding(self, base_model_name=None):
+        """How many rows of this model hold an id that is already somebody else's."""
+        return len(self._poly_colliding_ids(base_model_name))
+
+    @api.model
+    def _poly_renumber_enabled(self):
+        """Whether the migration may move a colliding record onto a free id.
+
+        On by default: a record that cannot be reconstructed is a record whose
+        polymorphic fields silently do nothing, and leaving it that way is the failure
+        this whole mechanism exists to prevent. Set ``numa_poly.renumber_collisions`` to
+        ``0`` to have the backfill report the collisions and stop instead — worth doing
+        on a first pass, together with ``_poly_collision_census()``.
+        """
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            POLY_RENUMBER_COLLISIONS_PARAM)
+        if param is None or param is False or param == '':
+            return True
+        return str(param).strip().lower() not in ('0', 'false', 'no')
+
+    @api.model
+    def _poly_table_fk_dependents(self, table):
+        """``(table, column)`` for every foreign key that points at ``table``'s id.
+
+        Read from ``pg_constraint`` rather than from the ORM: what has to move with a
+        renumbered row is what the *database* will refuse to leave behind, which includes
+        the many2many relation tables and every column a custom module added.
+        """
+        self.env.cr.execute("""
+            SELECT c.conrelid::regclass::text, a.attname
+            FROM pg_constraint c
+            JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+            JOIN pg_attribute r ON r.attrelid = c.confrelid AND r.attnum = c.confkey[1]
+            WHERE c.contype = 'f'
+              AND c.confrelid = to_regclass(%s)
+              AND array_length(c.conkey, 1) = 1
+              AND r.attname = 'id'
+        """, (table,))
+        return sorted(set(self.env.cr.fetchall()))
+
+    @api.model
+    def _poly_fk_dependents(self):
+        """``(table, column)`` for every foreign key that points at this model's id."""
+        return self._poly_table_fk_dependents(self._table)
+
+    @api.model
+    def _poly_reference_dependents(self):
+        """``(table, id column, model column)`` for references that carry no foreign key.
+
+        Odoo points at a record by ``(model name, id)`` in several places — attachments,
+        messages, followers, external ids, the backfill ledger. Postgres knows nothing
+        about those, so a renumbering that only follows real foreign keys leaves every
+        one of them pointing at a record that has moved.
+        """
+        cr = self.env.cr
+        found = set()
+        for model_name in self.env.registry.models:
+            model = self.env.get(model_name)
+            if model is None or not model._auto or not model._table:
+                continue
+            for fname, field in model._fields.items():
+                model_field = getattr(field, 'model_field', None)
+                if field.type == 'many2one_reference' and field.store and model_field:
+                    found.add((model._table, fname, model_field))
+        # Two tables that predate Many2oneReference and still key records this way.
+        found.add(('ir_model_data', 'res_id', 'model'))
+        found.add(('numa_poly_backfill', 'res_id', 'res_model'))
+        # The companion field naming the model is not always a column of its own:
+        # base_automation.trg_field_ref_model_name is a related, computed on the fly.
+        # Nothing is stored there to match against, so there is nothing to renumber.
+        return sorted(
+            (table, id_column, model_column) for table, id_column, model_column in found
+            if {id_column, model_column} <= _poly_leaf_columns(cr, table)
+        )
+
+    @api.model
+    @api.model
+    def _poly_renumber_rank(self):
+        """
+        How much it costs to move this model's rows. The higher rank keeps its ids.
+
+        When two legacy tables hold the same id, one of them has to move, and *which* is
+        the whole decision. Row count is the tempting answer and the wrong one: the first
+        run of this migration picked ``mrp.workcenter`` over ``res.partner`` and set out
+        to renumber partner 1 — the company's own partner, named by an external id and
+        pointed at from several hundred tables — in order to spare three work centres.
+
+        So the first criterion is how widely the model is referenced, counted from
+        ``pg_constraint``. Row count breaks the tie, the name breaks what is left, so the
+        order is total and the same on every run.
+        """
+        key = (id(self.pool), self._name)
+        cached = _POLY_RENUMBER_RANK.get(key)
+        if cached is None:
+            rows = 0
+            try:
+                self.env.cr.execute(SQL("SELECT count(*) FROM %s",
+                                        SQL.identifier(self._table)))
+                rows = self.env.cr.fetchone()[0]
+            except Exception:  # noqa: BLE001 — a missing table simply ranks lowest
+                pass
+            cached = (len(self._poly_fk_dependents()), rows, self._name)
+            _POLY_RENUMBER_RANK[key] = cached
+        return cached
+
+    @api.model
+    def _poly_renumber_chain_tables(self, record_id):
+        """The tables holding this record's own rows, the concrete one first.
+
+        A record that owns its ``ir.poly_base`` row owns the rest of its chain, and all
+        of it has to travel together — leaving the base row behind would keep the id
+        occupied and block whoever is waiting for it.
+        """
+        tables = [self._table]
+        owner = _poly_id_owners(self.env.cr, [record_id]).get(record_id)
+        ours = _poly_base_row_is_usable(owner, self._name, self.pool) if owner else False
+        for base_model_name in self._poly_chain_bases():
+            base = self.env.get(base_model_name)
+            if base is None or base_model_name == self._name or not base._table:
+                continue
+            if base._table in tables:
+                continue
+            if base_model_name == 'ir.poly_base':
+                # The claim itself. Only ours to move if it names us.
+                if ours:
+                    tables.append(base._table)
+                continue
+            # A row in an intermediate base is ours unless it can belong to whoever holds
+            # the id. It usually cannot: `res.partner` is no kind of `numa.planning.node`,
+            # so a node row under a partner-owned id is the wreckage of the backfill that
+            # could not tell the two apart — and leaving it behind is how 44 orphan rows
+            # survived a renumbering that was otherwise correct.
+            if ours or (owner and base_model_name not in _poly_ancestor_names(
+                    owner, self.pool)):
+                tables.append(base._table)
+        return tables
+
+    @api.model
+    def _poly_renumber_colliding(self, ids=None, dry_run=False):
+        """
+        Free this model's records from ids that are already somebody else's.
+
+        The last resort, and the only real fix. Polymorphic models share one id space; a
+        record whose id another model holds cannot be given its base rows while it keeps
+        that id, so one of the two has to move. Which one is decided by
+        ``_poly_renumber_rank`` — and when the *other* model is the one that should move,
+        this asks it to, rather than moving a record that half the database points at.
+
+        Everything that points at a moved row moves with it: real foreign keys, taken
+        from ``pg_constraint`` rather than from a list somebody has to maintain, and the
+        ``(model, id)`` references Postgres knows nothing about. A row and its foreign
+        keys move in a single statement, because a foreign key declared ``NO ACTION`` is
+        checked at the end of the statement and not before — updating the row on its own
+        is rejected outright.
+
+        This rewrites primary keys of real business data. Take a backup, and run
+        ``dry_run=True`` first to see what would move.
+
+        :return: ``{old_id: new_id}`` for the rows of *this* model that moved.
+        """
+        ids = list(ids) if ids is not None else self._poly_colliding_ids()
+        if not ids:
+            return {}
+        cr = self.env.cr
+        self.env.flush_all()
+
+        # Hand back the ids whose current holder is the one that should give way.
+        mine, delegated = [], defaultdict(list)
+        conflicts = self._poly_id_conflicts(ids)
+        for record_id in ids:
+            holder = conflicts.get(record_id)
+            other = self.env.get(holder) if holder else None
+            if other is not None and self._poly_renumber_rank() > other._poly_renumber_rank():
+                delegated[holder].append(record_id)
+            else:
+                mine.append(record_id)
+        for holder, held_ids in delegated.items():
+            _logger.info("[poly] %s outranks %s: moving %s of its row(s) instead.",
+                         self._name, holder, len(held_ids))
+            self.env[holder]._poly_renumber_colliding(held_ids, dry_run=dry_run)
+        if not mine:
+            return {}
+
+        self._sync_poly_sequence()
+        plan = {}
+        for old_id in mine:
+            cr.execute("SELECT nextval('ir_poly_base_id_seq')")
+            plan[old_id] = cr.fetchone()[0]
+        if dry_run:
+            _logger.info("[poly] renumber (dry run) %s: %s row(s) would move, e.g. %s",
+                         self._name, len(plan), dict(list(plan.items())[:5]))
+            return plan
+
+        reference_dependents = self._poly_reference_dependents()
+        # Odoo 18 dropped ir_property in favour of company-dependent jsonb columns, but
+        # a database upgraded from an older version can still have the table.
+        cr.execute("SELECT to_regclass('ir_property')")
+        has_ir_property = bool(cr.fetchone()[0])
+        fk_cache = {}
+
+        for index, (old_id, new_id) in enumerate(plan.items(), start=1):
+            # One statement per record. Batching them would be faster, but a table with
+            # a self-referencing foreign key would then have two updates racing on the
+            # same row, whose outcome Postgres explicitly leaves undefined.
+            parts, position = [], 0
+            for table in self._poly_renumber_chain_tables(old_id):
+                if table not in fk_cache:
+                    fk_cache[table] = self._poly_table_fk_dependents(table)
+                for child_table, column in fk_cache[table]:
+                    parts.append(SQL(
+                        "%s AS (UPDATE %s SET %s = %s WHERE %s = %s RETURNING 1)",
+                        SQL.identifier('poly_fk_%s' % position),
+                        SQL.identifier(child_table), SQL.identifier(column), new_id,
+                        SQL.identifier(column), old_id))
+                    position += 1
+                parts.append(SQL(
+                    "%s AS (UPDATE %s SET id = %s WHERE id = %s RETURNING 1)",
+                    SQL.identifier('poly_row_%s' % position), SQL.identifier(table),
+                    new_id, old_id))
+                position += 1
+            cr.execute(SQL("WITH %s SELECT 1", SQL(', ').join(parts)))
+
+            for table, id_column, model_column in reference_dependents:
+                cr.execute(SQL(
+                    "UPDATE %s SET %s = %s WHERE %s = %s AND %s = %s",
+                    SQL.identifier(table), SQL.identifier(id_column), new_id,
+                    SQL.identifier(id_column), old_id,
+                    SQL.identifier(model_column), self._name))
+            if has_ir_property:
+                cr.execute(
+                    "UPDATE ir_property SET res_id = %s WHERE res_id = %s",
+                    ('%s,%s' % (self._name, new_id), '%s,%s' % (self._name, old_id)))
+
+            if index % 500 == 0:
+                _logger.info("[poly] renumber %s: %s/%s", self._name, index, len(plan))
+
+        # Claim the new ids. Without this the record lands on an id nothing owns, while
+        # the base rows that travelled with it sit there under it — which is exactly what
+        # a standalone base record looks like, so the very next scan reads the record as
+        # colliding with its own rows and refuses to reconstruct it.
+        if _poly_is_polymorphic(self):
+            model_id = self.env['ir.model']._get_id(self._name)
+            cr.execute(
+                "INSERT INTO ir_poly_base (id, concrete_model_id, create_uid, write_uid, "
+                "create_date, write_date) SELECT unnest(%s), %s, %s, %s, now(), now() "
+                "ON CONFLICT (id) DO NOTHING",
+                (list(plan.values()), model_id, SUPERUSER_ID, SUPERUSER_ID))
+
+        self.env.invalidate_all()
+        self._poly_forget_transition_state()
+        _logger.warning("[poly] renumbered %s row(s) of %s onto free ids; the records "
+                        "can now be reconstructed.", len(plan), self._name)
+        return plan
+
+    @api.model
     def _poly_backfill_pending_pairs(self):
         """Bases of this model that have not been reconstructed yet."""
-        return [name for name in self._poly_get_depend_models().keys()
+        return [name for name in self._poly_chain_bases()
                 if name != self._name and name in self.env
                 and self._poly_backfill_pair_state(name) != 'done']
 
@@ -4080,6 +4789,11 @@ class PolyBase(_original_BaseModel):
         """
         Create records from the stored field values in data_list.
         """
+        # A many2one in the values may point at a record whose base row was never built;
+        # without it the insert fails on a foreign key naming a table the caller never
+        # mentioned. True of non-polymorphic models too — numa.planning.allocation is one.
+        self._poly_repair_base_references(data_list)
+
         # [poly] ir.poly_base IS NOT polymorphic, it is the common base.
         # Standard Odoo models that ARE NOT polymorphic must also be handled by Odoo.
         _is_poly = _poly_is_polymorphic(self)
@@ -4772,21 +5486,195 @@ class PolyBase(_original_BaseModel):
                 return
         return super()._compute_field_value(field)
 
-    def _poly_ensure_base_rows_for_write(self, vals):
+    @api.model
+    def _poly_transition_finished(self):
         """
-        Create the base rows these records are missing, when the write needs them.
+        True once every base of this model has been reconstructed.
 
-        Cheap on the hot path: a write that only touches the model's own fields returns
-        immediately, and the existence check only runs for the rest.
+        Reports on the migration; deliberately *not* what decides whether the safety net
+        below runs. A finished migration says the records that existed at the time were
+        completed, not that no incomplete record can appear afterwards — a restored
+        partial dump, a row inserted outside the ORM and a create that failed halfway all
+        produce one, and a safeguard switched off by a flag is not a safeguard.
         """
-        if not self or not vals:
+        key = (id(self.pool), self._name)
+        if key in _POLY_TRANSITION_FINISHED:
+            return True
+        bases = [name for name in self._poly_chain_bases()
+                 if name != self._name and name in self.env]
+        if not bases:
+            _POLY_TRANSITION_FINISHED.add(key)
+            return True
+        try:
+            done = set(self.env['numa.poly.backfill.pair'].sudo().search([
+                ('concrete_model', '=', self._name),
+                ('base_model', 'in', bases),
+                ('state', '=', 'done'),
+            ]).mapped('base_model'))
+        except Exception:  # noqa: BLE001 — before the table exists, assume unfinished
+            return False
+        if all(name in done for name in bases):
+            _POLY_TRANSITION_FINISHED.add(key)
+            return True
+        return False
+
+    @api.model
+    def _poly_forget_transition_state(self):
+        """Ask again — a pair was reopened, or the backfill just moved rows."""
+        _POLY_TRANSITION_FINISHED.discard((id(self.pool), self._name))
+
+    @api.model
+    def _poly_base_rows_present(self, ids):
+        """One indexed lookup: do these records have an ``ir.poly_base`` row of their own?
+
+        That row is where the id is claimed, and ``create`` never makes one without the
+        rest of the chain — so a row that belongs to *this* record is a sound proxy for
+        "this record is whole", and the cheapest question that can be asked on the write
+        path. Ownership is half the question, not a refinement of it: a colliding record
+        has a row under its id too, somebody else's, and answering on presence alone
+        would wave it through exactly as the old backfill did.
+
+        The alternative — trusting the migration to have finished — costs nothing and
+        answers the wrong question: it stays true of a database that acquired an
+        incomplete record yesterday.
+        """
+        ids = set(ids)
+        if not ids:
+            return True
+        acceptable = self._poly_acceptable_owner_ids()
+        if not acceptable:
+            return False
+        self.env.cr.execute(
+            "SELECT count(*) FROM ir_poly_base WHERE id IN %s AND concrete_model_id IN %s",
+            (tuple(ids), tuple(acceptable)))
+        return self.env.cr.fetchone()[0] >= len(ids)
+
+    @api.model
+    def _poly_ensure_base_rows(self, ids, force=False):
+        """
+        Build the polymorphic rows ``ids`` are missing, now, before they are needed.
+
+        The safety net for a transition that is not over: a table still being migrated by
+        the cron, a backfill that failed halfway, a row inserted outside the ORM. What
+        decides whether it runs is the state of the *record*, never which fields a caller
+        happens to be touching — the write that took production down set only
+        ``date_planned``, a field of the concrete model, and then created an allocation
+        pointing at the base row that was not there:
+
+            ForeignKeyViolation: numa_planning_allocation_node_id_fkey
+            Key (node_id)=(14764) is not present in table "numa_planning_node"
+
+        Raises when a record cannot be completed because its id belongs to somebody else:
+        that is not something a caller can work around, and a clear message beats the
+        same ForeignKeyViolation three frames further down.
+        """
+        ids = [i for i in (ids or []) if isinstance(i, int) and i > 0]
+        if not ids or not self._poly_get_depend_models():
             return
-        native = self._poly_native_field_names()
-        if all(key in native or key not in self._fields for key in vals):
+        if not force and self._poly_base_rows_present(ids):
             return
-        if not self._poly_get_depend_models():
+        conflicts = self._poly_id_conflicts(ids)
+        if conflicts:
+            record_id, holder = sorted(conflicts.items())[0]
+            raise UserError(_(
+                "%(model)s %(id)s cannot be given its polymorphic rows: the id already "
+                "belongs to %(holder)s. Polymorphic models share one id space, and this "
+                "record predates the module that made it polymorphic. Run "
+                "_poly_renumber_colliding() on %(model)s to move it to a free id.",
+                model=self._name, id=record_id, holder=holder))
+        self._poly_backfill_base_rows(only_ids=ids)
+
+    def _poly_ensure_base_rows_for_write(self, vals):
+        """Kept for callers outside this module; the values no longer decide anything."""
+        self._poly_ensure_base_rows(list(self._ids))
+
+    @api.model
+    def _poly_base_reference_fields(self):
+        """``(field name, base model)`` for the many2ones of this model that point into
+        a polymorphic hierarchy.
+
+        Almost every model has none, and answering that is a dict lookup — which is the
+        whole point, because the check below runs on every create and write.
+        """
+        key = (id(self.pool), self._name)
+        cached = _POLY_BASE_REFERENCE_FIELDS.get(key)
+        if cached is None:
+            cached = tuple(
+                (fname, field.comodel_name)
+                for fname, field in self._fields.items()
+                if field.type == 'many2one' and field.store and field.comodel_name
+                and _poly_subtype_names(field.comodel_name, self.pool)
+            )
+            _POLY_BASE_REFERENCE_FIELDS[key] = cached
+        return cached
+
+    @api.model
+    def _poly_repair_base_references(self, vals_list):
+        """
+        Complete the records this write is about to point at.
+
+        A foreign key does not care who forgot to build the row. ``numa.planning.node``
+        is a base of ``purchase.order.line``, so an allocation created against a line
+        that never got its node row fails inside *the allocation's* create, with a
+        ForeignKeyViolation naming a table the caller never mentioned. The record being
+        referenced is the incomplete one, so that is where the repair belongs.
+        """
+        references = self._poly_base_reference_fields()
+        if not references:
             return
-        self._poly_backfill_base_rows(only_ids=list(self._ids))
+        wanted = defaultdict(set)
+        for fname, base_model_name in references:
+            for vals in vals_list:
+                value = vals.get(fname)
+                if isinstance(value, BaseModel):
+                    value = value.id
+                if isinstance(value, int) and value > 0:
+                    wanted[base_model_name].add(value)
+        for base_model_name, ids in wanted.items():
+            try:
+                self._poly_complete_base_targets(base_model_name, ids)
+            except Exception:  # noqa: BLE001 — the caller's own error is the useful one
+                _logger.exception(
+                    "[poly] could not complete the %s records referenced from %s",
+                    base_model_name, self._name)
+
+    @api.model
+    def _poly_complete_base_targets(self, base_model_name, ids):
+        """Build the missing rows of `base_model_name` for `ids`, via their own model."""
+        cr = self.env.cr
+        base = self.env.get(base_model_name)
+        if base is None or not base._table or not _poly_leaf_columns(cr, base._table):
+            return
+        cr.execute(SQL("SELECT id FROM %s WHERE id IN %s",
+                       SQL.identifier(base._table), tuple(ids)))
+        missing = set(ids) - {row[0] for row in cr.fetchall()}
+        if not missing:
+            return
+        for subtype in _poly_subtype_names(base_model_name, self.pool):
+            if not missing:
+                break
+            model = self.env.get(subtype)
+            if model is None or not model._auto or not model._table:
+                continue
+            if not _poly_leaf_columns(cr, model._table):
+                continue
+            cr.execute(SQL("SELECT id FROM %s WHERE id IN %s",
+                           SQL.identifier(model._table), tuple(missing)))
+            owned = [row[0] for row in cr.fetchall()]
+            if not owned:
+                continue
+            try:
+                # The base row is already known to be absent, so there is nothing left
+                # for the cheap probe to establish: go straight to the repair.
+                model._poly_ensure_base_rows(owned, force=True)
+            except UserError as blocked:
+                # One record's taken id must not take down an operation that merely
+                # mentions it. Writing to the blocked record itself still raises — there
+                # the message is the answer; here it would be an unrelated create dying
+                # because some other row is in trouble.
+                _logger.warning("[poly] %s referenced from %s: %s",
+                                subtype, self._name, blocked)
+            missing.difference_update(owned)
 
     def write(self, vals):
         """
@@ -4795,15 +5683,26 @@ class PolyBase(_original_BaseModel):
         if not self:
             return True
 
+        # Before anything else, and whether or not THIS model is polymorphic: a many2one
+        # in `vals` may be about to point at a record that never got its base row.
+        self._poly_repair_base_references([vals])
+
         if not _poly_is_polymorphic(self):
             return super().write(vals)
 
         # A write to a field that lives on a base row is discarded when that row does not
-        # exist — silently, returning True. Give the records their rows first, so the
-        # value has somewhere to land.
+        # exist — silently, returning True. And a write that touches nothing but the
+        # model's own fields is no safer: what runs after it reaches for the base row.
+        # Give the records their rows first, either way.
         try:
-            self._poly_ensure_base_rows_for_write(vals)
+            self._poly_ensure_base_rows(list(self._ids))
+        except UserError:
+            # A taken id. Nothing the caller can do about it, and nothing this write can
+            # do either — say so rather than fail later and elsewhere.
+            raise
         except Exception:
+            # Anything else must not cost the user their write: the record stays as
+            # readable as it was, and the log carries the reason.
             _logger.exception(
                 "[poly] could not create the missing base rows for a write on %s; "
                 "values aimed at a base model may be lost.", self._name)
@@ -6376,6 +7275,17 @@ def _poly_registry_setup_models(self, cr):
     _POLY_LEAF_COLUMNS.clear()
     _POLY_COLUMN_CACHE.clear()
     _POLY_NATIVE_FNAMES.clear()
+
+    # [poly] Same reasoning for the graph caches the ownership probe reads on every
+    # write: a module update can add a base to a model, which changes what its records
+    # may own, and a stale answer there is the difference between a record being
+    # completed and being reported as somebody else's.
+    _POLY_ANCESTORS.clear()
+    _POLY_ACCEPTABLE_OWNERS.clear()
+    _POLY_SUBTYPES.clear()
+    _POLY_BASE_REFERENCE_FIELDS.clear()
+    _POLY_RENUMBER_RANK.clear()
+    _POLY_TRANSITION_FINISHED.clear()
 
     # [poly] Technical access to core classes
     cls_PolyBase = PolyBase
