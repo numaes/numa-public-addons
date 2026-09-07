@@ -174,6 +174,9 @@ _POLY_RENUMBER_RANK: dict = {}
 _POLY_ANCESTORS: dict = {}
 _POLY_ACCEPTABLE_OWNERS: dict = {}
 
+# (registry, model, field) triples whose base collision has already been reported.
+_POLY_REPORTED_COLLISIONS: set = set()
+
 
 def _poly_subtype_names(base_model_name, pool):
     """The polymorphic models whose chain includes ``base_model_name``.
@@ -1247,6 +1250,45 @@ def _poly_base_row_is_usable(owner_name, model_name, pool):
         return True
     return (model_name in _poly_ancestor_names(owner_name, pool)
             or owner_name in _poly_ancestor_names(model_name, pool))
+
+
+def _poly_report_base_field_collisions(pool):
+    """Log the field names that more than one base of a polymorphic model provides.
+
+    Reported once per (registry, model, field): a registry rebuild is frequent and this
+    is a modelling problem, not an event.
+    """
+    for model_name, model_cls in pool.items():
+        try:
+            dep_map = _poly_collect_depend_models(model_cls)
+        except Exception:  # noqa: BLE001 — a half-built class must not break the report
+            continue
+        if not dep_map or len(dep_map) < 2:
+            continue
+        providers = {}
+        for base_name in dep_map:
+            base_cls = pool.get(base_name)
+            if base_cls is None:
+                continue
+            for fname, field in getattr(base_cls, '_fields', {}).items():
+                if fname in _POLY_TECHNICAL_FIELDS:
+                    continue
+                if getattr(field, 'related', None) or getattr(field, 'inherited', False):
+                    continue
+                providers.setdefault(fname, []).append(base_name)
+        for fname, owners in providers.items():
+            if len(owners) < 2:
+                continue
+            key = (id(pool), model_name, fname)
+            if key in _POLY_REPORTED_COLLISIONS:
+                continue
+            _POLY_REPORTED_COLLISIONS.add(key)
+            _logger.warning(
+                "[poly] %s.%s is provided by %s bases: %s. %s wins; the others are not "
+                "reachable under that name. Rename the field on the base that has no "
+                "claim to it -- a model meant to be a polymorphic base should not "
+                "occupy a name as common as 'state'.",
+                model_name, fname, len(owners), ', '.join(owners), owners[0])
 
 
 def _poly_id_owners(cr, ids):
@@ -7302,6 +7344,7 @@ def _poly_registry_setup_models(self, cr):
     # completed and being reported as somebody else's.
     _POLY_ANCESTORS.clear()
     _POLY_ACCEPTABLE_OWNERS.clear()
+    _POLY_REPORTED_COLLISIONS.clear()
     _POLY_SUBTYPES.clear()
     _POLY_BASE_REFERENCE_FIELDS.clear()
     _POLY_RENUMBER_RANK.clear()
@@ -7646,6 +7689,21 @@ def _poly_registry_setup_models(self, cr):
     # Field injection is now handled by _setup_base via _build_poly_fields.
     if 'field_computed' in self.__dict__:
         del self.__dict__['field_computed']
+
+    # [poly] Report a field name that two bases of the same model both provide.
+    #
+    # Only one of them can be `model.<name>`, and which one is decided here (the first in
+    # `_depend_models`); the other becomes unreachable under that name. Odoo notices when
+    # the two are Selections with different values and says so once per model of the
+    # hierarchy -- 219 lines on a real installation, none of which name the two bases.
+    # This says it once, and says which one won.
+    #
+    # It cost a real bug before it existed: `conversation.message` sits on `digital.event`
+    # (state = new/pending/processed/error) and on `fsm.instance` (state = init/running/
+    # paused/ended/error). digital.event won, so every `message.state == 'init'` in
+    # numa_conversation_fsm compared an event's processing status against an FSM state and
+    # was dead code that nothing reported.
+    _poly_report_base_field_collisions(self)
     # [poly] Clear the polymorphic model name cache so stale results from the
     # previous registry state don't persist into the newly rebuilt registry.
     _poly_is_polymorphic_cache.clear()

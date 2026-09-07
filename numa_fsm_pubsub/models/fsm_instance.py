@@ -212,7 +212,7 @@ class FsmInstance(models.Model):
         # Fallback: Try to trigger an FSM event/transition with the topic name
         # This unifies network events with state events
         try:
-            if self.state in ['running', 'paused']:
+            if self.fsm_state in ['running', 'paused']:
                 _logger.debug(
                     f"FSM Instance {self.id}: Attempting to send event '{topic_name}' to FSM."
                 )
@@ -227,7 +227,7 @@ class FsmInstance(models.Model):
                     )
             else:
                 _logger.debug(
-                    f"FSM Instance {self.id}: FSM is in state '{self.state}'. "
+                    f"FSM Instance {self.id}: FSM is in state '{self.fsm_state}'. "
                     f"Event '{topic_name}' not processed."
                 )
         except Exception as e:

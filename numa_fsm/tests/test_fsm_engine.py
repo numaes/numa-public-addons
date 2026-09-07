@@ -28,7 +28,7 @@ class TestFSMEngineOutcomes(TestFSMCommon):
         })
         # Set instance as running in the desired state (bypass legacy start mechanics)
         fsmi.write({
-            "state": "running",
+            "fsm_state": "running",
             "current_state": current_state,
             "json_instance_values": json.dumps({}),
         })

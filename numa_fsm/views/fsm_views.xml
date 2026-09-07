@@ -104,7 +104,7 @@
                         <button name="end" type="object" string="End" invisible="state != 'running'"/>
                         <button name="action_debug_next_step" type="object" string="Next Step" class="btn-primary" invisible="state != 'paused'"/>
                         <button name="action_debug_continue" type="object" string="Continue" class="btn-secondary" invisible="state != 'paused'"/>
-                        <field name="state" widget="statusbar" />
+                        <field name="fsm_state" widget="statusbar" />
                     </header>
                     <sheet>
                         <group>
@@ -156,7 +156,7 @@
                 <list string="FSM Instances">
                     <field name="name" />
                     <field name="definition_id" />
-                    <field name="state" />
+                    <field name="fsm_state" />
                     <field name="current_state_id" />
                 </list>
             </field>
@@ -169,7 +169,7 @@
                 <search string="FSM Instance search">
                     <field name="name" />
                     <field name="definition_id" />
-                    <field name="state" />
+                    <field name="fsm_state" />
                     <field name="current_state_id" />
                     <group expand="0" name="filtered_by" string="Filtered By">
                         <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>

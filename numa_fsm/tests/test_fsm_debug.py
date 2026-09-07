@@ -29,7 +29,7 @@ class TestFSMDebugSuite(TestFSMCommon):
             "name": f"inst_{fsmd.name}",
         })
         fsmi.write({
-            "state": "running",
+            "fsm_state": "running",
             "current_state": current_state,
             "json_instance_values": json.dumps({}),
             "debug_mode": debug_mode,

@@ -44,7 +44,7 @@ class TestFSMInstance(TestFSMCommon):
         self.assertTrue(fsmi, "FSM instance was not created")
         self.assertEqual(fsmi.definition_id.id, fsmd.id, "FSM instance has incorrect definition")
         self.assertEqual(fsmi.name, 'test_creation_instance', "FSM instance has incorrect name")
-        self.assertEqual(fsmi.state, 'init', "FSM instance has incorrect initial state")
+        self.assertEqual(fsmi.fsm_state, 'init', "FSM instance has incorrect initial state")
 
     def test_instance_start(self):
         """
@@ -76,7 +76,7 @@ class TestFSMInstance(TestFSMCommon):
         fsmi.start()
         
         # Check that the instance was started correctly
-        self.assertEqual(fsmi.state, 'running', "FSM instance was not started")
+        self.assertEqual(fsmi.fsm_state, 'running', "FSM instance was not started")
         self.assertEqual(fsmi.current_state, 'initialState', 
                          "FSM instance did not execute start code correctly")
         
@@ -113,13 +113,13 @@ class TestFSMInstance(TestFSMCommon):
         fsmi.start()
         
         # Check that the instance was started correctly
-        self.assertEqual(fsmi.state, 'running', "FSM instance was not started")
+        self.assertEqual(fsmi.fsm_state, 'running', "FSM instance was not started")
         
         # End the FSM instance
         fsmi.process_event({'name': 'endEvent'}, {})
         
         # Check that the instance was ended correctly
-        self.assertEqual(fsmi.state, 'ended', "FSM instance was not ended")
+        self.assertEqual(fsmi.fsm_state, 'ended', "FSM instance was not ended")
 
     def test_instance_logging(self):
         """

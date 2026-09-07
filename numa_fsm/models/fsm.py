@@ -471,7 +471,7 @@ class FSMInstance(models.Model):
     name = fields.Char('Instance ID', default=lambda s: uuid.uuid4(), copy=False)
     definition_id = fields.Many2one('fsm.definition', 'Definition')
     
-    state = fields.Selection(
+    fsm_state = fields.Selection(
         [('init', 'Not Started'), ('running', 'Running'), ('paused', 'Paused'), ('ended', 'Ended'), ('error', 'Error')],
         string='Execution State', required=True, default='init', copy=False, tracking=True
     )
@@ -497,7 +497,7 @@ class FSMInstance(models.Model):
 
     def start(self):
         self.ensure_one()
-        if self.state != 'init':
+        if self.fsm_state != 'init':
             raise exceptions.UserError("Only instances in 'Not Started' state can be started.")
         
         compiled_def = json.loads(self.definition_id.json_compiled_definition or '{}')
@@ -507,7 +507,7 @@ class FSMInstance(models.Model):
             raise exceptions.UserError("Cannot start FSM: No 'start' node defined in the diagram.")
             
         self.write({
-            'state': 'running',
+            'fsm_state': 'running',
             'next_node_id': start_node_id,
             'instance_variables': {},
             'intermediate_variables': {},
@@ -517,13 +517,13 @@ class FSMInstance(models.Model):
 
     def action_debug_next_step(self):
         self.ensure_one()
-        if self.state not in ['paused', 'running'] or not self.next_node_id:
+        if self.fsm_state not in ['paused', 'running'] or not self.next_node_id:
             return
         self.with_context(fsm_single_step=True)._execute_chain()
 
     def action_debug_continue(self):
         self.ensure_one()
-        if self.state not in ['paused', 'running'] or not self.next_node_id:
+        if self.fsm_state not in ['paused', 'running'] or not self.next_node_id:
             return
         self.with_context(fsm_single_step=False)._execute_chain()
 
@@ -559,7 +559,7 @@ class FSMInstance(models.Model):
 
                     if is_breakpoint or is_single_step:
                         self.write({
-                            'state': 'paused',
+                            'fsm_state': 'paused',
                             'intermediate_variables': intermediate_vars,
                             'next_node_id': current_node_id,
                         })
@@ -569,7 +569,7 @@ class FSMInstance(models.Model):
                 elif node['type'] == 'state':
                     self.log(f"Reached state: {node.get('label', current_node_id)}")
                     self.write({
-                        'state': 'running',
+                        'fsm_state': 'running',
                         'current_state_id': current_node_id,
                         'instance_variables': intermediate_vars,
                         'intermediate_variables': {},
@@ -580,7 +580,7 @@ class FSMInstance(models.Model):
                 elif node['type'] == 'end':
                     self.log(f"Reached end: {node.get('label', current_node_id)}")
                     self.write({
-                        'state': 'ended',
+                        'fsm_state': 'ended',
                         'current_state_id': current_node_id,
                         'instance_variables': intermediate_vars,
                         'intermediate_variables': {},
@@ -594,7 +594,7 @@ class FSMInstance(models.Model):
         except Exception as e:
             _logger.exception("FSM Execution Error", exc_info=True)
             self.log(f"ERROR: {e}")
-            self.write({'state': 'error', 'intermediate_variables': {}})
+            self.write({'fsm_state': 'error', 'intermediate_variables': {}})
 
     def _get_execution_globals(self, variables):
         self.ensure_one()
@@ -640,7 +640,7 @@ class FSMInstance(models.Model):
         :param event: Dictionary containing event data with at least a 'name' key
         """
         self.ensure_one()
-        if self.state != 'running' or not self.current_state_id:
+        if self.fsm_state != 'running' or not self.current_state_id:
             self.log(f"Event '{event.get('name')}' ignored: FSM not in a running state.")
             return
 
@@ -726,7 +726,7 @@ class FSMInstance(models.Model):
             raise exceptions.UserError(_('Page %s not found!') % page_name)
 
     def end(self):
-        self.write({'state': 'ended'})
+        self.write({'fsm_state': 'ended'})
     
     def start_timer(self, event, delay=None, at=None):
         timer_model = self.env['fsm.timer']

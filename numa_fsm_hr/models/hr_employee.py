@@ -87,13 +87,13 @@ class HrEmployee(models.Model):
             else:
                 employee.bot_state = False
 
-    @api.depends('state', 'definition_id')
+    @api.depends('fsm_state', 'definition_id')
     def _compute_has_fsm(self):
         """Compute if employee has an active FSM instance."""
         for employee in self:
             employee.has_fsm = bool(
                 employee.definition_id and 
-                employee.state in ['running', 'paused']
+                employee.fsm_state in ['running', 'paused']
             )
 
     @api.model_create_multi
@@ -109,7 +109,7 @@ class HrEmployee(models.Model):
             if employee.definition_id and employee.definition_id.state == 'production':
                 # Auto-start FSM for new employees with bots
                 try:
-                    if employee.state == 'init':
+                    if employee.fsm_state == 'init':
                         employee.start()
                 except Exception as e:
                     _logger.warning(f"Failed to auto-start FSM for employee {employee.id}: {e}")
@@ -129,7 +129,7 @@ class HrEmployee(models.Model):
         if 'bot_id' in vals or 'definition_id' in vals:
             for employee in self:
                 # Start FSM if definition is set and instance is in init state
-                if employee.definition_id and employee.state == 'init':
+                if employee.definition_id and employee.fsm_state == 'init':
                     try:
                         employee.start()
                     except Exception as e:
@@ -159,8 +159,8 @@ class HrEmployee(models.Model):
         if not self.definition_id:
             raise UserError(_("No FSM definition assigned to this employee. Please assign a bot first."))
         
-        if self.state != 'init':
-            raise UserError(_("FSM is already running or has ended. Current state: %s") % self.state)
+        if self.fsm_state != 'init':
+            raise UserError(_("FSM is already running or has ended. Current state: %s") % self.fsm_state)
         
         try:
             self.start()
@@ -183,8 +183,8 @@ class HrEmployee(models.Model):
         if not self.definition_id:
             raise UserError(_("No FSM definition assigned."))
         
-        if self.state != 'running':
-            raise UserError(_("FSM is not running. Current state: %s") % self.state)
+        if self.fsm_state != 'running':
+            raise UserError(_("FSM is not running. Current state: %s") % self.fsm_state)
         
         # Set debug mode to pause on next breakpoint
         self.write({'debug_mode': 'step_by_step'})
@@ -205,8 +205,8 @@ class HrEmployee(models.Model):
         if not self.definition_id:
             raise UserError(_("No FSM definition assigned."))
         
-        if self.state != 'paused':
-            raise UserError(_("FSM is not paused. Current state: %s") % self.state)
+        if self.fsm_state != 'paused':
+            raise UserError(_("FSM is not paused. Current state: %s") % self.fsm_state)
         
         self.action_debug_continue()
         return {
@@ -226,8 +226,8 @@ class HrEmployee(models.Model):
         if not self.definition_id:
             raise UserError(_("No FSM definition assigned."))
         
-        if self.state != 'paused':
-            raise UserError(_("FSM is not paused. Current state: %s") % self.state)
+        if self.fsm_state != 'paused':
+            raise UserError(_("FSM is not paused. Current state: %s") % self.fsm_state)
         
         self.action_debug_next_step()
         return {

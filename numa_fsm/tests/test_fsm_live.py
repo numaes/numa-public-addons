@@ -86,9 +86,9 @@ class TestFsmLive(TransactionCase):
     # ---------------------------------------------------------------- #
     def test_start_reaches_first_state(self):
         inst = self._new_instance()
-        self.assertEqual(inst.state, 'init')
+        self.assertEqual(inst.fsm_state, 'init')
         inst.start()
-        self.assertEqual(inst.state, 'running')
+        self.assertEqual(inst.fsm_state, 'running')
         self.assertEqual(inst.current_state_id, 'waiting')
         self.assertEqual((inst.instance_variables or {}).get('log'), ['started'])
 
@@ -108,7 +108,7 @@ class TestFsmLive(TransactionCase):
         inst._process_event_sync({'name': 'increment'})
         self.assertEqual(inst.instance_variables.get('count'), 2)
         inst._process_event_sync({'name': 'approve', 'by': 'tester'})
-        self.assertEqual(inst.state, 'ended')
+        self.assertEqual(inst.fsm_state, 'ended')
         self.assertEqual(inst.current_state_id, 'approved')
         self.assertEqual(inst.instance_variables.get('result'), 'tester')
         self.assertIn('approved', inst.instance_variables.get('log', []))
@@ -117,7 +117,7 @@ class TestFsmLive(TransactionCase):
         inst = self._new_instance()
         inst.start()
         inst._process_event_sync({'name': 'reject'})
-        self.assertEqual(inst.state, 'ended')
+        self.assertEqual(inst.fsm_state, 'ended')
         self.assertEqual(inst.current_state_id, 'rejected')
 
     def test_unknown_event_ignored(self):
@@ -125,13 +125,13 @@ class TestFsmLive(TransactionCase):
         inst = self._new_instance()
         inst.start()
         inst._process_event_sync({'name': 'inexistente'})
-        self.assertEqual(inst.state, 'running')
+        self.assertEqual(inst.fsm_state, 'running')
         self.assertEqual(inst.current_state_id, 'waiting')
 
     def test_event_ignored_when_not_running(self):
         inst = self._new_instance()  # state='init', sin current_state
         inst._process_event_sync({'name': 'approve'})
-        self.assertEqual(inst.state, 'init')
+        self.assertEqual(inst.fsm_state, 'init')
 
     def test_bad_outcome_sets_error_state(self):
         """Una transición cuyo outcome no tiene connection deja la instancia en 'error'."""
@@ -145,7 +145,7 @@ class TestFsmLive(TransactionCase):
         inst = self.env['fsm.instance'].create({'definition_id': bad_def.id})
         inst.start()
         inst._process_event_sync({'name': 'approve'})
-        self.assertEqual(inst.state, 'error')
+        self.assertEqual(inst.fsm_state, 'error')
 
     # ---------------------------------------------------------------- #
     # Timers (referencia polimórfica — fsm.instance real).             #
@@ -186,5 +186,5 @@ class TestFsmLive(TransactionCase):
         b._process_event_sync({'name': 'reject'})
         self.assertEqual(a.instance_variables.get('count'), 2)
         self.assertEqual(a.current_state_id, 'waiting')
-        self.assertEqual(b.state, 'ended')
+        self.assertEqual(b.fsm_state, 'ended')
         self.assertEqual(b.current_state_id, 'rejected')

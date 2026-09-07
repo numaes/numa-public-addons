@@ -16,6 +16,8 @@ records were left with is worse than nothing — ``ir_poly_base.concrete_model_i
 names the *wrong* model, so anything resolved through a polymorphic base dispatches to
 it.
 """
+from collections import OrderedDict
+
 from odoo.tests import tagged, TransactionCase
 
 from ..models.poly import _poly_base_row_is_usable
@@ -338,3 +340,108 @@ class TestPolyIdCollisions(TransactionCase):
                             (new_id,))
         self.assertEqual(self.env.cr.fetchone()[0], 1,
                          "And the node row must have come along.")
+
+
+@tagged('post_install', '-at_install')
+class TestPolyBaseFieldNames(TransactionCase):
+    """
+    Two bases of one polymorphic model providing the same field name.
+
+    Only one of them can be ``model.<name>``; the other is not reachable under it.
+    ``conversation.message`` sat on ``digital.event`` (state = new/pending/processed/
+    error) and on ``fsm.instance`` (state = init/running/paused/ended/error). The event's
+    state won, so every ``message.state == 'init'`` in numa_conversation_fsm compared a
+    processing status against an FSM state and did nothing — and Odoo's only comment on
+    it was a generic line repeated 219 times that named neither base.
+
+    Reported, not forbidden. A subtype redefining an inherited attribute on purpose is a
+    legitimate thing to do; what is not legitimate is doing it by accident and finding
+    out months later. So numa_poly says which bases collided and which one won, once, and
+    leaves the decision to whoever reads it.
+    """
+
+    def _collisions(self):
+        from ..models.poly import _poly_collect_depend_models, _POLY_TECHNICAL_FIELDS
+
+        found = []
+        for model_name in sorted(self.env.registry.models):
+            dep_map = _poly_collect_depend_models(self.env.registry[model_name])
+            if len(dep_map) < 2:
+                continue
+            providers = {}
+            for base_name in dep_map:
+                base = self.env.get(base_name)
+                if base is None:
+                    continue
+                for fname, field in base._fields.items():
+                    if fname in _POLY_TECHNICAL_FIELDS or field.related or field.inherited:
+                        continue
+                    providers.setdefault(fname, []).append(base_name)
+            for fname, owners in sorted(providers.items()):
+                if len(owners) > 1:
+                    found.append((model_name, fname, owners))
+        return found
+
+    def test_01_the_collision_that_started_this_is_gone(self):
+        """`fsm.instance.state` became `fsm_state`; nothing must put it back."""
+        clashes = [c for c in self._collisions() if c[1] == 'state']
+        self.assertFalse(
+            clashes,
+            "A polymorphic base is claiming the name 'state' again: %s. It is too common "
+            "a name for a model whose purpose is to be mixed into others." % (clashes,))
+
+    def test_02_a_collision_is_reported_rather_than_hidden(self):
+        """
+        The detector must name both bases and the winner. Checked against a synthetic
+        pair so the test keeps working once — as now — no real collision is left.
+        """
+        from ..models import poly
+
+        with self.assertLogs('odoo.addons.numa_poly.models.poly', level='WARNING') as logs:
+            poly._POLY_REPORTED_COLLISIONS.clear()
+            self.addCleanup(poly._POLY_REPORTED_COLLISIONS.clear)
+            poly._poly_report_base_field_collisions(_FakePool())
+
+        message = '\n'.join(logs.output)
+        self.assertIn('demo.leaf.state', message)
+        self.assertIn('demo.first', message)
+        self.assertIn('demo.second', message)
+        self.assertIn('demo.first wins', message)
+
+    def test_03_the_same_collision_is_not_repeated_on_every_rebuild(self):
+        from ..models import poly
+
+        pool = _FakePool()
+        poly._POLY_REPORTED_COLLISIONS.clear()
+        self.addCleanup(poly._POLY_REPORTED_COLLISIONS.clear)
+        with self.assertLogs('odoo.addons.numa_poly.models.poly', level='WARNING') as first:
+            poly._poly_report_base_field_collisions(pool)
+        poly._poly_report_base_field_collisions(pool)  # must stay silent
+
+        self.assertEqual(len(first.output), 1)
+
+
+class _FakeField:
+    def __init__(self):
+        self.related = None
+        self.inherited = False
+
+
+class _FakeModel:
+    _fields = {'state': _FakeField()}
+
+
+class _FakeLeaf:
+    _name = 'demo.leaf'
+    _depend_models = OrderedDict([('demo.first', 'first_id'), ('demo.second', 'second_id')])
+
+
+class _FakePool(dict):
+    """The smallest thing the collision report reads: a mapping of model name to class."""
+
+    def __init__(self):
+        super().__init__({
+            'demo.leaf': _FakeLeaf,
+            'demo.first': _FakeModel,
+            'demo.second': _FakeModel,
+        })

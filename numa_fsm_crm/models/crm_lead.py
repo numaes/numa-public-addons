@@ -90,13 +90,13 @@ class CrmLead(models.Model):
             else:
                 lead.bot_state = False
 
-    @api.depends('state', 'definition_id')
+    @api.depends('fsm_state', 'definition_id')
     def _compute_has_fsm(self):
         """Compute if lead has an active FSM instance."""
         for lead in self:
             lead.has_fsm = bool(
                 lead.definition_id and 
-                lead.state in ['running', 'paused']
+                lead.fsm_state in ['running', 'paused']
             )
 
     @api.model_create_multi
@@ -112,7 +112,7 @@ class CrmLead(models.Model):
             if lead.definition_id and lead.definition_id.state == 'production':
                 # Auto-start FSM for new leads with bots
                 try:
-                    if lead.state == 'init':
+                    if lead.fsm_state == 'init':
                         lead.start()
                 except Exception as e:
                     _logger.warning(f"Failed to auto-start FSM for lead {lead.id}: {e}")
@@ -132,7 +132,7 @@ class CrmLead(models.Model):
         if 'bot_id' in vals or 'definition_id' in vals:
             for lead in self:
                 # Start FSM if definition is set and instance is in init state
-                if lead.definition_id and lead.state == 'init':
+                if lead.definition_id and lead.fsm_state == 'init':
                     try:
                         lead.start()
                     except Exception as e:
@@ -162,8 +162,8 @@ class CrmLead(models.Model):
         if not self.definition_id:
             raise UserError(_("No FSM definition assigned to this lead. Please assign a bot first."))
         
-        if self.state != 'init':
-            raise UserError(_("FSM is already running or has ended. Current state: %s") % self.state)
+        if self.fsm_state != 'init':
+            raise UserError(_("FSM is already running or has ended. Current state: %s") % self.fsm_state)
         
         try:
             self.start()
@@ -186,8 +186,8 @@ class CrmLead(models.Model):
         if not self.definition_id:
             raise UserError(_("No FSM definition assigned."))
         
-        if self.state != 'running':
-            raise UserError(_("FSM is not running. Current state: %s") % self.state)
+        if self.fsm_state != 'running':
+            raise UserError(_("FSM is not running. Current state: %s") % self.fsm_state)
         
         # Set debug mode to pause on next breakpoint
         self.write({'debug_mode': 'step_by_step'})
@@ -208,8 +208,8 @@ class CrmLead(models.Model):
         if not self.definition_id:
             raise UserError(_("No FSM definition assigned."))
         
-        if self.state != 'paused':
-            raise UserError(_("FSM is not paused. Current state: %s") % self.state)
+        if self.fsm_state != 'paused':
+            raise UserError(_("FSM is not paused. Current state: %s") % self.fsm_state)
         
         self.action_debug_continue()
         return {
@@ -229,8 +229,8 @@ class CrmLead(models.Model):
         if not self.definition_id:
             raise UserError(_("No FSM definition assigned."))
         
-        if self.state != 'paused':
-            raise UserError(_("FSM is not paused. Current state: %s") % self.state)
+        if self.fsm_state != 'paused':
+            raise UserError(_("FSM is not paused. Current state: %s") % self.fsm_state)
         
         self.action_debug_next_step()
         return {

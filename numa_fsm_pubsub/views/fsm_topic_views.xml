@@ -95,7 +95,7 @@
         <field name="model">fsm.instance</field>
         <field name="inherit_id" ref="numa_fsm.instance_form_view"/>
         <field name="arch" type="xml">
-            <xpath expr="//field[@name='state']" position="after">
+            <xpath expr="//field[@name='fsm_state']" position="after">
                 <field name="subscription_count"/>
             </xpath>
         </field>

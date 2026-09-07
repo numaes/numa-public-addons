@@ -72,7 +72,7 @@ class FSMExecutionLog(models.Model):
         new_instance = Instance.create({
             'definition_id': base_instance.definition_id.id,
             'name': sim_name,
-            'state': 'running',  # ensure it can process events
+            'fsm_state': 'running',  # ensure it can process events
             'is_simulation': True,
         })
 
