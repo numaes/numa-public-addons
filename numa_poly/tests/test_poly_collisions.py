@@ -236,3 +236,37 @@ class TestPolyIdCollisions(TransactionCase):
         self.env.flush_all()
 
         self.assertEqual(self.Task._poly_renumber_colliding(), {})
+
+    # -- finishing without a person ---------------------------------------------
+
+    def test_13_the_cron_finishes_what_the_install_started(self):
+        """
+        Nobody can foresee which module will make which model polymorphic on which
+        database, so nothing here may depend on somebody knowing to run it. Whatever the
+        install could not finish is handed to the cron, and the cron finishes it.
+        """
+        task = self._orphan_task(claimed=True)
+        self._reopen_pairs()
+        self.Task._poly_backfill_defer()
+
+        self.env['ir.poly_base']._cron_poly_backfill_pending()
+
+        self.assertNotIn('project.task', self._deferred_models(),
+                         "A model with nothing left to do must leave the cron's list.")
+        self.assertEqual(self.Task._poly_backfill_count_colliding(), 0)
+
+    def test_14_a_model_it_cannot_finish_stays_on_the_list(self):
+        """The other half of the same promise: it does not quietly give up either."""
+        self._no_renumbering()
+        task = self._orphan_task(claimed=True)
+        self._reopen_pairs()
+        self.Task._poly_backfill_defer()
+
+        self.env['ir.poly_base']._cron_poly_backfill_pending()
+
+        self.assertIn('project.task', self._deferred_models())
+
+    def _deferred_models(self):
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            'numa_poly.backfill_deferred_models') or ''
+        return [name for name in param.split(',') if name]

@@ -2419,7 +2419,7 @@ class PolyBase(_original_BaseModel):
         # would pull the id out from under them, which is why a targeted repair raises
         # instead (see _poly_ensure_base_rows).
         if only_ids is None and self._poly_renumber_enabled():
-            colliding = self._poly_colliding_ids()
+            colliding = self._poly_colliding_ids(limit=limit)
             if colliding:
                 self._poly_renumber_colliding(colliding)
 
@@ -2752,7 +2752,8 @@ class PolyBase(_original_BaseModel):
                 with self.env.cr.savepoint():
                     model._poly_backfill_base_rows(
                         batch_size=batch_size, limit=batch_size * 10)
-                if not model._poly_backfill_count_missing():
+                if not (model._poly_backfill_count_missing()
+                        or model._poly_backfill_count_colliding()):
                     model._poly_backfill_undefer()
             except Exception:
                 _logger.exception(
@@ -3236,8 +3237,11 @@ class PolyBase(_original_BaseModel):
                 # writes materialise their own row, so nothing is lost in the meantime.
                 _logger.warning(
                     "[poly] %s has %s record(s) without their polymorphic rows, above "
-                    "the %s inline limit. Deferred to the '%s' cron; run "
-                    "_poly_backfill_base_rows() by hand to do it now.",
+                    "the %s inline limit. The '%s' cron will work through them in "
+                    "batches; until it does, reads answer defaults and any write "
+                    "materialises the record's rows first, so nothing waits on it. "
+                    "_poly_backfill_base_rows() finishes it now if you would rather "
+                    "not wait.",
                     self._name, pending, self._poly_backfill_inline_limit(),
                     'Polymorphic: finish backfilled records')
                 self._poly_backfill_defer()
@@ -3251,13 +3255,20 @@ class PolyBase(_original_BaseModel):
                 created = self._poly_backfill_base_rows()
         except Exception:
             # A failed backfill must not take the whole upgrade down: the records stay
-            # readable through the concrete model and the migration can be re-run.
-            _logger.exception("[poly] backfill failed for %s; re-run "
-                              "_poly_backfill_base_rows() once the cause is fixed.",
-                              self._name)
+            # readable through the concrete model, and the cron keeps trying. Leaving it
+            # to a person to re-run by hand is not a mechanism — nobody can foresee which
+            # module will make which model polymorphic on which database.
+            _logger.exception(
+                "[poly] backfill failed for %s; handed to the '%s' cron, which will "
+                "retry it.", self._name, 'Polymorphic: finish backfilled records')
+            self._poly_backfill_defer()
             return
         if any(created.values()):
             _logger.info("[poly] %s: backfilled %s", self._name, created)
+        if self._poly_backfill_pending_pairs():
+            # Something is still open — a batch limit, a collision that could not be
+            # resolved, a base that was not ready. The cron owns it from here.
+            self._poly_backfill_defer()
 
     def _auto_init(self):
         """
