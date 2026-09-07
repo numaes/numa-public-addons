@@ -1,26 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Numa Big ID Module
+Numa Big ID: every 32-bit integer column in the database becomes 64-bit.
 
-This module converts all integer (int4) columns to BIGINT (int8) in PostgreSQL
-to support infinite scalability for polymorphic models.
-
-The monkey patch is applied immediately when this module is loaded to ensure
-that all new Integer fields created after installation will be BIGINT.
+`hooks` carries the migration and the verification gate; `models` patches the ORM so that
+everything created afterwards is 64-bit from the start. The patch is applied at import
+time, before any model is defined, which is what makes the two halves agree.
 """
 
-# Import hooks - this makes them available to Odoo
 from . import hooks
+from . import models
 
-# Export pre_init_hook at module level for Odoo's hook system
-# Odoo looks for pre_init_hook as a module attribute, not just imported
+# Odoo looks these up as attributes of the module.
 pre_init_hook = hooks.pre_init_hook
 
-# Import the patch module to apply monkey patches immediately
-# This ensures that all Integer fields created after module load will be BIGINT
-try:
-    from . import models
-except ImportError:
-    # If models can't be imported (e.g., during initial installation),
-    # the patch will be applied when the module is fully loaded
-    pass
+# Usable from a shell, so a DBA can migrate and verify without installing anything:
+#   from odoo.addons.numa_big_id import migrate_to_bigint, verify_bigint, log_verification
+migrate_to_bigint = hooks.migrate_to_bigint
+verify_bigint = hooks.verify_bigint
+log_verification = hooks.log_verification

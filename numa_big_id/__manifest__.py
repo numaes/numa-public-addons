@@ -7,34 +7,45 @@
 Numa Big ID
 ===========
 
-This module is a critical dependency of `numa_poly`. Odoo uses `int4` (Integer) by default
-for IDs and foreign keys, which limits records to 2.147 billion. `numa_poly` unifies sequences,
-which will quickly exhaust this limit.
+Odoo stores ids and foreign keys as `int4`, which runs out at 2,147,483,647. This module
+widens every 32-bit integer column in the database to 64-bit, and patches the ORM so that
+everything created afterwards is 64-bit from the start.
 
-This module converts all integer arithmetic in the database to 64-bit (`int8` / `BIGINT`)
-to guarantee infinite scalability.
+The ceiling is not reached by counting records. `numa_poly` allocates every replacement id
+above the global maximum and never reuses what it frees, so the id space is spent
+monotonically: each collision repaired costs ids permanently. On `int8` the question stops
+existing.
 
-**Features:**
-- Pre-installation hook that migrates ALL integer columns to BIGINT (fully generalized)
-- Safety check to prevent migration on databases with >500k records in critical tables
-- Monkey patch of Odoo ORM to force Integer fields to map to BIGINT
-- Automatic sequence conversion to BIGINT
-- Automatic handling of dependent views (drop and recreate)
-- Automatic handling of table inheritance (skip inherited columns)
-- Automatic handling of PostgreSQL reserved words (escape column names)
-- Periodic commits to avoid lock exhaustion
+**This is a maintenance-window operation.** Stop the service, take a backup you have
+restored at least once, migrate, verify, reopen. The migration rewrites every table —
+`ALTER TABLE ... TYPE bigint` is not a metadata change — taking an ACCESS EXCLUSIVE lock
+on each table and on everything holding a foreign key into it.
 
-**Architecture:**
-- Completely generalized - processes ALL tables in the database
-- No hardcoded dependencies on specific modules or models
-- Works with any combination of installed Odoo modules
-- Handles edge cases automatically (views, inheritance, reserved words)
+How it behaves:
 
-**Important:**
-- This module must be installed BEFORE any other modules that use polymorphic models
-- The migration is irreversible without manual database intervention
-- For large databases (>500k records in critical tables), manual migration by a DBA is required
-- The pre_init_hook only runs during initial installation (uninstall/reinstall to re-run)
+- **Commits table by table.** Holding the locks for ~800 tables does not exhaust client
+  memory, it exhausts PostgreSQL's lock table and dies with `out of shared memory`.
+- **Is resumable.** Every step asks the catalog what is still narrow, so an interrupted
+  run is continued by installing again. It commits as it goes, so it is not atomic — which
+  is exactly why it must be safe to re-run.
+- **Isolates failures.** Each table runs inside a savepoint; one failure does not abort
+  the transaction and take its neighbours down silently with it.
+- **Refuses to report success while anything is left.** A foreign key whose child is int4
+  and whose parent is int8 works until that table's ids pass 2,147,483,647 and then fails
+  alone, in production. Half-widened is the one outcome worth refusing.
+- **Widens all integer columns**, not only ids and foreign keys: `res_id` columns
+  (attachments, messages, external ids) hold ids and carry no constraint that would
+  identify them.
+
+Above 500,000 rows in a high-volume table the install stops and asks for a deliberate
+confirmation (`numa_big_id.confirm_large_migration` = `1`, or `NUMA_BIG_ID_CONFIRM=1`),
+because past that size "install a module" stops being an honest description of it.
+
+Not handled: materialised views (reported, refresh them afterwards) and custom triggers or
+stored procedures that name the column types.
+
+Install it on a database that has not been migrated yet, verify with
+`numa_big_id.verify_bigint(cr)`, and only then install the rest.
     """,
     'author': 'NUMA Extreme Systems',
     'website': 'https://www.numaes.com',

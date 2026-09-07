@@ -1,744 +1,513 @@
 # -*- coding: utf-8 -*-
 """
-Pre-installation hooks for numa_big_id module.
+Widen every 32-bit integer column in the database to 64-bit.
 
-This module performs a critical database migration: converting all integer (int4)
-columns to BIGINT (int8) to support infinite scalability for polymorphic models.
+Odoo stores ids and foreign keys as `int4`, which runs out at 2,147,483,647. That ceiling
+is not reached by counting records: numa_poly's renumbering allocates every replacement id
+*above the global maximum* and never reuses what it frees, so the id space is spent
+monotonically. On `int8` the question stops existing.
+
+## The shape of the operation
+
+This is a maintenance-window job: production stopped, no concurrent users, migrate, verify,
+open on Monday. Three consequences follow, and the previous version got each of them wrong.
+
+**It commits as it goes, and that is correct.** `ALTER TABLE ... TYPE bigint` rewrites the
+table and takes an ACCESS EXCLUSIVE lock on it *and on every table holding a foreign key
+into it*. Holding all of that across ~800 tables does not exhaust client memory — it
+exhausts PostgreSQL's lock table, and the migration dies with `out of shared memory`
+somewhere around `res_users`, which is exactly what it did. Committing after each table
+bounds the locks to one table's dependents.
+
+**Committing as it goes makes it non-atomic, so it has to be resumable.** Every step asks
+the catalog what still needs doing, so a re-run continues instead of repeating, and an
+interrupted run leaves a database that is half wide and wholly consistent.
+
+**A failure must not take its neighbours with it.** Each table is wrapped in a savepoint.
+Without one, the first error aborts the transaction and every statement until the next
+commit fails too — silently, since the loop catches and continues. That is how a previous
+run reported one error and left 190 of 795 id columns still `int4`.
+
+## What it will not do
+
+Materialised views are not touched. Custom triggers and stored procedures referring to the
+column types are not inspected. Both are reported, not fixed.
 """
 
 import logging
-from odoo import api, SUPERUSER_ID
+import os
+
 from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
-# Safety threshold: if any critical table exceeds this number of rows,
-# abort the installation to prevent unsafe automatic migration
-# 
-# IMPORTANT RISKS FOR LARGE DATABASES:
-# - Partial transactions: Intermediate commits can leave database in inconsistent state if interrupted
-# - Disk space: Conversion may require up to 2x disk space temporarily (PostgreSQL creates new files)
-# - Long locks: ALTER TABLE can lock tables for extended periods, blocking other operations
-# - Index recreation: Indexes may need to be rebuilt, which can be very slow on large tables
-# - Materialized views: Not currently handled (may need manual intervention)
-# - Triggers: Not validated (may have issues with type changes)
-# - Replication: Can cause issues with streaming replication if not properly handled
-# - Rollback: No automatic rollback mechanism - manual intervention required if migration fails
-# - Execution time: Can take hours on very large databases
-#
-# RECOMMENDATION: For databases with >500k records, use manual migration by DBA
-MAX_SAFE_ROWS = 500000
+# Above this many rows in any of the tables below, the migration refuses to start unless
+# it is told explicitly to go ahead. It is not a technical limit — it is the line past
+# which "install a module" stops being an honest description of what is about to happen.
+MAX_SAFE_ROWS = 500_000
+CONFIRM_PARAM = 'numa_big_id.confirm_large_migration'
+CONFIRM_ENV = 'NUMA_BIG_ID_CONFIRM'
 
-# Enable foreign key handling (can be very heavy on medium databases)
-# Set to True only if you have a small database or can afford downtime
-# When False, ID column conversion may fail if foreign keys block it
-# 
-# WARNING: Enabling this can make migration 10-100x slower on large databases
-# as it requires dropping and recreating all foreign keys
-HANDLE_FOREIGN_KEYS = False
-
-# Critical tables to check before migration
-# These are common Odoo core tables that typically have the most records.
-# The safety check uses these to estimate database size. If any of these
-# tables exceed MAX_SAFE_ROWS, the migration is aborted for safety.
-# This list is not exhaustive - it's just a sample of high-volume tables.
-# The actual migration processes ALL tables in the database, regardless
-# of whether they're in this list.
-CRITICAL_TABLES = [
-    'res_partner',      # Partners/contacts (high volume in most installations)
-    'mail_message',     # Messages (can grow very large)
-    'ir_attachment',    # Attachments (can grow very large)
-    'ir_model_data',    # Module data (grows with each module)
-    'res_users',        # Users (typically small but important)
+SIZE_PROBE_TABLES = [
+    'mail_message', 'mail_tracking_value', 'ir_attachment', 'ir_model_data',
+    'account_move_line', 'stock_move', 'stock_move_line', 'res_partner', 'res_users',
 ]
 
 
-def get_and_drop_dependent_views(cr, table_name, column_name):
+# --------------------------------------------------------------------------------------
+# Catalog queries — every one of them answers "what is still to do", so the whole
+# operation is resumable by construction.
+# --------------------------------------------------------------------------------------
+
+def _pending_columns(cr):
+    """``{table: [column, ...]}`` for every int4 column left in the public schema.
+
+    *Inherited columns* are excluded, not inherited tables. Odoo's action models really do
+    use PostgreSQL table inheritance — `ir_act_server`, `ir_act_window` and three others
+    inherit from `ir_actions` — and skipping those tables wholesale left their own columns
+    behind: `ir_act_server.crud_model_id` stayed int4 pointing at an int8 `ir_model.id`,
+    which is precisely the mismatch this module exists to prevent. Only a column with
+    `attinhcount > 0` may not be altered on the child, and altering the parent carries it.
     """
-    Get views that depend on a specific column and drop them temporarily.
-    
-    Note: This handles regular views ('v'), but NOT materialized views ('m').
-    Materialized views need to be refreshed manually after migration.
-    
-    Returns:
-        dict: Dict of {(view_schema, view_name): view_definition}
-    """
-    # Check for views that depend on this column
-    # Note: This query finds regular views ('v'), not materialized views ('m')
     cr.execute("""
-        SELECT DISTINCT dependent_ns.nspname as dependent_schema,
-               dependent_view.relname as dependent_view
-        FROM pg_depend
-        JOIN pg_rewrite ON pg_depend.objid = pg_rewrite.oid
-        JOIN pg_class as dependent_view ON pg_rewrite.ev_class = dependent_view.oid
-        JOIN pg_class as source_table ON pg_depend.refobjid = source_table.oid
-        JOIN pg_namespace dependent_ns ON dependent_view.relnamespace = dependent_ns.oid
-        JOIN pg_namespace source_ns ON source_table.relnamespace = source_ns.oid
-        WHERE source_ns.nspname = 'public'
-        AND source_table.relname = %s
-        AND dependent_view.relkind = 'v'
-    """, (table_name,))
-    
-    dependent_views = cr.fetchall()
-    view_definitions = []
-    
-    # Store view definitions before dropping
-    for view_schema, view_name in dependent_views:
+        SELECT c.table_name, c.column_name
+          FROM information_schema.columns c
+          JOIN information_schema.tables t
+            ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+           AND t.table_type = 'BASE TABLE'
+         WHERE c.table_schema = 'public'
+           AND c.data_type = 'integer'
+           AND NOT EXISTS (
+                 SELECT 1 FROM pg_attribute a
+                  WHERE a.attrelid = to_regclass('public.' || quote_ident(c.table_name))
+                    AND a.attname = c.column_name
+                    AND a.attinhcount > 0)
+         ORDER BY c.table_name, c.ordinal_position
+    """)
+    pending = {}
+    for table, column in cr.fetchall():
+        pending.setdefault(table, []).append(column)
+    return pending
+
+
+def _pending_sequences(cr):
+    cr.execute("""
+        SELECT sequence_name FROM information_schema.sequences
+         WHERE sequence_schema = 'public' AND data_type <> 'bigint'
+         ORDER BY sequence_name
+    """)
+    return [row[0] for row in cr.fetchall()]
+
+
+def _dependent_views(cr, table):
+    """Every view that depends on `table`, transitively, with its definition.
+
+    A view built on a view is only reachable by following the chain: dropping the first
+    with CASCADE takes the second with it, and a version that did not look would recreate
+    one and lose the other without a word.
+    """
+    cr.execute("""
+        WITH RECURSIVE deps AS (
+            SELECT v.oid
+              FROM pg_depend d
+              JOIN pg_rewrite r ON r.oid = d.objid
+              JOIN pg_class v ON v.oid = r.ev_class AND v.relkind = 'v'
+             WHERE d.refobjid = to_regclass(%s)
+               AND v.oid <> d.refobjid
+            UNION
+            SELECT v.oid
+              FROM deps
+              JOIN pg_depend d ON d.refobjid = deps.oid
+              JOIN pg_rewrite r ON r.oid = d.objid
+              JOIN pg_class v ON v.oid = r.ev_class AND v.relkind = 'v'
+             WHERE v.oid <> deps.oid
+        )
+        SELECT n.nspname, c.relname, pg_get_viewdef(c.oid, true)
+          FROM deps JOIN pg_class c ON c.oid = deps.oid
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+    """, ('public.' + table,))
+    return cr.fetchall()
+
+
+def _recreate_views(cr, views):
+    """Recreate dropped views, retrying until no more can be built.
+
+    Their creation order is their dependency order and the catalog does not hand it over,
+    so this converges on it: each pass creates whatever now has its inputs.
+    """
+    remaining = list(views)
+    while remaining:
+        progressed = []
+        for schema, name, definition in remaining:
+            cr.execute("SAVEPOINT numa_big_id_view")
+            try:
+                cr.execute('CREATE OR REPLACE VIEW "%s"."%s" AS %s' % (schema, name, definition))
+                cr.execute("RELEASE SAVEPOINT numa_big_id_view")
+                progressed.append((schema, name, definition))
+            except Exception:
+                cr.execute("ROLLBACK TO SAVEPOINT numa_big_id_view")
+        if not progressed:
+            for schema, name, _definition in remaining:
+                _logger.error("[big_id] could not recreate view %s.%s — recreate it by hand",
+                              schema, name)
+            return False
+        remaining = [v for v in remaining if v not in progressed]
+    return True
+
+
+# --------------------------------------------------------------------------------------
+# The migration
+# --------------------------------------------------------------------------------------
+
+FK_BACKUP_TABLE = 'numa_big_id_dropped_fk'
+
+
+def _ensure_fk_backup(cr):
+    """A table holding the foreign keys the migration had to take down.
+
+    It lives in the database, not in memory, because the window between dropping a
+    constraint and putting it back is the one moment this operation can lose something
+    that is not recoverable from the catalog. If the process dies there, the definitions
+    are still on disk and the next run restores them before doing anything else.
+    """
+    cr.execute("""
+        CREATE TABLE IF NOT EXISTS %s (
+            child_table text NOT NULL,
+            constraint_name text NOT NULL,
+            definition text NOT NULL,
+            PRIMARY KEY (child_table, constraint_name))
+    """ % FK_BACKUP_TABLE)
+
+
+def _restore_dropped_fks(cr):
+    """Put back every constraint the backup table still remembers."""
+    _ensure_fk_backup(cr)
+    cr.execute("SELECT child_table, constraint_name, definition FROM %s" % FK_BACKUP_TABLE)
+    pending = cr.fetchall()
+    if not pending:
+        return 0
+    _logger.info("[big_id] restoring %s foreign key(s) from a previous run", len(pending))
+    restored = 0
+    for child, name, definition in pending:
+        cr.execute("SAVEPOINT numa_big_id_fk")
         try:
-            # Use pg_get_viewdef to get the complete view definition
-            cr.execute("""
-                SELECT pg_get_viewdef('%s.%s'::regclass, true)
-            """ % (view_schema, view_name))
-            view_def = cr.fetchone()
-            if view_def and view_def[0]:
-                view_definitions.append((view_schema, view_name, view_def[0]))
+            cr.execute('ALTER TABLE %s ADD CONSTRAINT "%s" %s' % (child, name, definition))
+            cr.execute("RELEASE SAVEPOINT numa_big_id_fk")
+            cr.execute("DELETE FROM %s WHERE child_table = %%s AND constraint_name = %%s"
+                       % FK_BACKUP_TABLE, (child, name))
+            restored += 1
+            if restored % 200 == 0:
+                cr.commit()
+        except Exception as exc:
+            cr.execute("ROLLBACK TO SAVEPOINT numa_big_id_fk")
+            if 'already exists' in str(exc):
+                # It was never dropped, or a previous run put it back.
+                cr.execute("DELETE FROM %s WHERE child_table = %%s AND constraint_name = %%s"
+                           % FK_BACKUP_TABLE, (child, name))
             else:
-                _logger.warning("  Could not get definition for view %s.%s", view_schema, view_name)
-        except Exception as e:
-            _logger.warning("  Could not get definition for view %s.%s: %s", view_schema, view_name, e)
-    
-    # Remove duplicates (CASCADE may drop multiple views)
-    unique_views = {}
-    for view_schema, view_name, view_def in view_definitions:
-        view_key = (view_schema, view_name)
-        if view_key not in unique_views:
-            unique_views[view_key] = view_def
-    
-    # Drop views temporarily
-    for (view_schema, view_name), _ in unique_views.items():
-        try:
-            cr.execute("DROP VIEW IF EXISTS %s.%s CASCADE" % (view_schema, view_name))
-            _logger.debug("  Dropped view %s.%s temporarily (depends on %s.%s)", 
-                         view_schema, view_name, table_name, column_name)
-        except Exception as e:
-            _logger.warning("  Could not drop view %s.%s: %s", view_schema, view_name, e)
-    
-    return unique_views
+                _logger.error("[big_id] could not restore %s on %s: %s", name, child, exc)
+    cr.commit()
+    return restored
 
 
-def recreate_views(cr, unique_views):
+def _widen_detaching_fks(cr, table, columns):
+    """Widen a table whose incoming foreign keys are too many to lock at once.
+
+    `ALTER COLUMN id TYPE` revalidates every foreign key pointing at the column, which
+    means locking every table that holds one. `res_users` is referenced by `create_uid`
+    and `write_uid` on essentially every table in the database — some sixteen hundred
+    constraints — and PostgreSQL gives up with `out of shared memory` before it starts.
+
+    So the constraints come off first, in their own transaction, with their definitions
+    written to disk; the column is widened alone; and they go back on. Raising
+    `max_locks_per_transaction` avoids all of this and is the better answer when a DBA is
+    at the keyboard, but it needs a restart and this does not.
+
+    Views come down here too. The normal path drops them inside a savepoint, so rolling
+    that back brings them straight back and the retry meets `cannot alter type of a column
+    used by a view or rule` instead of the lock error it was written for.
+
+    Everything that comes down goes back up in a `finally`: the alter is the step allowed
+    to fail, and it must not be able to leave the database without its foreign keys.
     """
-    Recreate views that were dropped temporarily.
-    
-    Args:
-        cr: Database cursor
-        unique_views: Dict of {(view_schema, view_name): view_definition}
+    _ensure_fk_backup(cr)
+    views = _dependent_views(cr, table)
+    for schema, name, _definition in views:
+        cr.execute('DROP VIEW IF EXISTS "%s"."%s" CASCADE' % (schema, name))
+
+    cr.execute("""
+        SELECT c.conrelid::regclass::text, c.conname, pg_get_constraintdef(c.oid)
+          FROM pg_constraint c
+         WHERE c.contype = 'f' AND c.confrelid = to_regclass(%s)
+    """, ('public.' + table,))
+    fks = cr.fetchall()
+    _logger.warning("[big_id] %s has %s incoming foreign key(s); detaching them to widen it",
+                    table, len(fks))
+    for child, name, definition in fks:
+        cr.execute("INSERT INTO %s (child_table, constraint_name, definition) "
+                   "VALUES (%%s, %%s, %%s) ON CONFLICT DO NOTHING" % FK_BACKUP_TABLE,
+                   (child, name, definition))
+    cr.commit()
+
+    try:
+        for index, (child, name, _definition) in enumerate(fks, start=1):
+            cr.execute('ALTER TABLE %s DROP CONSTRAINT IF EXISTS "%s"' % (child, name))
+            if index % 200 == 0:
+                cr.commit()
+        cr.commit()
+
+        alters = ', '.join('ALTER COLUMN "%s" TYPE bigint' % c for c in columns)
+        cr.execute('ALTER TABLE "%s" %s' % (table, alters))
+        cr.commit()
+    finally:
+        _recreate_views(cr, views)
+        cr.commit()
+        restored = _restore_dropped_fks(cr)
+        _logger.info("[big_id] %s: %s foreign key(s) back in place", table, restored)
+
+
+def migrate_to_bigint(cr, dry_run=False):
+    """Widen every int4 column in the public schema. Resumable; safe to re-run.
+
+    :return: ``{'tables': n, 'columns': n, 'sequences': n, 'failed': {table: reason}}``
     """
-    for (view_schema, view_name), view_def in unique_views.items():
+    if not dry_run:
+        _restore_dropped_fks(cr)
+    pending = _pending_columns(cr)
+    report = {'tables': 0, 'columns': 0, 'sequences': 0, 'failed': {}}
+    if dry_run:
+        report['tables'] = len(pending)
+        report['columns'] = sum(len(c) for c in pending.values())
+        report['sequences'] = len(_pending_sequences(cr))
+        return report
+
+    total = len(pending)
+    _logger.info("[big_id] %s table(s) with %s int4 column(s) to widen",
+                 total, sum(len(c) for c in pending.values()))
+
+    for index, (table, columns) in enumerate(sorted(pending.items()), start=1):
+        cr.execute("SAVEPOINT numa_big_id_table")
         try:
-            # Use CREATE OR REPLACE to handle cases where view still exists
-            cr.execute("CREATE OR REPLACE VIEW %s.%s AS %s" % (view_schema, view_name, view_def))
-            _logger.debug("  Recreated view %s.%s", view_schema, view_name)
-        except Exception as e:
-            _logger.error("  ✗ ERROR recreating view %s.%s: %s", view_schema, view_name, e)
-            _logger.error("  MANUAL INTERVENTION REQUIRED for view %s.%s", view_schema, view_name)
+            views = _dependent_views(cr, table)
+            for schema, name, _definition in views:
+                cr.execute('DROP VIEW IF EXISTS "%s"."%s" CASCADE' % (schema, name))
+
+            # Every column of the table in ONE statement: `ALTER COLUMN ... TYPE` rewrites
+            # the whole table, so doing them one at a time rewrites it once per column —
+            # twenty rewrites for a table with twenty integer columns.
+            alters = ', '.join('ALTER COLUMN "%s" TYPE bigint' % c for c in columns)
+            cr.execute('ALTER TABLE "%s" %s' % (table, alters))
+
+            _recreate_views(cr, views)
+            cr.execute("RELEASE SAVEPOINT numa_big_id_table")
+            # Per table, not per batch: the lock this took covers the table and everything
+            # holding a foreign key into it, and res_users alone brings hundreds.
+            cr.commit()
+            report['tables'] += 1
+            report['columns'] += len(columns)
+            if index % 50 == 0 or index == total:
+                _logger.info("[big_id] %s/%s tables", index, total)
+        except Exception as exc:
+            # Roll back to the savepoint so the cursor is usable: without it the
+            # transaction stays aborted and every table after this one fails too.
+            cr.execute("ROLLBACK TO SAVEPOINT numa_big_id_table")
+            cr.commit()
+            reason = str(exc).strip().splitlines()[0]
+            if 'out of shared memory' in reason or 'max_locks_per_transaction' in reason:
+                try:
+                    _widen_detaching_fks(cr, table, columns)
+                    report['tables'] += 1
+                    report['columns'] += len(columns)
+                    continue
+                except Exception as retry_exc:
+                    cr.rollback()
+                    reason = str(retry_exc).strip().splitlines()[0]
+            report['failed'][table] = reason
+            _logger.error("[big_id] %s: %s", table, reason)
+
+    for sequence in _pending_sequences(cr):
+        cr.execute("SAVEPOINT numa_big_id_seq")
+        try:
+            cr.execute('ALTER SEQUENCE "%s" AS bigint' % sequence)
+            cr.execute("RELEASE SAVEPOINT numa_big_id_seq")
+            report['sequences'] += 1
+        except Exception as exc:
+            cr.execute("ROLLBACK TO SAVEPOINT numa_big_id_seq")
+            _logger.error("[big_id] sequence %s: %s", sequence, exc)
+    cr.commit()
+
+    _logger.info("[big_id] widened %s column(s) across %s table(s), %s sequence(s)",
+                 report['columns'], report['tables'], report['sequences'])
+    return report
+
+
+# --------------------------------------------------------------------------------------
+# The gate
+# --------------------------------------------------------------------------------------
+
+def verify_bigint(cr):
+    """What is still 32-bit, and where a foreign key now spans both widths.
+
+    The mismatches are the reason this exists. A parent whose `id` is `int8` and a child
+    whose foreign key is still `int4` does not fail today; it fails the day that sequence
+    passes 2,147,483,647, on that table alone, in production. A migration that leaves them
+    behind is worse than one that never ran, because the failure stops being global and
+    predictable and becomes local and surprising.
+
+    :return: ``{'int4_ids': [...], 'int4_columns': n, 'fk_mismatches': [...],
+                'int4_sequences': [...], 'clean': bool}``
+    """
+    cr.execute("""
+        SELECT table_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND column_name = 'id' AND data_type = 'integer'
+         ORDER BY table_name
+    """)
+    int4_ids = [row[0] for row in cr.fetchall()]
+
+    cr.execute("""
+        SELECT count(*) FROM information_schema.columns c
+          JOIN information_schema.tables t
+            ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+           AND t.table_type = 'BASE TABLE'
+         WHERE c.table_schema = 'public' AND c.data_type = 'integer'
+    """)
+    int4_columns = cr.fetchone()[0]
+
+    cr.execute("""
+        SELECT c.conrelid::regclass::text, a.attname, ta.typname,
+               c.confrelid::regclass::text, tr.typname
+          FROM pg_constraint c
+          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+          JOIN pg_type ta ON ta.oid = a.atttypid
+          JOIN pg_attribute r ON r.attrelid = c.confrelid AND r.attnum = c.confkey[1]
+          JOIN pg_type tr ON tr.oid = r.atttypid
+         WHERE c.contype = 'f' AND array_length(c.conkey, 1) = 1
+           AND ta.typname IS DISTINCT FROM tr.typname
+           AND ta.typname IN ('int4', 'int8') AND tr.typname IN ('int4', 'int8')
+         ORDER BY 1, 2
+    """)
+    mismatches = cr.fetchall()
+
+    cr.execute("SELECT to_regclass(%s)", ('public.' + FK_BACKUP_TABLE,))
+    detached = []
+    if cr.fetchone()[0]:
+        cr.execute("SELECT child_table, constraint_name FROM %s" % FK_BACKUP_TABLE)
+        detached = cr.fetchall()
+
+    result = {
+        'int4_ids': int4_ids,
+        'int4_columns': int4_columns,
+        'fk_mismatches': mismatches,
+        'int4_sequences': _pending_sequences(cr),
+        'detached_fks': detached,
+    }
+    result['clean'] = not (int4_ids or mismatches or result['int4_sequences'] or detached)
+    return result
+
+
+def log_verification(cr):
+    """Write the gate's answer to the log and say whether it passed."""
+    result = verify_bigint(cr)
+    if result['clean']:
+        _logger.info("[big_id] verification passed: every id, foreign key and sequence "
+                     "is 64-bit (%s int4 column(s) left, none of them identity)",
+                     result['int4_columns'])
+        return result
+    if result['int4_ids']:
+        _logger.error("[big_id] %s id column(s) still int4: %s",
+                      len(result['int4_ids']), ', '.join(result['int4_ids'][:20]))
+    for child, col, ctype, parent, ptype in result['fk_mismatches'][:20]:
+        _logger.error("[big_id] foreign key %s.%s (%s) -> %s.id (%s)",
+                      child, col, ctype, parent, ptype)
+    if len(result['fk_mismatches']) > 20:
+        _logger.error("[big_id] ... and %s more foreign keys spanning both widths",
+                      len(result['fk_mismatches']) - 20)
+    if result['int4_sequences']:
+        _logger.error("[big_id] %s sequence(s) still int4: %s",
+                      len(result['int4_sequences']), ', '.join(result['int4_sequences'][:20]))
+    if result['detached_fks']:
+        _logger.error("[big_id] %s foreign key(s) are still detached; their definitions "
+                      "are in %s and the next run puts them back",
+                      len(result['detached_fks']), FK_BACKUP_TABLE)
+    return result
+
+
+# --------------------------------------------------------------------------------------
+# Size check and entry point
+# --------------------------------------------------------------------------------------
+
+def _confirmed(cr):
+    if os.environ.get(CONFIRM_ENV):
+        return True
+    cr.execute("SELECT value FROM ir_config_parameter WHERE key = %s", (CONFIRM_PARAM,))
+    row = cr.fetchone()
+    return bool(row) and str(row[0]).strip().lower() not in ('', '0', 'false', 'no')
+
+
+def _check_size(cr):
+    """Report what the migration is about to rewrite, and stop if nobody said to.
+
+    Not a technical limit. Past this size the operation is hours of table rewrites needing
+    up to twice the disk, and it deserves to be a decision somebody made rather than the
+    side effect of ticking a module in the interface.
+    """
+    biggest = []
+    for table in SIZE_PROBE_TABLES:
+        cr.execute("SELECT to_regclass(%s)", ('public.' + table,))
+        if not cr.fetchone()[0]:
+            continue
+        cr.execute('SELECT count(*) FROM "%s"' % table)
+        biggest.append((cr.fetchone()[0], table))
+    biggest.sort(reverse=True)
+    for rows, table in biggest[:5]:
+        _logger.info("[big_id] %s: %s rows", table, rows)
+
+    if biggest and biggest[0][0] > MAX_SAFE_ROWS and not _confirmed(cr):
+        rows, table = biggest[0]
+        raise UserError(
+            "numa_big_id rewrites every table in this database to widen its integer "
+            "columns.\n\n"
+            "%s holds %s rows, over the %s at which this stops being a routine install: "
+            "expect hours of ACCESS EXCLUSIVE locks and up to twice the disk while it "
+            "runs. Stop the service, take a backup you have restored at least once, and "
+            "then confirm deliberately:\n\n"
+            "    INSERT INTO ir_config_parameter (key, value) VALUES ('%s', '1');\n\n"
+            "or set %s=1 in the environment. The migration commits table by table and is "
+            "resumable, so an interrupted run is continued by installing again."
+            % (table, rows, MAX_SAFE_ROWS, CONFIRM_PARAM, CONFIRM_ENV))
 
 
 def pre_init_hook(env):
+    """Widen the database before this module's own tables are created.
+
+    Runs before the module is loaded, which is the only moment the schema is still the
+    one every other module built. Raises if the result does not pass the gate: a module
+    that reports `installed` over a half-widened database is the failure this whole file
+    is written against.
     """
-    Pre-installation hook that migrates all integer columns to BIGINT.
-    
-    This hook:
-    1. Performs a safety check on critical tables
-    2. If safe, migrates all integer columns to BIGINT
-    3. Converts all sequences to BIGINT
-    
-    Args:
-        env: Odoo Environment (in Odoo 18, hooks receive env instead of cr)
-        
-    Raises:
-        UserError: If database is too large for safe automatic migration
-    """
-    # In Odoo 18, hooks receive env instead of cr
-    # Get the cursor from the environment
     cr = env.cr
-    _logger.info("=" * 80)
-    _logger.info("NUMA BIG ID: Starting pre-installation migration")
-    _logger.info("=" * 80)
-    _logger.info("This hook converts all integer columns to BIGINT")
-    _logger.info("IMPORTANT: This hook only runs during module installation")
-    _logger.info("If module is already installed, uninstall and reinstall to run migration")
-    
-    # Step 1: Safety Check
-    # This check uses a sample of common high-volume tables to estimate database size.
-    # It's not exhaustive - the actual migration processes ALL tables in the database.
-    # The purpose is to prevent accidental migration of very large databases where
-    # the migration might take too long or cause issues.
-    _logger.info("Step 1: Performing safety check on critical tables...")
-    _logger.info("Note: This checks a sample of common tables. Migration will process ALL tables.")
-    
-    tables_checked = 0
-    for table_name in CRITICAL_TABLES:
-        try:
-            cr.execute("""
-                SELECT COUNT(*) 
-                FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = %s
-            """, (table_name,))
-            
-            if cr.fetchone()[0] == 0:
-                _logger.debug("Table %s does not exist, skipping", table_name)
-                continue
-            
-            tables_checked += 1
-                
-            # Use parameterized query to avoid SQL injection
-            cr.execute("SELECT COUNT(*) FROM %s" % table_name)
-            row_count = cr.fetchone()[0]
-            _logger.info("Table %s: %s rows", table_name, row_count)
-            
-            if row_count > MAX_SAFE_ROWS:
-                error_msg = (
-                    "The database is too large for safe automatic migration.\n\n"
-                    "Table '%s' contains %s records, which exceeds the safe limit of %s.\n\n"
-                    "Please perform the conversion to BIGINT using external scripts controlled "
-                    "by a DBA before installing this module.\n\n"
-                    "This module requires manual migration for large databases.\n\n"
-                    "Note: You can adjust MAX_SAFE_ROWS in hooks.py if you wish to change this limit."
-                ) % (table_name, row_count, MAX_SAFE_ROWS)
-                
-                _logger.error(error_msg)
-                raise UserError(error_msg)
-                
-        except UserError:
-            raise
-        except Exception as e:
-            _logger.warning("Error checking table %s: %s", table_name, e)
-            # Continue with other tables, but log the warning
-    
-    if tables_checked == 0:
-        _logger.warning("No critical tables found - database may be empty or use custom table names")
-    
-    _logger.info("Safety check passed. Proceeding with migration...")
-    
-    # Step 2: Get all tables in public schema
-    _logger.info("Step 2: Discovering all tables in public schema...")
-    cr.execute("""
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_type = 'BASE TABLE'
-        ORDER BY table_name
-    """)
-    all_tables = [row[0] for row in cr.fetchall()]
-    _logger.info("Found %s tables to analyze", len(all_tables))
-    
-    # Check for materialized views (not handled automatically)
-    cr.execute("""
-        SELECT COUNT(*)
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public'
-        AND c.relkind = 'm'
-    """)
-    mat_view_count = cr.fetchone()[0]
-    if mat_view_count > 0:
-        _logger.warning("=" * 80)
-        _logger.warning("WARNING: Found %s materialized views - these are NOT handled automatically", mat_view_count)
-        _logger.warning("  Materialized views may need manual refresh after migration")
-        _logger.warning("  Check logs and refresh manually: REFRESH MATERIALIZED VIEW <view_name>")
-        _logger.warning("=" * 80)
-    
-    # Step 3: Migrate integer columns to BIGINT
-    _logger.info("Step 3: Migrating integer columns to BIGINT...")
-    columns_migrated = 0
-    id_columns_migrated = 0
-    
-    # First pass: Convert all 'id' columns first (they are critical)
-    _logger.info("Step 3a: Converting 'id' columns first (priority)...")
-    
-    if HANDLE_FOREIGN_KEYS:
-        _logger.warning("FOREIGN KEY HANDLING ENABLED - This may be very slow on medium/large databases")
-    
-    commit_counter = 0
-    COMMIT_INTERVAL = 50  # Commit every 50 tables to avoid lock exhaustion
-    # 
-    # WARNING: Intermediate commits mean the migration is NOT atomic.
-    # If interrupted, the database will be in a partially migrated state.
-    # There is NO automatic rollback - manual intervention will be required.
-    # Consider this when deciding if automatic migration is appropriate.
-    
-    for table_name in all_tables:
-        try:
-            # Check if table has an 'id' column that is integer
-            cr.execute("""
-                SELECT column_name, data_type
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                AND table_name = %s
-                AND column_name = 'id'
-                AND data_type = 'integer'
-            """, (table_name,))
-            
-            id_column = cr.fetchone()
-            if not id_column:
-                continue
-            
-            # Check if this table inherits from another table (table inheritance)
-            # PostgreSQL doesn't allow altering inherited columns
-            cr.execute("""
-                SELECT COUNT(*)
-                FROM pg_inherits
-                WHERE inhrelid = %s::regclass
-            """, (table_name,))
-            
-            is_inherited = cr.fetchone()[0] > 0
-            if is_inherited:
-                _logger.debug("  Skipping %s.id - column is inherited (table inheritance)", table_name)
-                continue
-            
-            # Check if already BIGINT (double check)
-            cr.execute("""
-                SELECT data_type
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                AND table_name = %s
-                AND column_name = 'id'
-            """, (table_name,))
-            
-            result = cr.fetchone()
-            if result and result[0] == 'bigint':
-                continue
-            
-            # Check for views that depend on this column and drop them
-            unique_views = get_and_drop_dependent_views(cr, table_name, 'id')
-            
-            # Check for foreign keys that reference this column
-            foreign_keys_to_handle = []
-            fk_count = 0
-            if HANDLE_FOREIGN_KEYS:
-                # Find all foreign keys that reference this ID column
-                cr.execute("""
-                    SELECT 
-                        conname,
-                        conrelid::regclass as referencing_table,
-                        confrelid::regclass as referenced_table,
-                        a.attname as referencing_column,
-                        af.attname as referenced_column
-                    FROM pg_constraint c
-                    JOIN pg_class r ON c.conrelid = r.oid
-                    JOIN pg_class rf ON c.confrelid = rf.oid
-                    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
-                    JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = ANY(c.confkey)
-                    WHERE c.contype = 'f'
-                    AND (rf.relname = %s AND af.attname = 'id')
-                    ORDER BY conname
-                """, (table_name,))
-                foreign_keys_to_handle = cr.fetchall()
-                fk_count = len(foreign_keys_to_handle)
-            
-            # Log table processing (simplified)
-            if fk_count > 0:
-                _logger.info("Processing table %s: ID column + %s FKs", table_name, fk_count)
-            else:
-                _logger.info("Processing table %s: ID column", table_name)
-            
-            try:
-                # Temporarily disable foreign keys if handling is enabled
-                disabled_fks = []
-                if HANDLE_FOREIGN_KEYS and foreign_keys_to_handle:
-                    for fk_info in foreign_keys_to_handle:
-                        fk_name, ref_table, refed_table, ref_col, refed_col = fk_info
-                        try:
-                            sql_drop = "ALTER TABLE %s DROP CONSTRAINT %s" % (ref_table, fk_name)
-                            cr.execute(sql_drop)
-                            disabled_fks.append((ref_table, fk_name, fk_info))
-                        except Exception as fk_err:
-                            _logger.warning("  Could not drop FK %s: %s", fk_name, fk_err)
-                
-                # Convert ID column to BIGINT
-                # 'id' is not a reserved word, but we escape it for consistency
-                sql = "ALTER TABLE %s ALTER COLUMN \"id\" TYPE bigint USING \"id\"::bigint" % table_name
-                cr.execute(sql)
-                
-                # Recreate views
-                recreate_views(cr, unique_views)
-                
-                # Verify conversion
-                cr.execute("""
-                    SELECT data_type
-                    FROM information_schema.columns
-                    WHERE table_schema = 'public'
-                    AND table_name = %s
-                    AND column_name = 'id'
-                """, (table_name,))
-                verify_result = cr.fetchone()
-                if verify_result and verify_result[0] == 'bigint':
-                    columns_migrated += 1
-                    id_columns_migrated += 1
-                    commit_counter += 1
-                    _logger.info("  ✓ Converted %s.id to BIGINT (verified)", table_name)
-                    
-                    # Commit periodically to avoid lock exhaustion
-                    if commit_counter >= COMMIT_INTERVAL:
-                        cr.commit()
-                        commit_counter = 0
-                        _logger.debug("  Committed transaction (processed %s ID columns so far)", id_columns_migrated)
-                else:
-                    _logger.error("  ✗ Conversion failed - %s.id is still %s", table_name, verify_result[0] if verify_result else 'unknown')
-                
-                # Recreate foreign keys if they were disabled
-                if HANDLE_FOREIGN_KEYS and disabled_fks:
-                    for ref_table, fk_name, fk_info in disabled_fks:
-                        fk_name_orig, ref_table_orig, refed_table_orig, ref_col, refed_col = fk_info
-                        try:
-                            sql_create = """
-                                ALTER TABLE %s 
-                                ADD CONSTRAINT %s 
-                                FOREIGN KEY (%s) 
-                                REFERENCES %s(%s)
-                            """ % (ref_table, fk_name, ref_col, refed_table, refed_col)
-                            cr.execute(sql_create)
-                        except Exception as fk_err:
-                            _logger.error("  ✗ ERROR recreating FK %s: %s", fk_name, fk_err)
-                            _logger.error("  MANUAL INTERVENTION REQUIRED for FK %s", fk_name)
-                    if disabled_fks:
-                        _logger.info("  ✓ Recreated %s foreign keys", len(disabled_fks))
-                
-            except Exception as e:
-                _logger.error("  ✗ ERROR converting %s.id: %s", table_name, e)
-                
-                # If we disabled FKs, try to recreate them even on error
-                if HANDLE_FOREIGN_KEYS and disabled_fks:
-                    _logger.warning("  Attempting to restore %s foreign keys after error...", len(disabled_fks))
-                    for ref_table, fk_name, fk_info in disabled_fks:
-                        fk_name_orig, ref_table_orig, refed_table_orig, ref_col, refed_col = fk_info
-                        try:
-                            sql_create = """
-                                ALTER TABLE %s 
-                                ADD CONSTRAINT %s 
-                                FOREIGN KEY (%s) 
-                                REFERENCES %s(%s)
-                            """ % (ref_table, fk_name, ref_col, refed_table, refed_col)
-                            cr.execute(sql_create)
-                            _logger.info("  ✓ Restored FK %s", fk_name)
-                        except Exception as fk_err:
-                            _logger.error("  ✗ CRITICAL: Could not restore FK %s: %s", fk_name, fk_err)
-                            _logger.error("  MANUAL INTERVENTION REQUIRED for FK %s", fk_name)
-                
-                # Check for foreign key constraints that might be blocking
-                if not HANDLE_FOREIGN_KEYS:
-                    try:
-                        cr.execute("""
-                            SELECT COUNT(*)
-                            FROM pg_constraint
-                            WHERE confrelid = %s::regclass
-                            AND contype = 'f'
-                        """, (table_name,))
-                        fk_count = cr.fetchone()[0]
-                        if fk_count > 0:
-                            _logger.warning("  Table has %s foreign keys - consider enabling HANDLE_FOREIGN_KEYS", fk_count)
-                    except:
-                        pass
-        except Exception as e:
-            _logger.error("Error processing table %s: %s", table_name, e)
-    
-    # Final commit for ID columns
-    if commit_counter > 0:
-        cr.commit()
-        commit_counter = 0
-    
-    _logger.info("Converted %s ID columns to BIGINT", id_columns_migrated)
-    
-    # Second pass: Convert all other integer columns (including FKs)
-    _logger.info("Step 3b: Converting other integer columns (FKs and others)...")
-    commit_counter = 0  # Reset counter for other columns
-    for table_name in all_tables:
-        try:
-            # Get all integer columns in this table (excluding 'id' which we already did)
-            cr.execute("""
-                SELECT column_name, data_type
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                AND table_name = %s
-                AND data_type = 'integer'
-                AND column_name != 'id'
-                ORDER BY column_name
-            """, (table_name,))
-            
-            integer_columns = cr.fetchall()
-            
-            if not integer_columns:
-                continue
-            
-            # Count FK columns (those ending in _id)
-            fk_columns = [col for col in integer_columns if col[0].endswith('_id')]
-            other_columns = [col for col in integer_columns if not col[0].endswith('_id')]
-            
-            if fk_columns or other_columns:
-                if fk_columns and other_columns:
-                    _logger.info("Processing table %s: %s FK columns, %s other integer columns", 
-                               table_name, len(fk_columns), len(other_columns))
-                elif fk_columns:
-                    _logger.info("Processing table %s: %s FK columns", table_name, len(fk_columns))
-                else:
-                    _logger.info("Processing table %s: %s other integer columns", table_name, len(other_columns))
-            
-            for column_name, _ in integer_columns:
-                try:
-                    # Check if column is already BIGINT
-                    cr.execute("""
-                        SELECT data_type
-                        FROM information_schema.columns
-                        WHERE table_schema = 'public'
-                        AND table_name = %s
-                        AND column_name = %s
-                    """, (table_name, column_name))
-                    
-                    result = cr.fetchone()
-                    if result and result[0] == 'bigint':
-                        _logger.debug("Column %s.%s is already BIGINT, skipping", table_name, column_name)
-                        continue
-                    
-                    # Check if this table inherits from another table (table inheritance)
-                    # PostgreSQL doesn't allow altering inherited columns
-                    cr.execute("""
-                        SELECT COUNT(*)
-                        FROM pg_inherits
-                        WHERE inhrelid = %s::regclass
-                    """, (table_name,))
-                    
-                    is_inherited = cr.fetchone()[0] > 0
-                    if is_inherited:
-                        _logger.debug("  Skipping %s.%s - column is inherited (table inheritance)", table_name, column_name)
-                        continue
-                    
-                    # Check for views that depend on this column and drop them
-                    unique_views = get_and_drop_dependent_views(cr, table_name, column_name)
-                    
-                    # Convert column to BIGINT
-                    try:
-                        # Escape column names (some are PostgreSQL reserved words like 'user')
-                        escaped_column = '"%s"' % column_name
-                        # First, try with USING clause (recommended for PostgreSQL)
-                        sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint USING %s::bigint" % (
-                            table_name, escaped_column, escaped_column
-                        )
-                        cr.execute(sql)
-                        
-                        # Recreate views
-                        recreate_views(cr, unique_views)
-                        
-                        # Verify conversion
-                        cr.execute("""
-                            SELECT data_type
-                            FROM information_schema.columns
-                            WHERE table_schema = 'public'
-                            AND table_name = %s
-                            AND column_name = %s
-                        """, (table_name, column_name))
-                        verify_result = cr.fetchone()
-                        if verify_result and verify_result[0] == 'bigint':
-                            columns_migrated += 1
-                            commit_counter += 1
-                            
-                            # Commit periodically to avoid lock exhaustion
-                            if commit_counter >= COMMIT_INTERVAL:
-                                cr.commit()
-                                commit_counter = 0
-                                _logger.debug("  Committed transaction (processed %s other columns so far)", columns_migrated)
-                        else:
-                            _logger.warning("  ⚠ Conversion may have failed - %s.%s is %s", 
-                                          table_name, column_name, verify_result[0] if verify_result else 'unknown')
-                    except Exception as e:
-                        # If USING fails, try without it (for some constraint issues)
-                        # But first check if it's a view dependency error
-                        if 'view or rule' in str(e).lower() or 'rule' in str(e).lower():
-                            # Views should have been handled, but maybe there are more
-                            unique_views = get_and_drop_dependent_views(cr, table_name, column_name)
-                        
-                        try:
-                            # Escape column names (some are PostgreSQL reserved words like 'user')
-                            escaped_column = '"%s"' % column_name
-                            sql = "ALTER TABLE %s ALTER COLUMN %s TYPE bigint" % (
-                                table_name, escaped_column
-                            )
-                            cr.execute(sql)
-                            
-                            # Recreate views if we dropped them
-                            if 'unique_views' in locals() and unique_views:
-                                recreate_views(cr, unique_views)
-                            
-                            # Verify conversion
-                            cr.execute("""
-                                SELECT data_type
-                                FROM information_schema.columns
-                                WHERE table_schema = 'public'
-                                AND table_name = %s
-                                AND column_name = %s
-                            """, (table_name, column_name))
-                            verify_result = cr.fetchone()
-                            if verify_result and verify_result[0] == 'bigint':
-                                columns_migrated += 1
-                            else:
-                                _logger.warning("  ⚠ Conversion may have failed - %s.%s is %s", 
-                                              table_name, column_name, verify_result[0] if verify_result else 'unknown')
-                        except Exception as e2:
-                            _logger.error("  ✗ ERROR converting %s.%s: %s", table_name, column_name, e2)
-                            # Continue with other columns
-                            continue
-                    
-                except Exception as e:
-                    _logger.error(
-                        "Error processing column %s.%s: %s",
-                        table_name, column_name, e
-                    )
-                    # Continue with other columns
-                    
-        except Exception as e:
-            _logger.error("Error processing table %s: %s", table_name, e)
-            # Continue with other tables
-    
-    other_columns_migrated = columns_migrated - id_columns_migrated
-    _logger.info("Step 3 summary: %s total columns migrated (%s ID, %s other)", 
-                 columns_migrated, id_columns_migrated, other_columns_migrated)
-    
-    # Step 3.5: Verify conversion of ID columns
-    _logger.info("Step 3.5: Verifying ID column conversions...")
-    id_columns_verified = 0
-    id_columns_failed = 0
-    for table_name in all_tables:
-        try:
-            cr.execute("""
-                SELECT column_name, data_type
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                AND table_name = %s
-                AND column_name = 'id'
-            """, (table_name,))
-            result = cr.fetchone()
-            if result:
-                col_name, data_type = result
-                if data_type == 'bigint':
-                    id_columns_verified += 1
-                    _logger.debug("Verified: %s.%s is BIGINT", table_name, col_name)
-                elif data_type == 'integer':
-                    id_columns_failed += 1
-                    _logger.warning("WARNING: %s.%s is still INTEGER (conversion may have failed)", table_name, col_name)
-        except Exception as e:
-            _logger.error("Error verifying ID column for %s: %s", table_name, e)
-    
-    _logger.info("ID column verification: %s BIGINT, %s still INTEGER", id_columns_verified, id_columns_failed)
-    
-    # Step 4: Convert sequences to BIGINT
-    _logger.info("Step 4: Converting sequences to BIGINT...")
-    sequences_migrated = 0
-    
-    # Get all sequences
-    cr.execute("""
-        SELECT sequence_name
-        FROM information_schema.sequences
-        WHERE sequence_schema = 'public'
-        ORDER BY sequence_name
-    """)
-    
-    all_sequences = [row[0] for row in cr.fetchall()]
-    _logger.info("Found %s sequences to analyze", len(all_sequences))
-    
-    for sequence_name in all_sequences:
-        try:
-            # Check current data type of sequence
-            cr.execute("""
-                SELECT data_type
-                FROM information_schema.sequences
-                WHERE sequence_schema = 'public'
-                AND sequence_name = %s
-            """, (sequence_name,))
-            
-            result = cr.fetchone()
-            if result and result[0] == 'bigint':
-                _logger.debug("Sequence %s is already BIGINT, skipping", sequence_name)
-                continue
-            
-            # For PostgreSQL 10+, we can use ALTER SEQUENCE ... AS bigint
-            # For older versions, we need to recreate the sequence
-            try:
-                # Try PostgreSQL 10+ syntax first
-                cr.execute("ALTER SEQUENCE %s AS bigint" % sequence_name)
-                sequences_migrated += 1
-            except Exception:
-                # Fallback: Get current sequence properties and recreate
-                cr.execute("""
-                    SELECT last_value, is_called
-                    FROM %s
-                """ % sequence_name)
-                
-                last_value, is_called = cr.fetchone()
-                
-                # Get increment, min, max values
-                cr.execute("""
-                    SELECT increment_by, min_value, max_value
-                    FROM %s
-                """ % sequence_name)
-                
-                increment, min_val, max_val = cr.fetchone()
-                
-                # Drop and recreate as BIGINT
-                cr.execute("DROP SEQUENCE %s" % sequence_name)
-                cr.execute("""
-                    CREATE SEQUENCE %s
-                    AS bigint
-                    INCREMENT BY %s
-                    MINVALUE %s
-                    MAXVALUE %s
-                    START WITH %s
-                """ % (sequence_name, increment, min_val, max_val, last_value + 1 if is_called else last_value))
-                
-                sequences_migrated += 1
-                _logger.info("Recreated sequence %s as BIGINT (fallback method)", sequence_name)
-                
-        except Exception as e:
-            _logger.error("Error converting sequence %s: %s", sequence_name, e)
-            # Continue with other sequences
-    
-    _logger.info("Migrated %s sequences to BIGINT", sequences_migrated)
-    
-    # Step 5: Summary and warnings
-    _logger.info("=" * 80)
-    _logger.info("NUMA BIG ID: Pre-installation migration completed")
-    _logger.info("=" * 80)
-    _logger.info("Summary:")
-    _logger.info("  - Tables analyzed: %s", len(all_tables))
-    _logger.info("  - Columns migrated: %s", columns_migrated)
-    _logger.info("  - ID columns migrated: %s", id_columns_migrated)
-    _logger.info("  - Sequences migrated: %s", sequences_migrated)
-    if id_columns_failed > 0:
-        _logger.warning("  - WARNING: %s ID columns are still INTEGER - manual intervention may be required", id_columns_failed)
-    _logger.info("=" * 80)
-    _logger.warning("POST-MIGRATION ACTIONS REQUIRED:")
-    _logger.warning("  1. Verify all columns were converted (check logs for errors)")
-    _logger.warning("  2. Consider running REINDEX on converted tables for optimal performance")
-    _logger.warning("  3. Refresh any materialized views that depend on converted columns")
-    _logger.warning("  4. Test application functionality to ensure triggers/custom code work correctly")
-    _logger.warning("  5. Monitor database performance - indexes may need rebuilding")
-    _logger.info("=" * 80)
-    
-    # Final verification: Check a few sample tables to confirm conversion
-    # Use the same critical tables for verification (they should exist in most Odoo installations)
-    _logger.info("Final verification: Checking sample ID columns...")
-    for sample_table in CRITICAL_TABLES:
-        try:
-            # Check if table exists first
-            cr.execute("""
-                SELECT COUNT(*) 
-                FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = %s
-            """, (sample_table,))
-            
-            if cr.fetchone()[0] == 0:
-                continue  # Table doesn't exist, skip
-                
-            cr.execute("""
-                SELECT data_type
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                AND table_name = %s
-                AND column_name = 'id'
-            """, (sample_table,))
-            result = cr.fetchone()
-            if result:
-                _logger.info("  %s.id: %s", sample_table, result[0])
-        except Exception as e:
-            _logger.debug("  Could not verify %s: %s", sample_table, e)
+    _logger.info("[big_id] widening the database to 64-bit integers")
+    _check_size(cr)
+
+    cr.execute("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+               "WHERE n.nspname = 'public' AND c.relkind = 'm'")
+    materialized = cr.fetchone()[0]
+    if materialized:
+        _logger.warning("[big_id] %s materialised view(s) are not touched; refresh them "
+                        "after the migration", materialized)
+
+    migrate_to_bigint(cr)
+    result = log_verification(cr)
+    if not result['clean']:
+        raise UserError(
+            "The conversion to 64-bit did not complete.\n\n"
+            "%s id column(s), %s foreign key(s) spanning both widths and %s sequence(s) "
+            "are still 32-bit; the log lists them. The database is consistent — the "
+            "migration commits per table — so fix what the log names and install again "
+            "to continue where it stopped.\n\n"
+            "Leaving it half done is the one outcome worth refusing: a foreign key whose "
+            "child is int4 and whose parent is int8 works until that table's ids pass "
+            "2,147,483,647, and then fails alone, in production."
+            % (len(result['int4_ids']), len(result['fk_mismatches']),
+               len(result['int4_sequences'])))
+    _logger.info("[big_id] done")
