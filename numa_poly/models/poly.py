@@ -1252,6 +1252,44 @@ def _poly_base_row_is_usable(owner_name, model_name, pool):
             or owner_name in _poly_ancestor_names(model_name, pool))
 
 
+def _poly_drop_base_declarations(field, model_class):
+    """Remove the polymorphic bases' declarations from a field the concrete model owns.
+
+    ``_base_fields`` is every declaration of the name in the MRO, and Odoo merges their
+    attributes. For a field numa_poly deliberately did *not* inject — one the concrete
+    model declares itself — the bases are in that MRO only because numa_poly put them
+    there, so anything they contribute is an accident of the injection rather than
+    something either model asked for.
+
+    Declarations from other extensions of the *same* model are left alone: that is
+    ordinary Odoo inheritance and the whole point of `_inherit`.
+    """
+    args = getattr(field, '_args__', None)
+    if not args:
+        return
+    base_fields = args.get('_base_fields')
+    if not base_fields or len(base_fields) < 2:
+        return
+    try:
+        dep_names = set(_poly_collect_depend_models(model_class).keys())
+    except Exception:  # noqa: BLE001 — a half-built class keeps the merge it had
+        return
+    if not dep_names:
+        return
+    own_name = getattr(model_class, '_name', None)
+    kept = tuple(bf for bf in base_fields
+                 if getattr(bf, 'model_name', None) not in dep_names
+                 or getattr(bf, 'model_name', None) == own_name)
+    if kept and len(kept) != len(base_fields):
+        dropped = sorted({getattr(bf, 'model_name', '?') for bf in base_fields
+                          if bf not in kept})
+        _logger.debug(
+            "[poly] %s.%s is declared by the model itself; not merging the declarations "
+            "from %s.", own_name, getattr(field, 'name', '?'), ', '.join(dropped))
+        args['_base_fields'] = kept
+        field.__dict__['_base_fields'] = kept
+
+
 def _poly_report_base_field_collisions(pool):
     """Log the field names that more than one base of a polymorphic model provides.
 
@@ -6857,6 +6895,21 @@ def poly_BaseModel_add_field(self, name, field):
                 if _ftype and _ftype != getattr(_base_field, 'type', None):
                     _keep_own = True
             if _keep_own:
+                # The concrete model's own declaration is the authority for this field.
+                # Odoo merges attributes across every declaration in the MRO, and the
+                # bases are in that MRO because numa_poly put them there — so an
+                # attribute the concrete model does not mention is silently taken from a
+                # base that has nothing to do with it.
+                #
+                # It broke creating a company. `res.partner` sits on
+                # `numa.planning.resource`, whose `company_id` declares
+                # `default=lambda self: self.env.company`; res.partner's own declares no
+                # default. During a module update the merge gave every new partner the
+                # current company, including the one `res.company.create` makes for a new
+                # company — which then failed its own check_company. On a plain boot the
+                # field is set up from its definition class alone and the leak does not
+                # happen, which is why it only ever showed up under `-u`.
+                _poly_drop_base_declarations(field, model_class)
                 return _original_BaseModel_add_field(self, name, field)
             # Forzamos los atributos del objeto field directamente antes de que Odoo lo registre
             _poly_force_related(field, _target_related)
