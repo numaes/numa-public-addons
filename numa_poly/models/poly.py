@@ -3148,25 +3148,38 @@ class PolyBase(_original_BaseModel):
         fk_cache = {}
 
         for index, (old_id, new_id) in enumerate(plan.items(), start=1):
-            # One statement per record. Batching them would be faster, but a table with
-            # a self-referencing foreign key would then have two updates racing on the
-            # same row, whose outcome Postgres explicitly leaves undefined.
-            parts, position = [], 0
+            # One statement per record, and — this is the part that is not optional —
+            # one UPDATE per *table* within it, rewriting all of that table's columns at
+            # once.
+            #
+            # Postgres applies at most one of a statement's data-modifying CTEs to any
+            # given row, silently. A table with two columns pointing at the record
+            # (`conversation_message` has parent_id, reference_id and root_id, and a
+            # planning node is its own root) therefore had one of them updated and the
+            # rest quietly left behind, and the statement died on the foreign key it had
+            # just been told to fix.
+            columns_by_table = defaultdict(set)
             for table in self._poly_renumber_chain_tables(old_id):
                 if table not in fk_cache:
                     fk_cache[table] = self._poly_table_fk_dependents(table)
                 for child_table, column in fk_cache[table]:
-                    parts.append(SQL(
-                        "%s AS (UPDATE %s SET %s = %s WHERE %s = %s RETURNING 1)",
-                        SQL.identifier('poly_fk_%s' % position),
-                        SQL.identifier(child_table), SQL.identifier(column), new_id,
-                        SQL.identifier(column), old_id))
-                    position += 1
+                    columns_by_table[child_table].add(column)
+                columns_by_table[table].add('id')
+
+            parts = []
+            for position, (table, columns) in enumerate(sorted(columns_by_table.items())):
+                ordered = sorted(columns)
                 parts.append(SQL(
-                    "%s AS (UPDATE %s SET id = %s WHERE id = %s RETURNING 1)",
-                    SQL.identifier('poly_row_%s' % position), SQL.identifier(table),
-                    new_id, old_id))
-                position += 1
+                    "%s AS (UPDATE %s SET %s WHERE %s RETURNING 1)",
+                    SQL.identifier('poly_move_%s' % position), SQL.identifier(table),
+                    SQL(', ').join(
+                        SQL("%s = CASE WHEN %s = %s THEN %s ELSE %s END",
+                            SQL.identifier(c), SQL.identifier(c), old_id, new_id,
+                            SQL.identifier(c))
+                        for c in ordered),
+                    SQL(' OR ').join(
+                        SQL("%s = %s", SQL.identifier(c), old_id) for c in ordered),
+                ))
             cr.execute(SQL("WITH %s SELECT 1", SQL(', ').join(parts)))
 
             for table, id_column, model_column in reference_dependents:
@@ -5575,9 +5588,13 @@ class PolyBase(_original_BaseModel):
             ForeignKeyViolation: numa_planning_allocation_node_id_fkey
             Key (node_id)=(14764) is not present in table "numa_planning_node"
 
-        Raises when a record cannot be completed because its id belongs to somebody else:
-        that is not something a caller can work around, and a clear message beats the
-        same ForeignKeyViolation three frames further down.
+        A record whose id belongs to somebody else cannot be completed here — the id has
+        to be given up first, and taking it out from under a caller mid-transaction is
+        not something this may do. It is reported and skipped, never raised: refusing the
+        write would mean a purchase order that cannot be saved because one of its lines
+        is waiting for a migration, and a system that stops is worse than one whose
+        planning fields on that one line are still empty. The cron resolves it, usually
+        within the hour.
         """
         ids = [i for i in (ids or []) if isinstance(i, int) and i > 0]
         if not ids or not self._poly_get_depend_models():
@@ -5587,12 +5604,16 @@ class PolyBase(_original_BaseModel):
         conflicts = self._poly_id_conflicts(ids)
         if conflicts:
             record_id, holder = sorted(conflicts.items())[0]
-            raise UserError(_(
-                "%(model)s %(id)s cannot be given its polymorphic rows: the id already "
-                "belongs to %(holder)s. Polymorphic models share one id space, and this "
-                "record predates the module that made it polymorphic. Run "
-                "_poly_renumber_colliding() on %(model)s to move it to a free id.",
-                model=self._name, id=record_id, holder=holder))
+            _logger.warning(
+                "[poly] %s %s cannot be given its polymorphic rows yet: the id belongs "
+                "to %s (%s record(s) of this write). Values aimed at a base model are "
+                "not stored for %s. The backfill cron moves it to a free id; "
+                "_poly_renumber_colliding() does it now.",
+                self._name, record_id, holder, len(conflicts),
+                'them' if len(conflicts) > 1 else 'it')
+            ids = [i for i in ids if i not in conflicts]
+            if not ids:
+                return
         self._poly_backfill_base_rows(only_ids=ids)
 
     def _poly_ensure_base_rows_for_write(self, vals):
@@ -5674,17 +5695,9 @@ class PolyBase(_original_BaseModel):
             owned = [row[0] for row in cr.fetchall()]
             if not owned:
                 continue
-            try:
-                # The base row is already known to be absent, so there is nothing left
-                # for the cheap probe to establish: go straight to the repair.
-                model._poly_ensure_base_rows(owned, force=True)
-            except UserError as blocked:
-                # One record's taken id must not take down an operation that merely
-                # mentions it. Writing to the blocked record itself still raises — there
-                # the message is the answer; here it would be an unrelated create dying
-                # because some other row is in trouble.
-                _logger.warning("[poly] %s referenced from %s: %s",
-                                subtype, self._name, blocked)
+            # The base row is already known to be absent, so there is nothing left for
+            # the cheap probe to establish: go straight to the repair.
+            model._poly_ensure_base_rows(owned, force=True)
             missing.difference_update(owned)
 
     def write(self, vals):
@@ -5707,13 +5720,9 @@ class PolyBase(_original_BaseModel):
         # Give the records their rows first, either way.
         try:
             self._poly_ensure_base_rows(list(self._ids))
-        except UserError:
-            # A taken id. Nothing the caller can do about it, and nothing this write can
-            # do either — say so rather than fail later and elsewhere.
-            raise
         except Exception:
-            # Anything else must not cost the user their write: the record stays as
-            # readable as it was, and the log carries the reason.
+            # This must not cost the user their write: the record stays as readable as it
+            # was, and the log carries the reason.
             _logger.exception(
                 "[poly] could not create the missing base rows for a write on %s; "
                 "values aimed at a base model may be lost.", self._name)

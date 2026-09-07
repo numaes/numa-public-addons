@@ -16,7 +16,6 @@ records were left with is worse than nothing — ``ir_poly_base.concrete_model_i
 names the *wrong* model, so anything resolved through a polymorphic base dispatches to
 it.
 """
-from odoo.exceptions import UserError
 from odoo.tests import tagged, TransactionCase
 
 from ..models.poly import _poly_base_row_is_usable
@@ -161,19 +160,23 @@ class TestPolyIdCollisions(TransactionCase):
 
     # -- operability ------------------------------------------------------------
 
-    def test_07_writing_to_a_blocked_record_says_what_is_wrong(self):
+    def test_07_writing_to_a_blocked_record_still_saves_the_record(self):
         """
-        A raw ForeignKeyViolation three frames deep is not an answer. The write cannot
-        succeed — the row cannot be built — so it must at least name the cause.
+        This raised at first, on the reasoning that a write which cannot land should say
+        so. In production that meant a purchase order nobody could save, because one of
+        its lines was waiting for a migration — a system that stops is worse than one
+        whose planning fields on that one line stay empty for an hour. The collision goes
+        to the log; the record's own fields are saved.
         """
         task = self._orphan_task(claimed=True)
 
-        with self.assertRaises(UserError) as caught:
-            task.write({'pln_constraint_type': 'alap'})
+        task.write({'name': 'Renamed', 'pln_constraint_type': 'alap'})
+        self.env.flush_all()
+        self.env.invalidate_all()
 
-        message = str(caught.exception)
-        self.assertIn('res.partner', message)
-        self.assertIn(str(task.id), message)
+        self.assertEqual(task.name, 'Renamed')
+        self.assertEqual(self._base_rows(task.id), 0,
+                         "The row still cannot be built on somebody else's id.")
 
     # -- renumbering ------------------------------------------------------------
 
@@ -270,3 +273,68 @@ class TestPolyIdCollisions(TransactionCase):
         param = self.env['ir.config_parameter'].sudo().get_param(
             'numa_poly.backfill_deferred_models') or ''
         return [name for name in param.split(',') if name]
+
+    # -- moving a row that points at itself -------------------------------------
+
+    def test_15_a_record_that_is_its_own_root_moves_in_one_piece(self):
+        """
+        Postgres applies at most one data-modifying CTE to any given row, silently. A
+        planning node is its own `pln_root_id`, so the update of the id and the update of
+        the reference landed on the same row and only one of them took — and the
+        statement died on the foreign key it had just been told to fix.
+
+        `conversation_message` is the same shape three times over: parent_id,
+        reference_id and root_id all point at a message.
+        """
+        task = self._orphan_task(claimed=True, name='Own root')
+        old_id = task.id
+        self.env.cr.execute(
+            "INSERT INTO ir_poly_base (id, concrete_model_id, create_uid, write_uid, "
+            "create_date, write_date) VALUES (%s, %s, 1, 1, now(), now()) "
+            "ON CONFLICT (id) DO NOTHING", (old_id + 10 ** 7, self.other_model_id))
+        # Give it the node row it would have had, rooted on itself.
+        self.env.cr.execute(
+            "INSERT INTO numa_planning_node (id, name, create_uid, write_uid, "
+            "create_date, write_date, pln_root_id) VALUES (%s, %s, 1, 1, now(), now(), %s)",
+            (old_id, 'Own root', old_id))
+
+        moved = self.Task._poly_renumber_colliding([old_id])
+
+        new_id = moved[old_id]
+        self.env.cr.execute(
+            "SELECT id, pln_root_id FROM numa_planning_node WHERE id = %s", (new_id,))
+        self.assertEqual(self.env.cr.fetchone(), (new_id, new_id),
+                         "The id and the self-reference must move together.")
+
+    def test_16_two_references_from_one_row_both_move(self):
+        """The general case behind it: one row, several columns, one renumbered id.
+
+        `numa_planning_node` gets both its own `id` and a `pln_root_id` rewritten in the
+        same statement, which is where the one-CTE-per-row rule bites.
+        """
+        target = self.Task.create({'name': 'Target', 'project_id': self.project.id})
+        follower = self.Task.create({'name': 'Follower', 'project_id': self.project.id,
+                                     'parent_id': target.id})
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE numa_planning_node SET pln_root_id = %s WHERE id = %s",
+            (target.id, follower.id))
+        # Now take the id away from it, keeping the node row it already has: that row is
+        # the record's own and has to travel with it.
+        self.env.cr.execute("DELETE FROM ir_poly_base WHERE id = %s", (target.id,))
+        self._claim(target.id)
+
+        moved = self.Task._poly_renumber_colliding([target.id])
+
+        new_id = moved[target.id]
+        self.env.cr.execute("SELECT parent_id FROM project_task WHERE id = %s",
+                            (follower.id,))
+        self.assertEqual(self.env.cr.fetchone()[0], new_id)
+        self.env.cr.execute("SELECT pln_root_id FROM numa_planning_node WHERE id = %s",
+                            (follower.id,))
+        self.assertEqual(self.env.cr.fetchone()[0], new_id,
+                         "The reference from another row must move too.")
+        self.env.cr.execute("SELECT count(*) FROM numa_planning_node WHERE id = %s",
+                            (new_id,))
+        self.assertEqual(self.env.cr.fetchone()[0], 1,
+                         "And the node row must have come along.")
