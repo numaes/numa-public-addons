@@ -16,7 +16,7 @@
 # ./odoo-install
 ################################################################################
 
-OE_USER="$user"
+OE_USER="$USER"
 OE_HOME=$(pwd)
 # The default port where this Odoo instance will run under provided you use the command -c in the terminal
 # Set to true if you want to install it, false if you don't need it or have it already installed.
@@ -53,7 +53,7 @@ if [ "$INSTALL_NGINX" = "True" ]; then
   read -r -e -p "Enable SSL? [True/False]: " -i "False" ENABLE_SSL
 
   # Provide Email to register ssl certificate
-  read -r -e -p "Email for ssl certificate: " -i "odoo@example.com ADMIN_EMAIL"
+  read -r -e -p "Email for ssl certificate: " -i "odoo@example.com" ADMIN_EMAIL
 
 fi
 
@@ -106,7 +106,7 @@ echo -e "\n---- Installing nodeJS NPM and rtlcss for LTR support ----"
 sudo apt-get install nodejs npm -y
 sudo npm install -g rtlcss
 
-if [ ! -d /usr/bin/home ]; then
+if [ ! -e /usr/bin/node ] && [ -e /usr/bin/nodejs ]; then
   echo -e "\n--- Create symlink for node"
   sudo ln -s /usr/bin/nodejs /usr/bin/node
 fi
@@ -246,13 +246,16 @@ db_user = pg-$PROJECT-$OE_VERSION
 addons_path=../numa-public-odoo-$OE_VERSION-numa/addons,../numa-public-odoo-$OE_VERSION-numa/odoo/addons,../extra-addons-$OE_VERSION$(if [ "$IS_ENTERPRISE" = "True" ]; then echo ",../enterprise-$OE_VERSION"; fi),../numa-public-addons-$OE_VERSION,../extra-addons-$OE_VERSION$(if [ "$INSTALL_PRIVATE" = "Yes" ]; then echo ",../numa-addons-$OE_VERSION,../numa_l10n_ar-$OE_VERSION"; fi)$(if [ "$PROJECT_REPO" = "True" ]; then echo ",$PROJECT-addons-$OE_VERSION"; fi)
 EOF
 
-        createuser -s "pg-$PROJECT-$OE_VERSION"
       fi
 
-    cat <<EOF > ./start.sh
+    cat > ./start.sh <<START_EOF
+#!/bin/bash
+# El shebang no es decorativo: sin el, ./start.sh lo toma dash, que no conoce
+# \`source\`, no activa el venv y odoo-bin muere con ModuleNotFoundError: babel.
+cd "\$(dirname "\$0")"
 source venv/bin/activate
-../numa-public-odoo-$OE_VERSION-numa/odoo-bin -c odoo.config \$1 \$2 \$3 \$4 \$5 \$6 \$7 \$8 \$9
-EOF
+exec ../numa-public-odoo-$OE_VERSION-numa/odoo-bin -c odoo.config "\$@"
+START_EOF
     chmod +x ./start.sh
 
     CWD=$(pwd)
@@ -267,135 +270,249 @@ EOF
     fi
 
     if [ ! -f ./stop.sh ]; then
-      cat <<EOF > ./stop.sh
-if [ -f running-odoo.pid ]; then
-    CWO=\$(cat running-odoo.pid)
-    kill -9 \$CWO
-    rm running-odoo.pid
+      cat > ./stop.sh <<'STOP_EOF'
+#!/bin/bash
+# Apagado ordenado. Un `kill -9` al master no le da a Odoo la oportunidad de cerrar
+# workers ni conexiones, deja workers huerfanos (se ven en el log como "Parent changed"
+# seguidos de "exiting" hasta minuto y medio despues) y puede matar un wkhtmltopdf en
+# curso -- que es como aparece un "Wkhtmltopdf failed (error code: -9)" sin que haya OOM.
+cd "$(dirname "$0")"
+[ -f running-odoo.pid ] || { echo "no hay running-odoo.pid"; exit 0; }
+PID=$(cat running-odoo.pid)
+if ! kill -0 "$PID" 2>/dev/null; then
+    echo "el pid $PID ya no corre"; rm -f running-odoo.pid; exit 0
 fi
-EOF
+echo "apagando odoo (pid $PID) con SIGTERM..."
+kill -TERM "$PID"
+for i in $(seq 1 30); do
+    kill -0 "$PID" 2>/dev/null || { echo "apagado limpio en ${i}s"; rm -f running-odoo.pid; exit 0; }
+    sleep 1
+done
+echo "no respondio en 30s, SIGKILL como ultimo recurso"
+kill -9 "$PID" 2>/dev/null || true
+rm -f running-odoo.pid
+STOP_EOF
       chmod +x ./stop.sh
     fi
 
+    # Los dos heredocs de abajo usan delimitador ENTRECOMILLADO ('NUMA_..._EOF').
+    # Sin las comillas el shell expande cada $VAR y $(...) al GENERAR el script, y lo que
+    # queda en disco son los valores congelados del momento de la instalacion:
+    #     if [ $# -ne 2 ]        ->  if [ 0 -ne 2 ]      (siempre verdadero)
+    #     DATE="$(date ...)"     ->  DATE="2025-08-26-00-18-19"
+    #     for DB in $DBS         ->  for DB in           (ni siquiera es sintaxis valida)
+    # Asi quedaron los dbbackup.sh/dbrestore.sh de produccion desde 2025-08-26: inertes,
+    # y sin que nada lo avisara. Nada de aca adentro debe interpolarse al generar.
     if [ ! -f ./dbbackup.sh ]; then
-      cat <<EOF > ./dbbackup.sh
-# !/bin/bash
-# This script is public domain. Feel free to use or modify as you like.
-if [ \$# -ne 2 ]; then
-    echo "Usage:"
-    echo "     \$0 <database>  <role>"
-else
-	BZIP2="/bin/bzip2"
-	GREP="/bin/grep"
-	ROLE="\$2"
-	DUMPALL="pg_dumpall"
-	PGDUMP="pg_dump"
-	PSQL="psql"
-	DATE="\$(date +%Y-%m-%d-%H-%M-%S)"
-	CWD=\$(pwd)
-	FILESTOREDIR="\$CWD/data"
+      cat > ./dbbackup.sh <<'NUMA_DBBACKUP_EOF'
+#!/bin/bash
+# Respaldo logico de una base Odoo: volcado de PostgreSQL + filestore, en un solo archivo.
+#
+# Uso:   ./dbbackup.sh <base> [rol]
+#        KEEP=14 ./dbbackup.sh <base>      # cuantos respaldos conservar (0 = todos)
+#
+# Produce  ./database/<base>-<fecha>.tar.gz  con dentro:
+#     manifest     que base, que rol la posee, cuando, con que version de PostgreSQL
+#     dump.pgc     pg_dump en formato custom -- permite restaurar una sola tabla
+#     filestore/   los adjuntos de esa base
+#
+# Complementa al snapshot diario de la VM, no lo reemplaza: el snapshot cubre perder la
+# maquina, esto cubre recuperar una tabla sin levantar una VM entera, y es un dominio de
+# falla distinto (un snapshot copia fielmente la corrupcion logica que tenga la base).
+#
+# La version anterior de este archivo estaba destruida: alguien expandio sus variables el
+# 2025-08-26 y guardo el resultado, dejando `if [ 0 -ne 2 ]` y `for DB in ; do`. No solo no
+# respaldaba: no era sintaxis valida. Nadie se entero porque nada lo avisa.
+set -euo pipefail
 
-	# directory to save backups in, must be rwx by postgres user
-	BACKUPDIR="\$CWD/database"
-	[ -d \$BACKUPDIR ] || mkdir -p \$BACKUPDIR
+cd "$(dirname "$0")"
 
-	if [ ! -d \$FILESTOREDIR ]; then
-	   echo "You have no access to Odoo filestore. Run dbbackup with sudo!"
-	   exit
-	fi
+BACKUPDIR="./database"
+FILESTOREDIR="./data/filestore"
+KEEP="${KEEP:-14}"
 
-	# get list of databases in system for current user
-	# command inspired on SISalp suggestion on odoo mail list
-	# https://www.odoo.com/groups/community-59/community-15954813
-	# shellcheck disable=SC2006
-	# shellcheck disable=SC2006
-	DBS=`\$PSQL -l -U "\$ROLE" | grep "\$ROLE" | cut -d '|' -f1`
-	DBS="\$1"
-
-	# now backup the tables
-	cd /tmp
-	for DB in \$DBS; do
-		# It would have been nice to do the next using pipe
-		# but pipe didnt now allow me to redirect pg_dump output to input tar
-		# at least I couldn't ;(
-		echo "Performing backup of $DB..."
-		[ -d \$BACKUPDIR/\$DB ] || mkdir -p \$BACKUPDIR/\$DB
-
-		if [ -d "\$FILESTOREDIR/filestore/\$DB" ]; then
-			\$PGDUMP \$DB -U -O \$ROLE > dump.sql && tar cjf \$BACKUPDIR/\$DB/\$DB-\$DATE.tar.bz2 --transform "s,^filestore/$DB,filestore," dump.sql -C \$FILESTOREDIR filestore/\$DB && rm -rf dump.sql
-		else
-			\$PGDUMP \$DB -U -O \$ROLE > dump.sql && tar cjf \$BACKUPDIR/\$DB/\$DB-\$DATE.tar.bz2 dump.sql && rm -rf dump.sql
-		fi
-	done
-	cd \$CWD
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+    cat >&2 <<USAGE
+Uso: $(basename "$0") <base> [rol]
+     Si se omite el rol, se usa el dueño actual de la base.
+     KEEP=<n> conserva solo los n respaldos mas recientes de esa base (0 = todos).
+Ejemplo: $(basename "$0") cm-prod-18.0
+USAGE
+    exit 1
 fi
-EOF
+
+DB="$1"
+DATE="$(date +%Y%m%d-%H%M%S)"
+
+if ! psql -d postgres -X -t -A -c "SELECT 1 FROM pg_database WHERE datname = '$DB'" | grep -q 1; then
+    echo "No existe la base '$DB'." >&2
+    exit 1
+fi
+
+OWNER="${2:-$(psql -d postgres -X -t -A -c \
+    "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = '$DB'")}"
+
+STAGE="$(mktemp -d -t dbbackup-XXXXXX)"
+trap 'rm -rf "$STAGE"' EXIT
+
+echo "Respaldando '$DB' (dueño: $OWNER)"
+mkdir -p "$BACKUPDIR"
+
+echo "  volcando la base..."
+pg_dump -Fc -Z6 -f "$STAGE/dump.pgc" "$DB"
+
+echo "  verificando el volcado..."
+TABLES=$(pg_restore -l "$STAGE/dump.pgc" | grep -c "TABLE DATA" || true)
+if [ "$TABLES" -lt 1 ]; then
+    echo "  el volcado no contiene datos -- abortando sin dejar archivo" >&2
+    exit 1
+fi
+echo "  $TABLES tablas con datos"
+
+if [ -d "$FILESTOREDIR/$DB" ]; then
+    echo "  copiando filestore..."
+    cp -a "$FILESTOREDIR/$DB" "$STAGE/filestore"
+else
+    echo "  (sin filestore en $FILESTOREDIR/$DB)"
+    mkdir -p "$STAGE/filestore"
+fi
+
+cat > "$STAGE/manifest" <<MANIFEST
+database=$DB
+owner=$OWNER
+created=$(date --iso-8601=seconds)
+host=$(hostname)
+pg_version=$(psql -d postgres -X -t -A -c "SHOW server_version")
+tables_with_data=$TABLES
+MANIFEST
+
+OUT="$BACKUPDIR/$DB-$DATE.tar.gz"
+echo "  empaquetando..."
+tar czf "$OUT" -C "$STAGE" manifest dump.pgc filestore
+
+echo "Listo: $OUT ($(du -h "$OUT" | cut -f1))"
+
+if [ "$KEEP" -gt 0 ]; then
+    # shellcheck disable=SC2012
+    OLD=$(ls -1t "$BACKUPDIR/$DB"-*.tar.gz 2>/dev/null | tail -n +$((KEEP + 1)) || true)
+    if [ -n "$OLD" ]; then
+        echo "Purgando respaldos viejos (conservando $KEEP):"
+        echo "$OLD" | while read -r f; do echo "  - $f"; rm -f "$f"; done
+    fi
+fi
+NUMA_DBBACKUP_EOF
       chmod +x ./dbbackup.sh
     fi
 
     if [ ! -f ./dbrestore.sh ]; then
-      cat <<EOF > ./dbrestore.sh
-if [ \$# -ne 3 ]; then
-    echo "Usage:"
-    echo "     \$0 <database>  <backup-file>  <role>"
-else
-    DB="\$1"
-    BACKUP_FILE="\$2"
-    ROLE="\$3"
-    DATA_PATH="./data"
-    UNTARDIR="/tmp/untardir"
-    TODAY="\$(date '+%Y-%m-%d %H:%M:%S')"
-    TODAY_PLUS_ONE_MONTH="\$(date -d '+1 month' '+%Y-%m-%d %H:%M:%S')"
-    UUID=$(cat /proc/sys/kernel/random/uuid)
-    PSQL="psql"
+      cat > ./dbrestore.sh <<'NUMA_DBRESTORE_EOF'
+#!/bin/bash
+# Restaura un respaldo hecho por dbbackup.sh: base + filestore.
+#
+# Uso:   ./dbrestore.sh <base-destino> <archivo.tar.gz> [rol] [--production]
+#
+# POR DEFECTO LA COPIA SE NEUTRALIZA. Una restauracion de produccion en otra base sigue
+# teniendo dentro los servidores de correo, los cron y el uuid de la original: apenas Odoo
+# la abre empieza a mandar mails reales a clientes reales y a correr integraciones. Asi que
+# salvo que pases --production, este script deja la copia:
+#     - con un database.uuid nuevo        (no se hace pasar por la original)
+#     - sin fecha de expiracion heredada
+#     - con los cron desactivados
+#     - con los servidores de correo entrante y saliente desactivados
+# La version original de este archivo tenia esas tres lineas escritas y comentadas; el
+# autor sabia del problema. Aca estan activas y ademas cubren correo y cron.
+#
+# Usa --production solo para restaurar sobre la base que realmente atiende usuarios.
+set -euo pipefail
 
-    if [ ! -d \$DATA_PATH ]; then
-        echo "You have no access to Odoo filestore. Run command with sudo"
-    else
-        echo "Droping database \$DB if exists"
-        dropdb \$DB -U \$ROLE
-    fi
+cd "$(dirname "$0")"
 
-		DBS=`\$PSQL -l -U \$ROLE | grep \$ROLE | cut -d '|' -f1`
+DATA_PATH="./data"
+PRODUCTION=0
+ARGS=()
+for a in "$@"; do
+    if [ "$a" = "--production" ]; then PRODUCTION=1; else ARGS+=("$a"); fi
+done
+set -- "${ARGS[@]:-}"
 
-    if echo \$DBS | grep -w \$DB > /dev/null; then
-      echo "Existing database, aborting..."
-      exit 1
-    fi
-
-    echo "Creating empty database"
-    createdb -O \$ROLE -U \$ROLE \$DB --encoding=UNICODE -T template0
-
-    echo "Restoring database \$DB with file $BACKUP_FILE"
-    test -d \$UNTARDIR && rm -r \$UNTARDIR
-    mkdir \$UNTARDIR
-    tar -xjf \$BACKUP_FILE -C \$UNTARDIR
-
-    echo "Regenerating database ..."
-    psql -d \$DB -U \$ROLE >/dev/null < \$UNTARDIR/dump.sql
-
-    echo "Creating a new id for the new database"
-    # psql -d \$DB -U \$ROLE -c "UPDATE ir_config_parameter set value='\$UUID' where key='database.uuid'"
-    # psql -d \$DB -U \$ROLE -c "UPDATE ir_config_parameter set value='\$TODAY' where key='database.create_date'"
-    # psql -d \$DB -U \$ROLE -c "UPDATE ir_config_parameter set value='\$TODAY_PLUS_ONE_MONTH' where key='database.expiration_date'"
-
-		echo "Cleaning filestore"
-    test -d \$DATA_PATH/filestore || mkdir -p \$DATA_PATH/filestore
-    test -d \$DATA_PATH/filestore/\$DB || mkdir -p \$DATA_PATH/filestore/\$DB
-    # rm -r \$DATA_PATH/filestore/\$DB/*
-    if [ -d \$UNTARDIR/filestore ]; then
-      echo "Restoring filestore"
-        mv \$UNTARDIR/filestore/* -t \$DATA_PATH/filestore/\$DB
-    fi
-
-    # chown -R odoo:odoo \$DATA_PATH/filestore/\$DB
-
-    rm -r \$UNTARDIR
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+    cat >&2 <<USAGE
+Uso: $(basename "$0") <base-destino> <archivo.tar.gz> [rol] [--production]
+     Sin --production la copia se neutraliza (uuid nuevo, cron y correo apagados).
+Ejemplo: $(basename "$0") cm-restore-test ./database/cm-prod-18.0-20260908-124639.tar.gz
+USAGE
+    exit 1
 fi
-EOF
+
+DB="$1"
+BACKUP_FILE="$2"
+
+[ -f "$BACKUP_FILE" ] || { echo "No existe el archivo '$BACKUP_FILE'." >&2; exit 1; }
+
+if psql -d postgres -X -t -A -c "SELECT 1 FROM pg_database WHERE datname = '$DB'" | grep -q 1; then
+    echo "La base '$DB' ya existe. Borrala primero si de verdad la queres reemplazar:" >&2
+    echo "    dropdb '$DB'" >&2
+    exit 1
+fi
+
+STAGE="$(mktemp -d -t dbrestore-XXXXXX)"
+trap 'rm -rf "$STAGE"' EXIT
+
+echo "Desempaquetando $BACKUP_FILE"
+tar xzf "$BACKUP_FILE" -C "$STAGE"
+[ -f "$STAGE/dump.pgc" ] || { echo "El archivo no contiene dump.pgc -- ¿es un respaldo de dbbackup.sh?" >&2; exit 1; }
+
+[ -f "$STAGE/manifest" ] && { echo "Manifiesto del respaldo:"; sed 's/^/  /' "$STAGE/manifest"; }
+
+OWNER="${3:-$(sed -n 's/^owner=//p' "$STAGE/manifest" 2>/dev/null)}"
+OWNER="${OWNER:-$(whoami)}"
+
+echo "Creando la base '$DB' (dueño: $OWNER)"
+createdb -O "$OWNER" --encoding=UNICODE -T template0 "$DB"
+
+echo "Restaurando el volcado..."
+pg_restore -d "$DB" --no-owner --role="$OWNER" -j 2 "$STAGE/dump.pgc" 2>&1 | grep -v "^$" || true
+
+echo "Restaurando el filestore..."
+mkdir -p "$DATA_PATH/filestore"
+rm -rf "${DATA_PATH:?}/filestore/$DB"
+if [ -d "$STAGE/filestore" ]; then
+    cp -a "$STAGE/filestore" "$DATA_PATH/filestore/$DB"
+else
+    mkdir -p "$DATA_PATH/filestore/$DB"
+fi
+
+if [ "$PRODUCTION" -eq 1 ]; then
+    echo
+    echo "*** --production: la copia queda TAL CUAL. Cron y correo activos, uuid original."
+else
+    echo "Neutralizando la copia..."
+    psql -d "$DB" -X -q <<'SQL'
+UPDATE ir_config_parameter SET value = gen_random_uuid()::text WHERE key = 'database.uuid';
+DELETE FROM ir_config_parameter WHERE key IN ('database.expiration_date','database.expiration_reason');
+DO $$
+BEGIN
+    IF to_regclass('ir_cron') IS NOT NULL THEN
+        UPDATE ir_cron SET active = false;
+    END IF;
+    IF to_regclass('ir_mail_server') IS NOT NULL THEN
+        UPDATE ir_mail_server SET active = false;
+    END IF;
+    IF to_regclass('fetchmail_server') IS NOT NULL THEN
+        UPDATE fetchmail_server SET active = false, state = 'draft';
+    END IF;
+END $$;
+SQL
+    echo "  uuid nuevo, cron y servidores de correo desactivados."
+    echo "  Para reactivarlos en la copia, hacelo a mano y a conciencia."
+fi
+
+echo
+echo "Listo. Base '$DB' restaurada. Arrancala con:"
+echo "    ./start.sh -d '$DB'"
+NUMA_DBRESTORE_EOF
       chmod +x ./dbrestore.sh
     fi
-
 
     echo -e "\n---- Install python packages/requirements ----"
     pip install --upgrade pip
@@ -422,9 +539,13 @@ if [ "$INSTALL_NGINX" = "True" ]; then
     sudo apt install nginx -y
     sudo apt install letsencrypt -y
     sudo apt install certbot python3-certbot-nginx -y
-    sudo letsencrypt certonly --nginx -d "$WEBSITE_NAME" --noninteractive --agree-tos --email "$ADMIN_EMAIL" --redirect
-    sudo service nginx reload
-    echo "SSL/HTTPS is enabled!"
+    if [ "$ENABLE_SSL" = "True" ]; then
+      sudo certbot certonly --nginx -d "$WEBSITE_NAME" --noninteractive --agree-tos --email "$ADMIN_EMAIL"
+      sudo service nginx reload
+      echo "SSL/HTTPS is enabled!"
+    else
+      echo "SSL not requested; the site will be served over HTTP only."
+    fi
 
   cat <<EOF > ~/$WEBSITE_NAME
 #odoo server
@@ -443,18 +564,18 @@ map \$http_upgrade \$connection_upgrade {
 server {
    listen 80;
    server_name $WEBSITE_NAME;
-   rewrite ^/.*\$ https://\$host\$1 permanent;
+   rewrite ^ https://\$host\$request_uri? permanent;
 }
 
 server {
   listen 443 ssl;
-  server_name test-$WEBSITE_NAME;
+  server_name $WEBSITE_NAME;
   proxy_read_timeout 900s;
   proxy_connect_timeout 900s;
   proxy_send_timeout 900s;
 
-  ssl_certificate /etc/letsencrypt/live/test-$WEBSITE_NAME/fullchain.pem; # managed by Certbot
-  ssl_certificate_key /etc/letsencrypt/live/test-$WEBSITE_NAME/privkey.pem; # managed by Certbot
+  ssl_certificate /etc/letsencrypt/live/$WEBSITE_NAME/fullchain.pem; # managed by Certbot
+  ssl_certificate_key /etc/letsencrypt/live/$WEBSITE_NAME/privkey.pem; # managed by Certbot
   ssl_session_timeout 30m;
   ssl_protocols TLSv1.2;
   ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
@@ -512,7 +633,7 @@ server {
   }
 
   location /websocket {
-    proxy_pass http://backend-WEBSITE_NAME-im;
+    proxy_pass http://backend-$WEBSITE_NAME-im;
     proxy_set_header Upgrade \$http_upgrade;
     proxy_set_header Connection \$connection_upgrade;
     proxy_set_header X-Forwarded-Host \$host;
@@ -529,15 +650,8 @@ EOF
   sudo ln -s /etc/nginx/sites-available/$WEBSITE_NAME /etc/nginx/sites-enabled/$WEBSITE_NAME
   sudo rm /etc/nginx/sites-enabled/default
   sudo service nginx reload
-  # Mejora: Usar sudo para escribir en el archivo de configuración
-  # Mejora: Definir OE_CONFIG previamente o usar odoo.config si se refiere a ese archivo
-  if [ -n "$OE_CONFIG" ]; then # Verificar si la variable OE_CONFIG está definida
-      sudo su root -c "echo 'proxy_mode = True' >> /etc/$OE_CONFIG.conf"
-  else
-      echo "Error: La variable OE_CONFIG no está definida. No se pudo configurar proxy_mode."
-  fi
-  # O si se refiere al archivo odoo.config, usar:
-  # echo "proxy_mode = True" >> "$ODOO_ROOT/odoo.config"
+  # proxy_mode ya se escribe en odoo.config al generarlo (arriba), a partir de
+  # $INSTALL_NGINX. No hay ningun /etc/<OE_CONFIG>.conf en esta instalacion.
   echo "Done! The Nginx server is up and running. Configuration can be found at /etc/nginx/sites-available/odoo"
 else
   echo "Nginx isn't installed due to choice of the user!"
@@ -552,9 +666,9 @@ echo "-----------------------------------------------------------"
 echo "Done!. Specifications:"
 echo "Port: $OE_PORT"
 echo "Project: $PROJECT"
-echo "Project directory: $pwd/$PROJECT-$OE_VERSION"
-echo "Configuraton file location: $pwd/$PROJECT-$OE_VERSION/odoo.config"
-echo "Logfile location: $pwd/$PROJECT-$OE_VERSION/log"
+echo "Project directory: $(pwd)/$PROJECT-$OE_VERSION"
+echo "Configuraton file location: $(pwd)/$PROJECT-$OE_VERSION/odoo.config"
+echo "Logfile location: $(pwd)/$PROJECT-$OE_VERSION/log"
 echo "User PostgreSQL: pg-$PROJECT-$OE_VERSION"
 echo "Password superadmin database: $OE_SUPERADMIN"
 if [ "$INSTALL_NGINX" = "True" ]; then
