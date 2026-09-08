@@ -8,3 +8,4 @@ from . import test_poly_no_shadow
 from . import test_poly_collisions
 from . import test_poly_incomplete_records
 from . import test_poly_audit_stamp
+from . import test_poly_id_space

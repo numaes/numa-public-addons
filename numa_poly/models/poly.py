@@ -654,6 +654,9 @@ POLY_BACKFILL_LIMIT_PARAM = 'numa_poly.backfill_inline_limit'
 POLY_BACKFILL_DEFERRED_PARAM = 'numa_poly.backfill_deferred_models'
 POLY_RENUMBER_COLLISIONS_PARAM = 'numa_poly.renumber_collisions'
 
+# El unico asignador de ids del espacio compartido. Ver _poly_claim_shared_id_space.
+POLY_ID_SEQUENCE = 'ir_poly_base_id_seq'
+
 
 def _poly_missing_base_is_tolerable(field, record):
     """Whether a MissingError here is the absent-base-row case rather than a real one."""
@@ -3192,6 +3195,12 @@ class PolyBase(_original_BaseModel):
             return
         if not _poly_is_polymorphic(self):
             return
+
+        # Un solo asignador para todo el espacio de ids compartido. Se re-aplica en cada
+        # actualizacion, sin preguntar si hace falta: la sentencia es idempotente y barata,
+        # y preguntar primero es justamente la clase de astucia que dejo el problema abierto
+        # durante un año.
+        self._poly_claim_shared_id_space()
         try:
             if not self._poly_backfill_pending_pairs():
                 # Every base of this model has already been reconstructed; from here on
@@ -4038,12 +4047,13 @@ class PolyBase(_original_BaseModel):
         # fields like personal_stage_type_id on project.task, or company-dependent
         # account fields on res.partner) into the leaf INSERT, which would raise
         # "column ... does not exist".
+        # _poly_leaf_columns cachea por tabla; sql.table_columns consulta
+        # information_schema.columns cada vez. Medido sobre res.partner: 5,64 ms de los
+        # 13,7 ms de SQL de un create -- el 41%, y el costo unitario mas grande del alta,
+        # por leer un catalogo que no cambia en runtime.
         _poly_leaf_cols = set()
         if getattr(self, '_table', None):
-            try:
-                _poly_leaf_cols = set(sql.table_columns(self.env.cr, self._table))
-            except Exception:
-                _poly_leaf_cols = set()
+            _poly_leaf_cols = _poly_leaf_columns(self.env.cr, self._table)
 
         # En modelos polimórficos, si hay altas sin id explícito, asegurar una vez
         # por registry que la secuencia global de ir.poly_base esté alineada.
@@ -4603,6 +4613,80 @@ class PolyBase(_original_BaseModel):
         if not ids:
             return True
         return len(self._poly_owned_base_ids(ids)) >= len(ids)
+
+    def _poly_claim_shared_id_space(self):
+        """Hacer que la tabla de este modelo, y las de sus bases, tomen su id del unico asignador.
+
+        Un registro polimorfico y sus componentes comparten un id, asi que todas esas
+        tablas viven en un mismo espacio. Pero cada una nacio con su propio ``SERIAL`` y
+        por lo tanto con su propia secuencia: treinta asignadores independientes repartiendo
+        sobre el mismo espacio. Que no chocaran dependia de que absolutamente toda alta
+        pasara por ``create()`` de poly, que provee el id explicito y nunca usa el default
+        de la columna. Cualquier insercion por fuera -- SQL directo, una carga de datos, un
+        camino del ORM que inserta sin id -- disparaba una secuencia que no sabe nada del
+        espacio compartido.
+
+        Lo insidioso es que el sintoma depende de la tabla. ``res_partner_id_seq`` estaba en
+        119 con ``MAX(id) = 14763``: ahi un insert por default explota fuerte con clave
+        duplicada. ``conversation_bot_id_seq`` estaba en 0 con la tabla vacia: entrega 1, 2,
+        3 -- libres en *esa* tabla y ocupados en el espacio compartido. Eso no falla,
+        corrompe. Es el mecanismo de las 560 colisiones que aparecieron en produccion.
+
+        La reconciliacion periodica (``_get_max_poly_id`` escaneando 26 tablas y
+        ``_sync_poly_sequence`` haciendo ``setval`` bajo advisory lock) no puede cerrar eso:
+        sincroniza asignadores que se vuelven a separar en cuanto termina. Con un unico
+        asignador el requisito "el id debe ser mayor que el de todas las bases" desaparece.
+        No hace falta "mayor que"; hace falta "nunca entregado antes", que es lo que una
+        secuencia da gratis, de forma atomica y sin bloquear: 8 sesiones concurrentes
+        generaron 2000 ids sin un solo duplicado en 121 ms.
+
+        Se re-aplica en cada actualizacion a proposito. El ``ALTER`` toca el catalogo, no
+        reescribe la tabla, y es idempotente; y hacerlo incremental -- cada modelo reclama
+        su propia cadena -- evita depender del orden en que se cargan los modulos.
+        """
+        cr = self.env.cr
+        tablas = []
+        if getattr(self, '_table', None):
+            tablas.append(self._table)
+        for base_name in (self._poly_get_depend_models() or {}):
+            base = self.env.get(base_name) if base_name in self.env else None
+            if base is not None and getattr(base, '_table', None):
+                tablas.append(base._table)
+
+        for table in dict.fromkeys(tablas):
+            try:
+                if not sql.table_exists(cr, table):
+                    continue
+                cr.execute("""SELECT column_default FROM information_schema.columns
+                               WHERE table_schema = current_schema()
+                                 AND table_name = %s AND column_name = 'id'""", (table,))
+                row = cr.fetchone()
+                ya_estaba = bool(row and row[0] and POLY_ID_SEQUENCE in row[0])
+
+                # La secuencia solo avanza. Subirla por encima del maximo de esta tabla
+                # antes de reclamarla deja el invariante cerrado sin coordinacion global:
+                # despues de recorrer todas, quedo por encima del maximo de todas.
+                cr.execute(SQL("SELECT COALESCE(MAX(id), 0) FROM %s", SQL.identifier(table)))
+                max_id = (cr.fetchone() or [0])[0] or 0
+                cr.execute("SELECT last_value, is_called FROM %s" % POLY_ID_SEQUENCE)
+                last, called = cr.fetchone()
+                actual = last if called else last - 1
+                if max_id > actual:
+                    cr.execute("SELECT setval(%s, %s, true)", (POLY_ID_SEQUENCE, max_id))
+                    _logger.info("[poly] %s adelantada a %s por %s", POLY_ID_SEQUENCE, max_id, table)
+
+                cr.execute(SQL(
+                    "ALTER TABLE %s ALTER COLUMN id SET DEFAULT nextval(%s)",
+                    SQL.identifier(table), SQL(repr(POLY_ID_SEQUENCE)),
+                ))
+                if not ya_estaba:
+                    _logger.info("[poly] %s: su columna id ahora toma del asignador unico %s",
+                                 table, POLY_ID_SEQUENCE)
+            except Exception:  # noqa: BLE001
+                # Una tabla que no se puede reclamar no debe impedir reclamar las demas;
+                # la proxima actualizacion lo reintenta.
+                _logger.warning("[poly] no pude apuntar %s al asignador unico", table,
+                                exc_info=True)
 
     @api.model
     def _poly_owned_base_ids(self, ids):

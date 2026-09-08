@@ -115,3 +115,9 @@ Until that version the backfill accepted *any* row under a record's id as proof 
 own work, so it closed pairs over records that had never owned their ids. The
 pre-migration re-opens every closed pair, so the corrected scan looks at them again on
 the next `-u numa_poly`. Nothing else is needed.
+
+---
+
+Sobre el espacio de ids que comparten un registro polimórfico y sus componentes —un solo
+asignador para todas las tablas, por qué sincronizar no alcanzaba, y qué consumo tiene—
+ver [ID_SPACE.md](ID_SPACE.md).
