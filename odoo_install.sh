@@ -233,19 +233,50 @@ if [ "$PROJECT" != "" ]; then
     # instalacion, y las dependencias de sistema terminaban poniendose a mano.
     sudo "../numa-public-odoo-$OE_VERSION-numa/setup/debinstall.sh"
 
+    # --- dimensionamiento -------------------------------------------------------------
+    # Todas nuestras instalaciones son de 16 GB. Los workers salen de la regla de Odoo
+    # (2 x nucleos + 1), con tope 9 para dejar aire a PostgreSQL en la misma maquina.
+    #
+    # db_maxconn se deriva de los workers porque es POR PROCESO, no global: con el valor
+    # suelto de 64 y 7 workers se piden hasta 448 conexiones contra el max_connections=100
+    # que trae PostgreSQL por defecto. Los +2 son los hilos de cron.
+    OE_CORES=$(nproc 2>/dev/null || echo 2)
+    OE_WORKERS=$(( OE_CORES * 2 + 1 ))
+    [ "$OE_WORKERS" -gt 9 ] && OE_WORKERS=9
+    OE_DB_MAXCONN=$(( 90 / (OE_WORKERS + 2) ))
+    OE_MAJOR="${OE_VERSION%%.*}"
+
     if [ ! -f 'odoo.config' ]; then
           cat > odoo.config <<EOF
 [options]
 admin_passwd = $(if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then head /dev/urandom | tr -dc A-Za-z0-9 | head -c 16; echo; else echo "$OE_SUPERADMIN"; fi)
 http_port = $OE_PORT
-longpolling_port = $(if [ "$OE_VERSION" -ge "16" ]; then echo "False"; else echo "$LONGPOLLING_PORT"; fi)
+$(if [ "$OE_MAJOR" -ge 16 ]; then echo "gevent_port = $LONGPOLLING_PORT"; else echo "longpolling_port = $LONGPOLLING_PORT"; fi)
 proxy_mode = $INSTALL_NGINX
 data_dir = $DATA_DIR
-limit_memory_hard = 1677721600
-limit_memory_soft = 8291456000
+
+# Sin workers Odoo corre en un solo proceso con hilos: no hay pool, y una impresion que
+# bloquea su worker bloquea todo. Con wkhtmltopdf ademas hace falta que sobren workers,
+# porque pide los assets por HTTP contra este mismo Odoo mientras retiene el suyo.
+workers = $OE_WORKERS
+max_cron_threads = 2
+db_maxconn = $OE_DB_MAXCONN
+
+# El blando tiene que ser MENOR que el duro: al pasarlo, el worker termina la peticion en
+# curso y sale ordenado. Aca estaban al reves (blando 8,29 GB, duro 1,6 GB), asi que el
+# reciclado ordenado nunca ocurria -- siempre llegaba primero el duro. Y el duro lo hereda
+# wkhtmltopdf como RLIMIT_AS: con 1,6 GB compartidos con un worker ya cargado, Qt se queda
+# sin espacio de direcciones.
+limit_memory_soft = 2147483648
+limit_memory_hard = 4294967296
 limit_request = 8192
-limit_time_cpu = 3600
-limit_time_real = 7200
+
+# 7200 son dos horas: una peticion trabada retiene su worker todo ese tiempo. El cpu debe
+# quedar por debajo del real. Los crons siguen exentos.
+limit_time_cpu = 600
+limit_time_real = 900
+limit_time_real_cron = -1
+
 db_user = pg-$PROJECT-$OE_VERSION
 addons_path=../numa-public-odoo-$OE_VERSION-numa/addons,../numa-public-odoo-$OE_VERSION-numa/odoo/addons,../extra-addons-$OE_VERSION$(if [ "$IS_ENTERPRISE" = "True" ]; then echo ",../enterprise-$OE_VERSION"; fi),../numa-public-addons-$OE_VERSION$(if [ "$INSTALL_PRIVATE" = "True" ]; then echo ",../numa-addons-$OE_VERSION,../numa_l10n_ar-$OE_VERSION"; fi)$(if [ "$PROJECT_REPO" = "True" ]; then echo ",$PROJECT-addons-$OE_VERSION"; fi)
 EOF
@@ -265,11 +296,16 @@ START_EOF
     CWD=$(pwd)
 
     if [ ! -f ./onboot.sh ]; then
-      cat <<EOF > ./onboot.sh
-cd $CWD
+      cat > ./onboot.sh <<ONBOOT_EOF
+#!/bin/bash
+# Sin shebang, el \`@reboot /bin/bash -c .../onboot.sh\` del crontab termina ejecutando
+# esto con /bin/sh (dash), que no conoce \`source\`: el venv no se activa y odoo-bin muere
+# con ModuleNotFoundError. \$CWD se interpola aca a proposito: cron arranca en otro
+# directorio y necesita la ruta absoluta.
+cd "$CWD" || exit 1
 source venv/bin/activate
-./start.sh --pidfile=running-odoo.pid --logfile=log/odoo-server.log &
-EOF
+exec ./start.sh --pidfile=running-odoo.pid --logfile=log/odoo-server.log
+ONBOOT_EOF
       chmod +x ./onboot.sh
     fi
 
