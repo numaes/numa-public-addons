@@ -176,6 +176,7 @@ _POLY_ACCEPTABLE_OWNERS: dict = {}
 
 # (registry, model, field) triples whose base collision has already been reported.
 _POLY_REPORTED_COLLISIONS: set = set()
+_POLY_REPORTED_UNOWNED_STAMPS: set = set()
 
 
 def _poly_subtype_names(base_model_name, pool):
@@ -5680,13 +5681,25 @@ class PolyBase(_original_BaseModel):
         ids = set(ids)
         if not ids:
             return True
+        return len(self._poly_owned_base_ids(ids)) >= len(ids)
+
+    @api.model
+    def _poly_owned_base_ids(self, ids):
+        """The subset of ``ids`` whose ``ir.poly_base`` row is this model's to write.
+
+        The same question :meth:`_poly_base_rows_present` asks, answered by name instead
+        of by count, for the callers that must act on each id rather than on the batch.
+        """
+        ids = [i for i in set(ids or ()) if isinstance(i, int) and i > 0]
+        if not ids:
+            return []
         acceptable = self._poly_acceptable_owner_ids()
         if not acceptable:
-            return False
+            return []
         self.env.cr.execute(
-            "SELECT count(*) FROM ir_poly_base WHERE id IN %s AND concrete_model_id IN %s",
+            "SELECT id FROM ir_poly_base WHERE id IN %s AND concrete_model_id IN %s",
             (tuple(ids), tuple(acceptable)))
-        return self.env.cr.fetchone()[0] >= len(ids)
+        return [row[0] for row in self.env.cr.fetchall()]
 
     @api.model
     def _poly_ensure_base_rows(self, ids, force=False):
@@ -5919,6 +5932,63 @@ class PolyBase(_original_BaseModel):
         # Call super with the remaining (standard/local) values
         return super().write(processed_vals)
 
+    def _poly_stamp_base_audit_fields(self):
+        """Keep the shared identity's ``write_uid``/``write_date`` current, and only its own.
+
+        A polymorphic record has two audit trails. The concrete table keeps its own
+        ``write_date``/``write_uid`` columns, which standard Odoo maintains correctly and
+        this method does not touch. ``ir_poly_base`` keeps a second pair, for the identity
+        the whole chain shares -- the answer to "when was this record, in any of its
+        components, last touched?", which no single component's column can give.
+
+        That second pair was written once at insert and never again: its caller tested for
+        an attribute that name-mangling put out of reach, so it never ran and every base
+        row still carries its creation timestamp. Making the caller ask the right question
+        is what brings this code to life, and bringing it to life is what makes the filter
+        below load-bearing rather than decorative.
+
+        Because the row is addressed by the record's own id, and that is right exactly as
+        long as the id is the record's to claim. When it is not -- a colliding id left over
+        from the pre-transition id space, the state :meth:`_poly_colliding_ids` reports --
+        the row under that id is another model's record, and stamping it there would not
+        add a wrong second trail: it would overwrite the only shared-identity trail that
+        record has, with this user and this moment. Silent, and in the one field an auditor
+        is entitled to trust. Production carried 560 such ids on ``purchase.order.line``
+        alone, and printing a quotation writes every line
+        (``purchase.order.line.state`` is a stored related over the order), so an ordinary
+        print would have been enough to do it.
+
+        The rows are therefore filtered by ownership. A colliding record keeps no shared
+        trail until it is renumbered -- the honest outcome, and the one the renumbering
+        pass exists to end -- and each such id is reported once rather than dropped
+        quietly.
+        """
+        ids = [i for i in self._ids if isinstance(i, int) and i > 0]
+        if not ids:
+            return
+        owned = self._poly_owned_base_ids(ids)
+        if owned:
+            self.env['ir.poly_base'].browse(owned).write({
+                'write_uid': self.env.uid,
+                'write_date': self.env.cr.now(),
+            })
+        skipped = set(ids) - set(owned)
+        if not skipped:
+            return
+        owners = _poly_id_owners(self.env.cr, sorted(skipped))
+        for record_id in sorted(skipped):
+            key = (id(self.pool), self._name, record_id)
+            if key in _POLY_REPORTED_UNOWNED_STAMPS:
+                continue
+            _POLY_REPORTED_UNOWNED_STAMPS.add(key)
+            holder = owners.get(record_id)
+            _logger.warning(
+                "[poly] %s %s gets no shared audit stamp: its ir_poly_base row is %s. "
+                "Stamping it would rewrite that record's trail instead. The renumbering "
+                "pass has to move this record before it can have one of its own.",
+                self._name, record_id,
+                "held by %s" % holder if holder else "claimed by no model")
+
     def _write_multi(self, vals_list):
         """
         Low-level implementation of write() for multiple records.
@@ -6032,11 +6102,15 @@ class PolyBase(_original_BaseModel):
             parent_records._parent_store_update()
 
 
-        # Update audit fields for polymorphic models
-        if self._log_access and hasattr(type(self), '__depends_base_classes') and self._name != 'ir.poly_base':
-            poly_base_model = self.env['ir.poly_base']
-            log_vals = {'write_uid': self.env.uid, 'write_date': self.env.cr.now()}
-            poly_base_model.browse(self.ids).write(log_vals)
+        # Update audit fields for polymorphic models.
+        # The predicate is the model's own declaration, not the `__depends_base_classes`
+        # attribute this used to test for: that name is written inside the body of
+        # `PolyBase`, so Python mangles it to `_PolyBase__depends_base_classes`, while
+        # every `hasattr`/`getattr` reading it passes an unmangled string literal. The
+        # attribute is on no model in the registry -- `dir()` finds neither spelling --
+        # so the test was constant False and the stamp below has never run.
+        if self._log_access and self._name != 'ir.poly_base' and self._poly_get_depend_models():
+            self._poly_stamp_base_audit_fields()
 
     @api.model
     def fields_get(self, allfields=None, attributes=None):
@@ -7433,6 +7507,7 @@ def _poly_registry_setup_models(self, cr):
     _POLY_ANCESTORS.clear()
     _POLY_ACCEPTABLE_OWNERS.clear()
     _POLY_REPORTED_COLLISIONS.clear()
+    _POLY_REPORTED_UNOWNED_STAMPS.clear()
     _POLY_SUBTYPES.clear()
     _POLY_BASE_REFERENCE_FIELDS.clear()
     _POLY_RENUMBER_RANK.clear()
