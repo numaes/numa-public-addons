@@ -340,10 +340,6 @@ def poly_inherits_check(self):
     return _original_inherits_check(self)
 odoo.models.BaseModel._inherits_check = poly_inherits_check
 
-# Global cache for polymorphic MRO to ensure they survive Odoo's registry setup phases.
-# Keys are db_name, then model_name. Values are tuples of base classes.
-POLY_MRO_CACHE = defaultdict(dict)
-
 # [poly] Technical list for deferred view validation
 @odoo.tools.lazy_property
 def _poly_pending_views(self):
@@ -2186,134 +2182,12 @@ class PolyBase(_original_BaseModel):
 
         rec_stack.remove(name)
 
-    # Legacy reactive MRO code below (neutralized)
-    def _legacy_setup_base_logic(self):
-        model_class = type(self)
-        name = self._name
-        # During -u, Odoo creates new class objects; stale POLY_MRO_CACHE references trigger
-        # Python MRO validation errors on subclasses (TypeError: Cannot create consistent MRO).
-        if cached_bases:
-            _stale = any(
-                getattr(_cb, '_name', None) and
-                _cb._name in self.pool and
-                self.pool[_cb._name] is not _cb
-                for _cb in cached_bases
-            )
-            if _stale:
-                _logger.debug("[poly] Discarding stale POLY_MRO_CACHE for '%s'", self._name)
-                POLY_MRO_CACHE.get(db_name, {}).pop(self._name, None)
-                if hasattr(self.pool, '_poly_mro_cache'):
-                    self.pool._poly_mro_cache.pop(self._name, None)
-                cached_bases = None
-
-        if cached_bases:
-            # Merge cached poly-parent bases with any new definition classes added by
-            # _build_model after the cache was set (e.g. a module loaded AFTER the last
-            # _apply_polymorphic_hierarchy call that extends this poly model via _inherit).
-            # Without this merge, stale cached_bases would override __base_classes and
-            # drop the new definition classes, making their fields invisible in _setup_base.
-            _current_build_classes = model_class.__base_classes  # canonical, set by _build_model
-            _extra_def_classes = [
-                b for b in _current_build_classes
-                if b not in cached_bases
-                and getattr(b, 'pool', None) is None
-                # Skip classes that are already ancestors of something in cached_bases:
-                # appending an ancestor AFTER its descendants violates Python's MRO rules.
-                and not any(issubclass(c, b) for c in cached_bases if c is not b)
-            ]
-            if _extra_def_classes:
-                cached_bases = tuple(list(cached_bases) + _extra_def_classes)
-                POLY_MRO_CACHE[db_name][self._name] = cached_bases
-                if hasattr(self.pool, '_poly_mro_cache'):
-                    self.pool._poly_mro_cache[self._name] = cached_bases
-            model_class.__depends_base_classes = cached_bases
-            # Force Odoo 18 to use our polymorphic bases as the original ones
-            model_class.__base_classes = cached_bases
-            
-            if model_class.__bases__ != cached_bases:
-                 try:
-                     model_class.__bases__ = cached_bases
-                     # Refresh MRO cache
-                     import ctypes as _ctypes
-                     if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                         _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(model_class))
-                     
-                     # Clear Environment cache
-                     from odoo.api import Environment
-                     if hasattr(Environment, '_classes') and Environment._classes is not None:
-                          if self.pool in Environment._classes:
-                               Environment._classes[self.pool].pop(self._name, None)
-                 except TypeError as e:
-                     _logger.error("Failed to apply cached bases to model class %s: %s", self._name, e)
-
-            # Odoo 18: Registry proxy classes must also be updated
-            if hasattr(self.pool, 'models') and self._name in self.pool.models:
-                  proxy_class = self.pool.models[self._name]
-                  if proxy_class is not model_class and proxy_class.__bases__ != cached_bases:
-                       proxy_class.__base_classes = cached_bases
-                       try:
-                           proxy_class.__bases__ = cached_bases
-                           import ctypes as _ctypes
-                           if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                                _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(proxy_class))
-                       except TypeError as e:
-                           _logger.error("Failed to apply cached bases to proxy class %s: %s", self._name, e)
-
-        # For polymorphic models, ensure __base_classes matches __bases__ before calling
-        # Odoo's _prepare_setup. Odoo's implementation does `cls.__bases__ = cls.__base_classes`,
-        # so if __base_classes still holds Odoo's original value (e.g. (PolyModel, base) where
-        # PolyModel already inherits from base), Python raises a MRO TypeError. Poly already set
-        # __bases__ correctly in _build_model; mirroring that into __base_classes prevents the
-        # conflict. We do this regardless of whether cached_bases was found.
-        _is_poly_model = getattr(model_class, '_depend_models', None) is not None
-        if _is_poly_model:
-            _poly_bases = model_class.__bases__
-            if _poly_bases and model_class.__base_classes != _poly_bases:
-                model_class.__base_classes = _poly_bases
-
-        # Use unbound method to avoid MRO lookup issues
-        try:
-            _original_BaseModel._prepare_setup(self)
-        except TypeError as _mro_err:
-            if 'MRO' not in str(_mro_err) and 'resolution' not in str(_mro_err).lower():
-                raise
-            _logger.error(
-                "[poly] MRO conflict in _prepare_setup for model '%s'. "
-                "__base_classes=%s  __bases__=%s",
-                self._name,
-                [getattr(b, '__name__', repr(b)) for b in model_class.__base_classes],
-                [getattr(b, '__name__', repr(b)) for b in model_class.__bases__],
-            )
-            raise
-
-        # Ensure bases remain synchronized after super
-        if cached_bases:
-             # Check both model class and proxy class
-             for cls_to_check in [model_class, getattr(self.pool.models.get(self._name), '__dict__', {}).get('_wrapped__', self.pool.models.get(self._name))]:
-                  if cls_to_check is None: continue
-                  if cls_to_check.__bases__ != cached_bases:
-                       _logger.debug("Bases for %s (%s) changed after super()._prepare_setup(). Re-applying...", self._name, cls_to_check.__name__)
-                       try:
-                           cls_to_check.__base_classes = cached_bases
-                           cls_to_check.__bases__ = cached_bases
-                           import ctypes as _ctypes
-                           if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-                               _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(cls_to_check))
-                           
-                           # Exhaustive method recovery for Odoo 18
-                           from odoo.models import MetaModel
-                           for base in cls_to_check.mro():
-                                if base in (cls_to_check, object): continue
-                                # If it's a MetaModel but not a standard model with pool (so it's a "raw" class from a module)
-                                if isinstance(base, MetaModel):
-                                     for m_name, m_meth in base.__dict__.items():
-                                          # Use __dict__ check to see if it's REALLY missing from cls_to_check and not just found via MRO
-                                          if not m_name.startswith('__') and m_name not in cls_to_check.__dict__:
-                                               if not isinstance(m_meth, (property, fields.Field)):
-                                                    setattr(cls_to_check, m_name, m_meth)
-
-                       except TypeError as e:
-                           _logger.error("Failed to re-apply cached bases to class %s: %s", self._name, e)
+    # _legacy_setup_base_logic lived here: 127 lines marked "neutralized", called by
+    # nothing, and broken besides -- it read a free variable `cached_bases` that the
+    # function never binds, so entering it would have raised NameError. It was also
+    # the only writer of __depends_base_classes and the only writer of POLY_MRO_CACHE,
+    # which it wrote exclusively from inside `if cached_bases:` -- a cache that could
+    # never be primed.
 
     def _setup_base(self):
         """Run standard Odoo field setup then inject polymorphic fields."""
@@ -5172,7 +5046,10 @@ class PolyBase(_original_BaseModel):
                     _logger.warning("[poly] Intercepted MissingError/AccessError in %s.fields_get() during boot.", self._name)
                     return {}
 
-        if not hasattr(type(self), '__depends_base_classes'):
+        # Whether this model is polymorphic is its own declaration. This used to test for
+        # `__depends_base_classes`, which no model carries, so the sanitisation below and
+        # the base merge at the end have never run: every call took this line out.
+        if not self._poly_get_depend_models():
             return super().fields_get(allfields=allfields, attributes=attributes)
 
         try:
@@ -5229,20 +5106,15 @@ class PolyBase(_original_BaseModel):
             
             raise e
         
-        all_bases = getattr(type(self), '__depends_base_classes', ())
-        dependent_model_names = [cls._name for cls in all_bases if cls._name not in (self._name, 'ir.poly_base')]
-        
-        if dependent_model_names:
-            # Ensure all dependent models are in the bases_to_create dict
-            depends_reverse = list(dependent_model_names)
-            depends_reverse.reverse()
-            for base in depends_reverse:
-                base_model = self.env[base]
-                base_fields = base_model.fields_get(allfields=allfields, attributes=attributes)
-                # Add inherited fields that don't exist in result
-                for field_name, field_attrs in base_fields.items():
-                    if field_name not in result:
-                        result[field_name] = field_attrs
+        # A merge of each base's fields_get() into this one used to sit here, reading the
+        # bases from `__depends_base_classes` and therefore never running. Giving it a
+        # working source made it advertise `event_id` on the six conversation.message.*
+        # models -- a field poly deliberately does not inject into them, and which is not
+        # in their _fields. The web client would then request a field the ORM cannot read.
+        #
+        # The base fields a concrete model really has are injected into _fields by
+        # _build_poly_fields, so super().fields_get() already reports them. Anything this
+        # merge would add on top is, by construction, something the model does not have.
         return result
 
     def _determine_fields_to_fetch(self, field_names, ignore_when_in_cache=False):
@@ -5254,7 +5126,10 @@ class PolyBase(_original_BaseModel):
         # These models might be accessed before they are fully initialized in the registry.
         # If it's not a polymorphic model, we MUST be careful not to hide real errors
         # unless it's a known problematic field during boot.
-        is_poly = hasattr(type(self), '__depends_base_classes')
+        # _poly_is_polymorphic is the cached, canonical predicate. The attribute this
+        # used to test for is on no model, so every model took the non-poly branch
+        # below and poly models were reported as 'non-poly' in the warning it logs.
+        is_poly = _poly_is_polymorphic(self)
         
         valid_field_names = []
         for name in field_names:
@@ -5338,7 +5213,10 @@ class PolyBase(_original_BaseModel):
         In Odoo 18, web client might send polymorphic field names that are 
         not yet in the model's _fields for virtual records.
         """
-        if not hasattr(type(self), '__depends_base_classes'):
+        # The attribute this used to test for is on no model, so every call returned here
+        # and the filtering below never ran. It only drops names that are in neither
+        # self._fields nor the pool's -- exactly the ones super() raises KeyError on.
+        if not _poly_is_polymorphic(self):
             return super().onchange(values, field_names, fields_spec)
 
         # Filter field_names to avoid KeyError in super().onchange
@@ -5362,7 +5240,9 @@ class PolyBase(_original_BaseModel):
         """
         Override web_read to handle polymorphic fields and ensure data consistency.
         """
-        if not hasattr(type(self), '__depends_base_classes'):
+        # The attribute this used to test for is on no model, so every web_read went
+        # straight to super() and the polymorphic completion below never ran.
+        if not _poly_is_polymorphic(self):
             return super().web_read(specification)
 
         # 1. Filter standard fields to avoid ValueError/KeyError in super().web_read
@@ -5543,7 +5423,9 @@ class IrModel(models.Model):
         # but might have been missed by standard reflection.
         for name, model in self.env.registry.items():
             if name not in all_model_names:
-                if hasattr(model, '__depends_base_classes'):
+                # The attribute this used to test for is on no model, so this safety net
+                # never added anything to the reflection list.
+                if _poly_is_polymorphic(model):
                     # Check if the model belongs to the module being initialized
                     if module and (model._module == module or getattr(model, '_original_module', None) == module):
                         all_model_names.append(name)
@@ -6731,8 +6613,13 @@ def _poly_registry_setup_models(self, cr):
                 model_class.__bases__ = final_bases
                 if hasattr(model_class, '_BaseModel__base_classes'):
                     model_class._BaseModel__base_classes = final_bases
-                if hasattr(model_class, '_BaseModel__depends_base_classes'):
-                    model_class._BaseModel__depends_base_classes = final_bases
+                # A write to _BaseModel__depends_base_classes used to sit here, guarded by
+                # a hasattr on itself -- so it could only fire if something else had
+                # already created the attribute, and nothing ever did. Every reader of
+                # that attribute now asks _poly_is_polymorphic or _poly_get_depend_models
+                # instead, so there is nothing left to write it for.
+                # (_BaseModel__base_classes above is different: Odoo itself sets and
+                # reads it, and the injected MRO has to be reflected there.)
                 if hasattr(ctypes.pythonapi, 'PyType_Modified'):
                     ctypes.pythonapi.PyType_Modified(ctypes.py_object(model_class))
                 # Restore child-model attributes that may have been shadowed by the
