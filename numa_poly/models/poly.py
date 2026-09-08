@@ -5183,8 +5183,17 @@ class PolyBase(_original_BaseModel):
         # Process each record to create
         for current_idx, data in enumerate(data_list):
             # Handle explicit ID or create a new one via ir.poly_base
+            linked_id = self._poly_identity_from_link_fields(data)
             if 'id' in data:
                 new_id = data['id']
+                if linked_id and linked_id != new_id:
+                    raise ValueError(
+                        "%s: create was given id=%s and a link field pointing at %s. A "
+                        "link field is the record's own id, so the two cannot differ."
+                        % (self._name, new_id, linked_id))
+            elif linked_id:
+                new_id = linked_id
+                data['id'] = new_id
             else:
                 # Ahora creamos en ir.poly_base confiando en la secuencia ya sincronizada.
                 # Si aun así falla por un ID insertado justo después del cálculo del max_id,
@@ -5662,6 +5671,46 @@ class PolyBase(_original_BaseModel):
         for vals in missing:
             cr.execute("SELECT nextval('ir_poly_base_id_seq')")
             vals['id'] = cr.fetchone()[0]
+
+    @api.model
+    def _poly_identity_from_link_fields(self, data):
+        """The id a caller asked this record to take, said with a link field.
+
+        ``_depend_models`` maps each base to the name of the field that links to it, and
+        that field is a :class:`PolyReference`: unstored, read-only, and by construction
+        equal to the record's own id -- ``convert_to_record`` returns
+        ``comodel(env, (record.id,), (record.id,))``. So ``{'poly_id': driver.id}`` and
+        ``{'id': driver.id}`` are the same sentence, and the bridges say it the first way:
+
+            driver = self.env['conversation.driver'].create({'name': ..., ...})
+            self.env['conversation.driver.instagram'].create({'poly_id': driver.id, ...})
+
+        ``create`` used to read only ``id``, which made the link field silently inert. The
+        value was dropped as unstored, a fresh id was drawn from the sequence, and the base
+        was created a *second* time -- this time from a dict that never carried the
+        caller's business values, because the caller had already put them in the first one.
+        On ``conversation.driver``, whose ``name`` is NOT NULL, that second insert failed
+        outright and took 42 tests across five bridges with it.
+
+        Returns ``None`` when no link field was supplied, which is the ordinary case: the
+        record is new and draws its own identity.
+        """
+        candidates = {}
+        for link_name in (self._poly_get_depend_models() or {}).values():
+            value = data.get(link_name)
+            if isinstance(value, BaseModel):
+                value = value.id
+            if isinstance(value, int) and value > 0:
+                candidates[link_name] = value
+        if not candidates:
+            return None
+        distinct = set(candidates.values())
+        if len(distinct) > 1:
+            raise ValueError(
+                "%s: create was given several identities -- %s. A link field is the "
+                "record's own id, so they all have to agree."
+                % (self._name, ', '.join('%s=%s' % kv for kv in sorted(candidates.items()))))
+        return distinct.pop()
 
     @api.model
     def _poly_base_rows_present(self, ids):
