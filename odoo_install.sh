@@ -227,7 +227,11 @@ if [ "$PROJECT" != "" ]; then
     fi
 
     source venv/bin/activate
-    sudo ./setup/debinstall.sh
+    # setup/ es del arbol de Odoo, no del directorio del proyecto: aca el cwd es
+    # $ODOO_ROOT, que solo tiene venv, log, data, database y los addons del proyecto.
+    # `sudo ./setup/debinstall.sh` fallaba con "No such file or directory" en cada
+    # instalacion, y las dependencias de sistema terminaban poniendose a mano.
+    sudo "../numa-public-odoo-$OE_VERSION-numa/setup/debinstall.sh"
 
     if [ ! -f 'odoo.config' ]; then
           cat > odoo.config <<EOF
@@ -243,7 +247,7 @@ limit_request = 8192
 limit_time_cpu = 3600
 limit_time_real = 7200
 db_user = pg-$PROJECT-$OE_VERSION
-addons_path=../numa-public-odoo-$OE_VERSION-numa/addons,../numa-public-odoo-$OE_VERSION-numa/odoo/addons,../extra-addons-$OE_VERSION$(if [ "$IS_ENTERPRISE" = "True" ]; then echo ",../enterprise-$OE_VERSION"; fi),../numa-public-addons-$OE_VERSION,../extra-addons-$OE_VERSION$(if [ "$INSTALL_PRIVATE" = "Yes" ]; then echo ",../numa-addons-$OE_VERSION,../numa_l10n_ar-$OE_VERSION"; fi)$(if [ "$PROJECT_REPO" = "True" ]; then echo ",$PROJECT-addons-$OE_VERSION"; fi)
+addons_path=../numa-public-odoo-$OE_VERSION-numa/addons,../numa-public-odoo-$OE_VERSION-numa/odoo/addons,../extra-addons-$OE_VERSION$(if [ "$IS_ENTERPRISE" = "True" ]; then echo ",../enterprise-$OE_VERSION"; fi),../numa-public-addons-$OE_VERSION$(if [ "$INSTALL_PRIVATE" = "True" ]; then echo ",../numa-addons-$OE_VERSION,../numa_l10n_ar-$OE_VERSION"; fi)$(if [ "$PROJECT_REPO" = "True" ]; then echo ",$PROJECT-addons-$OE_VERSION"; fi)
 EOF
 
       fi
@@ -519,7 +523,7 @@ NUMA_DBRESTORE_EOF
     pip install wheel
     pip install -r "../numa-public-odoo-$OE_VERSION-numa/requirements.txt"
     pip install -r "../numa-public-addons-$OE_VERSION/requirements.txt"
-    if [ "$INSTALL_PRIVATE" = "Yes" ]; then
+    if [ "$INSTALL_PRIVATE" = "True" ]; then
       pip install -r "../numa-addons-$OE_VERSION/requirements.txt"
       pip install -r "../numa_l10n_ar-$OE_VERSION/requirements.txt"
     fi
