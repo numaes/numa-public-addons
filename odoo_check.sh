@@ -168,10 +168,12 @@ WANT_WORKERS=$(( CORES * 2 + 1 )); [ "$WANT_WORKERS" -gt 9 ] && WANT_WORKERS=9
 W="$(cfg workers)"
 if [ -z "$W" ] || [ "$W" -lt 1 ] 2>/dev/null; then
     set_cfg workers "$WANT_WORKERS" "sin workers Odoo corre en un solo proceso: no hay pool"
+    # Contra el valor que VA a tener, no contra el que tiene: en modo informe todavia no se
+    # escribio, y derivar db_maxconn de workers=0 proponia 45 en vez de 8.
+    W="$WANT_WORKERS"
 else
     good "workers = $W"
 fi
-W="$(cfg workers)"; W="${W:-$WANT_WORKERS}"
 
 WANT_MAXCONN=$(( 90 / (W + 2) ))
 MAXC="$(cfg db_maxconn)"
