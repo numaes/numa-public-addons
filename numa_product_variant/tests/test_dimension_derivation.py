@@ -1,0 +1,95 @@
+from odoo.tests.common import tagged
+
+from .common import NumaVariantCommon
+
+
+@tagged('post_install', '-at_install', 'numa_product_variant')
+class TestDimensionDerivation(NumaVariantCommon):
+    """A configured variant must reach the database with every magnitude set.
+
+    ``change_on_create`` writes a dimension; surface, volume and weight follow
+    from it through ``numa_physical_product``. This module used to carry its
+    own copy of the weight derivation under a different name, so the form and
+    the configurator produced different weights for the same variant.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        Attribute = cls.env['product.attribute']
+        Value = cls.env['product.attribute.value']
+
+        cls.attr_sheet_length = Attribute.create({
+            'name': 'Sheet length', 'create_variant': 'always',
+            'code_identifier': 'L', 'value_type': 'number',
+            'change_on_create': 'length', 'allow_additional_values': True,
+            'number_rounding': 0.001,
+        })
+        cls.attr_sheet_width = Attribute.create({
+            'name': 'Sheet width', 'create_variant': 'always',
+            'code_identifier': 'W', 'value_type': 'number',
+            'change_on_create': 'width', 'allow_additional_values': True,
+            'number_rounding': 0.001,
+        })
+        cls.length_3 = cls.attr_sheet_length._get_or_create_value({'number': 3.0})
+        cls.width_2 = cls.attr_sheet_width._get_or_create_value({'number': 2.0})
+
+        # A value that scales the weight, to pin the multiplier hook.
+        cls.attr_finish = Attribute.create({
+            'name': 'Finish', 'create_variant': 'always', 'code_identifier': 'F',
+        })
+        cls.finish_heavy = Value.create({
+            'name': 'Heavy', 'attribute_id': cls.attr_finish.id,
+            'code_value': 'H', 'weight_factor': 2.0,
+        })
+
+    def _sheet_template(self, extra_lines=(), **vals):
+        base = {
+            'name': 'Sheet',
+            'type': 'consu',
+            'base_code': 'SH',
+            'attribute_line_ids': [
+                (0, 0, {'attribute_id': self.attr_sheet_length.id,
+                        'value_ids': [(6, 0, self.length_3.ids)]}),
+                (0, 0, {'attribute_id': self.attr_sheet_width.id,
+                        'value_ids': [(6, 0, self.width_2.ids)]}),
+            ] + list(extra_lines),
+        }
+        base.update(vals)
+        return self.env['product.template'].create(base)
+
+    def test_configured_variant_gets_its_surface(self):
+        variant = self._sheet_template().product_variant_ids
+        self.assertEqual(len(variant), 1)
+        self.assertEqual(variant.product_length, 3.0)
+        self.assertEqual(variant.product_width, 2.0)
+        self.assertEqual(variant.surface, 6.0)
+
+    def test_configured_sheet_is_not_costed_at_zero(self):
+        """The failure the derivation fix exists for."""
+        variant = self._sheet_template(price_base='surface').product_variant_ids
+        self.assertEqual(variant._get_price_qty(2.0), 12.0)
+
+    def test_weight_follows_the_derived_surface(self):
+        variant = self._sheet_template(
+            weight_kind='surface', weight_factor=1.5).product_variant_ids
+        self.assertEqual(variant.weight, 9.0)
+
+    def test_attribute_value_weight_factor_scales_the_weight(self):
+        variant = self._sheet_template(
+            extra_lines=[(0, 0, {'attribute_id': self.attr_finish.id,
+                                 'value_ids': [(6, 0, self.finish_heavy.ids)]})],
+            weight_kind='surface', weight_factor=1.5).product_variant_ids
+        self.assertEqual(variant.weight, 18.0)
+
+    def test_a_zero_weight_factor_is_read_as_no_factor(self):
+        """A value predating the field carries 0.0, which is not weightless."""
+        legacy = self.env['product.attribute.value'].create({
+            'name': 'Legacy', 'attribute_id': self.attr_finish.id,
+            'code_value': 'LG', 'weight_factor': 0.0,
+        })
+        variant = self._sheet_template(
+            extra_lines=[(0, 0, {'attribute_id': self.attr_finish.id,
+                                 'value_ids': [(6, 0, legacy.ids)]})],
+            weight_kind='surface', weight_factor=1.5).product_variant_ids
+        self.assertEqual(variant.weight, 9.0)

@@ -213,22 +213,20 @@ class ProductProduct(models.Model):
         already had.
         """
         for variant in self:
-            applied = False
-            # Write every dimension first, then recompute once. Recomputing
-            # after each one reads a half-updated variant: the derived
-            # dimensions would be computed from a width that is still zero.
+            dimensions = {}
             for ptav in variant.product_template_attribute_value_ids:
                 change_on_create = ptav.attribute_id.change_on_create
                 if not change_on_create:
                     continue
                 att_value = ptav.product_attribute_value_id
                 if att_value.value_on_create:
-                    variant['variant_' + change_on_create] = \
+                    dimensions['variant_' + change_on_create] = \
                         att_value.value_on_create
-                    applied = True
-            if applied:
-                variant.onchange_variant_weight()
-                variant.onchange_variant_dimensions()
+            if dimensions:
+                # One write, so numa_physical_product derives surface, volume
+                # and weight once from the complete set of dimensions rather
+                # than from a variant whose width is still zero.
+                variant.write(dimensions)
 
     @api.constrains('product_template_attribute_value_ids')
     def _check_attribute_rules(self):
@@ -312,23 +310,23 @@ class ProductProduct(models.Model):
                 .mapped('product_attribute_value_id'))
         return candidates
 
-    @api.onchange('weight_kind', 'weight_factor', 'surface', 'product_width',
-                  'product_height', 'product_length', 'volume')
-    def onchange_variant_weight(self):
-        for p in self:
-            weight = 0.0
-            if p.weight_kind == 'length':
-                weight = p.weight_factor * p.product_length
-            elif p.weight_kind == 'width':
-                weight = p.weight_factor * p.product_width
-            elif p.weight_kind == 'height':
-                weight = p.weight_factor * p.product_height
-            elif p.weight_kind == 'surface':
-                weight = p.weight_factor * p.surface
-            elif p.weight_kind == 'volume':
-                weight = p.weight_factor * p.volume
+    def _physical_weight_multiplier(self):
+        """Fold the weight factor carried by each attribute value into the weight.
 
-            for ptav in p.product_template_attribute_value_ids:
-                weight *= ptav.product_attribute_value_id.weight_factor
+        ``numa_physical_product`` derives a variant's weight from its
+        dimensions; a value such as an alloy or a wall thickness scales it.
+        This is the hook it exposes for exactly that, so the derivation lives
+        in one place and the form and the ORM cannot disagree — which they did
+        while this module carried a second, differently-named copy of it.
 
-            p.variant_weight = weight
+        A factor of zero is read as *no factor*, not as *weightless*: the
+        field defaults to one, so a zero is a row written before the field
+        existed rather than a statement about the product.
+        """
+        self.ensure_one()
+        multiplier = 1.0
+        for ptav in self.product_template_attribute_value_ids:
+            factor = ptav.product_attribute_value_id.weight_factor
+            if factor:
+                multiplier *= factor
+        return multiplier

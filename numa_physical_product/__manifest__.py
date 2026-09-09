@@ -2,7 +2,7 @@
 
 {
     'name': 'NUMA Physical Product',
-    'version': '18.0.0.1',
+    'version': '18.0.0.2',
     'category': 'Product',
     'description': """
 This module extends the handling of physical dimensions on products.

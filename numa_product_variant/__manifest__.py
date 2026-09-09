@@ -1,6 +1,6 @@
 {
     'name': 'NUMA Product Variant',
-    'version': '18.0.0.4',
+    'version': '18.0.0.5',
     'category': 'Product',
     'description': """
 This module extends the handling of variants on products.

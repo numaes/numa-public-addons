@@ -14,8 +14,16 @@ Purchase Orders.
   inherited recursively from parent categories and applied on template
   create/category change.
 - Attributes with `change_on_create` (length/width/height) set the matching
-  variant dimension on creation; variant weight is recomputed from dimensions and
-  `weight_factor` (via `numa_physical_product`).
+  variant dimension on creation, in a single write so that
+  `numa_physical_product` derives surface, volume and weight once from the
+  complete set of dimensions rather than from a variant whose width is still
+  zero.
+- An attribute value can carry a `weight_factor` that scales the derived weight
+  (an alloy, a wall thickness). This module supplies it through
+  `product.product._physical_weight_multiplier()`, the hook
+  `numa_physical_product` exposes for it; the derivation itself lives there. A
+  factor of zero is read as *no factor* rather than *weightless*, since the
+  field defaults to one and a zero is a row predating it.
 
 ### Product configurator on Purchase Orders
 Entering a product template on a purchase order line runs the same

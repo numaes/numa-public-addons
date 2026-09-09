@@ -8,7 +8,8 @@ _logger = logging.getLogger(__name__)
 
 
 class ProductProduct(models.Model):
-    _inherit = 'product.product'
+    _name = 'product.product'
+    _inherit = ['product.product', 'numa.physical.magnitudes']
 
     weight_factor = fields.Float(string='Weight Factor [kg/unit]',
                                  compute="get_weight_factor",
@@ -119,28 +120,79 @@ class ProductProduct(models.Model):
         for product in self:
             product.variant_height = product.product_height
 
-    @api.onchange('product_width', 'product_height', 'product_length')
-    def onchange_variant_dimensions(self):
-        self.variant_surface = self.product_length * self.product_width
-        self.variant_volume = self.product_length * self.product_width * self.product_height
-        self.get_volume()
-        self.get_weight()
-        self.get_surface()
-        self._onchange_variant_weight()
+    # ------------------------------------------------------------------
+    # Derived magnitudes.  See ``numa.physical.magnitudes`` for the contract.
+    #
+    # A variant derives into its own ``variant_*`` columns, from the effective
+    # dimensions — its own where it has them, the template's where it has not.
+    # ------------------------------------------------------------------
 
-    @api.onchange('weight_kind', 'weight_factor', 'surface', 'product_width',
-                  'product_height', 'product_length', 'volume')
-    def _onchange_variant_weight(self):
-        if self.weight_kind == 'length':
-            self.variant_weight = self.weight_factor * self.product_length
-        elif self.weight_kind == 'width':
-            self.variant_weight = self.weight_factor * self.product_width
-        elif self.weight_kind == 'height':
-            self.variant_weight = self.weight_factor * self.product_height
-        elif self.weight_kind == 'surface':
-            self.variant_weight = self.weight_factor * self.surface
-        elif self.weight_kind == 'volume':
-            self.variant_weight = self.weight_factor * self.volume
+    def _physical_triggers(self):
+        return ('variant_length', 'variant_width', 'variant_height',
+                'variant_surface', 'variant_volume', 'variant_weight_factor',
+                'product_length', 'product_width', 'product_height',
+                'surface', 'volume', 'weight_kind', 'weight_factor')
+
+    def _has_own_dimensions(self):
+        """Whether this variant carries any dimension of its own.
+
+        A variant with none of them inherits every magnitude from its template
+        and must keep inheriting. Storing a derived surface on it would freeze
+        that number the day the template's dimensions move.
+        """
+        self.ensure_one()
+        return bool(self.variant_length or self.variant_width or
+                    self.variant_height)
+
+    def _physical_weight_multiplier(self):
+        """Extra factor applied to a derived variant weight.
+
+        One here; a module that makes an attribute value carry a weight factor
+        overrides this rather than reimplementing the derivation.
+        """
+        return 1.0
+
+    def _physical_derived_vals(self, stated=()):
+        self.ensure_one()
+        if not self._has_own_dimensions():
+            return {}
+        stated = set(stated)
+        derived = {}
+        if not stated & {'surface', 'variant_surface'}:
+            derived['variant_surface'] = (self.product_length *
+                                          self.product_width)
+        if not stated & {'volume', 'variant_volume'}:
+            derived['variant_volume'] = (self.product_length *
+                                         self.product_width *
+                                         self.product_height)
+        if not stated & {'weight', 'variant_weight'}:
+            weight = self._physical_weight(
+                derived.get('variant_surface', self.surface),
+                derived.get('variant_volume', self.volume))
+            if weight is not None:
+                derived['variant_weight'] = (weight *
+                                             self._physical_weight_multiplier())
+        return derived
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        variants = super().create(vals_list)
+        for variant, vals in zip(variants, vals_list):
+            variant._apply_physical_derivation(stated=vals.keys())
+        return variants
+
+    def write(self, vals):
+        res = super().write(vals)
+        if self._physical_derivation_needed(vals):
+            self._apply_physical_derivation(stated=vals.keys())
+        return res
+
+    @api.onchange('product_width', 'product_height', 'product_length',
+                  'weight_kind', 'weight_factor')
+    def _onchange_physical_dimensions(self):
+        """Show in the form exactly what a write would store."""
+        for name, value in self._physical_derived_vals().items():
+            self[name] = value
 
     def _get_price_qty(self, quantity, uom=None):
         """Return the costing/billing quantity for `quantity` units of this product.
