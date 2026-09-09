@@ -98,3 +98,56 @@ class TestDerivedMagnitudes(TransactionCase):
                               weight_factor=1.5, weight=7.0)
         self.assertEqual(tmpl.surface, 0.0)
         self.assertEqual(tmpl.weight, 7.0)
+
+
+@tagged('post_install', '-at_install', 'numa_physical_product')
+class TestVariantOverrides(TransactionCase):
+    """A variant states its own magnitude through a flag, not through a zero.
+
+    Zero used to mean "inherit from the template", so a variant of a template
+    six metres long could not be a variant of no length at all.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tmpl = self.env['product.template'].create({
+            'name': 'Bar', 'type': 'consu',
+            'product_length': 6.0, 'product_width': 0.04,
+        })
+        self.variant = self.tmpl.product_variant_id
+
+    def test_a_genuine_zero_is_expressible(self):
+        self.variant.write({'variant_length': 0.0,
+                            'variant_length_set': True})
+        self.assertEqual(self.variant.product_length, 0.0)
+        self.assertEqual(self.tmpl.product_length, 6.0)
+
+    def test_writing_a_magnitude_states_it(self):
+        self.variant.product_length = 2.0
+        self.assertTrue(self.variant.variant_length_set)
+        self.assertEqual(self.variant.product_length, 2.0)
+
+    def test_writing_the_raw_column_states_it(self):
+        """``change_on_create`` writes the column, not the computed field."""
+        self.variant.write({'variant_length': 2.0})
+        self.assertTrue(self.variant.variant_length_set)
+        self.assertEqual(self.variant.product_length, 2.0)
+
+    def test_dropping_the_flag_inherits_again(self):
+        self.variant.product_length = 2.0
+        self.variant.write({'variant_length_set': False})
+        self.assertEqual(self.variant.product_length, 6.0)
+
+    def test_dropping_every_dimension_drops_the_derived_surface(self):
+        """Otherwise the variant keeps the surface it derived while it had one."""
+        self.variant.product_length = 2.0
+        self.assertEqual(self.variant.surface, 0.08)
+        self.variant.write({'variant_length_set': False})
+        self.assertFalse(self.variant.variant_surface_set)
+        self.assertEqual(self.variant.surface, self.tmpl.surface)
+
+    def test_a_stated_zero_survives_a_template_change(self):
+        self.variant.write({'variant_length': 0.0,
+                            'variant_length_set': True})
+        self.tmpl.write({'product_length': 8.0})
+        self.assertEqual(self.variant.product_length, 0.0)

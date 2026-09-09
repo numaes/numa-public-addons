@@ -15,6 +15,17 @@
                     <field name="variant_surface" invisible="1" />
                     <field name="variant_volume" invisible="1" />
                     <field name="variant_weight" invisible="1" />
+                    <field name="variant_weight_factor" invisible="1" />
+                    <separator string="Own Magnitudes"/>
+                    <label for="variant_length_set"
+                           string="A magnitude is inherited from the product template until this variant states its own. Untick to inherit again."/>
+                    <field name="variant_length_set" />
+                    <field name="variant_width_set" />
+                    <field name="variant_height_set" />
+                    <field name="variant_surface_set" />
+                    <field name="variant_volume_set" />
+                    <field name="variant_weight_set" />
+                    <field name="variant_weight_factor_set" />
                 </xpath>
             </field>
         </record>

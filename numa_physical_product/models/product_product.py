@@ -6,6 +6,11 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+#: The magnitudes a variant may carry on its own, as the suffix of the
+#: ``variant_<name>`` column and of the ``variant_<name>_set`` flag beside it.
+VARIANT_MAGNITUDES = ('weight_factor', 'weight', 'volume', 'surface',
+                      'width', 'height', 'length')
+
 
 class ProductProduct(models.Model):
     _name = 'product.product'
@@ -50,99 +55,143 @@ class ProductProduct(models.Model):
     variant_height = fields.Float(string='Variant Height [m]')
     variant_length = fields.Float(string='Variant Length [m]')
 
-    @api.depends('variant_weight_factor', 'product_tmpl_id.weight_factor')
+    # A magnitude is the variant's own when its flag says so, never because
+    # its value happens to be non-zero. Zero used to mean "inherit from the
+    # template", which made a genuine zero inexpressible: a variant of a
+    # template six metres long could not be a variant of no length at all.
+    variant_weight_factor_set = fields.Boolean(string='Own Weight Factor')
+    variant_weight_set = fields.Boolean(string='Own Weight')
+    variant_volume_set = fields.Boolean(string='Own Volume')
+    variant_surface_set = fields.Boolean(string='Own Surface')
+    variant_width_set = fields.Boolean(string='Own Width')
+    variant_height_set = fields.Boolean(string='Own Height')
+    variant_length_set = fields.Boolean(string='Own Length')
+
+    @api.depends('variant_weight_factor', 'variant_weight_factor_set',
+                 'product_tmpl_id.weight_factor')
     def get_weight_factor(self):
         for product in self:
-            product.weight_factor = product.variant_weight_factor if product.variant_weight_factor != 0 else \
-                                    product.product_tmpl_id.weight_factor
+            product.weight_factor = product.variant_weight_factor \
+                if product.variant_weight_factor_set \
+                else product.product_tmpl_id.weight_factor
 
     def set_weight_factor(self):
         for product in self:
             product.variant_weight_factor = product.weight_factor
+            product.variant_weight_factor_set = True
 
-    @api.depends('variant_weight', 'product_tmpl_id.weight')
+    @api.depends('variant_weight', 'variant_weight_set', 'product_tmpl_id.weight')
     def get_weight(self):
         for product in self:
-            product.weight = product.variant_weight if product.variant_weight != 0 else \
-                             product.product_tmpl_id.weight
+            product.weight = product.variant_weight \
+                if product.variant_weight_set else product.product_tmpl_id.weight
 
     def set_weight(self):
         for product in self:
             product.variant_weight = product.weight
+            product.variant_weight_set = True
 
-    @api.depends('variant_volume', 'product_tmpl_id.volume')
+    @api.depends('variant_volume', 'variant_volume_set', 'product_tmpl_id.volume')
     def get_volume(self):
         for product in self:
-            product.volume = product.variant_volume if product.variant_volume != 0 else \
-                             product.product_tmpl_id.volume
+            product.volume = product.variant_volume \
+                if product.variant_volume_set else product.product_tmpl_id.volume
 
     def set_volume(self):
         for product in self:
             product.variant_volume = product.volume
+            product.variant_volume_set = True
 
-    @api.depends('variant_surface', 'product_tmpl_id.surface')
+    @api.depends('variant_surface', 'variant_surface_set', 'product_tmpl_id.surface')
     def get_surface(self):
         for product in self:
-            product.surface = product.variant_surface if product.variant_surface != 0 else \
-                              product.product_tmpl_id.surface
+            product.surface = product.variant_surface \
+                if product.variant_surface_set else product.product_tmpl_id.surface
 
     def set_surface(self):
         for product in self:
             product.variant_surface = product.surface
+            product.variant_surface_set = True
 
-    @api.depends('variant_length', 'product_tmpl_id.product_length')
+    @api.depends('variant_length', 'variant_length_set',
+                 'product_tmpl_id.product_length')
     def get_length(self):
         for product in self:
-            product.product_length = product.variant_length if product.variant_length != 0 else \
-                                     product.product_tmpl_id.product_length
+            product.product_length = product.variant_length \
+                if product.variant_length_set \
+                else product.product_tmpl_id.product_length
 
     def set_length(self):
         for product in self:
             product.variant_length = product.product_length
+            product.variant_length_set = True
 
-    @api.depends('variant_width', 'product_tmpl_id.product_width')
+    @api.depends('variant_width', 'variant_width_set',
+                 'product_tmpl_id.product_width')
     def get_width(self):
         for product in self:
-            product.product_width = product.variant_width if product.variant_width != 0 else \
-                                    product.product_tmpl_id.product_width
+            product.product_width = product.variant_width \
+                if product.variant_width_set \
+                else product.product_tmpl_id.product_width
 
     def set_width(self):
         for product in self:
             product.variant_width = product.product_width
+            product.variant_width_set = True
 
-    @api.depends('variant_height', 'product_tmpl_id.product_height')
+    @api.depends('variant_height', 'variant_height_set',
+                 'product_tmpl_id.product_height')
     def get_height(self):
         for product in self:
-            product.product_height = product.variant_height if product.variant_height != 0 else \
-                                     product.product_tmpl_id.product_height
+            product.product_height = product.variant_height \
+                if product.variant_height_set \
+                else product.product_tmpl_id.product_height
 
     def set_height(self):
         for product in self:
             product.variant_height = product.product_height
+            product.variant_height_set = True
 
     # ------------------------------------------------------------------
     # Derived magnitudes.  See ``numa.physical.magnitudes`` for the contract.
     #
     # A variant derives into its own ``variant_*`` columns, from the effective
-    # dimensions — its own where it has them, the template's where it has not.
+    # dimensions — its own where it states them, the template's where it does
+    # not.
     # ------------------------------------------------------------------
 
+    def _override_flags_for(self, vals):
+        """Flags implied by writing a raw ``variant_*`` column.
+
+        Writing the column is itself the statement that the variant carries
+        its own value; the caller does not have to raise the flag as well.
+        Passing the flag explicitly always wins, which is how an override is
+        dropped.
+        """
+        return {
+            'variant_%s_set' % name: True
+            for name in VARIANT_MAGNITUDES
+            if 'variant_%s' % name in vals
+            and 'variant_%s_set' % name not in vals
+        }
+
     def _physical_triggers(self):
-        return ('variant_length', 'variant_width', 'variant_height',
-                'variant_surface', 'variant_volume', 'variant_weight_factor',
-                'product_length', 'product_width', 'product_height',
-                'surface', 'volume', 'weight_kind', 'weight_factor')
+        return (
+            tuple('variant_%s' % name for name in VARIANT_MAGNITUDES)
+            + tuple('variant_%s_set' % name for name in VARIANT_MAGNITUDES)
+            + ('product_length', 'product_width', 'product_height',
+               'surface', 'volume', 'weight_kind', 'weight_factor'))
 
     def _has_own_dimensions(self):
-        """Whether this variant carries any dimension of its own.
+        """Whether this variant states any dimension of its own.
 
-        A variant with none of them inherits every magnitude from its template
-        and must keep inheriting. Storing a derived surface on it would freeze
-        that number the day the template's dimensions move.
+        A variant stating none of them inherits every magnitude from its
+        template and must keep inheriting. Storing a derived surface on it
+        would freeze that number the day the template's dimensions move.
         """
         self.ensure_one()
-        return bool(self.variant_length or self.variant_width or
-                    self.variant_height)
+        return bool(self.variant_length_set or self.variant_width_set or
+                    self.variant_height_set)
 
     def _physical_weight_multiplier(self):
         """Extra factor applied to a derived variant weight.
@@ -154,17 +203,32 @@ class ProductProduct(models.Model):
 
     def _physical_derived_vals(self, stated=()):
         self.ensure_one()
-        if not self._has_own_dimensions():
-            return {}
         stated = set(stated)
+        if not self._has_own_dimensions():
+            # Nothing of its own to derive from. Drop the derived overrides so
+            # the variant goes back to following its template instead of
+            # keeping the numbers it derived while it did have dimensions.
+            dropped = {}
+            if not stated & {'surface', 'variant_surface', 'variant_surface_set'}:
+                dropped['variant_surface_set'] = False
+            if not stated & {'volume', 'variant_volume', 'variant_volume_set'}:
+                dropped['variant_volume_set'] = False
+            if (self.weight_kind != 'normal'
+                    and not stated & {'weight', 'variant_weight',
+                                      'variant_weight_set'}):
+                dropped['variant_weight_set'] = False
+            return dropped
+
         derived = {}
         if not stated & {'surface', 'variant_surface'}:
             derived['variant_surface'] = (self.product_length *
                                           self.product_width)
+            derived['variant_surface_set'] = True
         if not stated & {'volume', 'variant_volume'}:
             derived['variant_volume'] = (self.product_length *
                                          self.product_width *
                                          self.product_height)
+            derived['variant_volume_set'] = True
         if not stated & {'weight', 'variant_weight'}:
             weight = self._physical_weight(
                 derived.get('variant_surface', self.surface),
@@ -172,16 +236,22 @@ class ProductProduct(models.Model):
             if weight is not None:
                 derived['variant_weight'] = (weight *
                                              self._physical_weight_multiplier())
+                derived['variant_weight_set'] = True
         return derived
 
     @api.model_create_multi
     def create(self, vals_list):
+        vals_list = [dict(vals, **self._override_flags_for(vals))
+                     for vals in vals_list]
         variants = super().create(vals_list)
         for variant, vals in zip(variants, vals_list):
             variant._apply_physical_derivation(stated=vals.keys())
         return variants
 
     def write(self, vals):
+        flags = self._override_flags_for(vals)
+        if flags:
+            vals = dict(vals, **flags)
         res = super().write(vals)
         if self._physical_derivation_needed(vals):
             self._apply_physical_derivation(stated=vals.keys())

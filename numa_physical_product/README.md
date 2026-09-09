@@ -53,18 +53,27 @@ Three rules hold everywhere:
 
 ## Template and variant
 
-Both levels carry the magnitudes. On a variant they are stored in `variant_*`
-columns and read through a compute that **falls back to the template when the
-variant's own value is zero**, so a variant only overrides what it actually
-states.
+Both levels carry the magnitudes. On a variant each one is stored in a
+`variant_<name>` column with a `variant_<name>_set` flag beside it, and read
+through a compute that **uses the variant's value when its flag is raised and
+the template's otherwise**.
 
-A variant therefore derives into its own columns only when it carries at least
-one dimension of its own; one that carries none keeps inheriting, and keeps
-following the template when the template's dimensions move.
+The flag, not the value, is what says *this variant states its own*. Writing a
+magnitude raises it — through the computed field or the raw column alike, so a
+configurator writing `variant_length` needs to know nothing about flags — and
+unticking it returns the variant to inheriting.
 
-> **Known limitation.** Because zero means *inherit*, a genuine zero cannot be
-> expressed on a variant. This is a real modelling defect, recorded in
-> `numa-addons-18.0/docs/superpowers/specs/2026-09-09-configure-to-order-pipeline.md`.
+> Until 18.0.0.2 a magnitude was the variant's own when it was **not zero**.
+> That made a genuine zero inexpressible: a variant of a template six metres
+> long could not be a variant of no length at all. The 18.0.0.3 migration
+> raises the flag exactly where the value is non-zero, so existing data keeps
+> behaving as it did.
+
+A variant derives into its own columns only while it states at least one
+dimension of its own. One that states none keeps inheriting and keeps following
+the template when the template's dimensions move — and a variant that stops
+stating them drops the magnitudes it had derived, rather than keeping numbers
+that no longer follow from anything.
 
 ### Extending the derived weight
 
