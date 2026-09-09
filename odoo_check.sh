@@ -129,6 +129,10 @@ for f in start.sh stop.sh onboot.sh dbbackup.sh dbrestore.sh; do
         # kill -9 solo es sintoma si NO hay un SIGTERM antes: el stop.sh correcto lo usa
         # como ultimo recurso despues de esperar 30s.
         grep -q 'kill -9' "$f" && ! grep -q 'kill -TERM' "$f" && why="$why apaga con kill -9 directo;"
+        # Buscar procesos por patron de nombre alcanza a los ambientes vecinos, que corren
+        # el mismo odoo-bin desde directorios hermanos.
+        grep -qE 'pkill|killall' "$f" && why="$why mata por patron (alcanza a otros ambientes);"
+        [ "$f" = "start.sh" ] && ! grep -q 'CURRENT_DIR' "$f" && why="$why no identifica el ambiente en ps;"
         [ -z "$why" ] && why=" difiere del generador"
         if [ "$FIX" -eq 1 ]; then
             backup "$f"; cp "$WORK/$f" "$f"; chmod +x "$f"; did "$f:$why reemplazado (backup guardado)"
@@ -191,17 +195,20 @@ else
 fi
 
 TREAL="$(cfg limit_time_real)"
+WANT_TREAL=900
 if [ -z "$TREAL" ] || [ "$TREAL" -gt 1800 ] 2>/dev/null; then
-    set_cfg limit_time_real 900 "${TREAL:-7200}s retiene el worker demasiado tiempo cuando algo se traba"
+    set_cfg limit_time_real "$WANT_TREAL" "${TREAL:-7200}s retiene el worker demasiado tiempo cuando algo se traba"
 else
     good "limit_time_real = $TREAL"
+    WANT_TREAL="$TREAL"
 fi
-TREAL="$(cfg limit_time_real)"
+# Contra el valor que limit_time_real VA a tener, no contra el que tiene: en modo informe
+# todavia no se escribio, y calcular sobre un valor vacio proponia limit_time_cpu = 0.
 TCPU="$(cfg limit_time_cpu)"
-if [ -z "$TCPU" ] || [ "$TCPU" -ge "$TREAL" ] 2>/dev/null; then
-    set_cfg limit_time_cpu $(( TREAL * 2 / 3 )) "debe quedar por debajo de limit_time_real"
+if [ -z "$TCPU" ] || [ "$TCPU" -ge "$WANT_TREAL" ] 2>/dev/null; then
+    set_cfg limit_time_cpu $(( WANT_TREAL * 2 / 3 )) "debe quedar por debajo de limit_time_real ($WANT_TREAL)"
 else
-    good "limit_time_cpu = $TCPU (< $TREAL)"
+    good "limit_time_cpu = $TCPU (< $WANT_TREAL)"
 fi
 
 if [ "${OE_VERSION%%.*}" -ge 16 ] 2>/dev/null && grep -qE '^[[:space:]]*longpolling_port' odoo.config; then
@@ -211,6 +218,26 @@ fi
 # --------------------------------------------------------------------------------------
 # 3. entorno: cosas que no estan en ningun archivo de esta instalacion
 # --------------------------------------------------------------------------------------
+echo
+echo "Este ambiente:"
+if [ -f running-odoo.pid ]; then
+    PID=$(cat running-odoo.pid)
+    if ! kill -0 "$PID" 2>/dev/null; then
+        bad "running-odoo.pid apunta al pid $PID, que ya no corre (pidfile viejo)"
+    elif tr '\0' ' ' < "/proc/$PID/cmdline" 2>/dev/null | grep -qF "$INSTALL_DIR/odoo.config"; then
+        good "corriendo: pid $PID, $(pgrep -P "$PID" 2>/dev/null | wc -l) procesos hijos, identificable en ps"
+    else
+        # Un Odoo lanzado con el start.sh anterior no lleva la ruta absoluta del config, asi
+        # que stop.sh -- que se niega a matar lo que no puede probar que es suyo -- no va a
+        # poder pararlo. Es seguro, pero hay que saberlo.
+        bad "corriendo (pid $PID) pero SIN la ruta absoluta del config en su linea de comandos:"
+        note "" "      lo lanzo un start.sh anterior. stop.sh no va a poder pararlo."
+        note "" "      Pararlo a mano una vez (kill -TERM $PID) y volver a arrancar."
+    fi
+else
+    note "-" "no hay running-odoo.pid: este ambiente no esta corriendo, o se lanzo sin --pidfile"
+fi
+
 echo
 echo "Entorno (solo informa, no lo corrige este script):"
 if [ "$(swapon --show --noheadings 2>/dev/null | wc -l)" -eq 0 ]; then

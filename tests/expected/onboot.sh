@@ -5,4 +5,4 @@
 # directorio y necesita la ruta absoluta.
 cd "/opt/cm-18.0" || exit 1
 source venv/bin/activate
-exec ./start.sh --pidfile=running-odoo.pid --logfile=log/odoo-server.log
+exec ./start.sh --pidfile=running-odoo.pid --logfile=log/odoo-server.log &
