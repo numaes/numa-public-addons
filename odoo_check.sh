@@ -251,9 +251,17 @@ SWAPPINESS=$(cat /proc/sys/vm/swappiness 2>/dev/null || echo '?')
 [ "$SWAPPINESS" = "0" ] && bad "vm.swappiness = 0 anula el swap que exista"
 
 if crontab -l 2>/dev/null | grep -q "@reboot.*$INSTALL_DIR/onboot.sh"; then
-    good "@reboot en el crontab: la instalacion vuelve sola tras un reinicio"
+    good "@reboot en el crontab: vuelve sola tras un reinicio de la maquina"
 else
     bad "sin @reboot en el crontab -- agregar: @reboot /bin/bash $INSTALL_DIR/onboot.sh"
+fi
+
+# El @reboot solo cubre el reinicio de la maquina. Si el master muere por cualquier otra
+# razon no lo levanta nadie, y una caida de diez minutos se vuelve una de diez horas.
+if crontab -l 2>/dev/null | grep -q -- "--si-no-corre.*$INSTALL_DIR/onboot.sh\|$INSTALL_DIR/onboot.sh.*--si-no-corre"; then
+    good "supervision en el crontab: si el master muere, vuelve solo"
+else
+    bad "sin supervision -- agregar: */5 * * * * /bin/bash $INSTALL_DIR/onboot.sh --si-no-corre"
 fi
 
 LAST=$(ls -1t database/*.tar.gz 2>/dev/null | head -1)
