@@ -1,6 +1,7 @@
 from . import common
 from . import test_miniqweb
 from . import test_fsm_live
+from . import test_fsm_template_mail
 
 # NOTA: test_fsm / test_fsm_instance / test_fsm_templates / test_fsm_timer / test_fsm_form_input
 # apuntaban a una API MUERTA de fsm.definition/fsm.instance (text_definition /

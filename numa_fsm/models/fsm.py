@@ -768,14 +768,23 @@ class FSMInstance(models.Model):
         for fsm_instance in self:
             self.log(f"Stopping all timers")
 
-    def render_dynamic_html(self, template, **params):
+    @staticmethod
+    def _render_expressions(template, fsm_instance, params):
         templater = Environment(variable_start_string="{{", variable_end_string="}}",)
-        global_objects = self._get_execution_globals(params)
-        fsm_instance = global_objects['model']
-        processed_body = template
-        while "{{" in processed_body:
-            jinja_template = templater.from_string(processed_body)
-            processed_body = jinja_template.render(instance=fsm_instance, **params)
+        while "{{" in template:
+            template = templater.from_string(template).render(instance=fsm_instance, **params)
+        return template
+
+    def render_dynamic_text(self, template, **params):
+        """Resuelve solo las expresiones ``{{ }}``: para texto plano, como el asunto de un mail.
+
+        ``render_dynamic_html`` pasa además por miniqweb, que parsea XML: con texto plano falla."""
+        fsm_instance = self._get_execution_globals(params)['model']
+        return self._render_expressions(template or '', fsm_instance, params)
+
+    def render_dynamic_html(self, template, **params):
+        fsm_instance = self._get_execution_globals(params)['model']
+        processed_body = self._render_expressions(template, fsm_instance, params)
         return miniqweb.render(processed_body, **dict(instance=fsm_instance, **params))
 
     def render_page(self, page_name, **params):
@@ -791,8 +800,11 @@ class FSMInstance(models.Model):
         if not mail_template:
             raise exceptions.UserError(_('Mail template %s not found for definition %s') % (mail_template_name, self.definition_id.name))
         
-        concrete_body = self.render_dynamic_html(mail_template.body_html)
-        concrete_subject = self.render_dynamic_html(subject or mail_template.subject or _('Workflow message'))
+        # miniqweb parsea un árbol XML: con varios elementos en la raíz se quedaba solo con el
+        # primero, y con texto plano fallaba. El cuerpo va envuelto en un único elemento; el
+        # asunto es texto y solo se le resuelven las expresiones.
+        concrete_body = self.render_dynamic_html('<div>%s</div>' % (mail_template.body_html or ''))
+        concrete_subject = self.render_dynamic_text(subject or mail_template.subject or _('Workflow message'))
         
         target_object.message_notify(
             subject=concrete_subject,
