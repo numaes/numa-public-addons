@@ -17,6 +17,12 @@
 # Lo que NO toca nunca: admin_passwd, addons_path, db_user, puertos, data_dir -- todo lo
 # propio de la instalacion. De odoo.config solo ajusta las claves de dimensionamiento, y
 # una por una.
+#
+# Tambien revisa el venv y el despliegue, que es lo que hace que "instalacion correcta"
+# signifique el ambiente y no solo sus scripts: un venv clonado de otro ambiente sigue
+# nombrando al original y hace que este corra con los site-packages del otro, y el
+# deployed.txt que escribe start.sh dice en que commit esta cada repo -- Odoo no lo
+# registra en ningun lado.
 set -uo pipefail
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -218,7 +224,102 @@ if [ "${OE_VERSION%%.*}" -ge 16 ] 2>/dev/null && grep -qE '^[[:space:]]*longpoll
 fi
 
 # --------------------------------------------------------------------------------------
-# 3. entorno: cosas que no estan en ningun archivo de esta instalacion
+# 3. el venv: que sea de ESTE ambiente y no una copia de otro
+#
+# Un venv no es relocalizable. `bin/activate` y `pyvenv.cfg` llevan grabada la ruta con la
+# que se creo, y cada script de `bin/` un shebang absoluto. Clonar un ambiente copiando el
+# directorio deja un venv que sigue diciendo ser el del original -- y como odoo-bin arranca
+# con `#!/usr/bin/env python3`, el PATH que ese activate exporta es el que decide que
+# interprete y que site-packages se usan. El ambiente copiado corre con las bibliotecas del
+# otro y nada lo avisa: los dos python3 son el mismo binario del sistema, asi que ni
+# siquiera `readlink /proc/PID/exe` lo delata.
+#
+# Encontrado en un test-18.0 clonado de prod-18.0: mismo `pyvenv.cfg` al nanosegundo.
+# --------------------------------------------------------------------------------------
+echo
+echo "El venv:"
+VENV="$INSTALL_DIR/venv"
+if [ ! -d "$VENV" ]; then
+    bad "no hay venv en $VENV"
+else
+    RECORDED=""
+    if [ -f "$VENV/bin/activate" ]; then
+        RECORDED="$(grep -m1 '^VIRTUAL_ENV=' "$VENV/bin/activate" 2>/dev/null \
+                    | cut -d= -f2- | sed -e 's/^["'\'']//' -e 's/["'\'']$//')"
+    fi
+    if [ -n "$RECORDED" ] && [ "$RECORDED" != "$VENV" ]; then
+        bad "el venv dice ser $RECORDED"
+        note "" "      es una copia de otro ambiente: el PATH y los site-packages salen de alla"
+        if [ "$FIX" -eq 1 ]; then
+            N=0
+            while IFS= read -r f; do
+                [ -f "$f" ] || continue
+                backup "$f"
+                sed -i "s|$RECORDED|$VENV|g" "$f"
+                N=$((N + 1))
+            done < <(grep -rlIF "$RECORDED" "$VENV/bin" "$VENV/pyvenv.cfg" 2>/dev/null \
+                     | grep -v '\.bak-')
+            if [ "$N" -gt 0 ]; then
+                did "venv reapuntado a $VENV ($N archivo(s))"
+            else
+                note "" "      no encontre donde esta escrito; recrear el venv a mano"
+            fi
+        fi
+    elif [ -n "$RECORDED" ]; then
+        good "el venv es de este ambiente"
+    else
+        note "-" "no pude leer VIRTUAL_ENV de $VENV/bin/activate"
+    fi
+
+    # Los shebangs se revisan aparte y DESPUES del arreglo: un pip que apunta a otro venv
+    # instala en el otro venv, en silencio y con exito.
+    STRAY=0
+    for f in "$VENV"/bin/*; do
+        [ -f "$f" ] || continue
+        # Un backup no lo ejecuta nadie: su shebang viejo es justamente lo que se guarda.
+        case "$f" in *.bak-*) continue ;; esac
+        SB="$(head -1 "$f" 2>/dev/null)"
+        case "$SB" in
+            '#!'*python*)
+                case "$SB" in "#!$VENV/"*) ;; *) STRAY=$((STRAY + 1)) ;; esac ;;
+        esac
+    done
+    if [ "$STRAY" -gt 0 ]; then
+        bad "$STRAY script(s) de $VENV/bin arrancan con un python de otro lado"
+    else
+        good "los scripts de bin/ usan el python de este venv"
+    fi
+fi
+
+echo
+echo "Que hay desplegado:"
+if [ ! -f deployed.txt ]; then
+    note "-" "todavia no hay deployed.txt: lo escribe start.sh en el proximo arranque"
+else
+    good "ultimo arranque: $(sed -n 's/^arrancado: *//p' deployed.txt | head -1)"
+    VENV_RUN="$(sed -n 's/^venv: *//p' deployed.txt | head -1)"
+    if [ -n "$VENV_RUN" ] && [ "$VENV_RUN" != "$VENV" ]; then
+        bad "lo que corre usa el venv $VENV_RUN, no el de aca"
+    fi
+    MOVED=0
+    while read -r REV BR REPO; do
+        [ -n "${REPO:-}" ] && [ -d "$REPO/.git" ] || continue
+        NOW="$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null)"
+        if [ -n "$NOW" ] && [ "$NOW" != "$REV" ]; then
+            bad "$(basename "$REPO"): corriendo $REV, el checkout ya esta en $NOW ($BR)"
+            MOVED=$((MOVED + 1))
+        fi
+    done < <(sed -n '/^--- repositorios ---$/,/^--- paquetes ---$/p' deployed.txt \
+             | grep -v '^---')
+    if [ "$MOVED" -eq 0 ]; then
+        good "el codigo en disco es el mismo que esta corriendo"
+    else
+        note "" "      alguien hizo pull y no reinicio: reiniciar para tomarlo"
+    fi
+fi
+
+# --------------------------------------------------------------------------------------
+# 4. entorno: cosas que no estan en ningun archivo de esta instalacion
 # --------------------------------------------------------------------------------------
 echo
 echo "Este ambiente:"
