@@ -8,3 +8,4 @@ from . import test_fsm_live
 # (json_ui_schema → compilado, start/_process_event_sync, current_state_id, instance_variables,
 # timers polimórficos) se cubre en test_fsm_live.py. Los archivos viejos se dejan en el repo como
 # referencia pero NO se importan.
+from . import test_fsm_instance_filters

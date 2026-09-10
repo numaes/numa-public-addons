@@ -46,6 +46,7 @@ class HrEmployee(models.Model):
     has_fsm = fields.Boolean(
         string="Has Active FSM",
         compute='_compute_has_fsm',
+        search='_search_has_fsm',
         help="True if this employee has an active FSM instance."
     )
 
@@ -95,6 +96,19 @@ class HrEmployee(models.Model):
                 employee.definition_id and 
                 employee.fsm_state in ['running', 'paused']
             )
+
+    def _search_has_fsm(self, operator, value):
+        """Make ``has_fsm`` searchable.
+
+        The "With Active FSM" search filter uses it; a computed field without ``search`` makes the
+        whole search view invalid, including the standard views that inherit from it.
+        """
+        if operator not in ('=', '!='):
+            raise UserError(_('Unsupported operator for has_fsm: %s') % operator)
+        active_states = ['running', 'paused']
+        if (operator == '=') == bool(value):
+            return [('definition_id', '!=', False), ('fsm_state', 'in', active_states)]
+        return ['|', ('definition_id', '=', False), ('fsm_state', 'not in', active_states)]
 
     @api.model_create_multi
     def create(self, vals_list):

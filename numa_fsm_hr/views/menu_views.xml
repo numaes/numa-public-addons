@@ -5,7 +5,7 @@
         <menuitem
             id="menu_hr_bots"
             name="HR Bots (FSM)"
-            parent="hr.menu_hr_configuration"
+            parent="hr.menu_human_resources_configuration"
             action="action_hr_bot"
             sequence="100"
             groups="base.group_user"

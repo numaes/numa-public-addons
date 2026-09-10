@@ -21,7 +21,7 @@
                         <group>
                             <group string="FSM Status">
                                 <field name="bot_state" readonly="1"/>
-                                <field name="state" readonly="1" string="Execution State"/>
+                                <field name="fsm_state" readonly="1" string="Execution State"/>
                                 <field name="current_state_id" readonly="1" string="Current State"/>
                                 <field name="next_node_id" readonly="1" string="Next Node" invisible="not next_node_id"/>
                             </group>
@@ -30,22 +30,22 @@
                                         type="object" 
                                         string="Start FSM" 
                                         class="btn-primary"
-                                        invisible="state != 'init'"/>
+                                        invisible="fsm_state != 'init'"/>
                                 <button name="action_pause_fsm" 
                                         type="object" 
                                         string="Pause FSM" 
                                         class="btn-secondary"
-                                        invisible="state != 'running'"/>
+                                        invisible="fsm_state != 'running'"/>
                                 <button name="action_resume_fsm" 
                                         type="object" 
                                         string="Resume FSM" 
                                         class="btn-primary"
-                                        invisible="state != 'paused'"/>
+                                        invisible="fsm_state != 'paused'"/>
                                 <button name="action_next_step_fsm" 
                                         type="object" 
                                         string="Next Step" 
                                         class="btn-secondary"
-                                        invisible="state != 'paused'"/>
+                                        invisible="fsm_state != 'paused'"/>
                             </group>
                         </group>
                         
@@ -54,13 +54,13 @@
                             <field name="definition_id" invisible="1"/>
                             <field name="current_state_id" invisible="1"/>
                             <field name="next_node_id" invisible="1"/>
-                            <field name="state" invisible="1"/>
+                            <field name="fsm_state" invisible="1"/>
                             <field name="json_ui_schema"
                                    widget="fsm_diagram"
                                    nolabel="1"
                                    class="o_full_width"
                                    readonly="1"
-                                   activeNodeId="state == 'paused' ? next_node_id : current_state_id"
+                                   activeNodeId="fsm_state == 'paused' ? next_node_id : current_state_id"
                                    invisible="not json_ui_schema"/>
                             <div class="alert alert-info" role="alert" invisible="json_ui_schema">
                                 No FSM diagram available. Please configure the FSM definition.

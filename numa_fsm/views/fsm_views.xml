@@ -100,10 +100,10 @@
             <field name="arch" type="xml">
                 <form string="FSM Instance">
                     <header>
-                        <button name="start" type="object" string="Start" invisible="state != 'init'"/>
-                        <button name="end" type="object" string="End" invisible="state != 'running'"/>
-                        <button name="action_debug_next_step" type="object" string="Next Step" class="btn-primary" invisible="state != 'paused'"/>
-                        <button name="action_debug_continue" type="object" string="Continue" class="btn-secondary" invisible="state != 'paused'"/>
+                        <button name="start" type="object" string="Start" invisible="fsm_state != 'init'"/>
+                        <button name="end" type="object" string="End" invisible="fsm_state != 'running'"/>
+                        <button name="action_debug_next_step" type="object" string="Next Step" class="btn-primary" invisible="fsm_state != 'paused'"/>
+                        <button name="action_debug_continue" type="object" string="Continue" class="btn-secondary" invisible="fsm_state != 'paused'"/>
                         <field name="fsm_state" widget="statusbar" />
                     </header>
                     <sheet>
@@ -127,7 +127,7 @@
                             </page>
                             <page string="Debugger" name="debugger_page">
                                 <group>
-                                    <div class="alert alert-info" role="alert" invisible="state != 'paused'">
+                                    <div class="alert alert-info" role="alert" invisible="fsm_state != 'paused'">
                                         Execution Paused. Inspect variables and use 'Next Step' or 'Continue' to proceed.
                                     </div>
                                 </group>
@@ -139,7 +139,7 @@
                                        nolabel="1"
                                        class="o_full_width"
                                        readonly="1"
-                                       activeNodeId="state == 'paused' ? next_node_id : current_state_id"
+                                       activeNodeId="fsm_state == 'paused' ? next_node_id : current_state_id"
                                 />
                             </page>
                         </notebook>
@@ -172,12 +172,12 @@
                     <field name="fsm_state" />
                     <field name="current_state_id" />
                     <group expand="0" name="filtered_by" string="Filtered By">
-                        <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
-                        <filter string="Paused" name="paused" domain="[('state', '=', 'paused')]"/>
+                        <filter string="Running" name="running" domain="[('fsm_state', '=', 'running')]"/>
+                        <filter string="Paused" name="paused" domain="[('fsm_state', '=', 'paused')]"/>
                     </group>
                     <group expand="0" name="group_by" string="Group By">
                         <filter string="Definition" name="group_definition" context="{'group_by': 'definition_id'}"/>
-                        <filter string="Instance State" name="group_state" context="{'group_by': 'state'}"/>
+                        <filter string="Instance State" name="group_state" context="{'group_by': 'fsm_state'}"/>
                     </group>
                 </search>
             </field>
