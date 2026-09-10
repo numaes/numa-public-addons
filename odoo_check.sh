@@ -278,7 +278,9 @@ else
         [ -f "$f" ] || continue
         # Un backup no lo ejecuta nadie: su shebang viejo es justamente lo que se guarda.
         case "$f" in *.bak-*) continue ;; esac
-        SB="$(head -1 "$f" 2>/dev/null)"
+        # sed en vez de head: bin/ tambien tiene binarios, y una sustitucion de comandos
+        # sobre bytes nulos llena la salida de warnings.
+        SB="$(LC_ALL=C sed -n '1{/^#!/p;}; 1q' "$f" 2>/dev/null | tr -d '\0')"
         case "$SB" in
             '#!'*python*)
                 case "$SB" in "#!$VENV/"*) ;; *) STRAY=$((STRAY + 1)) ;; esac ;;
