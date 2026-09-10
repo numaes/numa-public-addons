@@ -20,14 +20,18 @@
         <xpath expr="//div[@name='ptal']/div[1]" position="after">
             <div class="o_ptal_open_value w-100 w-lg-75 mb-3 ms-lg-auto"
                  t-if="acceptsOpenValue">
-                <input t-if="openValueType === 'number'"
-                       class="o_input w-100"
-                       type="number"
-                       t-att-min="props.attribute.number_min or undefined"
-                       t-att-max="props.attribute.number_max or undefined"
-                       t-att-step="props.attribute.number_rounding or undefined"
-                       t-on-change="onOpenNumberConfirmed"
-                       placeholder="Enter a value"/>
+                <div t-if="openValueType === 'number'" class="input-group w-100">
+                    <input class="o_input"
+                           type="number"
+                           t-att-min="props.attribute.number_min or undefined"
+                           t-att-max="props.attribute.number_max or undefined"
+                           t-att-step="props.attribute.number_rounding or undefined"
+                           t-on-change="onOpenNumberConfirmed"
+                           placeholder="Enter a value"/>
+                    <span t-if="props.attribute.number_uom"
+                          class="input-group-text"
+                          t-esc="props.attribute.number_uom"/>
+                </div>
                 <input t-elif="openValueType === 'date'"
                        class="o_input w-100"
                        type="date"

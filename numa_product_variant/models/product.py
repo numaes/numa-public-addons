@@ -73,8 +73,9 @@ class ProductTemplate(models.Model):
         ptal_model = self.env['product.template.attribute.line']
 
         if 'categ_id' in vals and 'attribute_line_ids' not in vals:
+            result = True
             for product in self:
-                super(ProductTemplate, product).write(vals)
+                result = super(ProductTemplate, product).write(vals) and result
                 attributes = product.categ_id.get_default_attribute_lines()
                 for attribute in attributes:
                     product.attribute_line_ids = [(4, ptal_model.create({
@@ -82,8 +83,8 @@ class ProductTemplate(models.Model):
                         'attribute_id': attribute.id,
                         'value_ids': [(6, 0, attribute.value_ids.ids)],
                     }).id)]
-        else:
-            super().write(vals)
+            return result
+        return super().write(vals)
 
     @api.model
     def default_get(self, fields_list):
@@ -263,7 +264,12 @@ class ProductProduct(models.Model):
         ptav = self.product_template_attribute_value_ids.filtered(
             lambda value: value.attribute_id == attribute)
         if not ptav:
-            return self.env['product.template'].browse()
+            # An empty recordset of the model the attribute points at, so a
+            # caller can keep working with what it gets back. Returning an
+            # empty product.template for a res.partner attribute made the
+            # answer unusable for anything but a truth test.
+            return self.env[attribute.reference_model
+                            or 'product.template'].browse()
         return ptav[0]._get_effective_reference()
 
     def get_attribute_references(self, model=None):

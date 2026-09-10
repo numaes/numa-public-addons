@@ -33,6 +33,7 @@
                     <field name="reference_domain"
                            invisible="value_type != 'reference'" />
                     <field name="allow_additional_values" />
+                    <field name="number_uom" invisible="value_type != 'number'" />
                     <field name="number_min" invisible="value_type != 'number'" />
                     <field name="number_max" invisible="value_type != 'number'" />
                     <field name="number_rounding" invisible="value_type != 'number'" />

@@ -148,3 +148,67 @@ class TestReferencePayload(NumaVariantCommon):
             'reference_template_id': inside.id,
         })
         self.assertEqual(value._get_reference_record(), inside)
+
+
+@tagged('post_install', '-at_install', 'numa_product_variant')
+class TestNumericUnit(NumaVariantCommon):
+    """A numeric attribute declares the unit its values are typed in.
+
+    Dimensions are stored in metres. Anybody configuring a roof or a window
+    thinks in millimetres, and without a declared unit 1200 mm reached
+    ``variant_length`` as 1200 metres.
+    """
+
+    def _length_attribute(self, uom, rounding=1.0):
+        return self.env['product.attribute'].create({
+            'name': 'Opening width (%s)' % uom,
+            'create_variant': 'always',
+            'code_identifier': 'OW',
+            'value_type': 'number',
+            'number_uom': uom,
+            # Rounding is expressed in the attribute's own unit: whole
+            # millimetres, or a millimetre expressed in metres.
+            'number_rounding': rounding,
+            'change_on_create': 'length',
+            'allow_additional_values': True,
+        })
+
+    def _variant_for(self, attribute, value):
+        template = self.env['product.template'].create({
+            'name': 'Leaf', 'type': 'consu', 'base_code': 'LF',
+            'attribute_line_ids': [(0, 0, {
+                'attribute_id': attribute.id,
+                'value_ids': [(6, 0, value.ids)],
+            })],
+        })
+        return template.product_variant_ids
+
+    def test_millimetres_reach_the_dimension_as_metres(self):
+        attribute = self._length_attribute('mm')
+        value = attribute._get_or_create_value({'number': 1200})
+        self.assertEqual(value.free_number, 1200.0)
+        self.assertEqual(value.value_on_create, 1.2)
+        self.assertEqual(self._variant_for(attribute, value).product_length, 1.2)
+
+    def test_centimetres(self):
+        attribute = self._length_attribute('cm')
+        value = attribute._get_or_create_value({'number': 120})
+        self.assertEqual(value.value_on_create, 1.2)
+
+    def test_metres_are_the_default_and_unchanged(self):
+        attribute = self._length_attribute('m', rounding=0.001)
+        value = attribute._get_or_create_value({'number': 1.2})
+        self.assertEqual(value.value_on_create, 1.2)
+
+    def test_the_label_and_the_code_keep_the_entered_unit(self):
+        """The user typed 1200; nothing downstream should relabel it 1.2."""
+        attribute = self._length_attribute('mm')
+        value = attribute._get_or_create_value({'number': 1200})
+        self.assertEqual(value.name, '1200')
+        self.assertEqual(value.canonical_key, '1200')
+
+    def test_an_attribute_without_a_unit_behaves_as_metres(self):
+        attribute = self._length_attribute('mm', rounding=0.001)
+        attribute.number_uom = False
+        value = attribute._get_or_create_value({'number': 3})
+        self.assertEqual(value.value_on_create, 3.0)

@@ -109,6 +109,7 @@ class ProductConfiguratorValueResolver(SaleProductConfiguratorController):
                 'number_min': attribute.number_min,
                 'number_max': attribute.number_max,
                 'number_rounding': attribute.number_rounding,
+                'number_uom': attribute.number_uom,
             })
         return values
 

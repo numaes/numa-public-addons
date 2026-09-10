@@ -12,6 +12,10 @@ from .product_attribute_reference_mixin import REFERENCE_MODELS
 
 _logger = logging.getLogger(__name__)
 
+#: Factor turning a value of each unit into metres, the unit dimensions
+#: are stored in.
+NUMBER_UNIT_FACTORS = {'m': 1.0, 'cm': 0.01, 'mm': 0.001}
+
 
 class ProductAttribute(models.Model):
     """Attribute declaring what kind of data its values carry.
@@ -60,6 +64,16 @@ class ProductAttribute(models.Model):
              "a set of suggestions rather than a closed set.")
     number_min = fields.Float(string='Minimum Value')
     number_max = fields.Float(string='Maximum Value')
+    number_uom = fields.Selection(
+        selection=[('m', 'Metres'), ('cm', 'Centimetres'),
+                   ('mm', 'Millimetres')],
+        string='Unit of the Value',
+        default='m',
+        help="Unit the values of this attribute are entered in. Physical "
+             "dimensions are stored in metres, so a value entered in "
+             "millimetres is converted once, where it is materialised. "
+             "Bounds and rounding are expressed in this unit, which is the "
+             "unit the user types in.")
     number_rounding = fields.Float(
         string='Rounding', default=0.001,
         help="Numeric values are rounded to this precision before being "
@@ -86,6 +100,19 @@ class ProductAttribute(models.Model):
                 raise ValidationError(_(
                     "Attribute %(name)s has a minimum greater than its maximum.",
                     name=attribute.display_name))
+
+    def _number_unit_factor(self):
+        """Factor converting a value of this attribute into the model's unit.
+
+        Physical dimensions are stored in metres. A family asking for
+        millimetres — which is how anybody configuring a roof or a window
+        thinks — would otherwise write 1200 metres into ``variant_length``.
+        The conversion happens once, here, so nothing downstream learns about
+        units: the value keeps its entered form in ``free_number``, its label
+        and its code, and only the dimension it feeds is converted.
+        """
+        self.ensure_one()
+        return NUMBER_UNIT_FACTORS.get(self.number_uom or 'm', 1.0)
 
     @api.constrains('value_type', 'number_rounding')
     def _check_number_rounding(self):
@@ -164,7 +191,10 @@ class ProductAttribute(models.Model):
                 # value_on_create feeds the change_on_create machinery this
                 # module already had, so a free numeric attribute drives the
                 # variant dimension without any extra code.
-                'values': {'free_number': rounded, 'value_on_create': rounded},
+                'values': {
+                    'free_number': rounded,
+                    'value_on_create': rounded * self._number_unit_factor(),
+                },
                 'label': label,
             }
 

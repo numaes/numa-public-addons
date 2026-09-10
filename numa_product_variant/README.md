@@ -25,6 +25,19 @@ Purchase Orders.
   factor of zero is read as *no factor* rather than *weightless*, since the
   field defaults to one and a zero is a row predating it.
 
+### Numeric attributes carry a unit
+
+`number_uom` (metres, centimetres or millimetres) states the unit an
+attribute's values are typed in. Physical dimensions are stored in metres, so a
+value entered in millimetres is converted once, where it is materialised:
+`free_number`, the label and the generated code keep the entered form — 1200 —
+and only `value_on_create`, which feeds `change_on_create`, becomes 1.2.
+
+`number_min`, `number_max` and `number_rounding` are expressed in that same
+unit, which is the unit the user types in, and the configurator shows it beside
+the input. An attribute with no unit behaves as metres, so nothing created
+before this existed changes.
+
 ### Product configurator on Purchase Orders
 Entering a product template on a purchase order line runs the same
 detection/trigger logic as Sales:

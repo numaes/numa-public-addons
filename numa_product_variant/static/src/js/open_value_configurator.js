@@ -169,4 +169,5 @@ Object.assign(ProductTemplateAttributeLine.props.attribute.shape, {
     number_min: { type: Number, optional: true },
     number_max: { type: Number, optional: true },
     number_rounding: { type: Number, optional: true },
+    number_uom: { type: [Boolean, String], optional: true },
 });
