@@ -778,7 +778,8 @@ class FSMInstance(models.Model):
     def render_dynamic_text(self, template, **params):
         """Resuelve solo las expresiones ``{{ }}``: para texto plano, como el asunto de un mail.
 
-        ``render_dynamic_html`` pasa además por miniqweb, que parsea XML: con texto plano falla."""
+        ``render_dynamic_html`` pasa además por miniqweb, que interpreta el resultado como markup y
+        devuelve HTML: un asunto con '<' o '&' saldría escapado."""
         fsm_instance = self._get_execution_globals(params)['model']
         return self._render_expressions(template or '', fsm_instance, params)
 
@@ -800,10 +801,8 @@ class FSMInstance(models.Model):
         if not mail_template:
             raise exceptions.UserError(_('Mail template %s not found for definition %s') % (mail_template_name, self.definition_id.name))
         
-        # miniqweb parsea un árbol XML: con varios elementos en la raíz se quedaba solo con el
-        # primero, y con texto plano fallaba. El cuerpo va envuelto en un único elemento; el
-        # asunto es texto y solo se le resuelven las expresiones.
-        concrete_body = self.render_dynamic_html('<div>%s</div>' % (mail_template.body_html or ''))
+        # El asunto es texto: solo se le resuelven las expresiones, no se interpreta como markup.
+        concrete_body = self.render_dynamic_html(mail_template.body_html or '')
         concrete_subject = self.render_dynamic_text(subject or mail_template.subject or _('Workflow message'))
         
         target_object.message_notify(

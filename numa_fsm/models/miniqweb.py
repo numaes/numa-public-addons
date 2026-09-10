@@ -1,13 +1,42 @@
-import lxml.etree
-from lxml import etree
-from lxml.etree import LxmlError
-from lxml.etree import Element as E
-from odoo.tools.safe_eval import safe_eval
-from odoo import exceptions, _
-import html
+# -*- coding: utf-8 -*-
+"""
+miniqweb: el subconjunto de QWeb con el que numa_fsm renderiza páginas de portal y mails.
 
+La plantilla puede ser un fragmento: texto plano, varios elementos en la raíz, o el HTML que guarda
+un campo Html (``<br>``, ``&nbsp;``). La salida se serializa como HTML.
+
+Directivas:
+
+- ``t-if`` / ``t-elif`` / ``t-else``, en elementos hermanos consecutivos.
+- ``t-foreach`` + ``t-as``: repite el elemento. Define ``<as>``, ``<as>_value``, ``<as>_index``,
+  ``<as>_size``, ``<as>_first``, ``<as>_last``, ``<as>_parity``, ``<as>_even``, ``<as>_odd`` y
+  ``<as>_all``, que no salen del bucle. Un entero itera ``range(n)``; un dict, sus claves.
+- ``t-while``: repite el elemento mientras la expresión sea verdadera, con un tope de iteraciones.
+- ``t-set`` con ``t-value``, o con el contenido renderizado como valor.
+- ``t-esc`` (texto escapado) y ``t-raw`` (markup insertado tal cual, sin evaluar directivas):
+  reemplazan el contenido del elemento. ``None`` y ``False`` no emiten nada.
+- ``t-att-<nombre>`` (con ``None`` o ``False`` se omite), ``t-att`` (dict o pares) y
+  ``t-attf-<nombre>`` (``#{expr}``, ``{{ expr }}`` o ``{variable}``).
+- Los elementos ``<t-break/>`` y ``<t-continue/>``, dentro de un bucle.
+
+``<t>`` no genera elemento: aporta su texto y su contenido. Los comentarios no se emiten. Una
+directiva que no está en esta lista es un error, no un atributo más.
+"""
+import html
+import html.entities
 import logging
+import re
+
+import lxml.etree
+from lxml.etree import LxmlError
+from markupsafe import Markup
+
+from odoo import exceptions, _
+from odoo.tools.safe_eval import safe_eval
+
 _logger = logging.getLogger(__name__)
+
+MAX_WHILE_ITERATIONS = 10000
 
 
 class TBreak(Exception):
@@ -24,143 +53,291 @@ xml_parser = lxml.etree.XMLParser(encoding='UTF-8',
                                   recover=True,
                                   ns_clean=True)
 
+_FRAGMENT = 'miniqweb-fragment'
+_VOID_ELEMENTS = ('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param',
+                  'source', 'track', 'wbr')
+_VOID_CLOSE = re.compile(r'</(?:%s)\s*>' % '|'.join(_VOID_ELEMENTS), re.IGNORECASE)
+_ATTRIBUTE_VALUE = r'"[^"]*"|\'[^\']*\'|[^\s"\'=<>`]+'
+_START_TAG = re.compile(r'<([A-Za-z][\w:.-]*)((?:\s+[^\s"\'<>/=]+(?:\s*=\s*(?:%s))?)*)\s*(/?)>' % _ATTRIBUTE_VALUE)
+_ATTRIBUTE = re.compile(r'\s+([^\s"\'<>/=]+)(?:\s*=\s*(%s))?' % _ATTRIBUTE_VALUE)
+_XML_DECLARATION = re.compile(r'^\s*<\?xml[^>]*\?>')
+_NAMED_ENTITY = re.compile(r'&([A-Za-z][A-Za-z0-9]*);')
+_XML_ENTITIES = frozenset(('amp', 'lt', 'gt', 'quot', 'apos'))
+_BARE_AMPERSAND = re.compile(r'&(?!(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#[xX][0-9A-Fa-f]+);)')
+_ATTF_PLACEHOLDER = re.compile(r'#\{(.+?)\}|\{\{(.+?)\}\}|\{([A-Za-z_][A-Za-z0-9_]*)\}')
+_DIRECTIVES = frozenset(('t-if', 't-elif', 't-else', 't-foreach', 't-as', 't-while', 't-set', 't-value',
+                         't-esc', 't-raw', 't-att'))
 
-def render_node(node: E, parent: E = None, params: dict = None) -> E:
-    if params is None:
-        params = {}
 
-    copied_node = E(node.tag)
-    copied_node.text = node.text
-    copied_node.tail = node.tail
+def _start_tag(match):
+    name, attributes, closed = match.groups()
 
-    if node.tag == 't-break':
-        raise TBreak(_('At node %s, t-break') % (parent.tag if parent else 'root'))
-    elif node.tag == 't-continue':
-        raise TContinue(_('At node %s, t-continue') % (parent.tag if parent else 'root'))
-
-    variable_name = None
-    variable_value = None
-    iterable_collection = None
-    iterable_as = None
-    while_expression = None
-    for a_name, a_value in node.items():
-        if a_name == 't-set':
-            variable_name = a_value
-        elif a_name == 't-value':
-            variable_value = safe_eval(a_value, locals_dict=params)
-        elif a_name == 't-foreach':
-            iterable_collection = safe_eval(a_value, locals_dict=params)
-        elif a_name == 't-as':
-            iterable_as = a_value
-        elif a_name == 't-esc':
-            copied_node.text = str(safe_eval(a_value, locals_dict=params))
-        elif a_name == 't-raw':
-            inner_tree = lxml.etree.fromstring(
-                ('<div>' + str(safe_eval(a_value, locals_dict=params)) + '</div>').encode('UTF-8'),
-                parser=xml_parser
-            )
-            copied_node.text = inner_tree.text
-            for element in inner_tree:
-                new_node = render_node(element, node, params)
-                if new_node is not None:
-                    copied_node.append(new_node)
-        elif a_name == 't-while':
-            while_expression = a_value
-        elif a_name == 't-if':
-            if not safe_eval(a_value, locals_dict=params):
-                return None
-        elif a_name.startswith('t-att-'):
-            copied_node.attrib[a_name[len('t-att-'):]] = str(safe_eval(a_value, locals_dict=params))
-        elif a_name.startswith('t-attf-'):
-            copied_node.attrib[a_name[len('t-attf-'):]] = a_value.format(**params)
+    def attribute(attribute_match):
+        key, value = attribute_match.groups()
+        if value is None:
+            value = '"%s"' % key  # atributo booleano de HTML: multiple, checked, disabled…
+        elif value[0] in '"\'':
+            # XML no admite '<' en un valor: una expresión como t-att-title="'<br>'" se truncaba.
+            value = value[0] + value[1:-1].replace('<', '&lt;') + value[-1]
         else:
-            copied_node.attrib[a_name] = a_value
+            value = '"%s"' % value
+        return ' %s=%s' % (key, value)
 
-    if variable_name:
-        params[variable_name] = variable_value
+    if not closed and name.lower() in _VOID_ELEMENTS:
+        closed = '/'
+    return '<%s%s%s>' % (name, _ATTRIBUTE.sub(attribute, attributes), closed)
 
-    if iterable_collection and iterable_as:
-        loop_index = 0
-        params['$as_all'] = iterable_collection
-        params['$as_size'] = len(iterable_collection)
-        for loop_as in iterable_collection:
-            params['$as_index'] = loop_index
-            params['$as_first'] = loop_index == 0
-            params['$as_last'] = loop_index == (len(iterable_collection) - 1)
-            parity = 'odd' if loop_index % 2 else 'even'
-            params['$as_parity'] = parity
-            params['$as_even'] = parity == 'even'
-            params['$as_odd'] = parity == 'odd'
-            loop_index += 1
-            params[iterable_as] = loop_as
-            try:
-                for element in node:
-                    new_node = render_node(element, node, params)
-                    if parent is not None and new_node is not None:
-                        parent.append(new_node)
-            except TContinue:
-                pass
-            except TBreak:
-                break
-        return None
 
-    elif while_expression:
-        loop_index = 0
-        while safe_eval(while_expression, locals_dict=params):
-            params['$as_index'] = loop_index
-            params['$as_first'] = loop_index == 0
-            parity = 'odd' if loop_index % 2 else 'even'
-            params['$as_parity'] = parity
-            params['$as_even'] = parity == 'even'
-            params['$as_odd'] = parity == 'odd'
-            loop_index += 1
-            try:
-                for element in node:
-                    new_node = render_node(element, node, params)
-                    if parent is not None and new_node is not None:
-                        parent.append(new_node)
-            except TContinue:
-                pass
-            except TBreak:
-                break
-        return None
+def _as_xml(template):
+    """El HTML de un campo Html, como XML que lxml puede parsear: sin declaración, con los elementos
+    vacíos cerrados, los atributos con valor entre comillas y las entidades con nombre como
+    referencias numéricas. Un atributo sin valor no es XML válido, y el parser tolerante lo
+    descartaba: el ``multiple`` del input de archivos del portal se perdía."""
+    text = _XML_DECLARATION.sub('', template)
+    text = _VOID_CLOSE.sub('', text)
+    text = _START_TAG.sub(_start_tag, text)
 
+    def entity(match):
+        name = match.group(1)
+        if name in _XML_ENTITIES or name not in html.entities.name2codepoint:
+            return match.group(0)
+        return '&#%d;' % html.entities.name2codepoint[name]
+
+    # Un '&' suelto (una URL con varios parámetros, "a & b") no es XML válido.
+    return _BARE_AMPERSAND.sub('&amp;', _NAMED_ENTITY.sub(entity, text))
+
+
+def _parse(template):
+    """Parsea un fragmento dentro de un elemento contenedor. Devuelve el contenedor o None."""
+    source = '<%s>%s</%s>' % (_FRAGMENT, _as_xml(str(template)), _FRAGMENT)
+    try:
+        return lxml.etree.fromstring(source.encode('UTF-8'), parser=xml_parser)
+    except LxmlError:
+        _logger.exception('miniqweb: unexpected parsing error in template %r', template)
+        raise
+
+
+def _evaluate(expression, params):
+    return safe_eval(expression, locals_dict=params)
+
+
+def _text(value):
+    return '' if value is None or value is False else str(value)
+
+
+def _append_text(target, text):
+    """Agrega texto al final de lo ya emitido en ``target``: a la cola del último hijo, o a su texto."""
+    if not text:
+        return
+    if len(target):
+        last = target[-1]
+        last.tail = (last.tail or '') + text
     else:
-        if node.tag == 't':
-            for element in node:
-                new_node = render_node(element, parent, params)
-                if parent is not None and new_node is not None:
-                    parent.append(new_node)
+        target.text = (target.text or '') + text
+
+
+def _append_markup(target, value):
+    """Inserta markup al final de ``target``, tal cual: sus directivas no se evalúan."""
+    if value is None or value is False:
+        return
+    fragment = _parse(value)
+    if fragment is None:
+        return
+    _append_text(target, fragment.text)
+    for child in list(fragment):
+        target.append(child)
+
+
+def _serialize_children(element):
+    parts = [html.escape(element.text or '', quote=False)]
+    parts.extend(lxml.etree.tostring(child, method='html', encoding='unicode') for child in element)
+    return ''.join(parts)
+
+
+def _check_directives(node, attributes):
+    for name in attributes:
+        if name.startswith('t-') and name not in _DIRECTIVES and not name.startswith(('t-att-', 't-attf-')):
+            raise exceptions.UserError(_('Unsupported template directive %s in <%s>') % (name, node.tag))
+
+
+def _render_children(source, target, params):
+    """Renderiza el texto y los hijos de ``source`` al final de ``target``."""
+    _append_text(target, source.text)
+    chain = None
+    for child in source:
+        if isinstance(child.tag, str):
+            chain = _render_node(child, target, params, chain)
+        # Un comentario o una instrucción de procesamiento no se emite, pero su cola sí.
+        _append_text(target, child.tail)
+
+
+def _render_node(node, target, params, chain, attributes=None):
+    """Renderiza ``node`` al final de ``target``.
+
+    Devuelve el estado de la cadena t-if / t-elif / t-else para el hermano siguiente: None fuera de
+    una cadena, True si ya se tomó una rama, False si todavía no."""
+    if node.tag == 't-break':
+        raise TBreak()
+    if node.tag == 't-continue':
+        raise TContinue()
+    if attributes is None:
+        attributes = dict(node.attrib)
+        _check_directives(node, attributes)
+
+    if 't-foreach' in attributes:
+        _render_foreach(node, attributes, target, params)
+        return None
+    if 't-while' in attributes:
+        _render_while(node, attributes, target, params)
+        return None
+
+    if 't-if' in attributes:
+        if not _evaluate(attributes['t-if'], params):
+            return False
+        following = True
+    elif 't-elif' in attributes:
+        if chain is None:
+            raise exceptions.UserError(_('t-elif without a preceding t-if in <%s>') % node.tag)
+        if chain or not _evaluate(attributes['t-elif'], params):
+            return chain
+        following = True
+    elif 't-else' in attributes:
+        if chain is None:
+            raise exceptions.UserError(_('t-else without a preceding t-if in <%s>') % node.tag)
+        if chain:
             return None
+        following = None
+    else:
+        following = None
 
-        for element in node:
-            new_node = render_node(element, copied_node, params)
-            if new_node is not None:
-                copied_node.append(new_node)
+    _render_body(node, attributes, target, params)
+    return following
 
-    return copied_node
+
+def _render_foreach(node, attributes, target, params):
+    name = attributes.get('t-as')
+    if not name:
+        raise exceptions.UserError(_('t-foreach without t-as in <%s>') % node.tag)
+    collection = _evaluate(attributes['t-foreach'], params)
+    if collection is None or isinstance(collection, bool):
+        items = []
+    elif isinstance(collection, int):
+        items = list(range(collection))
+    else:
+        items = list(collection)
+    rest = {key: value for key, value in attributes.items() if key not in ('t-foreach', 't-as')}
+    size = len(items)
+    loop_params = dict(params)
+    for index, item in enumerate(items):
+        parity = 'odd' if index % 2 else 'even'
+        loop_params.update({
+            name: item,
+            name + '_value': collection[item] if isinstance(collection, dict) else item,
+            name + '_index': index,
+            name + '_size': size,
+            name + '_first': index == 0,
+            name + '_last': index == size - 1,
+            name + '_parity': parity,
+            name + '_even': parity == 'even',
+            name + '_odd': parity == 'odd',
+            name + '_all': collection,
+        })
+        try:
+            _render_node(node, target, loop_params, None, rest)
+        except TContinue:
+            continue
+        except TBreak:
+            break
+
+
+def _render_while(node, attributes, target, params):
+    rest = {key: value for key, value in attributes.items() if key != 't-while'}
+    iterations = 0
+    while _evaluate(attributes['t-while'], params):
+        iterations += 1
+        if iterations > MAX_WHILE_ITERATIONS:
+            raise exceptions.UserError(
+                _('t-while exceeded %s iterations in <%s>') % (MAX_WHILE_ITERATIONS, node.tag))
+        try:
+            _render_node(node, target, params, None, rest)
+        except TContinue:
+            continue
+        except TBreak:
+            break
+
+
+def _render_body(node, attributes, target, params):
+    if 't-set' in attributes:
+        if 't-value' in attributes:
+            value = _evaluate(attributes['t-value'], params)
+        else:
+            holder = lxml.etree.Element(_FRAGMENT)
+            _render_children(node, holder, params)
+            value = Markup(_serialize_children(holder))
+        params[attributes['t-set']] = value
+        return
+
+    if node.tag == 't':
+        container = target
+    else:
+        container = lxml.etree.SubElement(target, node.tag)
+        _set_attributes(container, attributes, params)
+
+    if 't-esc' in attributes:
+        _append_text(container, _text(_evaluate(attributes['t-esc'], params)))
+    elif 't-raw' in attributes:
+        _append_markup(container, _evaluate(attributes['t-raw'], params))
+    else:
+        _render_children(node, container, params)
+
+
+def _set_attributes(element, attributes, params):
+    for name, value in attributes.items():
+        if name.startswith('t-attf-'):
+            element.set(name[len('t-attf-'):], _format(value, params))
+        elif name.startswith('t-att-'):
+            _set_attribute(element, name[len('t-att-'):], _evaluate(value, params))
+        elif name == 't-att':
+            values = _evaluate(value, params)
+            for key, val in (values.items() if isinstance(values, dict) else values or ()):
+                _set_attribute(element, key, val)
+        elif not name.startswith('t-'):
+            element.set(name, value)
+
+
+def _set_attribute(element, name, value):
+    if value is None or value is False:
+        element.attrib.pop(name, None)
+    else:
+        element.set(name, str(value))
+
+
+def _format(template, params):
+    def placeholder(match):
+        expression, jinja_expression, variable = match.groups()
+        if variable is not None:
+            return _text(params[variable]) if variable in params else match.group(0)
+        return _text(_evaluate(expression or jinja_expression, params))
+
+    return _ATTF_PLACEHOLDER.sub(placeholder, template)
 
 
 def render(template: str, **params) -> str:
+    """Renderiza ``template`` con ``params``. Devuelve HTML, sin espacios al principio ni al final."""
+    if template is None or template is False:
+        return ''
+    fragment = _parse(template)
+    if fragment is None:
+        return ''
+    output = lxml.etree.Element(_FRAGMENT)
     try:
-        template_tree = lxml.etree.fromstring(template.encode('UTF-8'), parser=xml_parser)
-        output_tree = render_node(template_tree, params=params)
-        return lxml.etree.tostring(output_tree, encoding='UTF-8').decode('UTF-8') \
-            if output_tree is not None else ''
-
+        _render_children(fragment, output, params)
     except TBreak:
         trace_msg = _('<t-break> out of loop construction!')
-        _logger.exception(trace_msg, exc_info=True)
-        raise exceptions.UserError(trace_msg, )
-
+        _logger.error(trace_msg)
+        raise exceptions.UserError(trace_msg)
     except TContinue:
         trace_msg = _('<t-continue> out of loop construction!')
-        _logger.exception(trace_msg, exc_info=True)
+        _logger.error(trace_msg)
         raise exceptions.UserError(trace_msg)
-
-    except LxmlError as tree_exception:
-        _logger.exception(_('While processing {template}\nwith params {params}, '
-                            'unexpected parsing exception {tree_exception}') %
-                          dict(template=template, params=params, tree_exception=tree_exception),
-                          exc_info=True)
-        raise tree_exception
+    return _serialize_children(output).strip()
