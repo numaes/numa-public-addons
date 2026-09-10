@@ -1117,6 +1117,133 @@ class IrPolyBase(models.Model):
                             entry['concrete_model'], entry['count'], examples)
         return census
 
+    @api.model
+    def _poly_dependent_pairs(self):
+        """Every ``(base model, dependent model)`` pair the registry declares."""
+        pairs = set()
+        for model_name in list(self.env.registry.models):
+            model = self.env.get(model_name)
+            getter = getattr(model, '_poly_get_depend_models', None)
+            if model is None or not getter:
+                continue
+            try:
+                bases = getter() or {}
+            except Exception:  # noqa: BLE001 — a broken model must not stop the sweep
+                _logger.exception("[poly] could not read _depend_models of %s",
+                                  model_name)
+                continue
+            for base_name in bases:
+                if base_name != model_name and base_name in self.env:
+                    pairs.add((base_name, model_name))
+        return sorted(pairs)
+
+    @api.model
+    def _poly_sync_dependent_field_labels(self, max_passes=5):
+        """Give a dependent's cloned fields the translations of the base's.
+
+        A dependent model gets an ``ir.model.fields`` row of its own for every
+        propagated field, and a ``.po`` names only the base model's row — the
+        clone is never named anywhere, so it keeps the source language for
+        ever. The symptom is a form where every propagated field reads in
+        English while the very same field on the base model reads in the
+        user's language: it looks like a translation that will not load, and
+        it is really a translation with nowhere to land.
+
+        Only a clone still carrying the base's own source label is touched, so
+        a dependent that deliberately renames or re-documents a field keeps
+        what it said.
+
+        Two shapes in the graph need care. A **diamond** — a dependent with two
+        bases, as ``conversation.message`` has — would be claimed by both in
+        turn, and the two would overwrite each other on every pass; the first
+        base in a stable order therefore owns a name and the others skip it. A
+        **chain** — a dependent that is itself a base — needs the sweep run
+        again, because a pass may reach the far end before the near one; it
+        converges in as many passes as the chain is deep, and stops early when
+        a pass writes nothing.
+
+        Runs from the backfill cron for the reason that cron exists: a
+        registry that is finished and usable, and a mechanism that repairs
+        itself without anybody remembering to run it.
+        """
+        bases_by_dependent = {}
+        for base_name, dep_name in self._poly_dependent_pairs():
+            bases_by_dependent.setdefault(dep_name, []).append(base_name)
+
+        total = 0
+        for _pass in range(max_passes):
+            written = 0
+            for dep_name in sorted(bases_by_dependent):
+                bases = sorted(bases_by_dependent[dep_name])
+                for position, base_name in enumerate(bases):
+                    # Names an earlier base already owns are not this one's to
+                    # give: that is what stops a diamond oscillating.
+                    earlier = bases[:position]
+                    written += self._poly_adopt_labels(
+                        base_name, dep_name, earlier)
+            total += written
+            if not written:
+                break
+        else:
+            _logger.warning(
+                "[poly] field labels still changing after %s passes; the "
+                "dependency graph may hold a cycle.", max_passes)
+
+        if total:
+            self.env.registry.clear_cache()
+            _logger.info("[poly] adopted %s label(s) onto dependent models.",
+                         total)
+        return total
+
+    @api.model
+    def _poly_adopt_labels(self, base_name, dep_name, earlier_bases):
+        """Copy one base's field and selection labels onto one dependent."""
+        earlier = list(earlier_bases)
+        written = 0
+
+        self.env.cr.execute("""
+            UPDATE ir_model_fields d
+               SET field_description = b.field_description,
+                   help = CASE
+                       WHEN b.help IS NOT NULL
+                        AND (d.help IS NULL
+                             OR d.help->>'en_US' = b.help->>'en_US')
+                       THEN b.help ELSE d.help END
+              FROM ir_model_fields b
+             WHERE b.model = %s
+               AND d.model = %s
+               AND d.name = b.name
+               AND d.field_description->>'en_US'
+                   IS NOT DISTINCT FROM b.field_description->>'en_US'
+               AND d.field_description IS DISTINCT FROM b.field_description
+               AND NOT EXISTS (SELECT 1 FROM ir_model_fields e
+                                WHERE e.model = ANY(%s) AND e.name = d.name)
+        """, (base_name, dep_name, earlier))
+        written += self.env.cr.rowcount
+
+        # A selection's option labels live in their own table and have exactly
+        # the same problem: the dropdown reads in English while the base
+        # model's reads in the user's language.
+        self.env.cr.execute("""
+            UPDATE ir_model_fields_selection ds
+               SET name = bs.name
+              FROM ir_model_fields_selection bs
+              JOIN ir_model_fields bf ON bf.id = bs.field_id,
+                   ir_model_fields df
+             WHERE df.id = ds.field_id
+               AND bf.model = %s
+               AND df.model = %s
+               AND df.name = bf.name
+               AND ds.value = bs.value
+               AND ds.name->>'en_US' IS NOT DISTINCT FROM bs.name->>'en_US'
+               AND ds.name IS DISTINCT FROM bs.name
+               AND NOT EXISTS (SELECT 1 FROM ir_model_fields e
+                                WHERE e.model = ANY(%s) AND e.name = df.name)
+        """, (base_name, dep_name, earlier))
+        written += self.env.cr.rowcount
+
+        return written
+
     def as_concrete_model(self):
         """
         Convert this base record to its concrete model representation.
@@ -2725,6 +2852,14 @@ class PolyBase(_original_BaseModel):
             self.env['ir.poly_base']._poly_log_collision_census()
         except Exception:  # noqa: BLE001 — a report must not stop the work it reports on
             _logger.exception("[poly] collision census failed")
+
+        # Propagated fields land in ir.model.fields rows nobody translates.
+        # Cheap, idempotent, and it only writes what is still in the source
+        # language, so it costs nothing on a tick with nothing to do.
+        try:
+            self.env['ir.poly_base']._poly_sync_dependent_field_labels()
+        except Exception:  # noqa: BLE001
+            _logger.exception("[poly] field label sync failed")
 
         self.env.cr.execute(
             "SELECT DISTINCT res_model FROM numa_poly_backfill WHERE post_pending = true")
