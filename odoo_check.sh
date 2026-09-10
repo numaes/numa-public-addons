@@ -3,6 +3,7 @@
 #
 #     ./odoo_check.sh [ruta]            solo informa, no toca nada
 #     ./odoo_check.sh [ruta] --fix      aplica las correcciones, con backup de cada archivo
+#     ./odoo_check.sh [ruta] --db BASE  ademas, compara las versiones de los modulos
 #
 # Para que existe: los scripts de arranque, parada y respaldo los emite odoo_install.sh, y
 # durante años los emitio mal -- heredocs sin comillas en el delimitador, asi que el shell
@@ -30,9 +31,14 @@ INSTALLER="$SELF_DIR/odoo_install.sh"
 
 TARGET="."
 FIX=0
+DB_ARG=""
+NEXT_IS_DB=0
 for a in "$@"; do
+    if [ "$NEXT_IS_DB" -eq 1 ]; then DB_ARG="$a"; NEXT_IS_DB=0; continue; fi
     case "$a" in
         --fix) FIX=1 ;;
+        --db) NEXT_IS_DB=1 ;;
+        --db=*) DB_ARG="${a#--db=}" ;;
         -h|--help) sed -n '2,20p' "$0" | sed 's/^# \?//'; exit 0 ;;
         *) TARGET="$a" ;;
     esac
@@ -320,6 +326,63 @@ else
     fi
 fi
 
+echo
+echo "Modulos instalados contra el codigo en disco:"
+# deployed.txt dice en que commit esta cada repo, pero el codigo no es lo unico que se
+# despliega: un modulo lleva vistas, datos y migraciones que solo entran con `-u`. Un
+# `git pull` deja el disco al dia y la base atrasada, y no hay sintoma hasta que alguien
+# abre la vista que no se cargo. Odoo si guarda esto: `latest_version` es la version del
+# manifiesto que corrio la ultima vez.
+DB="$DB_ARG"
+if [ -z "$DB" ]; then
+    D="$(cfg db_name)"
+    [ -n "$D" ] && [ "$D" != "False" ] && DB="$D"
+fi
+MODS=""
+if [ -n "${ODOO_CHECK_MODULES_CMD:-}" ]; then
+    # Costura para las pruebas: comparar versiones no deberia necesitar una base.
+    MODS="$(eval "$ODOO_CHECK_MODULES_CMD" 2>/dev/null)"
+elif [ -n "$DB" ]; then
+    DBU="$(cfg db_user)"
+    MODS="$(psql ${DBU:+-U "$DBU"} -d "$DB" -tAF'|' \
+            -c "select name, latest_version from ir_module_module where state = 'installed'" \
+            2>/dev/null)"
+fi
+if [ -z "$MODS" ]; then
+    note "-" "sin base con que comparar: agregar --db <base>"
+else
+    ADDONS="$(sed -n '/^addons_path/,/^[a-z_][a-z_]*[[:space:]]*=/p' odoo.config \
+              | sed -e 's/^addons_path[[:space:]]*=[[:space:]]*//' -e 's/,[[:space:]]*$//' \
+              | grep -vE '^[a-z_]+[[:space:]]*=' \
+              | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | grep -v '^$')"
+    STALE=0; CHECKED=0
+    while IFS='|' read -r MOD VER; do
+        [ -n "$MOD" ] || continue
+        MDIR=""
+        for a in $ADDONS; do
+            [ -f "$a/$MOD/__manifest__.py" ] && { MDIR="$a/$MOD"; break; }
+        done
+        [ -n "$MDIR" ] || continue     # modulo de otra parte del addons_path: no opinamos
+        MV="$(sed -n "s/.*['\"]version['\"][[:space:]]*:[[:space:]]*['\"]\([^'\"]*\)['\"].*/\1/p" \
+              "$MDIR/__manifest__.py" | head -1)"
+        [ -n "$MV" ] || continue
+        # Odoo antepone la serie cuando el manifiesto no la trae: '1.2' se guarda 18.0.1.2.
+        case "$MV" in "$OE_VERSION".*) WANT="$MV" ;; *) WANT="$OE_VERSION.$MV" ;; esac
+        CHECKED=$((CHECKED + 1))
+        if [ "$WANT" != "$VER" ]; then
+            bad "$MOD: la base corrio $VER y el manifiesto ya dice $WANT"
+            STALE=$((STALE + 1))
+        fi
+    done <<< "$MODS"
+    if [ "$STALE" -eq 0 ]; then
+        good "$CHECKED modulo(s) al dia en $DB"
+    else
+        note "" "      $STALE modulo(s) necesitan -u sobre $DB:"
+        note "" "      ./stop.sh && venv/bin/python3 ../numa-public-odoo-$OE_VERSION-numa/odoo-bin \\"
+        note "" "          -c odoo.config -d $DB -u <modulos> --stop-after-init && ./onboot.sh"
+    fi
+fi
+
 # --------------------------------------------------------------------------------------
 # 4. entorno: cosas que no estan en ningun archivo de esta instalacion
 # --------------------------------------------------------------------------------------
@@ -341,6 +404,15 @@ if [ -f running-odoo.pid ]; then
     fi
 else
     note "-" "no hay running-odoo.pid: este ambiente no esta corriendo, o se lanzo sin --pidfile"
+fi
+if [ -f mantenimiento.lock ]; then
+    DESDE="$(head -1 mantenimiento.lock 2>/dev/null)"
+    case "$DESDE" in ''|*[!0-9]*) DESDE=0 ;; esac
+    if [ "$DESDE" -gt 0 ]; then
+        note "-" "mantenimiento en curso desde hace $(( ($(date +%s) - DESDE) / 60 )) min: la supervision no lo va a arrancar"
+    else
+        note "-" "hay un mantenimiento.lock sin marca de tiempo valida"
+    fi
 fi
 
 echo

@@ -10,6 +10,9 @@ cd "$(dirname "$0")"
 CURRENT_DIR="$(pwd)"
 source venv/bin/activate
 
+# Arrancar es el fin del mantenimiento.
+rm -f mantenimiento.lock
+
 # Que hay corriendo aca. El addons_path es una lista de directorios y nada en Odoo
 # registra en que commit esta cada uno, asi que "que version esta desplegada" termina
 # siendo arqueologia. Se escribe en cada arranque, que es el unico momento en que la

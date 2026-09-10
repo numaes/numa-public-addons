@@ -67,3 +67,10 @@ for h in $HIJOS; do
 done
 
 rm -f running-odoo.pid
+
+# Un apagado deliberado es, por definicion, mantenimiento. Sin esto la supervision del
+# cron lo pelea: mientras corre un `-u` no hay pidfile, la linea de --si-no-corre lo lee
+# como "se cayo" y arranca un segundo Odoo sobre la misma base, que es bastante peor que
+# tenerlo apagado. El candado caduca solo -- un mantenimiento abandonado no puede dejar
+# el ambiente caido para siempre -- y lo borra el proximo arranque.
+{ date +%s; echo "detenido por stop.sh el $(date '+%F %T')"; } > mantenimiento.lock

@@ -296,6 +296,9 @@ cd "\$(dirname "\$0")"
 CURRENT_DIR="\$(pwd)"
 source venv/bin/activate
 
+# Arrancar es el fin del mantenimiento.
+rm -f mantenimiento.lock
+
 # Que hay corriendo aca. El addons_path es una lista de directorios y nada en Odoo
 # registra en que commit esta cada uno, asi que "que version esta desplegada" termina
 # siendo arqueologia. Se escribe en cada arranque, que es el unico momento en que la
@@ -356,6 +359,20 @@ es_de_este_ambiente () {
 # reinicio de la maquina; si el master muere por cualquier otra razon, sin esto no lo
 # levanta nadie. Silencioso mientras todo va bien, para no llenar el mail del cron.
 if [ "\$MODO" = "--si-no-corre" ]; then
+    # Un apagado deliberado deja un candado. No arrancar encima de un mantenimiento en
+    # curso; y que el candado caduque, para que uno abandonado no deje el ambiente caido
+    # indefinidamente. Silencioso mientras el mantenimiento es reciente.
+    MANTENIMIENTO_MAX=1800
+    if [ -f mantenimiento.lock ]; then
+        DESDE=\$(head -1 mantenimiento.lock 2>/dev/null)
+        case "\$DESDE" in ''|*[!0-9]*) DESDE=0 ;; esac
+        AHORA=\$(date +%s)
+        if [ "\$DESDE" -gt 0 ] && [ \$((AHORA - DESDE)) -lt "\$MANTENIMIENTO_MAX" ]; then
+            exit 0
+        fi
+        echo "\$(date '+%F %T') candado de mantenimiento vencido; arranco igual"
+        rm -f mantenimiento.lock
+    fi
     if [ -f running-odoo.pid ]; then
         PID=\$(cat running-odoo.pid)
         if kill -0 "\$PID" 2>/dev/null && es_de_este_ambiente "\$PID"; then
@@ -478,6 +495,13 @@ for h in $HIJOS; do
 done
 
 rm -f running-odoo.pid
+
+# Un apagado deliberado es, por definicion, mantenimiento. Sin esto la supervision del
+# cron lo pelea: mientras corre un `-u` no hay pidfile, la linea de --si-no-corre lo lee
+# como "se cayo" y arranca un segundo Odoo sobre la misma base, que es bastante peor que
+# tenerlo apagado. El candado caduca solo -- un mantenimiento abandonado no puede dejar
+# el ambiente caido para siempre -- y lo borra el proximo arranque.
+{ date +%s; echo "detenido por stop.sh el $(date '+%F %T')"; } > mantenimiento.lock
 STOP_EOF
       chmod +x ./stop.sh
     fi

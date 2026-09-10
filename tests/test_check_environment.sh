@@ -1,8 +1,9 @@
 #!/bin/bash
-# Verifica que odoo_check.sh detecte -- y arregle -- un ambiente cuyo venv es una copia
-# de otro, y que sepa decir si el codigo en disco es el que esta corriendo.
+# Verifica lo que odoo_check.sh sabe del AMBIENTE, no de sus scripts: que detecte -- y
+# arregle -- un venv que es copia de otro, que sepa decir si el codigo en disco es el que
+# esta corriendo, y si algun modulo instalado quedo atras del manifiesto.
 #
-#     ./tests/test_check_venv.sh
+#     ./tests/test_check_environment.sh
 #
 # Existe por un caso real: un test-18.0 clonado de prod-18.0 copiando el directorio. El
 # venv copiado seguia diciendo ser el de produccion, y como odoo-bin arranca con
@@ -122,6 +123,49 @@ OUT="$("$CHECK" "$INST" 2>&1)"
 grep -qF "lo que corre usa el venv $OTHER" <<< "$OUT" \
     && ok "detecta que el proceso vivo usa otro venv" \
     || fail "no detecto el venv ajeno en el proceso vivo"
+
+echo
+echo "Modulos instalados contra el manifiesto en disco"
+# Sin costura habria que levantar una base para probar una comparacion de cadenas.
+mkdir -p "$WORK/addons/mod_viejo" "$WORK/addons/mod_al_dia" "$WORK/addons/mod_con_serie"
+printf "{'name': 'v', 'version': '1.2'}\n"       > "$WORK/addons/mod_viejo/__manifest__.py"
+printf "{'name': 'a', 'version': '1.2'}\n"       > "$WORK/addons/mod_al_dia/__manifest__.py"
+printf "{'name': 's', 'version': '18.0.2.0'}\n"  > "$WORK/addons/mod_con_serie/__manifest__.py"
+sed -i "s#^addons_path = .*#addons_path = $WORK/addons#" "$INST/odoo.config"
+
+export ODOO_CHECK_MODULES_CMD="printf 'mod_viejo|18.0.1.1\nmod_al_dia|18.0.1.2\nmod_con_serie|18.0.2.0\nmod_fantasma|18.0.9.9\n'"
+OUT="$("$CHECK" "$INST" 2>&1)"
+unset ODOO_CHECK_MODULES_CMD
+
+grep -q "mod_viejo: la base corrio 18.0.1.1 y el manifiesto ya dice 18.0.1.2" <<< "$OUT" \
+    && ok "detecta el modulo que quedo atras" \
+    || fail "no detecto el modulo desactualizado"
+grep -q "mod_al_dia" <<< "$OUT" \
+    && fail "reporto un modulo al dia (no antepuso la serie al manifiesto)" \
+    || ok "un manifiesto '1.2' equivale a 18.0.1.2 en la base"
+grep -q "mod_con_serie" <<< "$OUT" \
+    && fail "reporto un modulo cuyo manifiesto ya trae la serie" \
+    || ok "un manifiesto que ya trae la serie no se le antepone otra"
+grep -q "mod_fantasma" <<< "$OUT" \
+    && fail "opino sobre un modulo que no esta en este addons_path" \
+    || ok "calla sobre los modulos que no estan en disco aca"
+grep -q "necesitan -u sobre" <<< "$OUT" \
+    && ok "dice como actualizarlos" \
+    || fail "no dijo como actualizar"
+
+OUT="$("$CHECK" "$INST" 2>&1)"
+grep -q "sin base con que comparar" <<< "$OUT" \
+    && ok "sin base, lo dice en vez de callar" \
+    || fail "no aviso que le falta la base"
+
+echo
+echo "El candado de mantenimiento"
+{ date +%s; echo x; } > "$INST/mantenimiento.lock"
+OUT="$("$CHECK" "$INST" 2>&1)"
+grep -q "mantenimiento en curso" <<< "$OUT" \
+    && ok "avisa que hay un mantenimiento en curso" \
+    || fail "no menciono el candado"
+rm -f "$INST/mantenimiento.lock"
 
 echo
 if [ "$FAILED" -eq 0 ]; then
