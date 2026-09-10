@@ -10,3 +10,7 @@ from . import test_poly_incomplete_records
 from . import test_poly_audit_stamp
 from . import test_poly_id_space
 from . import test_poly_field_labels
+from . import test_poly_transparency
+from . import test_poly_view_validation
+from . import test_poly_views_valid
+from . import test_poly_registry_stabilization

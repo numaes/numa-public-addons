@@ -470,6 +470,30 @@ def get_poly_subclasses_info(self):
 
 ---
 
+### Issue: The update aborts listing invalid views
+
+**Symptoms**: `-u` (or a test run) ends with `ValidationError: [poly] N vista(s) inválida(s) al
+terminar la carga`, followed by one line per view.
+
+**Cause**: numa_poly defers view validation until module loading ends, and then validates every
+deferred view against the complete registry. The listed views are broken; loading aborts because
+`poly_strict_view_validation` is on, which is the default under `--test-enable`.
+
+**Solutions**:
+1. Fix each listed view; the reason is on the same line.
+2. To let a production server start while fixing them, set `poly_strict_view_validation = False`
+   in the `[options]` section of the configuration file. Every invalid view is still logged as an
+   error. See `doc/TRANSPARENCY.md`.
+
+### Warning: `se descarta el _inherits hacia ...`
+
+**Cause**: a model declares `_inherits` without declaring its link field. Odoo 18 does not create
+that field and the registry would not load, so numa_poly drops the delegation and warns. The model
+is left without the parent's fields.
+
+**Solution**: declare the link field in the model, e.g.
+`parent_id = fields.Many2one('parent.model', required=True, ondelete='cascade')`.
+
 ## Best Practices
 
 ### 1. Field Naming

@@ -8,7 +8,7 @@ tarde y NO quedan registrados -> test_advanced_api / test_orm_behavior fallaban 
 registren con el modulo.
 """
 
-from odoo import fields
+from odoo import fields, models
 from odoo.addons.numa_poly.models.poly import PolyModel
 
 
@@ -71,3 +71,25 @@ class TestPolyChildB(PolyModel):
     }
 
     child_b_field = fields.Char(string='Child B Field')
+
+
+class TestPlainDelegateParent(models.Model):
+    """Modelo común (no polimórfico), padre de un ``_inherits``."""
+    _name = 'test.plain.delegate.parent'
+    _description = 'Test Plain Delegate Parent'
+
+    name = fields.Char(string='Name')
+
+
+class TestPlainDelegateChild(models.Model):
+    """Modelo común (no polimórfico) con ``_inherits`` bien declarado.
+
+    numa_poly reemplaza el chequeo de ``_inherits`` de Odoo para todos los modelos; este fixture
+    verifica que a un modelo común con el enlace declarado no le cambia nada.
+    """
+    _name = 'test.plain.delegate.child'
+    _description = 'Test Plain Delegate Child'
+    _inherits = {'test.plain.delegate.parent': 'parent_id'}
+
+    parent_id = fields.Many2one('test.plain.delegate.parent', required=True, ondelete='cascade')
+    code = fields.Char(string='Code')

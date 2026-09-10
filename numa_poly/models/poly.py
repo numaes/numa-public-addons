@@ -31,16 +31,25 @@ Architecture & Design Decisions:
    that scans all models, recalculates hierarchies, and updates `__bases__`
    dynamically to ensure that all children acquire their parent's polymorphic methods.
 
-3. Reactive View Validation & Error Masking:
+3. Deferred View Validation:
    Odoo 18 validates views (`_validate_view`) immediately after XML record loading,
    often before the final MRO has been synchronized across all models. This leads
    to "Unknown field" or "Method not found" errors for buttons or actions referencing
    polymorphic logic.
-   To survive the `-u` (update) process:
-   - A reactive injection patch scans the MRO for missing elements during validation.
-   - If inconsistency persists, errors are masked (`return True`) as a fail-safe.
-   This masking is critical because the Registry is in a transient, inconsistent state
-   during update; final consistency is guaranteed only after the full registry setup.
+   To survive the `-u` (update) process, validation is deferred, never skipped:
+   - While modules load, every view that reaches `_validate_view` is recorded and passes.
+   - Once every module is loaded (`ir.poly_base._register_hook`, which Odoo calls exactly once
+     per model at the end of loading), every recorded view is validated against the complete
+     registry (`_poly_finalize_view_validation`) and all failures are reported.
+   - A failure aborts loading when `poly_strict_view_validation` is on (the default under
+     `--test-enable`); otherwise it is logged as an error.
+   Until 2026-09 no deferred view was ever validated: only `noupdate` views were recorded, and
+   even those were lost. The pending set was a lazy_property, first stored under a name other than
+   the one read and then wiped by every Registry.setup_models (lazy_property.reset_all); and the
+   final validation hung from a load_module_graph wrapper that never applies to the load in
+   progress.
+   See doc/TRANSPARENCY.md, which also covers which patches reach models outside every
+   polymorphic hierarchy.
 
 4. Cache and Proxy Synchronization:
    Modern Odoo uses internal caches (like `Environment._classes` and Proxy classes)
@@ -56,6 +65,7 @@ import warnings
 from collections import OrderedDict, defaultdict
 import typing
 import json
+import time
 
 from psycopg2.extras import Json as PsycopgJson
 
@@ -332,18 +342,38 @@ def poly_inherits_check(self):
                         object.__setattr__(field, 'ondelete', 'cascade')
                     except Exception:
                         field.__dict__['ondelete'] = 'cascade'
+            elif _poly_hierarchy_names(cls):
+                # Modelo polimórfico sin el enlace todavía: lo inyecta después _build_poly_fields.
+                del cls._inherits[parent_model]
             else:
-                # Field missing. Odoo WILL crash. Removing from _inherits.
-                # _logger.error("[poly] Field %s (parent %s) NOT FOUND in %s", field_name, parent_model, cls._name)
+                # Modelo común con el campo de enlace sin declarar. Odoo 18 no lo crea solo: su
+                # _add_field rechaza campos que no están en la clase Python, y el arranque caería.
+                # Se descarta la delegación para que cargue, pero se avisa: el modelo queda sin los
+                # campos del padre. Antes pasaba en silencio (así se rompió alfy.reuters.chat).
+                _logger.warning(
+                    "[poly] %s: se descarta el _inherits hacia %s porque el campo de enlace '%s' no "
+                    "está declarado en la clase (Odoo 18 exige declararlo); el modelo queda sin los "
+                    "campos de %s.", cls._name, parent_model, field_name, parent_model)
                 del cls._inherits[parent_model]
                 
     return _original_inherits_check(self)
 odoo.models.BaseModel._inherits_check = poly_inherits_check
 
-# [poly] Technical list for deferred view validation
-@odoo.tools.lazy_property
-def _poly_pending_views(self):
-    return set()
+# [poly] Vistas anotadas durante la carga para validarlas cuando termina.
+def _pending_poly_views(self):
+    """Ids de las vistas cuya validación se difirió durante la carga del registry.
+
+    Es un atributo común del registry y, a propósito, NO un lazy_property. Con lazy_property hubo
+    dos defectos: la función se llamaba distinto del atributo (lazy_property guarda el valor bajo
+    fget.__name__), así que cada lectura creaba un conjunto nuevo; y aun con el nombre correcto,
+    Registry.setup_models llama a lazy_property.reset_all(), que borra todos los lazy_property, y
+    durante un -u hay un setup_models por módulo actualizado. Sobrevivía solo lo anotado después
+    del último: 1 vista de cientos en una actualización de 36 módulos.
+    """
+    pending = self.__dict__.get('_poly_pending_view_ids')
+    if pending is None:
+        pending = self.__dict__['_poly_pending_view_ids'] = set()
+    return pending
 
 def _poly_get_safe_mro(cls):
     """
@@ -426,6 +456,50 @@ def _poly_is_polymorphic(model):
 
     _poly_is_polymorphic_cache[name] = False
     return False
+
+
+def _poly_registry_hierarchy_models(registry):
+    """Modelos que participan de alguna jerarquía polimórfica: los que declaran
+    ``_depend_models`` (``{}`` una base, un dict de padres un subtipo) y todo modelo nombrado como
+    padre en alguna de esas declaraciones.
+
+    El criterio es el VALOR, nunca la presencia del atributo: ``PolyBase`` declara
+    ``_depend_models = None`` y está en el MRO de todos los modelos, así que
+    ``'_depend_models' in base.__dict__`` es verdadero para los 839 modelos de una instalación
+    real, no para los ~40 polimórficos.
+    """
+    names = set()
+    for name in list(registry):
+        try:
+            cls = registry[name]
+        except KeyError:
+            continue
+        for base in _poly_get_safe_mro(cls):
+            declared = base.__dict__.get('_depend_models')
+            if declared is None:
+                continue
+            names.add(name)
+            if isinstance(declared, dict):
+                names.update(declared)
+    return frozenset(names)
+
+
+def _poly_is_outside_hierarchy(records):
+    """True solo cuando hay CERTEZA de que ``records`` es de un modelo ajeno a toda jerarquía poly,
+    y por lo tanto puede servirlo el camino original de Odoo.
+
+    La certeza exige un registry que terminó de cargar (``ready``) y el mapa de jerarquías
+    construido al final del último ``setup_models``. Mientras el registry se arma, poly reescribe
+    bases y campos de muchas clases y el camino tolerante hace falta para todos: durante el setup
+    esto responde False y nada cambia respecto de antes.
+    """
+    pool = getattr(records, 'pool', None)
+    if pool is None or not getattr(pool, 'ready', False):
+        return False
+    names = getattr(pool, '_poly_hierarchy_model_names', None)
+    if names is None:
+        return False
+    return getattr(records, '_name', None) not in names
 
 
 # ---------------------------------------------------------------------------
@@ -587,56 +661,79 @@ def _poly_injected_mro(self):
     """ {model_name: tuple(base_classes)} """
     return {}
 
+def _poly_strict_view_validation():
+    """¿Una vista inválida detectada al final de la carga aborta la carga, o solo se reporta?
+
+    Lo decide la opción ``poly_strict_view_validation`` del archivo de configuración. Sin la opción
+    es estricta cuando se corren tests (``--test-enable``) y no lo es en un servidor normal: un
+    ``-u`` sobre una instalación con vistas rotas latentes —que antes pasaban sin validar— no debe
+    dejar de arrancar de un día para el otro, pero sí tiene que decirlo; y una corrida de tests sí
+    tiene que fallar.
+    """
+    value = odoo.tools.config.get('poly_strict_view_validation')
+    if value is None or value == '':
+        return bool(odoo.tools.config.get('test_enable'))
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 def _poly_finalize_view_validation(self, cr):
     """
-    [poly] Finalizes the validation of views that were deferred during module loading.
+    [poly] Valida, terminada la carga, las vistas cuya validación se difirió.
+
+    Mientras se cargan módulos el MRO polimórfico puede estar incompleto, así que
+    ``poly_validate_view`` no valida: anota la vista. Acá se validan todas con el registry
+    completo; una vista que falla acá está rota de verdad. Se reportan todas, no solo la primera.
     """
     if not self._pending_poly_views:
         return
 
-    _logger.debug("[poly] Finalizing validation for %d deferred views", len(self._pending_poly_views))
-    
-    # We must use a separate cursor to avoid potential transaction issues
-    # although during load_module_graph we are usually in a safe spot.
+    _logger.info("[poly] Validando %d vista(s) diferida(s) al terminar la carga", len(self._pending_poly_views))
     env = odoo.api.Environment(cr, odoo.SUPERUSER_ID, {})
     View = env['ir.ui.view']
-    
-    # We work on a copy to allow clearing the original set safely
-    view_ids = sorted(list(self._pending_poly_views))
-    
-    errors_found = False
-    for view_id in view_ids:
-        try:
-            # We use a special context flag to bypass the 'deferred' check in our patch
-            view = View.browse(view_id).with_context(poly_final_validation=True)
-            if view.exists():
-                view._check_xml()
-        except Exception as e:
-            errors_found = True
-            # Try to identify the module for better error reporting
-            cr.execute("SELECT module, name FROM ir_model_data WHERE model='ir.ui.view' AND res_id=%s", (view_id,))
-            row = cr.fetchone()
-            module_info = f" ({row[0]}.{row[1]})" if row else ""
-            _logger.error("[poly] Validation failed for view %s%s: %s", view_id, module_info, e)
-            # In -u mode, Odoo usually aborts on view errors. 
-            # Here we log and continue to allow the system to boot, but ideally, 
-            # if we are in a 'strict' mode, we might want to re-raise.
-    
-    # Clear the pending views to ensure idempotency
+    view_ids = sorted(self._pending_poly_views)
+    # Se vacía antes de validar: si la validación aborta, lo pendiente no debe sobrevivir y
+    # reaparecer en la carga siguiente como si fuera nuevo.
     self._pending_poly_views.clear()
-    
-    if not errors_found:
-        _logger.debug("[poly] All deferred views validated successfully.")
-    else:
-        _logger.warning("[poly] Some deferred views failed validation. Check logs for details.")
 
-    # Final cleanup of caches to ensure everything is in sync
-    self.clear_caches()
-    # We don't call setup_models(cr) here again because we are likely at the end of the loading process
-    # and it was already called multiple times. Views validation shouldn't change the models structure.
+    failures = []
+    for view_id in view_ids:
+        view = View.browse(view_id).with_context(poly_final_validation=True)
+        try:
+            with cr.savepoint(flush=False):
+                if not view.exists():
+                    continue
+                view._check_xml()
+        except Exception as e:  # noqa: BLE001
+            cr.execute("SELECT module, name FROM ir_model_data WHERE model='ir.ui.view' AND res_id=%s",
+                       (view_id,))
+            row = cr.fetchone()
+            label = '%s.%s' % row if row else 'id %s' % view_id
+            text = str(e).strip()
+            reason = text.splitlines()[-1] if text else repr(e)
+            failures.append((label, reason))
+            _logger.error("[poly] Validation failed for view %s: %s", label, e)
 
-odoo.modules.registry.Registry._pending_poly_views = _poly_pending_views
+    # Registry.clear_caches() no existe en Odoo 18; la llamada anterior reventaba con
+    # AttributeError cada vez que había vistas pendientes.
+    self.clear_cache()
+
+    if not failures:
+        _logger.info("[poly] Las %d vistas diferidas validan.", len(view_ids))
+        return
+
+    summary = "[poly] %d vista(s) inválida(s) al terminar la carga:\n%s" % (
+        len(failures), '\n'.join('  - %s: %s' % f for f in failures))
+    if _poly_strict_view_validation():
+        raise ValidationError(summary)
+    _logger.warning("%s\n(no se aborta la carga: poly_strict_view_validation está desactivada)", summary)
+
+
+odoo.modules.registry.Registry._pending_poly_views = property(_pending_poly_views)
 odoo.modules.registry.Registry._poly_finalize_view_validation = _poly_finalize_view_validation
+# Mapa de modelos en jerarquías poly; se reconstruye al final de cada setup_models.
+odoo.modules.registry.Registry._poly_hierarchy_model_names = None
 
 # Save the original Odoo methods to avoid cyclic inheritance
 _original_Field_get = odoo.fields.Field.__get__
@@ -836,19 +933,11 @@ def _poly_Relational_get(self, records, owner=None):
     if records is None or isinstance(records, type):
         return self
 
-    # [poly] Optimization: delegate for non-polymorphic models
-    try:
-        is_poly_hierarchy = False
-        _mro = getattr(type(records), 'mro', lambda: [])()
-        for base in _mro:
-            if '_depend_models' in base.__dict__:
-                is_poly_hierarchy = True
-                break
-        
-        if not is_poly_hierarchy and not getattr(records, '_referenced_as_poly_base', False):
-            return _original_Relational_get(self, records, owner=owner)
-    except (KeyError, AttributeError):
-        pass
+    # [poly] Fuera de toda jerarquía poly y con el registry listo: camino original de Odoo.
+    # (El chequeo anterior buscaba `_depend_models` en el __dict__ de cada base; PolyBase lo
+    # declara en None y está en el MRO de todos, así que nunca delegaba.)
+    if _poly_is_outside_hierarchy(records):
+        return _original_Relational_get(self, records, owner=owner)
 
     # Check if records is a valid recordset before calling len(records._ids)
     # We check for _ids because that's what Odoo base uses at line 3112 of fields.py
@@ -881,19 +970,11 @@ def _poly_One2many_get(self, records, owner=None):
     if records is None or isinstance(records, type):
         return self
 
-    # [poly] Optimization: delegate for non-polymorphic models
-    try:
-        is_poly_hierarchy = False
-        _mro = getattr(type(records), 'mro', lambda: [])()
-        for base in _mro:
-            if '_depend_models' in base.__dict__:
-                is_poly_hierarchy = True
-                break
-        
-        if not is_poly_hierarchy and not getattr(records, '_referenced_as_poly_base', False):
-            return _original_One2many_get(self, records, owner=owner)
-    except (KeyError, AttributeError):
-        pass
+    # [poly] Fuera de toda jerarquía poly y con el registry listo: camino original de Odoo.
+    # (El chequeo anterior buscaba `_depend_models` en el __dict__ de cada base; PolyBase lo
+    # declara en None y está en el MRO de todos, así que nunca delegaba.)
+    if _poly_is_outside_hierarchy(records):
+        return _original_One2many_get(self, records, owner=owner)
 
     if records is not None and getattr(self, 'inverse_name', None) is not None:
         try:
@@ -1038,6 +1119,18 @@ class IrPolyBase(models.Model):
         inverse='_inverse_payload_dummy',
         help='Technical field for transporting polymorphic subclass data as JSON'
     )
+
+    def _register_hook(self):
+        """Valida las vistas cuya validación se difirió durante la carga.
+
+        Odoo llama a ``_register_hook`` una sola vez por modelo, con todos los módulos ya cargados
+        (loading.py, STEP 9). Es el primer punto garantizado después de la carga. El wrapper de
+        ``load_module_graph`` no sirve para eso: numa_poly se importa DENTRO de esa llamada, así
+        que la invocación en curso es la original y, en un arranque o un ``-u``, la validación
+        final nunca corría.
+        """
+        super()._register_hook()
+        self.pool._poly_finalize_view_validation(self.env.cr)
 
     @api.depends()
     def _compute_payload_dummy(self):
@@ -1494,19 +1587,11 @@ def poly_many2many_read(self, records):
     table and directly joins it. If the field is related (as often in polymorphic
     models), it should traverse the relation instead.
     """
-    # [poly] Optimization: delegate for non-polymorphic models
-    try:
-        is_poly_hierarchy = False
-        _mro = getattr(type(records), 'mro', lambda: [])()
-        for base in _mro:
-            if '_depend_models' in base.__dict__:
-                is_poly_hierarchy = True
-                break
-        
-        if not is_poly_hierarchy and not getattr(records, '_referenced_as_poly_base', False):
-            return _original_Many2many_read(self, records)
-    except (KeyError, AttributeError):
-        pass
+    # [poly] Fuera de toda jerarquía poly y con el registry listo: camino original de Odoo.
+    # (El chequeo anterior buscaba `_depend_models` en el __dict__ de cada base; PolyBase lo
+    # declara en None y está en el MRO de todos, así que nunca delegaba.)
+    if _poly_is_outside_hierarchy(records):
+        return _original_Many2many_read(self, records)
 
     if self.related:
         return self._compute_related(records)
@@ -1580,29 +1665,18 @@ def poly_many2many_setup_nonrelated(self, model):
         is_poly_counterpart = False
         model_class = model if isinstance(model, type) else type(model)
         
-        # Check if current model is polymorphic
-        is_self_poly = False
-        for base in _poly_get_safe_mro(model_class):
-            if '_depend_models' in base.__dict__:
-                is_self_poly = True
-                break
-        
-        if is_self_poly:
+        # Solo una contraparte de la MISMA jerarquía poly puede compartir la tabla. El chequeo
+        # anterior usaba la presencia de `_depend_models` (verdadera para todos por PolyBase) y
+        # sumaba `base._name` de PolyBase, que es None, a los dos conjuntos: la intersección {None}
+        # nunca era vacía y se toleraba cualquier colisión, poly o no.
+        self_poly_bases = _poly_hierarchy_names(model_class)
+        if self_poly_bases:
             for other in fields:
                 if self.model_name != other.model_name:
                     other_model = model.pool.get(other.model_name)
                     if not other_model: continue
                     other_class = other_model if isinstance(other_model, type) else type(other_model)
-                    
-                    # Check for polymorphic relationship (any shared polymorphic ancestor)
-                    self_poly_bases = set()
-                    for base in model_class.mro():
-                        if '_depend_models' in base.__dict__: self_poly_bases.add(base._name)
-                    
-                    other_poly_bases = set()
-                    for base in other_class.mro():
-                        if '_depend_models' in base.__dict__: other_poly_bases.add(base._name)
-                    
+                    other_poly_bases = _poly_hierarchy_names(other_class)
                     if self_poly_bases & other_poly_bases or \
                        other.model_name in self_poly_bases or \
                        self.model_name in other_poly_bases:
@@ -6550,6 +6624,10 @@ def poly_validate_view(self, node, model_name, view_type=None, editable=True, no
     # to avoid 'Unknown field' errors while the polymorphic MRO is incomplete.
     # UNLESS we are in the final validation phase (poly_final_validation context flag).
     if self.pool._init and not self._context.get('poly_final_validation'):
+        # Se ANOTA para la validación final. Antes solo quedaban anotadas las `noupdate` (vía
+        # _validate_module_views); las demás se salteaban sin anotarse y no se validaban nunca.
+        if self.ids:
+            self.pool._pending_poly_views.update(self.ids)
         return True
     
     return _original_validate_view(self, node, model_name, view_type=view_type, editable=editable, node_info=node_info)
@@ -6639,6 +6717,9 @@ def _poly_registry_setup_models(self, cr):
     # cached in earlier phases would be stale by later phases.  Clearing here
     # guarantees that every call during setup computes from the live class state.
     _poly_is_polymorphic_cache.clear()
+    # El mapa de jerarquías no vale mientras dura el setup: hasta que se reconstruya al final,
+    # _poly_is_outside_hierarchy responde False y todos toman el camino tolerante.
+    self._poly_hierarchy_model_names = None
 
     # [poly] Clear the schema (physical column) caches on every registry (re)build:
     # a module update (-u) may have added/removed columns, which would make the cached
@@ -7102,6 +7183,10 @@ def _poly_registry_setup_models(self, cr):
             if isinstance(_tsel, (list, tuple)):
                 _sf.selection = list(_tsel)
 
+    # Modelos que participan de jerarquías poly: los demás vuelven al camino original de Odoo
+    # en runtime (ver _poly_is_outside_hierarchy).
+    self._poly_hierarchy_model_names = _poly_registry_hierarchy_models(self)
+
     _logger.debug('[poly] Registry setup complete')
     return res
 
@@ -7230,49 +7315,49 @@ def _poly_registry_load(self, cr, module):
 odoo.modules.registry.Registry.load = _poly_registry_load
 odoo.modules.registry.Registry.setup_models = _poly_registry_setup_models
 
-_original_registry_new = odoo.modules.registry.Registry.new
+_original_registry_signal_changes = odoo.modules.registry.Registry.signal_changes
 
-@classmethod
-def _poly_registry_new(cls, db_name, force_demo=False, status=None, update_module=False):
+
+def _poly_stabilize_registry(registry):
+    """[poly] Estabilización polimórfica con el registry ya cargado.
+
+    Repite el setup de modelos con todos los módulos presentes (inyección de MRO y sincronización de
+    campos) y valida las vistas diferidas que queden.
+
+    Antes lo hacía un wrapper de ``Registry.new``, con tres problemas. numa_poly se importa DENTRO de
+    ``Registry.new``, así que en el primer arranque de cada proceso —cada worker— el wrapper no
+    aplicaba y esto no corría nunca: solo en recargas posteriores. Cuando corría, lo hacía después de
+    que ``new`` soltara el lock, con el registry ya visible para otros hilos. Y dejaba
+    ``registry_invalidated`` en True, así que la siguiente señal hacía recargar a los demás workers.
     """
-    [poly] Monkey patch for Registry.new to ensure the polymorphic stabilization
-    happens while the Registry class lock is still held.
-    This prevents incoming HTTP requests from accessing an inconsistent registry.
-    """
-    # 1. Execute the standard Odoo creation (held under @locked in Registry.new)
-    registry = _original_registry_new(db_name, force_demo=force_demo, status=status, update_module=update_module)
-
-    # 2. At this point, Odoo has set registry.ready = True, but we are still
-    # inside the @locked method, so any other thread calling Registry(db_name)
-    # is blocked in Registry.__new__ waiting for the lock.
-
+    t0 = time.monotonic()
+    invalidated = registry.registry_invalidated
+    registry.ready = False
     try:
-        _logger.debug("[poly] Starting post-load polymorphic stabilization for %s", db_name)
-        # Ensure we have a clean state for stabilization
-        registry.ready = False 
-        
         with registry.cursor() as cr:
-            # Force the final polymorphic setup
-            # This includes MRO injection and field synchronization
             registry.setup_models(cr)
-            
-            # Finalize view validation if there are pending views
-            if hasattr(registry, '_poly_finalize_view_validation'):
-                registry._poly_finalize_view_validation(cr)
-                
-        registry.ready = True
-        _logger.debug("[poly] Polymorphic stabilization completed for %s", db_name)
-    except Exception as e:
-        _logger.error("[poly] Critical error during polymorphic stabilization: %s", e, exc_info=True)
-        # If stabilization fails, we might want to keep ready=False or even 
-        # delete the registry from cls.registries, but Odoo's Registry.new 
-        # already has its own cleanup. We re-raise to be safe.
-        raise e
-        
-    return registry
+            registry._poly_finalize_view_validation(cr)
+    except Exception:
+        _logger.error("[poly] Error crítico en la estabilización post-carga de %s",
+                      getattr(registry, 'db_name', '?'), exc_info=True)
+        raise
+    registry.ready = True
+    # Re-armar los modelos no cambia nada que los otros procesos deban recargar.
+    registry.registry_invalidated = invalidated
+    _logger.info("[poly] Registry estabilizado después de la carga en %.2fs", time.monotonic() - t0)
 
-# Apply the patch to Registry.new
-odoo.modules.registry.Registry.new = _poly_registry_new
+
+def _poly_signal_changes(self):
+    """[poly] ``Registry.new`` llama a ``signal_changes`` al final: con la carga terminada, todavía
+    bajo el lock del registry, y también en el primer arranque de cada proceso. Ahí se estabiliza,
+    una sola vez por registry."""
+    if not self.__dict__.get('_poly_stabilized') and not self._init:
+        self.__dict__['_poly_stabilized'] = True
+        _poly_stabilize_registry(self)
+    return _original_registry_signal_changes(self)
+
+
+odoo.modules.registry.Registry.signal_changes = _poly_signal_changes
 
 
 # PATCH: load_module_graph to intercept the end of module loading

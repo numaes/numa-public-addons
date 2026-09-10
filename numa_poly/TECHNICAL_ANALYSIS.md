@@ -384,7 +384,9 @@ Fields from dependent models are "decorated" as `related` to access data in othe
 
 1. **Transparency**: Existing code works without modifications.
 2. **Compatibility**: Studio, Import/Export, and API work out-of-the-box.
-3. **Non-invasive**: Only affects models that declare `_depend_models`.
+3. **Mostly non-invasive at runtime**: once the registry is ready, relational reads of models
+   outside every polymorphic hierarchy take Odoo's original path. During registry setup, and for
+   view validation, poly acts on every model (see `doc/TRANSPARENCY.md`).
 
 ### Disadvantages
 
@@ -394,13 +396,21 @@ Fields from dependent models are "decorated" as `related` to access data in othe
 
 ### Implemented Protections
 
+The criterion is the **value** of `_depend_models`, never its presence: `PolyBase` declares
+`_depend_models = None` and sits in the MRO of every model, so `'_depend_models' in cls.__dict__`
+is true everywhere. Checks written that way were dead code until 2026-09 (see
+`doc/TRANSPARENCY.md`).
+
 ```python
-# Only applies if _depend_models is defined
+# create(): only applies if the model declares a hierarchy
 if hasattr(cls, '_depend_models') and cls._depend_models is not None:
     # ... polymorphic logic
 else:
-    # Standard Odoo behavior
     return super().create(data_list)
+
+# relational reads at runtime: registry ready and model not in the hierarchy map
+if _poly_is_outside_hierarchy(records):
+    return _original_Relational_get(self, records, owner)
 ```
 
 ---
@@ -729,8 +739,15 @@ Each level adds complexity in:
 - `_build_model()`: Odoo internal structure.
 - `_write_multi()`: Batch write implementation.
 - `_field_to_sql()`: SQL generation.
+- `Registry.setup_models()` / `load_module_graph()`: the post-setup adjustment phase.
+- `ir.ui.view._validate_view()` / `_validate_module_views()`: deferred view validation.
+- `BaseModel._inherits_check()` / `_add_field()`: Odoo 18 refuses fields that are not declared
+  in the Python class, so it never creates an `_inherits` link field by itself.
+- Registry API: Odoo 18 has `clear_cache()`, not `clear_caches()`.
 
-**Mitigation**: Exhaustive tests, review in each Odoo version.
+**Mitigation**: Exhaustive tests, review in each Odoo version, and
+`tests/test_poly_views_valid.py`, which validates every active view of the installation after an
+upgrade.
 
 ---
 
@@ -879,10 +896,27 @@ internal MRO cache.
 when two polymorphic relatives share the same relation table. The inverse field binding
 that Odoo skips on collision is manually restored.
 
+Only models of the same hierarchy qualify (`_poly_hierarchy_names`). Until 2026-09 the check
+added `PolyBase._name` (None) to both sides, so the intersection was never empty and a collision
+between any two models was suppressed.
+
 ### 7. View Resilience and Metadata Enforcement
 
-- **Emergency View Recovery**: `ir.ui.view` is patched to intercept `ParseError` during
-  view validation. Missing members present in the MRO are reactively injected.
+- **Deferred View Validation**: during module loading `ir.ui.view._validate_view` records the
+  view and passes; once every module is loaded (`ir.poly_base._register_hook`), every recorded
+  view is validated against the
+  complete registry and all failures are reported. Loading aborts when
+  `poly_strict_view_validation` is on (the default under `--test-enable`). Until 2026-09 no
+  deferred view was ever validated: the pending set was a lazy_property stored under a name other
+  than the one read, so every read returned a new empty set; and the finalization hung from a
+  `load_module_graph` wrapper that never applies to the load in progress, because numa_poly is
+  imported inside that very call; and `Registry.setup_models` wiped the set on every module it
+  loaded (`lazy_property.reset_all`). See `doc/TRANSPARENCY.md`.
+- **Post-load Stabilization**: once loading is over, models are set up again with every module
+  present. It runs from `Registry.signal_changes`, which `Registry.new` calls at the end under the
+  registry lock, once per registry. Until 2026-09 it hung from a `Registry.new` wrapper that never ran
+  on the first load of a process, ran outside the lock on reloads, and left `registry_invalidated`
+  set, prompting other workers to reload.
 - **Model Initialization Batching**: `_poly_registry_init_models` forces `setup_models`
   and sets `registry_invalidated = True` during the `init_models` phase of extending
   modules to ensure SQL columns exist before dependent views are created.

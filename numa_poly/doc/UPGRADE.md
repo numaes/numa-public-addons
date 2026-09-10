@@ -41,7 +41,7 @@ Odoo version's source before upgrading.
 | `fields.Many2many.setup_nonrelated` | `poly_many2many_setup_nonrelated` | PolyReference m2m setup |
 | `modules.registry.Registry.setup_models` | `_poly_registry_setup_models` | Central MRO injection + cache reset |
 | `modules.registry.Registry.init_models` | `_poly_registry_init_models` | Poly-aware model init |
-| `modules.registry.Registry.load` / `new` | `_poly_registry_load` / `_poly_registry_new` | Registry lifecycle hooks |
+| `modules.registry.Registry.load` / `signal_changes` | `_poly_registry_load` / `_poly_signal_changes` | Registry lifecycle hooks; post-load stabilization runs from `signal_changes`, which `Registry.new` calls at the end under the registry lock |
 
 ## Design invariants to preserve (regression-prone)
 

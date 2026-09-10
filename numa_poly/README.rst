@@ -172,7 +172,12 @@ We chose to monkey patch ``BaseModel`` not out of convenience, but out of a **pr
 2. Standard Odoo features (Studio, Import/Export, API) work out-of-the-box.
 3. We avoid the "lock-in" of custom base classes that would force you to rewrite your entire codebase.
 
-The patch is guarded with strict checks: if a model doesn't define ``_depend_models``, **Numa Poly** stays silent, consuming zero resources.
+The patch is not free for models outside polymorphic hierarchies, and it is worth being precise
+about it. Several ORM entry points are patched for *every* model. At runtime, relational reads of
+models that take part in no hierarchy go straight to Odoo's original code; during registry setup
+every model takes the tolerant path. View validation is deferred to the end of module loading for
+all modules, and every deferred view is validated then. See ``doc/TRANSPARENCY.md`` for what is
+touched, the criterion used, and how to audit an installation.
 
 FAQ for the Skeptics
 ====================
