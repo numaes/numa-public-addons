@@ -67,6 +67,7 @@ import typing
 import json
 import time
 
+import psycopg2
 from psycopg2.extras import Json as PsycopgJson
 
 # Odoo imports
@@ -3999,12 +4000,19 @@ class PolyBase(_original_BaseModel):
             # tabla no esté por detrás del MAX(id). Se hace una sola vez por
             # tabla/registry para no impactar rendimiento.
             if self._name != 'ir.poly_base':
+                # Un error de la base (transacción ya abortada, conflicto de concurrencia) no se
+                # tapa: taparlo solo lo corre a la consulta siguiente, lejos de la causa, y le
+                # quita a Odoo la posibilidad de reintentar el request.
                 try:
                     self._sync_table_id_sequence_once()
-                except Exception:
+                except psycopg2.Error:
+                    raise
+                except Exception:  # noqa: BLE001
                     pass
                 try:
                     self._poly_reserve_base_ids(data_list)
+                except psycopg2.Error:
+                    raise
                 except Exception:
                     _logger.exception(
                         "[poly] could not reserve a shared id for a new %s; it may "
