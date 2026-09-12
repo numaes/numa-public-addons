@@ -82,6 +82,7 @@ class NumaVariantCommon(TransactionCase):
             'allow_additional_values': True, 'number_rounding': 1.0,
             'code_format': '%(value)04.0f',
             'change_on_create': 'length',
+            'number_uom': 'm',
         })
         cls.attr_legend = Attribute.create({
             'name': 'Engraved legend', 'create_variant': 'no_variant',

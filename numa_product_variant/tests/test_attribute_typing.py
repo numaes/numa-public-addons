@@ -207,8 +207,25 @@ class TestNumericUnit(NumaVariantCommon):
         self.assertEqual(value.name, '1200')
         self.assertEqual(value.canonical_key, '1200')
 
-    def test_an_attribute_without_a_unit_behaves_as_metres(self):
-        attribute = self._length_attribute('mm', rounding=0.001)
-        attribute.number_uom = False
+    def test_a_value_that_feeds_no_dimension_needs_no_unit(self):
+        """Una cuenta de modulos es un numero, no una longitud."""
+        attribute = self.env['product.attribute'].create({
+            'name': 'Modules', 'create_variant': 'always',
+            'code_identifier': 'MD', 'value_type': 'number',
+            'number_rounding': 1.0, 'allow_additional_values': True,
+        })
+        self.assertFalse(attribute.number_uom)
         value = attribute._get_or_create_value({'number': 3})
-        self.assertEqual(value.value_on_create, 3.0)
+        self.assertEqual(value.free_number, 3.0)
+
+    def test_a_dimension_without_a_unit_is_refused(self):
+        """Sin unidad se asumiria metros, que es como 1200 mm entraron como
+        1200 m la primera vez."""
+        from odoo.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self.env['product.attribute'].create({
+                'name': 'Sin unidad', 'create_variant': 'always',
+                'code_identifier': 'SU', 'value_type': 'number',
+                'number_rounding': 1.0, 'change_on_create': 'length',
+                'allow_additional_values': True,
+            })

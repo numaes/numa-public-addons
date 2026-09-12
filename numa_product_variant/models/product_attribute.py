@@ -68,12 +68,14 @@ class ProductAttribute(models.Model):
         selection=[('m', 'Metres'), ('cm', 'Centimetres'),
                    ('mm', 'Millimetres')],
         string='Unit of the Value',
-        default='m',
         help="Unit the values of this attribute are entered in. Physical "
              "dimensions are stored in metres, so a value entered in "
              "millimetres is converted once, where it is materialised. "
              "Bounds and rounding are expressed in this unit, which is the "
-             "unit the user types in.")
+             "unit the user types in.\n\n"
+             "Only meaningful for a value that feeds a dimension: a count of "
+             "modules is a number, not a length, and offering it metres would "
+             "be an invitation to answer the wrong question.")
     number_rounding = fields.Float(
         string='Rounding', default=0.001,
         help="Numeric values are rounded to this precision before being "
@@ -113,6 +115,25 @@ class ProductAttribute(models.Model):
         """
         self.ensure_one()
         return NUMBER_UNIT_FACTORS.get(self.number_uom or 'm', 1.0)
+
+    @api.constrains('value_type', 'change_on_create', 'number_uom')
+    def _check_number_uom(self):
+        """Un numero que alimenta una dimension tiene que decir en que unidad esta.
+
+        Sin unidad se asume metros, y asumir es justamente lo que hizo que una
+        familia que pide milimetros escribiera 1200 metros de largo en la
+        variante. Donde el valor no alimenta ninguna dimension la unidad no
+        significa nada y se deja vacia.
+        """
+        for attribute in self:
+            if (attribute.value_type == 'number'
+                    and attribute.change_on_create
+                    and not attribute.number_uom):
+                raise ValidationError(_(
+                    "%(name)s writes the %(dimension)s of the variant, so it "
+                    "has to say which unit its values are in.",
+                    name=attribute.display_name,
+                    dimension=attribute.change_on_create))
 
     @api.constrains('value_type', 'number_rounding')
     def _check_number_rounding(self):

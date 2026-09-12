@@ -35,8 +35,14 @@ and only `value_on_create`, which feeds `change_on_create`, becomes 1.2.
 
 `number_min`, `number_max` and `number_rounding` are expressed in that same
 unit, which is the unit the user types in, and the configurator shows it beside
-the input. An attribute with no unit behaves as metres, so nothing created
-before this existed changes.
+the input.
+
+The unit is **required exactly where it means something**: on an attribute whose
+value feeds a dimension through `change_on_create`. A count of modules is a
+number and not a length, so it has no unit and the form does not offer one.
+Refusing the unset case rather than defaulting it is deliberate — assuming
+metres is how a family that asks for millimetres wrote 1200 metres into a
+variant.
 
 ### Product configurator on Purchase Orders
 Entering a product template on a purchase order line runs the same

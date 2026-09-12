@@ -22,13 +22,15 @@ class TestDimensionDerivation(NumaVariantCommon):
         cls.attr_sheet_length = Attribute.create({
             'name': 'Sheet length', 'create_variant': 'always',
             'code_identifier': 'L', 'value_type': 'number',
-            'change_on_create': 'length', 'allow_additional_values': True,
+            'change_on_create': 'length', 'number_uom': 'm',
+            'allow_additional_values': True,
             'number_rounding': 0.001,
         })
         cls.attr_sheet_width = Attribute.create({
             'name': 'Sheet width', 'create_variant': 'always',
             'code_identifier': 'W', 'value_type': 'number',
-            'change_on_create': 'width', 'allow_additional_values': True,
+            'change_on_create': 'width', 'number_uom': 'm',
+            'allow_additional_values': True,
             'number_rounding': 0.001,
         })
         cls.length_3 = cls.attr_sheet_length._get_or_create_value({'number': 3.0})

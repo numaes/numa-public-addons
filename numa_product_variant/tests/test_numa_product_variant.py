@@ -65,7 +65,9 @@ class TestNumaProductVariant(NumaVariantCommon):
     def test_variant_change_on_create_sets_dimension(self):
         """An attribute with change_on_create sets the matching dimension on the
         variant, and weight is recomputed for a dimension-based weight_kind."""
-        self.attr_size.change_on_create = 'length'
+        # La unidad es obligatoria cuando el valor alimenta una dimension:
+        # sin decirla, 1200 milimetros entrarian como 1200 metros.
+        self.attr_size.write({'change_on_create': 'length', 'number_uom': 'm'})
         self.size_l.value_on_create = 3.0
         tmpl = self._make_template(
             weight_kind='length',
