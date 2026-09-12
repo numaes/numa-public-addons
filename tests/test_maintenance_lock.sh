@@ -46,7 +46,10 @@ OUT="$(./onboot.sh --si-no-corre 2>&1)"; RC=$?
 
 echo
 echo "Con un candado vencido:"
-{ echo $(( $(date +%s) - 3600 )); echo "abandonado"; } > mantenimiento.lock
+# Leido del propio script: atarlo a un numero fijo lo rompe cada vez que se ajusta
+# cuanto puede durar un mantenimiento legitimo.
+MAX=$(grep -m1 'MANTENIMIENTO_MAX=' onboot.sh | cut -d= -f2)
+{ echo $(( $(date +%s) - MAX - 60 )); echo "abandonado"; } > mantenimiento.lock
 rm -f arranco.testigo
 OUT="$(./onboot.sh --si-no-corre 2>&1)"
 sleep 1

@@ -30,7 +30,11 @@ if [ "$MODO" = "--si-no-corre" ]; then
     # Un apagado deliberado deja un candado. No arrancar encima de un mantenimiento en
     # curso; y que el candado caduque, para que uno abandonado no deje el ambiente caido
     # indefinidamente. Silencioso mientras el mantenimiento es reciente.
-    MANTENIMIENTO_MAX=1800
+    # Dos horas, no treinta minutos: un  sobre una base con datos pasa los treinta
+    # sin ser un mantenimiento abandonado. El numero solo tiene que ser mas largo que el
+    # trabajo mas largo que se haga a mano; para que un ambiente no quede caido para
+    # siempre alcanza con que caduque alguna vez.
+    MANTENIMIENTO_MAX=7200
     if [ -f mantenimiento.lock ]; then
         DESDE=$(head -1 mantenimiento.lock 2>/dev/null)
         case "$DESDE" in ''|*[!0-9]*) DESDE=0 ;; esac

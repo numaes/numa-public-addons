@@ -142,8 +142,11 @@ for f in start.sh stop.sh onboot.sh dbbackup.sh dbrestore.sh; do
         # como ultimo recurso despues de esperar 30s.
         grep -q 'kill -9' "$f" && ! grep -q 'kill -TERM' "$f" && why="$why apaga con kill -9 directo;"
         # Buscar procesos por patron de nombre alcanza a los ambientes vecinos, que corren
-        # el mismo odoo-bin desde directorios hermanos.
-        grep -qE 'pkill|killall' "$f" && why="$why mata por patron (alcanza a otros ambientes);"
+        # el mismo odoo-bin desde directorios hermanos. Sin descartar los comentarios esto
+        # acusaba al stop.sh correcto, que menciona pkill justamente para explicar por que
+        # no lo usa.
+        grep -vE '^[[:space:]]*#' "$f" | grep -qE 'pkill|killall' \
+            && why="$why mata por patron (alcanza a otros ambientes);"
         [ "$f" = "start.sh" ] && ! grep -q 'CURRENT_DIR' "$f" && why="$why no identifica el ambiente en ps;"
         [ -z "$why" ] && why=" difiere del generador"
         if [ "$FIX" -eq 1 ]; then
