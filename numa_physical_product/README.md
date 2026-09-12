@@ -98,6 +98,31 @@ dimensions, and a numeric product attribute carries no unit either — a
 configurator asking for millimetres must convert before the value reaches
 `change_on_create`.
 
+## The translation check, which lives here for everybody
+
+`tests/translation_check.py` holds `TranslationCoverage`, a mixin that requires
+a module's `.po` to cover **every** translatable term the module exposes — not
+just the messages, but field labels, help texts, selections and view strings —
+read the same way `--i18n-export` reads them. It also reports entries left in
+the file that no longer exist in the module.
+
+```python
+from odoo.addons.numa_physical_product.tests.translation_check import (
+    TranslationCoverage)
+
+class TestSpanish(TranslationCoverage, TransactionCase):
+    TRANSLATED_MODULE = 'numa_cut_planning'
+```
+
+It is here rather than in each module because this is the lowest module the
+configurator family depends on, so all of them can import it, and because
+copying a check into four modules is how four copies drift.
+
+A module whose messages are translated and whose labels are not is not half
+translated: it *looks* translated, which is how it stays that way. That is what
+this catches, and it caught 168 terms across four modules the day it was
+written.
+
 ## Dependencies
 
 `base`, `product`, `stock`, `stock_account`, `purchase_stock`.

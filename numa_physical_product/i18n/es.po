@@ -6,14 +6,24 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-03-07 02:05+0000\n"
-"PO-Revision-Date: 2026-03-07 02:05+0000\n"
+"POT-Creation-Date: 2026-09-12 13:58+0000\n"
+"PO-Revision-Date: 2026-09-12 13:58+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: \n"
+
+#. module: numa_physical_product
+#: model_terms:ir.ui.view,arch_db:numa_physical_product.product_normal_form_view
+msgid ""
+"A magnitude is inherited from the product template until this variant "
+"states its own. Untick to inherit again."
+msgstr ""
+"Una magnitud se hereda de la plantilla del producto hasta que esta "
+"variante declara la suya. Destildá para volver a heredarla."
+
 
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__price_base
@@ -70,6 +80,12 @@ msgid "Based on width [m]"
 msgstr "Basado en el ancho [m]"
 
 #. module: numa_physical_product
+#: model:ir.model,name:numa_physical_product.model_numa_physical_magnitudes
+msgid "Derived Physical Magnitudes"
+msgstr "Magnitudes físicas derivadas"
+
+
+#. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__product_height
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_template__product_height
 msgid "Height [m]"
@@ -92,14 +108,14 @@ msgid ""
 "It computes weight automatically based on length, width, surface, volume, "
 "etc"
 msgstr ""
-"Calcula el peso automáticamente basado en la longitud, ancho, superficie, "
+"Calcula el peso automaticamente basado en la longitud, ancho, superficie, "
 "volumen, etc"
 
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__product_length
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_template__product_length
 msgid "Length [m]"
-msgstr "Longitud [m]"
+msgstr "Long. [m]"
 
 #. module: numa_physical_product
 #: model:ir.model.fields.selection,name:numa_physical_product.selection__product_template__weight_kind__length
@@ -114,7 +130,8 @@ msgstr "Longitud, precio por [m]"
 #. module: numa_physical_product
 #: model:ir.model.fields.selection,name:numa_physical_product.selection__product_template__weight_kind__normal
 msgid "Normal"
-msgstr ""
+msgstr "Normal"
+
 
 #. module: numa_physical_product
 #: model:ir.model.fields.selection,name:numa_physical_product.selection__product_template__price_base__normal
@@ -122,9 +139,57 @@ msgid "Normal, per product UoM"
 msgstr "Normal, por UdM del producto"
 
 #. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_height_set
+msgid "Own Height"
+msgstr "Alto propio"
+
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_length_set
+msgid "Own Length"
+msgstr "Largo propio"
+
+
+#. module: numa_physical_product
+#: model_terms:ir.ui.view,arch_db:numa_physical_product.product_normal_form_view
+msgid "Own Magnitudes"
+msgstr "Magnitudes propias"
+
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_surface_set
+msgid "Own Surface"
+msgstr "Superficie propia"
+
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_volume_set
+msgid "Own Volume"
+msgstr "Volumen propio"
+
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_weight_set
+msgid "Own Weight"
+msgstr "Peso propio"
+
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_weight_factor_set
+msgid "Own Weight Factor"
+msgstr "Factor de peso propio"
+
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_width_set
+msgid "Own Width"
+msgstr "Ancho propio"
+
+
+#. module: numa_physical_product
 #: model_terms:ir.ui.view,arch_db:numa_physical_product.product_template_form_view
 msgid "Physical Characteristics"
-msgstr ""
+msgstr "Caracteristicas físicas"
 
 #. module: numa_physical_product
 #: model_terms:ir.ui.view,arch_db:numa_physical_product.product_template_form_view
@@ -150,7 +215,7 @@ msgstr "Variante del producto"
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__weight_kind
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_template__weight_kind
 msgid "Product weight computation"
-msgstr "Cálculo del peso"
+msgstr "Cálculo del peso del producto"
 
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__surface
@@ -201,7 +266,7 @@ msgstr "Volumen variante [m3]"
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_weight_factor
 msgid "Variant Weight Factor [kg/unit]"
-msgstr "Factor de peso [Kg/unidad]"
+msgstr "Factor de peso variante [Kg/unidad]"
 
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_weight
@@ -236,7 +301,7 @@ msgstr "Cálculo del Peso"
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__weight_factor
 msgid "Weight Factor [kg/unit]"
-msgstr "Factor [Kg/Unidad]"
+msgstr "Factor de peso [Kg/Unidad]"
 
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__weight

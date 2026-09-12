@@ -11,3 +11,4 @@ from . import test_attribute_rules
 from . import test_open_value_tour
 from . import test_dimension_derivation
 from . import test_api_contracts
+from . import test_spanish

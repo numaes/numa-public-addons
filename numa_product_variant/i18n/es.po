@@ -6,8 +6,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Odoo Server 18.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-22 00:06+0000\n"
-"PO-Revision-Date: 2026-07-22 00:06+0000\n"
+"POT-Creation-Date: 2026-09-12 13:58+0000\n"
+"PO-Revision-Date: 2026-09-12 13:58+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "MIME-Version: 1.0\n"
@@ -16,9 +16,185 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute_rule.py:0
+msgid "%(condition)s %(effect)s %(values)s."
+msgstr "%(condition)s %(effect)s %(values)s."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid ""
+"%(name)s writes the %(dimension)s of the variant, so it has to say which "
+"unit its values are in."
+msgstr ""
+"%(name)s escribe %(dimension)s de la variante, así que tiene que decir en "
+"qué unidad están sus valores."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product.py:0
+msgid ""
+"%(product)s cannot be configured this way:\n%(reason)s"
+msgstr ""
+"%(product)s no se puede configurar así:\n%(reason)s"
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product.py:0
+msgid ""
+"%(product)s has no %(attribute)s line, so it cannot be configured on that "
+"attribute."
+msgstr ""
+"%(product)s no tiene línea de %(attribute)s, así que no se puede "
+"configurar por ese atributo."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute_value.py:0
+msgid "%(record)s is not an allowed reference for attribute %(attribute)s."
+msgstr "%(record)s no es una referencia permitida para el atributo %(attribute)s."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "%(value)s is above the maximum of attribute %(name)s."
+msgstr "%(value)s supera el máximo del atributo %(name)s."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "%(value)s is below the minimum of attribute %(name)s."
+msgstr "%(value)s está por debajo del mínimo del atributo %(name)s."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "%(value)s is not an allowed value of attribute %(name)s."
+msgstr "%(value)s no es un valor permitido del atributo %(name)s."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__active
+msgid "Active"
+msgstr "Activo"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__allow_additional_values
+msgid "Allow Additional Values"
+msgstr "Permitir valores adicionales"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute__allow_additional_values
+msgid ""
+"Allow values outside the predefined list. The list then acts as a set of "
+"suggestions rather than a closed set."
+msgstr ""
+"Permite valores fuera de la lista predefinida. La lista pasa a ser un "
+"conjunto de sugerencias y no una lista cerrada."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "Attribute %(name)s does not accept an empty value."
+msgstr "El atributo %(name)s no acepta un valor vacío."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "Attribute %(name)s expects a %(model)s record."
+msgstr "El atributo %(name)s espera un registro de %(model)s."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "Attribute %(name)s expects a date."
+msgstr "El atributo %(name)s espera una fecha."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "Attribute %(name)s expects a number."
+msgstr "El atributo %(name)s espera un número."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "Attribute %(name)s expects a record reference."
+msgstr "El atributo %(name)s espera una referencia a un registro."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "Attribute %(name)s expects a text value."
+msgstr "El atributo %(name)s espera un texto."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "Attribute %(name)s has a minimum greater than its maximum."
+msgstr "El atributo %(name)s tiene el mínimo por encima del máximo."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid "Attribute %(name)s must have a strictly positive rounding."
+msgstr "El redondeo del atributo %(name)s tiene que ser estrictamente positivo."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute.py:0
+msgid ""
+"Attribute %(name)s references records, so it must declare a referenced "
+"model."
+msgstr ""
+"El atributo %(name)s referencia registros, así que tiene que declarar a "
+"qué modelo apunta."
+
+
+#. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_attribute_value
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__reference_model__product_attribute_value
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_reference_mixin__reference_model__product_attribute_value
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_reference_mixin__reference_record__product_attribute_value
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_value__reference_model__product_attribute_value
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_value__reference_record__product_attribute_value
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_template_attribute_value__reference_model__product_attribute_value
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_template_attribute_value__reference_record__product_attribute_value
 msgid "Attribute Value"
 msgstr "Valor del Atributo"
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/controllers/product_configurator.py:0
+msgid "Attribute line %(line)s does not belong to this product."
+msgstr "La línea de atributo %(line)s no es de este producto."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute_value.py:0
+msgid "Attribute value %(name)s is part of a reference cycle."
+msgstr "El valor de atributo %(name)s forma parte de un ciclo de referencias."
+
 
 #. module: numa_product_variant
 #: model_terms:ir.ui.view,arch_db:numa_product_variant.product_template_kanban_view
@@ -33,6 +209,24 @@ msgid "Base code"
 msgstr "Código base"
 
 #. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__canonical_key
+msgid "Canonical Key"
+msgstr "Clave canónica"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__number_uom__cm
+msgid "Centimetres"
+msgstr "Centímetros"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__code_format
+msgid "Code Format"
+msgstr "Formato del código"
+
+
+#. module: numa_product_variant
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__code_identifier
 msgid "Code Identifier"
 msgstr "Identificador de código"
@@ -42,6 +236,66 @@ msgstr "Identificador de código"
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__code_value
 msgid "Code Value"
 msgstr "Valor de código"
+
+#. module: numa_product_variant
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_attribute_rule_view_form
+msgid "Configuration Rule"
+msgstr "Regla de configuración"
+
+
+#. module: numa_product_variant
+#: model:ir.actions.act_window,name:numa_product_variant.product_attribute_rule_action
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_product__attribute_rule_ids
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template__attribute_rule_ids
+#: model:ir.ui.menu,name:numa_product_variant.product_attribute_rule_menu
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_attribute_rule_view_list
+msgid "Configuration Rules"
+msgstr "Reglas de configuración"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__create_uid
+msgid "Created by"
+msgstr "Creado por"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__create_date
+msgid "Created on"
+msgstr "Creado el"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute_value__is_materialized
+msgid ""
+"Created on demand by the configurator rather than curated by hand. Only "
+"these are subject to automatic archiving."
+msgstr ""
+"Creado por el configurador a demanda y no cargado a mano. Solo estos se "
+"archivan automáticamente."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute__value_type
+msgid ""
+"Data type of this attribute's values. Orthogonal to the display type and "
+"to variant creation."
+msgstr ""
+"Tipo de dato de los valores de este atributo. Es independiente del tipo "
+"de visualización y de la creación de variantes."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__value_type__date
+msgid "Date"
+msgstr "Fecha"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__free_date
+msgid "Date Value"
+msgstr "Valor de fecha"
+
 
 #. module: numa_product_variant
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__default_value
@@ -54,9 +308,88 @@ msgid "Default attributes"
 msgstr "Attributos por defecto"
 
 #. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__name
+msgid "Description"
+msgstr "Descripción"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute_value__canonical_key
+msgid "Deterministic deduplication key used when materialising values on demand."
+msgstr ""
+"Clave determinística de deduplicación, usada al materializar valores a "
+"demanda."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__display_name
+msgid "Display Name"
+msgstr "Nombre mostrado"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__effect
+msgid "Effect"
+msgstr "Efecto"
+
+
+#. module: numa_product_variant
+#. odoo-javascript
+#: code:addons/numa_product_variant/static/src/xml/open_value_configurator.xml:0
+msgid "Enter a value"
+msgstr "Ingresá un valor"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_rule__effect__exclude
+msgid "Exclude"
+msgstr "Excluir"
+
+
+#. module: numa_product_variant
 #: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__height
 msgid "Height"
 msgstr "Altura"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__id
+msgid "ID"
+msgstr "ID"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_purchase_order_line__is_configurable_product
+msgid "Is the product configurable?"
+msgstr "¿El producto es configurable?"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__write_uid
+msgid "Last Updated by"
+msgstr "Última actualización por"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__write_date
+msgid "Last Updated on"
+msgstr "Última actualización el"
+
+
+#. module: numa_product_variant
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_attribute_rule_view_form
+msgid "Leave empty to apply everywhere"
+msgstr "Dejalo vacío para que se aplique en todos lados"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute_rule__product_tmpl_id
+msgid ""
+"Leave empty to apply the rule to every product using these attribute "
+"values."
+msgstr ""
+"Dejalo vacío para aplicar la regla a todo producto que use estos valores "
+"de atributo."
+
 
 #. module: numa_product_variant
 #: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__length
@@ -64,8 +397,88 @@ msgid "Length"
 msgstr "Longitud"
 
 #. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__is_materialized
+msgid "Materialised"
+msgstr "Materializado"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__number_max
+msgid "Maximum Value"
+msgstr "Valor máximo"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__message
+msgid "Message"
+msgstr "Mensaje"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__number_uom__m
+msgid "Metres"
+msgstr "Metros"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__number_uom__mm
+msgid "Millimetres"
+msgstr "Milímetros"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__number_min
+msgid "Minimum Value"
+msgstr "Valor mínimo"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute__reference_model
+msgid "Model whose records this attribute's values point at."
+msgstr "Modelo cuyos registros apuntan los valores de este atributo."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__value_type__number
+msgid "Number"
+msgstr "Número"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__free_number
+msgid "Numeric Value"
+msgstr "Valor numérico"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute__number_rounding
+msgid ""
+"Numeric values are rounded to this precision before being compared, so "
+"that 1250.0 and 1250.0000001 are the same value and therefore the same "
+"product."
+msgstr ""
+"Los valores numéricos se redondean a esta precisión antes de compararse, "
+"para que 1250,0 y 1250,0000001 sean el mismo valor y por lo tanto el "
+"mismo producto."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute__reference_domain
+msgid "Optional domain restricting which records may be referenced."
+msgstr "Dominio opcional que restringe qué registros se pueden referenciar."
+
+
+#. module: numa_product_variant
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_template_attribute_value_view_form
+msgid "Overrides the attribute value's own reference for this template only."
+msgstr "Pisa la referencia propia del valor de atributo, solo para esta plantilla."
+
+
+#. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_template
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__product_tmpl_id
 #: model_terms:ir.ui.view,arch_db:numa_product_variant.product_template_search_view
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.purchase_order_form_configurator
 msgid "Product"
 msgstr "Producto"
 
@@ -75,9 +488,39 @@ msgid "Product Attribute"
 msgstr "Atributo de producto"
 
 #. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_product_attribute_reference_mixin
+msgid "Product Attribute Reference Payload"
+msgstr "Contenido de referencia de atributo de producto"
+
+
+#. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_product_attribute_rule
+msgid "Product Attribute Rule"
+msgstr "Regla de atributo de producto"
+
+
+#. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_category
 msgid "Product Category"
 msgstr "Categoría del producto"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_purchase_order_line__product_template_id
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__reference_model__product_template
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_reference_mixin__reference_model__product_template
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_reference_mixin__reference_record__product_template
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_value__reference_model__product_template
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_value__reference_record__product_template
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_template_attribute_value__reference_model__product_template
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_template_attribute_value__reference_record__product_template
+msgid "Product Template"
+msgstr "Plantilla de producto"
+
+
+#. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_product_template_attribute_line
+msgid "Product Template Attribute Line"
+msgstr "Línea del atributo de la plantilla del producto"
 
 #. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_template_attribute_value
@@ -86,13 +529,212 @@ msgstr "Valor de Atributo del Modelo de Producto"
 
 #. module: numa_product_variant
 #: model:ir.model,name:numa_product_variant.model_product_product
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__reference_model__product_product
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_reference_mixin__reference_model__product_product
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_reference_mixin__reference_record__product_product
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_value__reference_model__product_product
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_value__reference_record__product_product
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_template_attribute_value__reference_model__product_product
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_template_attribute_value__reference_record__product_product
 msgid "Product Variant"
 msgstr "Variante del producto"
+
+#. module: numa_product_variant
+#: model:ir.actions.server,name:numa_product_variant.ir_cron_gc_materialized_values_ir_actions_server
+msgid "Product Variant: archive unused materialised attribute values"
+msgstr "Variantes de producto: archivar los valores materializados sin uso"
+
+
+#. module: numa_product_variant
+#: model:ir.model,name:numa_product_variant.model_purchase_order_line
+msgid "Purchase Order Line"
+msgstr "Línea de la orden de compra"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute__code_format
+msgid ""
+"Python format string used to build the code of materialised values, e.g. "
+"'%(value)04.0f'."
+msgstr ""
+"Formato de Python con el que se arma el código de los valores "
+"materializados, por ejemplo '%(value)04.0f'."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__reference_domain
+msgid "Reference Domain"
+msgstr "Dominio de la referencia"
+
+
+#. module: numa_product_variant
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_template_attribute_value_view_form
+msgid "Reference override"
+msgstr "Referencia pisada"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__value_type__reference
+msgid "Reference to a record"
+msgstr "Referencia a un registro"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__reference_model
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_reference_mixin__reference_model
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__reference_model
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__reference_model
+msgid "Referenced Model"
+msgstr "Modelo referenciado"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_reference_mixin__reference_record
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__reference_record
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__reference_record
+msgid "Referenced Record"
+msgstr "Registro referenciado"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_reference_mixin__reference_template_id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__reference_template_id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__reference_template_id
+msgid "Referenced Template"
+msgstr "Plantilla referenciada"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_reference_mixin__reference_value_id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__reference_value_id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__reference_value_id
+msgid "Referenced Value"
+msgstr "Valor referenciado"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_reference_mixin__reference_variant_id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__reference_variant_id
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_template_attribute_value__reference_variant_id
+msgid "Referenced Variant"
+msgstr "Variante referenciada"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute_rule__effect__require
+msgid "Require"
+msgstr "Exigir"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__number_rounding
+msgid "Rounding"
+msgstr "Redondeo"
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_attribute_rule.py:0
+msgid "Rule %(name)s has %(values)s on both sides, which can never be satisfied."
+msgstr ""
+"La regla %(name)s tiene %(values)s de los dos lados, y así no se puede "
+"cumplir nunca."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__sequence
+msgid "Sequence"
+msgstr "Secuencia"
+
 
 #. module: numa_product_variant
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__change_on_create
 msgid "Set on variant creation"
 msgstr "Fijar al crear variante"
+
+#. module: numa_product_variant
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_attribute_rule_view_form
+msgid "Shown when the rule rejects a configuration"
+msgstr "Se muestra cuando la regla rechaza una configuración"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute_rule__message
+msgid "Shown when the rule rejects a configuration."
+msgstr "Se muestra cuando la regla rechaza una configuración."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__value_type__char
+msgid "Text"
+msgstr "Texto"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute_rule__condition_value_ids
+msgid ""
+"The rule applies when every one of these values is part of the "
+"configuration."
+msgstr ""
+"La regla se aplica cuando todos estos valores forman parte de la "
+"configuración."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__effect_value_ids
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_attribute_rule_view_form
+msgid "Then"
+msgstr "Entonces"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute_reference_mixin__reference_record
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute_value__reference_record
+#: model:ir.model.fields,help:numa_product_variant.field_product_template_attribute_value__reference_record
+msgid "Uniform read/write access to the referenced record."
+msgstr "Acceso uniforme de lectura y escritura al registro referenciado."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__number_uom
+msgid "Unit of the Value"
+msgstr "Unidad del valor"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute__number_uom
+msgid ""
+"Unit the values of this attribute are entered in. Physical dimensions are "
+"stored in metres, so a value entered in millimetres is converted once, "
+"where it is materialised. Bounds and rounding are expressed in this unit, "
+"which is the unit the user types in.\n\nOnly meaningful for a value that "
+"feeds a dimension: a count of modules is a number, not a length, and "
+"offering it metres would be an invitation to answer the wrong question."
+msgstr ""
+"Unidad en la que se cargan los valores de este atributo. Las dimensiones "
+"físicas se guardan en metros, así que un valor cargado en milímetros se "
+"convierte una sola vez, donde se materializa. Los límites y el redondeo "
+"se expresan en esta misma unidad, que es la que tipea el usuario.\n\nSolo "
+"tiene sentido en un valor que alimenta una dimensión: una cantidad de "
+"módulos es un número y no una longitud, y ofrecerle metros sería invitar "
+"a contestar otra pregunta."
+
+
+#. module: numa_product_variant
+#. odoo-python
+#: code:addons/numa_product_variant/models/product_template_attribute_line.py:0
+msgid ""
+"Value %(value)s belongs to attribute %(value_attribute)s, not to "
+"%(line_attribute)s."
+msgstr ""
+"El valor %(value)s es del atributo %(value_attribute)s y no de "
+"%(line_attribute)s."
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute__value_type
+msgid "Value Type"
+msgstr "Tipo de valor"
+
 
 #. module: numa_product_variant
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__value_on_create
@@ -103,6 +745,21 @@ msgstr "Valor al crear variante"
 #: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_value__weight_factor
 msgid "Weight factor"
 msgstr "Factor de peso"
+
+#. module: numa_product_variant
+#: model:ir.model.fields,field_description:numa_product_variant.field_product_attribute_rule__condition_value_ids
+#: model_terms:ir.ui.view,arch_db:numa_product_variant.product_attribute_rule_view_form
+msgid "When all of"
+msgstr "Cuando estén todos"
+
+
+#. module: numa_product_variant
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute_reference_mixin__reference_model
+#: model:ir.model.fields,help:numa_product_variant.field_product_attribute_value__reference_model
+#: model:ir.model.fields,help:numa_product_variant.field_product_template_attribute_value__reference_model
+msgid "Which kind of record this value points at."
+msgstr "A qué clase de registro apunta este valor."
+
 
 #. module: numa_product_variant
 #: model:ir.model.fields.selection,name:numa_product_variant.selection__product_attribute__change_on_create__width
