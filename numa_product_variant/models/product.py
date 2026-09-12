@@ -2,7 +2,7 @@ import logging
 from typing import List
 
 from odoo import models, fields, api, _
-from odoo.exceptions import ValidationError
+from odoo.exceptions import ValidationError, UserError
 
 _logger = logging.getLogger(__name__)
 
@@ -89,6 +89,36 @@ class ProductTemplate(models.Model):
     @api.model
     def default_get(self, fields_list):
         return super().default_get(fields_list)
+
+    def configure(self, payloads):
+        """The variant of this template for a set of attribute values.
+
+        ``payloads`` maps a ``product.attribute`` to a payload in the form
+        ``_get_or_create_value`` takes -- ``{'number': 1200}``,
+        ``{'reference': record}``, ``{'char': 'Rojo'}``. Each value is
+        materialised, attached to the template's line, and the resulting
+        combination resolved to a variant: created when it is new, **and
+        returned as it is when somebody already configured the same thing**.
+
+        That last part is the whole point. A configurator that has to remember
+        what it built ends up with a catalogue full of near-duplicates; here
+        the deduplication is the canonical key of the value and the identity of
+        the combination, so asking twice for the same thing gives the same
+        product without anybody keeping a register.
+        """
+        self.ensure_one()
+        combination = self.env['product.template.attribute.value']
+        for attribute, payload in payloads.items():
+            line = self.attribute_line_ids.filtered(
+                lambda l: l.attribute_id == attribute)
+            if not line:
+                raise UserError(_(
+                    "%(product)s has no %(attribute)s line, so it cannot be "
+                    "configured on that attribute.",
+                    product=self.display_name,
+                    attribute=attribute.display_name))
+            combination |= line[0]._get_or_create_ptav(payload)
+        return self._create_product_variant(combination)
 
     attribute_rule_ids = fields.One2many(
         'product.attribute.rule', 'product_tmpl_id',

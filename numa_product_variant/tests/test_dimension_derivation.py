@@ -1,3 +1,4 @@
+from odoo.exceptions import UserError
 from odoo.tests.common import tagged
 
 from .common import NumaVariantCommon
@@ -95,3 +96,74 @@ class TestDimensionDerivation(NumaVariantCommon):
                                  'value_ids': [(6, 0, legacy.ids)]})],
             weight_kind='surface', weight_factor=1.5).product_variant_ids
         self.assertEqual(variant.weight, 9.0)
+
+
+@tagged('post_install', '-at_install', 'numa_product_variant')
+class TestConfigure(NumaVariantCommon):
+    """`configure` es la operacion que todo configurador necesita.
+
+    Estaba escrita dentro de una familia de un cliente; no tiene nada de esa
+    familia. Pedir la variante que corresponde a un juego de valores, creandola
+    si no existe y devolviendo la que hay si ya existe, es lo que hace cualquier
+    configurador de cualquier dominio.
+    """
+
+    def setUp(self):
+        super().setUp()
+        Attribute = self.env['product.attribute']
+        self.largo = Attribute.create({
+            'name': 'Largo', 'create_variant': 'dynamic',
+            'code_identifier': 'LG', 'value_type': 'number',
+            'number_rounding': 1.0, 'allow_additional_values': True,
+        })
+        self.material = Attribute.create({
+            'name': 'Material', 'create_variant': 'dynamic',
+            'code_identifier': 'MT', 'value_type': 'reference',
+            'reference_model': 'product.template',
+            'allow_additional_values': True,
+        })
+        self.perfil = self.env['product.template'].create(
+            {'name': 'Perfil X', 'type': 'consu'})
+        self.pieza = self.env['product.template'].create({
+            'name': 'Pieza', 'type': 'consu', 'base_code': 'PZ',
+            'attribute_line_ids': [
+                (0, 0, {'attribute_id': self.largo.id}),
+                (0, 0, {'attribute_id': self.material.id}),
+            ],
+        })
+
+    def test_it_gives_a_variant(self):
+        variant = self.pieza.configure({self.largo: {'number': 1200},
+                                        self.material: {'reference': self.perfil}})
+        self.assertTrue(variant)
+        self.assertEqual(variant.product_tmpl_id, self.pieza)
+
+    def test_asking_twice_gives_the_same_product(self):
+        payloads = {self.largo: {'number': 1200},
+                    self.material: {'reference': self.perfil}}
+        self.assertEqual(self.pieza.configure(payloads),
+                         self.pieza.configure(dict(payloads)))
+
+    def test_a_different_value_is_a_different_product(self):
+        one = self.pieza.configure({self.largo: {'number': 1200},
+                                    self.material: {'reference': self.perfil}})
+        other = self.pieza.configure({self.largo: {'number': 1201},
+                                      self.material: {'reference': self.perfil}})
+        self.assertNotEqual(one, other)
+
+    def test_the_rounding_decides_what_counts_as_the_same(self):
+        self.largo.number_rounding = 10.0
+        one = self.pieza.configure({self.largo: {'number': 1200},
+                                    self.material: {'reference': self.perfil}})
+        other = self.pieza.configure({self.largo: {'number': 1202},
+                                      self.material: {'reference': self.perfil}})
+        self.assertEqual(one, other)
+
+    def test_an_attribute_the_product_does_not_have_is_reported(self):
+        other = self.env['product.attribute'].create({
+            'name': 'Ajeno', 'create_variant': 'dynamic',
+            'code_identifier': 'AJ', 'value_type': 'number',
+            'number_rounding': 1.0, 'allow_additional_values': True,
+        })
+        with self.assertRaises(UserError):
+            self.pieza.configure({other: {'number': 1}})

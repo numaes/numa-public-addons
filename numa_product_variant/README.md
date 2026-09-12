@@ -44,6 +44,25 @@ Refusing the unset case rather than defaulting it is deliberate — assuming
 metres is how a family that asks for millimetres wrote 1200 metres into a
 variant.
 
+### Asking for a variant by its values
+
+```python
+variant = template.configure({
+    perfil: {'reference': az1}, largo: {'number': 1200},
+    angulo_a: {'number': 90}, angulo_b: {'number': 67.5},
+})
+```
+
+`configure` materialises each value, attaches it to the template's line and
+resolves the combination to a variant — created when it is new, **returned as
+it is when somebody already configured the same thing**.
+
+That last part is the whole point, and it is what lets a configurator invent the
+products it needs without keeping a register: the deduplication is the canonical
+key of the value and the identity of the combination. What counts as "the same
+thing" is the attribute's `number_rounding`, which is a business decision — at
+millimetre rounding a 1200 and a 1201 piece are two products.
+
 ### Product configurator on Purchase Orders
 Entering a product template on a purchase order line runs the same
 detection/trigger logic as Sales:
