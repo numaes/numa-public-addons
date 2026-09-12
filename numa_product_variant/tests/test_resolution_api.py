@@ -84,3 +84,89 @@ class TestResolutionApi(NumaVariantCommon):
                 'product_attribute_value_id')
             self.assertIn(self.color_blue, values)
             self.assertIn(self.alloy_6063, values)
+
+    # --- reading the values back ------------------------------------------
+    #
+    # The mirror of ``configure``. A configurator writes a payload into a
+    # variant and later has to read it back to recompute what the variant is
+    # made of; without this it goes digging by attribute name, which is how it
+    # ends up depending on a label.
+
+    def test_a_number_comes_back_as_a_number(self):
+        variant = self._configure_cut_piece(
+            self.cut, profile=self.profile_l4040,
+            colour=self.color_red, length=1250.0)
+        self.assertEqual(variant.get_attribute_value(self.attr_length), 1250.0)
+
+    def test_a_reference_comes_back_as_a_record(self):
+        variant = self._configure_cut_piece(
+            self.cut, profile=self.profile_l4040,
+            colour=self.color_red, length=800.0)
+        self.assertEqual(variant.get_attribute_value(self.attr_profile),
+                         self.profile_l4040)
+
+    def test_a_plain_value_comes_back_as_its_name(self):
+        variant = self._configure_cut_piece(
+            self.cut, profile=self.profile_l4040,
+            colour=self.color_blue, length=800.0)
+        self.assertEqual(variant.get_attribute_value(self.attr_color), 'Blue')
+
+    def test_an_absent_attribute_gives_the_default_and_not_zero(self):
+        """Una dimension omitida y una dimension en cero no son lo mismo."""
+        variant = self._configure_cut_piece(
+            self.cut, profile=self.profile_l4040,
+            colour=self.color_red, length=800.0)
+        self.assertIsNone(variant.get_attribute_value(self.attr_size))
+        self.assertEqual(
+            variant.get_attribute_value(self.attr_size, default=0.0), 0.0)
+
+    def test_every_value_at_once_is_keyed_by_attribute(self):
+        variant = self._configure_cut_piece(
+            self.cut, profile=self.profile_l4040,
+            colour=self.color_red, length=800.0)
+        values = variant.get_attribute_values()
+        self.assertEqual(values[self.attr_length], 800.0)
+        self.assertEqual(values[self.attr_profile], self.profile_l4040)
+        self.assertEqual(values[self.attr_color], 'Red')
+
+
+    def test_configure_reaches_a_curated_value(self):
+        """Un valor de lista cerrada no lleva clave canonica, y aun asi se pide.
+
+        Todo valor de un atributo cerrado nace de un archivo de datos o del
+        formulario del atributo, o sea sin materializar. Si `configure` no
+        pudiera nombrarlos, el unico mensaje posible seria el que seguro es
+        falso: "Red no es un valor permitido de Color", sobre el Red que el
+        atributo lista.
+        """
+        variant = self.cut.configure({
+            self.attr_profile: {'reference': self.profile_l4040},
+            self.attr_color: {'char': 'Red'},
+            self.attr_length: {'number': 1750.0},
+        })
+        self.assertEqual(variant.get_attribute_value(self.attr_color), 'Red')
+        self.assertEqual(variant.get_attribute_value(self.attr_length), 1750.0)
+        self.assertEqual(variant.get_attribute_value(self.attr_profile),
+                         self.profile_l4040)
+
+    def test_a_curated_value_is_found_and_not_duplicated(self):
+        before = self.env['product.attribute.value'].search_count(
+            [('attribute_id', '=', self.attr_color.id)])
+        self.cut.configure({
+            self.attr_profile: {'reference': self.profile_l4040},
+            self.attr_color: {'char': 'Red'},
+            self.attr_length: {'number': 1751.0},
+        })
+        self.assertEqual(
+            self.env['product.attribute.value'].search_count(
+                [('attribute_id', '=', self.attr_color.id)]),
+            before, 'volvio a crear un valor que ya estaba')
+
+    def test_a_value_the_attribute_does_not_list_is_still_refused(self):
+        from odoo.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self.cut.configure({
+                self.attr_profile: {'reference': self.profile_l4040},
+                self.attr_color: {'char': 'Verde fosforescente'},
+                self.attr_length: {'number': 1752.0},
+            })

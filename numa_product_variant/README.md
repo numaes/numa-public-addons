@@ -63,6 +63,34 @@ key of the value and the identity of the combination. What counts as "the same
 thing" is the attribute's `number_rounding`, which is a business decision — at
 millimetre rounding a 1200 and a 1201 piece are two products.
 
+A closed attribute's values work too, and that took a fallback. Every value of
+a closed attribute is created the ordinary way — a data file, the attribute
+form — so none of them carries a canonical key, and a lookup that only knew
+canonical keys could not find any of them. It refused with the one message that
+is certainly false: *"Red is not an allowed value of Color"*, about the Red the
+attribute itself lists. So the natural field is searched as well. It stays the
+weaker key: deduplication is still the canonical one, unique by index; the
+fallback only finds what somebody already declared.
+
+### Reading the values back
+
+```python
+variant.get_attribute_value(largo)          # 1200.0
+variant.get_attribute_value(perfil)         # product.template(AZ1)
+variant.get_attribute_values()              # {attribute: value}
+```
+
+The mirror of `configure`, typed the same way: a float for a number attribute,
+a record for a reference, a string for a plain value. A configurator needs both
+halves — it writes a payload into a variant and later reads it back to work out
+what the variant is made of. Without this it digs through
+`product_template_attribute_value_ids` by attribute name, which is how a
+configurator ends up depending on a label.
+
+`default` is returned when the variant carries no value for the attribute,
+which is not the same as carrying zero: an omitted dimension and a dimension
+entered as zero are different configurations.
+
 ### Product configurator on Purchase Orders
 Entering a product template on a purchase order line runs the same
 detection/trigger logic as Sales:

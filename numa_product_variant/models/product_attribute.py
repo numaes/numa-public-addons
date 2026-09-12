@@ -261,9 +261,40 @@ class ProductAttribute(models.Model):
                 ('reference_model', '=', target._name),
                 (field_name, '=', target.id),
             ], limit=1)
-        return Value.search([
+        found = Value.search([
             ('attribute_id', '=', self.id),
             ('canonical_key', '=', normalized['key']),
+        ], limit=1)
+        if found:
+            return found
+
+        # A value that was never materialised carries no canonical key: every
+        # value of a closed attribute is like that, because it was loaded from
+        # a data file or typed into the attribute form. Without this fallback
+        # `configure` cannot address any of them, and says so with the one
+        # message that is certainly wrong -- "Red is not an allowed value of
+        # Color" about the Red that the attribute itself lists.
+        #
+        # So the natural field is searched too. It is a weaker key on purpose:
+        # deduplication still belongs to the canonical one, which is unique by
+        # index; this only finds what somebody else already declared.
+        natural = {
+            'number': 'free_number',
+            'date': 'free_date',
+        }.get(self.value_type)
+        if natural:
+            value = normalized['values'].get(natural)
+            if value is None:
+                return Value.browse()
+            return Value.search([
+                ('attribute_id', '=', self.id),
+                ('canonical_key', '=', False),
+                (natural, '=', value),
+            ], limit=1)
+        return Value.search([
+            ('attribute_id', '=', self.id),
+            ('canonical_key', '=', False),
+            ('name', '=', normalized['label']),
         ], limit=1)
 
     def _get_or_create_value(self, payload):

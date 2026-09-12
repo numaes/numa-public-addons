@@ -302,6 +302,35 @@ class ProductProduct(models.Model):
                             or 'product.template'].browse()
         return ptav[0]._get_effective_reference()
 
+    def get_attribute_value(self, attribute, default=None):
+        """Typed value this variant carries for ``attribute``.
+
+        The mirror of ``product.template.configure``: one writes a payload
+        into a variant, this reads it back out, typed — a float for a number
+        attribute, a record for a reference one, a string for a plain value.
+
+        A configurator needs both halves. Without this one it goes digging
+        through ``product_template_attribute_value_ids`` by attribute name,
+        which is how a configurator ends up depending on a label.
+
+        ``default`` is returned when the variant carries no value for the
+        attribute, which is not the same as carrying zero: an optional
+        dimension left out and a dimension entered as zero are different
+        configurations.
+        """
+        self.ensure_one()
+        ptav = self.product_template_attribute_value_ids.filtered(
+            lambda value: value.attribute_id == attribute)
+        if not ptav:
+            return default
+        return ptav[0]._get_effective_value()
+
+    def get_attribute_values(self):
+        """Every value this variant carries, keyed by attribute."""
+        self.ensure_one()
+        return {ptav.attribute_id: ptav._get_effective_value()
+                for ptav in self.product_template_attribute_value_ids}
+
     def get_attribute_references(self, model=None):
         """Every reference carried by this variant, keyed by attribute.
 
