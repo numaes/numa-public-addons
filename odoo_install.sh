@@ -449,6 +449,22 @@ ONBOOT_EOF
 cd "$(dirname "$0")"
 ENV_DIR="$(pwd)"
 
+# El candado, ANTES de matar nada. Un apagado deliberado es, por definicion,
+# mantenimiento: la supervision del cron no tiene que arrancar un segundo Odoo sobre la
+# misma base mientras corre un `-u`.
+#
+# El orden es la parte que importa, y se aprendio de la unica manera. Escribirlo al final
+# deja una ventana entre "el master ya murio y el pidfile ya no esta" y "el candado ya
+# esta puesto". En produccion esa ventana duro tres segundos y el cron de los cinco
+# minutos cayo justo adentro: apago a las 09:10:02, el cron disparo a las 09:10:00, y
+# arranco un Odoo nuevo que despues se quedo sin pidfile porque stop.sh lo borro detras
+# suyo.
+#
+# Se escribe aunque el ambiente ya este apagado: quien corre stop.sh esta por hacer algo.
+# El candado caduca solo -- un mantenimiento abandonado no puede dejar el ambiente caido
+# para siempre -- y lo borra el proximo arranque.
+{ date +%s; echo "detenido por stop.sh el $(date '+%F %T')"; } > mantenimiento.lock
+
 es_de_este_ambiente () {  # es_de_este_ambiente <pid>
     [ -r "/proc/$1/cmdline" ] || return 1
     tr '\0' ' ' < "/proc/$1/cmdline" | grep -qF "$ENV_DIR/odoo.config"
@@ -495,13 +511,6 @@ for h in $HIJOS; do
 done
 
 rm -f running-odoo.pid
-
-# Un apagado deliberado es, por definicion, mantenimiento. Sin esto la supervision del
-# cron lo pelea: mientras corre un `-u` no hay pidfile, la linea de --si-no-corre lo lee
-# como "se cayo" y arranca un segundo Odoo sobre la misma base, que es bastante peor que
-# tenerlo apagado. El candado caduca solo -- un mantenimiento abandonado no puede dejar
-# el ambiente caido para siempre -- y lo borra el proximo arranque.
-{ date +%s; echo "detenido por stop.sh el $(date '+%F %T')"; } > mantenimiento.lock
 STOP_EOF
       chmod +x ./stop.sh
     fi

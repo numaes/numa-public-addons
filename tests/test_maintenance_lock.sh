@@ -63,6 +63,22 @@ sleep 1
 [ -f arranco.testigo ]     && ok "arranca, que es su trabajo" || fail "no arranco"
 
 echo
+echo "El orden dentro de stop.sh:"
+# Esta es la comprobacion que faltaba. El candado al final deja una ventana entre "el
+# master ya murio" y "el candado ya esta"; en produccion duro tres segundos y el cron de
+# los cinco minutos cayo justo adentro. La invariante es estructural, asi que se verifica
+# sobre el texto del script y no con un cronometro.
+LOCK_LN=$(grep -n 'mantenimiento.lock' "$EXPECTED/stop.sh" | head -1 | cut -d: -f1)
+# Sin el filtro de comentarios esto agarra la linea que explica por que no se usa
+# `pkill -f odoo-bin`, que esta mucho antes que cualquier codigo.
+KILL_LN=$(grep -n 'kill -' "$EXPECTED/stop.sh" | grep -v ':[[:space:]]*#' | head -1 | cut -d: -f1)
+if [ -n "$LOCK_LN" ] && [ -n "$KILL_LN" ] && [ "$LOCK_LN" -lt "$KILL_LN" ]; then
+    ok "el candado se escribe antes del primer kill (linea $LOCK_LN < $KILL_LN)"
+else
+    fail "el candado se escribe DESPUES de matar: linea $LOCK_LN, primer kill $KILL_LN"
+fi
+
+echo
 echo "stop.sh deja el candado:"
 rm -f mantenimiento.lock
 # Un proceso que se hace pasar por el de este ambiente: stop.sh lo reconoce por la ruta
@@ -77,6 +93,14 @@ echo "$FAKE" > running-odoo.pid
 head -1 mantenimiento.lock | grep -qE '^[0-9]+$' \
     && ok "la primera linea es la marca de tiempo" || fail "la marca de tiempo no es un numero"
 kill "$FAKE" 2>/dev/null
+
+echo
+echo "Con el ambiente ya apagado:"
+rm -f mantenimiento.lock running-odoo.pid
+./stop.sh >/dev/null 2>&1
+[ -f mantenimiento.lock ] \
+    && ok "igual deja el candado: quien apaga esta por hacer algo" \
+    || fail "no dejo candado con el ambiente ya apagado"
 
 echo
 if [ "$FAILED" -eq 0 ]; then echo "Todo bien."; exit 0; fi
