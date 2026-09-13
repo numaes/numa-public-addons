@@ -551,13 +551,18 @@ STOP_EOF
 #!/bin/bash
 # Respaldo logico de una base Odoo: volcado de PostgreSQL + filestore, en un solo archivo.
 #
-# Uso:   ./dbbackup.sh <base> [rol]
+# Uso:   ./dbbackup.sh <base> [rol] [--sin-filestore]
 #        KEEP=14 ./dbbackup.sh <base>      # cuantos respaldos conservar (0 = todos)
 #
 # Produce  ./database/<base>-<fecha>.tar.gz  con dentro:
 #     manifest     que base, que rol la posee, cuando, con que version de PostgreSQL
 #     dump.pgc     pg_dump en formato custom -- permite restaurar una sola tabla
 #     filestore/   los adjuntos de esa base
+#
+# --sin-filestore backs up the database only, into <base>-<fecha>-sin-filestore.tar.gz. The manifest
+# records which kind a backup is (filestore=included|excluded), and dbrestore.sh reads it: a backup
+# without filestore never touches the filestore already on disk. KEEP counts each kind separately, so
+# a manual database-only backup never purges a full one.
 #
 # Complementa al snapshot diario de la VM, no lo reemplaza: el snapshot cubre perder la
 # maquina, esto cubre recuperar una tabla sin levantar una VM entera, y es un dominio de
@@ -574,11 +579,24 @@ BACKUPDIR="./database"
 FILESTOREDIR="./data/filestore"
 KEEP="${KEEP:-14}"
 
-if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+FILESTORE=1
+BAD_OPTION=0
+ARGS=()
+for a in "$@"; do
+    case "$a" in
+        --sin-filestore) FILESTORE=0 ;;
+        -*) BAD_OPTION=1 ;;
+        *) ARGS+=("$a") ;;
+    esac
+done
+if [ "${#ARGS[@]}" -eq 0 ]; then set --; else set -- "${ARGS[@]}"; fi
+
+if [ "$BAD_OPTION" -eq 1 ] || [ $# -lt 1 ] || [ $# -gt 2 ]; then
     cat >&2 <<USAGE
-Uso: $(basename "$0") <base> [rol]
+Uso: $(basename "$0") <base> [rol] [--sin-filestore]
      Si se omite el rol, se usa el dueño actual de la base.
-     KEEP=<n> conserva solo los n respaldos mas recientes de esa base (0 = todos).
+     --sin-filestore backs up the database only, without its attachments.
+     KEEP=<n> conserva solo los n respaldos mas recientes de esa base y de ese tipo (0 = todos).
 Ejemplo: $(basename "$0") cm-prod-18.0
 USAGE
     exit 1
@@ -612,9 +630,13 @@ if [ "$TABLES" -lt 1 ]; then
 fi
 echo "  $TABLES tablas con datos"
 
-if [ -d "$FILESTOREDIR/$DB" ]; then
+FILES=0
+if [ "$FILESTORE" -eq 0 ]; then
+    echo "  filestore omitted (--sin-filestore): this backup restores the database only"
+elif [ -d "$FILESTOREDIR/$DB" ]; then
     echo "  copiando filestore..."
     cp -a "$FILESTOREDIR/$DB" "$STAGE/filestore"
+    FILES=$(find "$STAGE/filestore" -type f | wc -l)
 else
     echo "  (sin filestore en $FILESTOREDIR/$DB)"
     mkdir -p "$STAGE/filestore"
@@ -627,17 +649,23 @@ created=$(date --iso-8601=seconds)
 host=$(hostname)
 pg_version=$(psql -d postgres -X -t -A -c "SHOW server_version")
 tables_with_data=$TABLES
+filestore=$(if [ "$FILESTORE" -eq 1 ]; then echo included; else echo excluded; fi)
+filestore_files=$FILES
 MANIFEST
 
-OUT="$BACKUPDIR/$DB-$DATE.tar.gz"
+CONTENTS=(manifest dump.pgc)
+SUFFIX="-sin-filestore"
+if [ "$FILESTORE" -eq 1 ]; then CONTENTS+=(filestore); SUFFIX=""; fi
+OUT="$BACKUPDIR/$DB-$DATE$SUFFIX.tar.gz"
 echo "  empaquetando..."
-tar czf "$OUT" -C "$STAGE" manifest dump.pgc filestore
+tar czf "$OUT" -C "$STAGE" "${CONTENTS[@]}"
 
 echo "Listo: $OUT ($(du -h "$OUT" | cut -f1))"
 
 if [ "$KEEP" -gt 0 ]; then
+    # Only backups of this kind count: full ones never make room for database-only ones, or the reverse.
     # shellcheck disable=SC2012
-    OLD=$(ls -1t "$BACKUPDIR/$DB"-*.tar.gz 2>/dev/null | tail -n +$((KEEP + 1)) || true)
+    OLD=$(ls -1t "$BACKUPDIR/$DB"-????????-??????"$SUFFIX".tar.gz 2>/dev/null | tail -n +$((KEEP + 1)) || true)
     if [ -n "$OLD" ]; then
         echo "Purgando respaldos viejos (conservando $KEEP):"
         echo "$OLD" | while read -r f; do echo "  - $f"; rm -f "$f"; done
@@ -666,6 +694,11 @@ NUMA_DBBACKUP_EOF
 # autor sabia del problema. Aca estan activas y ademas cubren correo y cron.
 #
 # Usa --production solo para restaurar sobre la base que realmente atiende usuarios.
+#
+# The filestore follows the backup, with no option: a backup that carries one (every full backup, and
+# every backup made before --sin-filestore existed) replaces the filestore of the target database. A
+# database-only backup leaves the filestore on disk as it is -- restoring one over production must not
+# wipe its attachments -- and, when the target has none, says how to copy it from the source database.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -710,19 +743,42 @@ tar xzf "$BACKUP_FILE" -C "$STAGE"
 OWNER="${3:-$(sed -n 's/^owner=//p' "$STAGE/manifest" 2>/dev/null)}"
 OWNER="${OWNER:-$(whoami)}"
 
+# Backups made before --sin-filestore have no filestore= key and always carry a filestore/ directory.
+FILESTORE_MODE="$(sed -n 's/^filestore=//p' "$STAGE/manifest" 2>/dev/null || true)"
+if [ -z "$FILESTORE_MODE" ]; then
+    if [ -d "$STAGE/filestore" ]; then FILESTORE_MODE="included"; else FILESTORE_MODE="excluded"; fi
+fi
+SOURCE_DB="$(sed -n 's/^database=//p' "$STAGE/manifest" 2>/dev/null || true)"
+
 echo "Creando la base '$DB' (dueño: $OWNER)"
 createdb -O "$OWNER" --encoding=UNICODE -T template0 "$DB"
 
 echo "Restaurando el volcado..."
 pg_restore -d "$DB" --no-owner --role="$OWNER" -j 2 "$STAGE/dump.pgc" 2>&1 | grep -v "^$" || true
 
-echo "Restaurando el filestore..."
-mkdir -p "$DATA_PATH/filestore"
-rm -rf "${DATA_PATH:?}/filestore/$DB"
-if [ -d "$STAGE/filestore" ]; then
-    cp -a "$STAGE/filestore" "$DATA_PATH/filestore/$DB"
+if [ "$FILESTORE_MODE" = "included" ]; then
+    echo "Restaurando el filestore..."
+    mkdir -p "$DATA_PATH/filestore"
+    rm -rf "${DATA_PATH:?}/filestore/$DB"
+    if [ -d "$STAGE/filestore" ]; then
+        cp -a "$STAGE/filestore" "$DATA_PATH/filestore/$DB"
+    else
+        mkdir -p "$DATA_PATH/filestore/$DB"
+    fi
+elif [ -d "$DATA_PATH/filestore/$DB" ]; then
+    echo "The backup carries no filestore (--sin-filestore): the filestore of '$DB' on disk is kept as it is."
 else
     mkdir -p "$DATA_PATH/filestore/$DB"
+    STORED="?"
+    if [ "$(psql -d "$DB" -X -t -A -c "SELECT to_regclass('ir_attachment') IS NOT NULL" 2>/dev/null)" = "t" ]; then
+        STORED="$(psql -d "$DB" -X -t -A -c "SELECT count(*) FROM ir_attachment WHERE store_fname IS NOT NULL")"
+    fi
+    echo "WARNING: the backup carries no filestore (--sin-filestore) and '$DB' has none on disk:"
+    echo "         its attachments stored in the filestore ($STORED) will be missing."
+    if [ -n "$SOURCE_DB" ] && [ "$SOURCE_DB" != "$DB" ] && [ -d "$DATA_PATH/filestore/$SOURCE_DB" ]; then
+        echo "         To copy them from '$SOURCE_DB', which is on this server:"
+        echo "             rm -rf '$DATA_PATH/filestore/$DB' && cp -a '$DATA_PATH/filestore/$SOURCE_DB' '$DATA_PATH/filestore/$DB'"
+    fi
 fi
 
 if [ "$PRODUCTION" -eq 1 ]; then
