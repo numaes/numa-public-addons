@@ -42,12 +42,17 @@ read -r -e -p "Install NUMA's private repository? [True/False]: " -i "False" INS
 read -r -e -p "Install Nginx? [True/False]: " -i "False" INSTALL_NGINX
 
 WEBSITE_NAME='site@domain'
+WEBSITE_NAMES="$WEBSITE_NAME"
 ENABLE_SSL='False'
 ADMIN_EMAIL='odoo@example.com'
 
 if [ "$INSTALL_NGINX" = "True" ]; then
-  # Set the website name
-  read -r -e -p "Website name: " -i "www.odoo_website.com" WEBSITE_NAME
+  # Set the website name(s). Several names, separated by spaces, share one site and one certificate;
+  # the first one is the primary name (site file, certificate and log files).
+  read -r -e -p "Website name(s), separated by spaces: " -i "www.odoo_website.com" WEBSITE_NAMES
+  # shellcheck disable=SC2116,SC2086  # collapse repeated and surrounding spaces
+  WEBSITE_NAMES="$(echo $WEBSITE_NAMES)"
+  WEBSITE_NAME="${WEBSITE_NAMES%% *}"
 
   # Set to "True" to install certbot and have ssl enabled, "False" to use http
   read -r -e -p "Enable SSL? [True/False]: " -i "False" ENABLE_SSL
@@ -60,8 +65,9 @@ fi
 # Set the superadmin password - if GENERATE_RANDOM_PASSWORD is set to "True" we will automatically generate a random password, otherwise we use this one
 read -r -e -p "Superadmin name: " -i "admin" OE_SUPERADMIN
 
-# Set to "True" to generate a random password, "False" to use the variable in OE_SUPERADMIN
-read -r -e -p "Generate random password for admin? [True/False]: " -i "False" GENERATE_RANDOM_PASSWORD
+# Set to "True" to generate a random password, "False" to use the variable in OE_SUPERADMIN.
+# Random is the default: a guessable master password is how another installation lost its database.
+read -r -e -p "Generate random password for admin? [True/False]: " -i "True" GENERATE_RANDOM_PASSWORD
 
 # Project name
 read -r -e -p "Project name (blank if no project): " PROJECT
@@ -246,14 +252,27 @@ if [ "$PROJECT" != "" ]; then
     OE_DB_MAXCONN=$(( 90 / (OE_WORKERS + 2) ))
     OE_MAJOR="${OE_VERSION%%.*}"
 
+    # The master password guards creating, backing up, restoring and dropping databases.
+    if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then
+      OE_ADMIN_PASSWD=$(head -c 1024 /dev/urandom | tr -dc A-Za-z0-9 | head -c 24)
+    else
+      OE_ADMIN_PASSWD="$OE_SUPERADMIN"
+    fi
+
     if [ ! -f 'odoo.config' ]; then
           cat > odoo.config <<EOF
 [options]
-admin_passwd = $(if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then head /dev/urandom | tr -dc A-Za-z0-9 | head -c 16; echo; else echo "$OE_SUPERADMIN"; fi)
+admin_passwd = $OE_ADMIN_PASSWD
 http_port = $OE_PORT
 $(if [ "$OE_MAJOR" -ge 16 ]; then echo "gevent_port = $LONGPOLLING_PORT"; else echo "longpolling_port = $LONGPOLLING_PORT"; fi)
 proxy_mode = $INSTALL_NGINX
+$(if [ "$INSTALL_NGINX" = "True" ]; then echo "http_interface = 127.0.0.1"; fi)
 data_dir = $DATA_DIR
+
+# The database manager stays disabled (incident 2026-09-12). Create databases with odoo-bin, and back
+# them up or restore them with dbbackup.sh and dbrestore.sh. With a single database Odoo selects it by
+# itself; with several, set dbfilter or open /web/login?db=<name>, since nginx blocks the selector too.
+list_db = False
 
 # Sin workers Odoo corre en un solo proceso con hilos: no hay pool, y una impresion que
 # bloquea su worker bloquea todo. Con wkhtmltopdf ademas hace falta que sobren workers,
@@ -757,55 +776,67 @@ fi
 #--------------------------------------------------
 # Install Nginx if needed
 #--------------------------------------------------
-if [ "$INSTALL_NGINX" = "True" ]; then
-    # Mejora: Instalar letsencrypt-nginx si aún no lo está
-    sudo apt install python3-pip python3-venv python3-wheel python3-dev libxslt1-dev libzip-dev libldap2-dev libsasl2-dev libssl-dev libffi-dev libxml2-dev libxmlsec1-dev build-essential wget git nodejs npm rtlcss libjpeg-dev zlib1g-dev -y;
-    sudo apt install nginx -y
-    sudo apt install letsencrypt -y
-    sudo apt install certbot python3-certbot-nginx -y
-    if [ "$ENABLE_SSL" = "True" ]; then
-      sudo certbot certonly --nginx -d "$WEBSITE_NAME" --noninteractive --agree-tos --email "$ADMIN_EMAIL"
-      sudo service nginx reload
-      echo "SSL/HTTPS is enabled!"
-    else
-      echo "SSL not requested; the site will be served over HTTP only."
-    fi
 
-  cat <<EOF > ~/$WEBSITE_NAME
-#odoo server
-upstream backend-$WEBSITE_NAME {
- server localhost:$OE_PORT;
+# Writes the nginx site of this Odoo instance.
+#   write_nginx_site <output file> <ssl: True|False> <name> [<name> ...]
+# The first name is the primary one: it names the upstreams, the log files and the certificate.
+# Upstreams use 127.0.0.1, never localhost: localhost can also resolve to 127.0.1.1, where Odoo does
+# not listen, and nginx then fails and retries a share of its connections.
+write_nginx_site() {
+  local output="$1" ssl="$2"
+  shift 2
+  local names="$*" primary="$1"
+  local hsts=""
+  [ "$ssl" = "True" ] && hsts='    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";'
+  {
+    cat <<NGINX_EOF
+#odoo server $primary
+upstream backend-$primary {
+ server 127.0.0.1:$OE_PORT;
 }
-upstream backend-$WEBSITE_NAME-im {
- server localhost:$LONGPOLLING_PORT;
+upstream backend-$primary-im {
+ server 127.0.0.1:$LONGPOLLING_PORT;
 }
 map \$http_upgrade \$connection_upgrade {
   default upgrade;
   ''      close;
 }
 
-# http -> https
+NGINX_EOF
+    if [ "$ssl" = "True" ]; then
+      cat <<NGINX_EOF
+# http -> https, keeping the path and the query string
 server {
-   listen 80;
-   server_name $WEBSITE_NAME;
-   rewrite ^ https://\$host\$request_uri? permanent;
+  listen 80;
+  server_name $names;
+  return 301 https://\$host\$request_uri;
 }
 
 server {
   listen 443 ssl;
-  server_name $WEBSITE_NAME;
-  proxy_read_timeout 900s;
-  proxy_connect_timeout 900s;
-  proxy_send_timeout 900s;
+  server_name $names;
 
-  ssl_certificate /etc/letsencrypt/live/$WEBSITE_NAME/fullchain.pem; # managed by Certbot
-  ssl_certificate_key /etc/letsencrypt/live/$WEBSITE_NAME/privkey.pem; # managed by Certbot
+  ssl_certificate /etc/letsencrypt/live/$primary/fullchain.pem; # managed by Certbot
+  ssl_certificate_key /etc/letsencrypt/live/$primary/privkey.pem; # managed by Certbot
   ssl_session_timeout 30m;
   ssl_protocols TLSv1.2;
   ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
   ssl_prefer_server_ciphers off;
-  keepalive_timeout 60;
 
+NGINX_EOF
+    else
+      cat <<NGINX_EOF
+server {
+  listen 80;
+  server_name $names;
+
+NGINX_EOF
+    fi
+    cat <<NGINX_EOF
+  proxy_read_timeout 900s;
+  proxy_connect_timeout 900s;
+  proxy_send_timeout 900s;
+  keepalive_timeout 60;
 
   # Add Headers for odoo proxy mode
   proxy_set_header X-Forwarded-Host \$host;
@@ -815,34 +846,37 @@ server {
   add_header X-Frame-Options "SAMEORIGIN";
   add_header X-XSS-Protection "1; mode=block";
   proxy_set_header X-Client-IP \$remote_addr;
-  proxy_set_header HTTP_X_FORWARDED_HOST \$remote_addr;
 
-  #   odoo    log files
-  access_log  /var/log/nginx/$OE_USER-access.log;
-  error_log   /var/log/nginx/$OE_USER-error.log;
+  # odoo log files
+  access_log /var/log/nginx/$primary-access.log;
+  error_log /var/log/nginx/$primary-error.log;
 
-  #   increase    proxy   buffer  size
-  proxy_buffers   16  64k;
-  proxy_buffer_size   128k;
+  # increase proxy buffer size
+  proxy_buffers 16 64k;
+  proxy_buffer_size 128k;
 
-  #   force   timeouts    if  the backend dies
-  proxy_next_upstream error   timeout invalid_header  http_500    http_502
-  http_503;
+  # force timeouts if the backend dies
+  proxy_next_upstream error timeout invalid_header http_500 http_502 http_503;
 
   types {
     text/less less;
     text/scss scss;
   }
 
-  #   enable  data    compression
-  gzip    on;
+  # enable data compression
+  gzip on;
   gzip_min_length 1100;
-  gzip_buffers    4   32k;
-  gzip_types  text/css text/scss text/plain text/xml application/xml application/json application/javascript;
-  gzip_vary   on;
+  gzip_buffers 4 32k;
+  gzip_types text/css text/scss text/plain text/xml application/xml application/json application/javascript;
+  gzip_vary on;
   client_header_buffer_size 4k;
   large_client_header_buffers 4 64k;
   client_max_body_size 0;
+
+  # The database manager must never be reachable from the internet (incident 2026-09-12).
+  location ~* ^/+web/database {
+    deny all;
+  }
 
   location / {
     proxy_set_header X-Forwarded-Host \$host;
@@ -850,33 +884,139 @@ server {
     proxy_set_header X-Forwarded-Proto \$scheme;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_redirect off;
-    proxy_pass http://backend-$WEBSITE_NAME;
-
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
-
+    proxy_pass http://backend-$primary;
+$hsts
   }
 
   location /websocket {
-    proxy_pass http://backend-$WEBSITE_NAME-im;
+    proxy_pass http://backend-$primary-im;
     proxy_set_header Upgrade \$http_upgrade;
     proxy_set_header Connection \$connection_upgrade;
     proxy_set_header X-Forwarded-Host \$host;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto \$scheme;
     proxy_set_header X-Real-IP \$remote_addr;
-
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
+$hsts
   }
 }
-EOF
+NGINX_EOF
+  } > "$output"
+} # end write_nginx_site
 
-  sudo mv ~/$WEBSITE_NAME /etc/nginx/sites-available/
-  sudo ln -s /etc/nginx/sites-available/$WEBSITE_NAME /etc/nginx/sites-enabled/$WEBSITE_NAME
-  sudo rm /etc/nginx/sites-enabled/default
-  sudo service nginx reload
-  # proxy_mode ya se escribe en odoo.config al generarlo (arriba), a partir de
-  # $INSTALL_NGINX. No hay ningun /etc/<OE_CONFIG>.conf en esta instalacion.
-  echo "Done! The Nginx server is up and running. Configuration can be found at /etc/nginx/sites-available/odoo"
+# Writes a catch-all default server.
+#   write_nginx_catch_all <output file> <reject handshake: True|False>
+# Without a default server, nginx hands a host that no site names to the first site it loaded, which
+# answers with another site's certificate and content. The refusal sits inside `location /`, so the
+# exact location certbot adds for its challenge still wins if certbot ever copies this server.
+write_nginx_catch_all() {
+  local output="$1" reject="$2"
+  {
+    cat <<'NGINX_EOF'
+# Catch-all: refuse requests for hosts that no site names.
+server {
+  listen 80 default_server;
+  server_name _;
+  location / {
+    return 444;
+  }
+}
+
+server {
+  listen 443 ssl default_server;
+  server_name _;
+NGINX_EOF
+    if [ "$reject" = "True" ]; then
+      echo '  ssl_reject_handshake on;'
+    else
+      echo '  ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;'
+      echo '  ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;'
+    fi
+    cat <<'NGINX_EOF'
+  location / {
+    return 444;
+  }
+}
+NGINX_EOF
+  } > "$output"
+} # end write_nginx_catch_all
+
+# version_at_least <version> <minimum>: true when the dotted version is >= minimum.
+version_at_least() {
+  [ "$(printf '%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]
+} # end version_at_least
+
+# Warns when a name does not resolve, at a public resolver, to this server's public address. Certbot
+# fails until it does, and resolvers can keep a wrong record for its whole TTL after the DNS is fixed.
+warn_if_dns_mismatch() {
+  local public_ip name resolved
+  if ! command -v dig >/dev/null 2>&1; then
+    echo "DNS check skipped: dig is not installed."
+    return 0
+  fi
+  public_ip=$(curl -s --max-time 10 https://api.ipify.org || true)
+  if [ -z "$public_ip" ]; then
+    echo "DNS check skipped: could not learn this server's public IP."
+    return 0
+  fi
+  for name in "$@"; do
+    resolved=$(dig +short A "$name" @8.8.8.8 | tail -1)
+    if [ "$resolved" != "$public_ip" ]; then
+      echo "WARNING: $name resolves to '${resolved:-nothing}' at 8.8.8.8, but this server is $public_ip."
+      echo "         Certbot fails until the DNS points here, and an old record can linger for its TTL."
+    fi
+  done
+} # end warn_if_dns_mismatch
+
+if [ "$INSTALL_NGINX" = "True" ]; then
+    # Mejora: Instalar letsencrypt-nginx si aún no lo está
+    sudo apt install python3-pip python3-venv python3-wheel python3-dev libxslt1-dev libzip-dev libldap2-dev libsasl2-dev libssl-dev libffi-dev libxml2-dev libxmlsec1-dev build-essential wget git nodejs npm rtlcss libjpeg-dev zlib1g-dev -y;
+    # ssl-cert provides the snakeoil certificate of the catch-all; dnsutils provides dig.
+    sudo apt install nginx ssl-cert dnsutils -y
+    sudo apt install letsencrypt -y
+    sudo apt install certbot python3-certbot-nginx -y
+
+    NGINX_SSL="False"
+    if [ "$ENABLE_SSL" = "True" ]; then
+      warn_if_dns_mismatch $WEBSITE_NAMES
+      CERTBOT_DOMAINS=()
+      for name in $WEBSITE_NAMES; do CERTBOT_DOMAINS+=(-d "$name"); done
+      if sudo certbot certonly --nginx --cert-name "$WEBSITE_NAME" "${CERTBOT_DOMAINS[@]}" --expand \
+           --noninteractive --agree-tos --email "$ADMIN_EMAIL"; then
+        NGINX_SSL="True"
+        echo "SSL/HTTPS is enabled!"
+      else
+        # A site pointing at a certificate that does not exist would make nginx refuse every site.
+        echo "WARNING: certbot could not issue the certificate, so the site is written for HTTP only."
+        echo "         Once the DNS points here: sudo certbot --nginx --cert-name $WEBSITE_NAME ${CERTBOT_DOMAINS[*]}"
+      fi
+    else
+      echo "SSL not requested; the site will be served over HTTP only."
+    fi
+
+    # shellcheck disable=SC2086  # one argument per website name
+    write_nginx_site ~/"$WEBSITE_NAME" "$NGINX_SSL" $WEBSITE_NAMES
+    sudo mv ~/"$WEBSITE_NAME" /etc/nginx/sites-available/
+    sudo ln -sf /etc/nginx/sites-available/"$WEBSITE_NAME" /etc/nginx/sites-enabled/"$WEBSITE_NAME"
+
+    sudo rm -f /etc/nginx/sites-enabled/default
+    if ! grep -qs default_server /etc/nginx/sites-enabled/*; then
+      NGINX_VERSION=$(nginx -v 2>&1 | sed -n 's|.*nginx/\([0-9.]*\).*|\1|p')
+      REJECT_HANDSHAKE="False"
+      version_at_least "$NGINX_VERSION" 1.19.4 && REJECT_HANDSHAKE="True"   # ssl_reject_handshake
+      write_nginx_catch_all ~/000-catch-all "$REJECT_HANDSHAKE"
+      sudo mv ~/000-catch-all /etc/nginx/sites-available/000-catch-all
+      sudo ln -sf /etc/nginx/sites-available/000-catch-all /etc/nginx/sites-enabled/000-catch-all
+    fi
+
+    if sudo nginx -t; then
+      sudo service nginx reload
+      echo "Done! The Nginx server is up and running. Configuration: /etc/nginx/sites-available/$WEBSITE_NAME"
+    else
+      echo "ERROR: nginx rejected the configuration and was not reloaded."
+      echo "       Fix /etc/nginx/sites-available/$WEBSITE_NAME, then: sudo nginx -t && sudo service nginx reload"
+    fi
+    # proxy_mode ya se escribe en odoo.config al generarlo (arriba), a partir de
+    # $INSTALL_NGINX. No hay ningun /etc/<OE_CONFIG>.conf en esta instalacion.
 else
   echo "Nginx isn't installed due to choice of the user!"
 fi
@@ -894,8 +1034,8 @@ echo "Project directory: $(pwd)/$PROJECT-$OE_VERSION"
 echo "Configuraton file location: $(pwd)/$PROJECT-$OE_VERSION/odoo.config"
 echo "Logfile location: $(pwd)/$PROJECT-$OE_VERSION/log"
 echo "User PostgreSQL: pg-$PROJECT-$OE_VERSION"
-echo "Password superadmin database: $OE_SUPERADMIN"
+echo "Master password (admin_passwd): $(sed -n 's/^admin_passwd *= *//p' "$ODOO_ROOT/odoo.config" 2>/dev/null | head -1)"
 if [ "$INSTALL_NGINX" = "True" ]; then
-  echo "Nginx configuration file: /etc/nginx/sites-available/odoo"
+  echo "Nginx configuration file: /etc/nginx/sites-available/$WEBSITE_NAME"
 fi
 echo "-----------------------------------------------------------"
