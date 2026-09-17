@@ -1,72 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates id="template" xml:space="preserve" >
 
+    <!--
+      Barra de avance del trabajo de fondo.
+
+      La barra se arma UNA sola vez (antes había una copia por estado, todas con un bloque de ancho
+      fijo: se veía toda gris, sin mostrar el avance). Ahora la porción avanzada tiene el ancho del
+      porcentaje y el color lo da el estado; lo que cambia por estado es sólo el botón de cancelar
+      y el mensaje de error.
+    -->
     <t t-name="numa_background_job.bj_spinner" owl="1" >
         <div class="bj_spinner">
             <div >
                 <p t-esc="state_msg"/>
             </div>
 
-            <t t-if="spinner_state == 'aborted' || spinner_state == 'aborting'" >
-                <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C080C0">.</div>
-                    <div class="o_bjprogressbar_frame">
-                        <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
-                    </div>
+            <div class="o_bjprogressbar">
+                <div class="o_bjprogressbar_indicator"
+                     t-att-class="'o_bjprogressbar_' + spinner_state"
+                     t-attf-style="width: {{ progress_pct }}%;"/>
+                <div class="o_bjprogressbar_frame">
+                    <span class="o_bjprogressbar_value" t-esc="progress_pct + ' %'"/>
                 </div>
-                <div class="o_bjprogressbar_message" >
-                    <span t-esc="current_status"/>
-                </div>
-                <div class="o_bjprogressbar_error" >
-                    <span t-esc="error_msg"/>
-                </div>
-            </t>
-            <t t-if="spinner_state == 'init'">
-                <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">.</div>
-                </div>
-                <div class="o_bjprogressbar_abort" >
-                    <button t-on-click="() => click_abort()">
-                        Cancel
-                    </button>
-                </div>
-                <div class="o_bjprogressbar_message" >
-                    <span t-esc="current_status"/>
-                </div>
-            </t>
-            <t t-if="spinner_state == 'ended'">
-                <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">.</div>
-                    <div class="o_bjprogressbar_frame">
-                        <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
-                    </div>
-                </div>
-                <div class="o_bjprogressbar_message" >
-                    <span t-esc="current_status"/>
-                </div>
-                <div class="o_bjprogressbar_error" >
-                    <span t-esc="error_msg"/>
-                </div>
-            </t>
-            <t t-if="spinner_state == 'started'">
-                <div class="o_bjprogressbar">
-                    <div class="o_bjprogressbar_indicator" style="background-color: #C0C0C0">.</div>
-                    <div class="o_bjprogressbar_frame">
-                        <span class="o_bjprogressbar_value" t-esc="completion_rate + ' %'"/>
-                    </div>
-                </div>
-                <div class="o_bjprogressbar_message" >
-                    <span t-esc="current_status"/>
-                </div>
-                <div class="o_bjprogressbar_abort" >
-                    <button t-on-click="() => click_abort()">
-                        Cancel
-                    </button>
-                </div>
-                <div class="o_bjprogressbar_message" >
-                    <span t-esc="error_msg"/>
-                </div>
-            </t>
+            </div>
+
+            <div t-if="spinner_state == 'init' || spinner_state == 'started'"
+                 class="o_bjprogressbar_abort" >
+                <button t-on-click="() => this.click_abort()">
+                    Cancel
+                </button>
+            </div>
+
+            <div class="o_bjprogressbar_message" >
+                <span t-esc="current_status"/>
+            </div>
+            <div t-if="error_msg" class="o_bjprogressbar_error" >
+                <span t-esc="error_msg"/>
+            </div>
         </div>
     </t>
 

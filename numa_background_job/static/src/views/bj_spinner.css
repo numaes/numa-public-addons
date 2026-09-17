@@ -1,30 +1,55 @@
 .o_bjprogressbar {
+    position: relative;
     height: 30px;
     width: 100%;
-	margin: 5px 0;
+    margin: 5px 0;
+    /* La pista es el fondo gris; encima va la porción avanzada, con color. */
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    overflow: hidden;
 }
 
 .o_bjprogressbar_value {
-    color: #666;
+    color: #444;
 }
 
+/* El porcentaje va centrado SOBRE la barra, no al lado. */
 .o_bjprogressbar_frame {
-    height: 30px;
-    line-height: 30px;
-    width: 100%;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    z-index: 1;
-    position: relative;
-    top: -30px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    line-height: 28px;
     text-align: center;
 }
 
-.o_bjprogressbar_indicator{
-    height: 30px;
-    border-radius: 4px;
-    background-color: #f0f0f0;
-    z-index: -1;
+.o_bjprogressbar_indicator {
+    height: 100%;
+    /* El ancho lo pone el porcentaje de avance (inline, desde el widget). */
+    width: 0;
+    background-color: #7c98b6;
+    transition: width .4s ease;
+}
+
+/* El color dice en qué estado está el trabajo, sin tener que leer el texto. */
+.o_bjprogressbar_indicator.o_bjprogressbar_init {
+    background-color: #c0c0c0;
+}
+.o_bjprogressbar_indicator.o_bjprogressbar_started {
+    background-color: #17a2b8;
+}
+.o_bjprogressbar_indicator.o_bjprogressbar_ended {
+    background-color: #28a745;
+}
+.o_bjprogressbar_indicator.o_bjprogressbar_aborting,
+.o_bjprogressbar_indicator.o_bjprogressbar_aborted {
+    background-color: #c080c0;
+}
+
+.o_bjprogressbar_error {
+    color: #b02a37;
 }
 
 .o_bjprogressbar_abort {

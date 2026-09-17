@@ -119,6 +119,12 @@ export class BJSpinner extends Component {
         return this.state.error_msg;
     }
 
+    /** Porcentaje ya recorrido, acotado a 0..100: es el ancho de la porción con color. */
+    get progress_pct() {
+        const valor = Math.round(Number(this.state.completion_rate) || 0);
+        return Math.max(0, Math.min(100, valor));
+    }
+
     async click_abort() {
         const id = this.jobId;
         if (!id) {
