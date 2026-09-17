@@ -11,6 +11,7 @@
 
 import { Component, onWillStart, onWillUnmount, useState } from "@odoo/owl";
 import { browser } from "@web/core/browser/browser";
+import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
@@ -66,10 +67,10 @@ export class BJSpinner extends Component {
             completion_rate: this.props.completion_rate || 0,
             current_status: this.props.current_status || "",
             error_msg: this.props.error_msg || "",
-            initialized_on: this.props.initialized_on || "",
-            started_on: this.props.started_on || "",
-            ended_on: this.props.ended_on || "",
-            aborted_on: this.props.aborted_on || "",
+            initialized_on: this._fecha(this.props.initialized_on),
+            started_on: this._fecha(this.props.started_on),
+            ended_on: this._fecha(this.props.ended_on),
+            aborted_on: this._fecha(this.props.aborted_on),
         });
 
         // El bus avisa el avance de TODOS los trabajos: sólo se atiende el que muestra este widget.
@@ -152,10 +153,10 @@ export class BJSpinner extends Component {
             completion_rate: vals.completion_rate || 0,
             current_status: vals.current_status || "",
             error_msg: vals.error || "",
-            initialized_on: vals.initialized_on || this.state.initialized_on,
-            started_on: vals.started_on || this.state.started_on,
-            ended_on: vals.ended_on || this.state.ended_on,
-            aborted_on: vals.aborted_on || this.state.aborted_on,
+            initialized_on: this._fecha(vals.initialized_on) || this.state.initialized_on,
+            started_on: this._fecha(vals.started_on) || this.state.started_on,
+            ended_on: this._fecha(vals.ended_on) || this.state.ended_on,
+            aborted_on: this._fecha(vals.aborted_on) || this.state.aborted_on,
         });
         this.state.state_msg = this._state_msg(this.state);
         if (this.montado && anterior !== "ended" && this.state.spinner_state === "ended") {
@@ -193,6 +194,24 @@ export class BJSpinner extends Component {
         const valores = await this.orm.read("res.background_job", [id], CAMPOS);
         if (valores && valores.length) {
             this._update_spinner(valores[0]);
+        }
+    }
+
+    /**
+     * Fecha del trabajo, en la hora del usuario.
+     *
+     * Tanto el bus como el ORM mandan la fecha en UTC —el bus, además, como el texto "False"
+     * cuando está vacía—, así que el widget mostraba una hora que no coincidía con la del resto
+     * del formulario: "Started: 20:00:57" al lado de un "Inicio 17:00:57" del mismo trabajo.
+     */
+    _fecha(valor) {
+        if (!valor || valor === "False") {
+            return "";
+        }
+        try {
+            return formatDateTime(deserializeDateTime(valor));
+        } catch {
+            return valor;        // formato inesperado: mejor mostrarlo crudo que perderlo
         }
     }
 
