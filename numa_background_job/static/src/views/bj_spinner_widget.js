@@ -10,6 +10,7 @@
  */
 
 import { Component, onWillStart, onWillUnmount, useState } from "@odoo/owl";
+import { browser } from "@web/core/browser/browser";
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
@@ -51,8 +52,12 @@ export class BJSpinner extends Component {
         super.setup();
 
         this.orm = useService("orm");
+        this.action = useService("action");
         this.busService = this.env.services.bus_service;
         this.channel = "res.background_job";
+        // Al montar todavía no hubo transición: lo que se lee del trabajo ya vino con el
+        // formulario, así que no corresponde recargar nada.
+        this.montado = false;
 
         this.state = useState({
             spinner_name: this.props.spinner_name || "...",
@@ -78,6 +83,7 @@ export class BJSpinner extends Component {
 
         onWillStart(async () => {
             await this._get_current_state();
+            this.montado = true;
         });
 
         if (this.busService) {
@@ -134,11 +140,12 @@ export class BJSpinner extends Component {
         this.state.spinner_state = "aborting";
         this.state.state_msg = _t("Aborting ...");
         // El cierre lo confirma el propio trabajo por el bus; si no llegara, se relee.
-        setTimeout(() => this._get_current_state(), 10000);
+        browser.setTimeout(() => this._get_current_state(), 10000);
     }
 
     _update_spinner(vals) {
         vals = vals || {};
+        const anterior = this.state.spinner_state;
         Object.assign(this.state, {
             spinner_name: vals.name || this.state.spinner_name,
             spinner_state: vals.state || this.state.spinner_state,
@@ -151,6 +158,31 @@ export class BJSpinner extends Component {
             aborted_on: vals.aborted_on || this.state.aborted_on,
         });
         this.state.state_msg = this._state_msg(this.state);
+        if (this.montado && anterior !== "ended" && this.state.spinner_state === "ended") {
+            this._recargar_al_terminar();
+        }
+    }
+
+    /**
+     * Cuando el trabajo TERMINA BIEN, el formulario sigue mostrando lo que se leyó al abrirlo (el
+     * estado del registro, los contadores): el widget se entera por el bus, el resto no. Se recarga
+     * la vista para que lo que se ve sea lo que quedó.
+     *
+     * Sólo al terminar bien. Si se canceló o falló, no se toca nada: el usuario tiene que poder
+     * leer el mensaje de error y lo que quedó a medias.
+     *
+     * Tampoco se recarga si hay cambios sin guardar: recargar los perdería.
+     */
+    _recargar_al_terminar() {
+        // Un respiro antes de recargar: el trabajo confirma su última tanda justo después de
+        // avisar que terminó.
+        browser.setTimeout(async () => {
+            const registro = this.props.record;
+            if (registro && (await registro.isDirty())) {
+                return;         // hay cambios sin guardar: recargar los perdería
+            }
+            this.action.doAction({ type: "ir.actions.client", tag: "soft_reload" });
+        }, 1500);
     }
 
     async _get_current_state() {
