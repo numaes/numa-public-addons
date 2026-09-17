@@ -1,13 +1,31 @@
 /** @odoo-module **/
 
+/**
+ * Widget del trabajo de fondo: barra de avance, último paso y botón de cancelar.
+ *
+ * El avance llega por el bus (`res.background_job.refresh_state` manda un `notification` al canal
+ * `res.background_job` con el id del trabajo). El estado inicial se lee del propio trabajo al
+ * montar: antes se tomaba de atributos del XML que nadie completa, así que el widget arrancaba
+ * vacío hasta la primera notificación.
+ */
 
-import {
-    EventBus,
-    Component,
-} from "@odoo/owl";
+import { Component, onWillStart, onWillUnmount, useState } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
+import { useService } from "@web/core/utils/hooks";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
+
+const CAMPOS = [
+    "name",
+    "state",
+    "completion_rate",
+    "current_status",
+    "error",
+    "initialized_on",
+    "started_on",
+    "ended_on",
+    "aborted_on",
+];
 
 export class BJSpinner extends Component {
     static template = "numa_background_job.bj_spinner";
@@ -15,16 +33,16 @@ export class BJSpinner extends Component {
     static defaultProps = { dynamicPlaceholder: false };
     static props = {
         ...standardFieldProps,
-        spinner_name: {type: String, optional: true },
-        spinner_state: {type: String, optional: true },
-        state_msg: {type: String, optional: true },
-        completion_rate: {type: Number, optional: true },
-        current_status: {type: String, optional: true },
-        error_msg: {type: String, optional: true },
-        initialized_on: {type: String, optional: true },
-        started_on: {type: String, optional: true },
-        ended_on: {type: String, optional: true },
-        aborted_on: {type: String, optional: true },
+        spinner_name: { type: String, optional: true },
+        spinner_state: { type: String, optional: true },
+        state_msg: { type: String, optional: true },
+        completion_rate: { type: Number, optional: true },
+        current_status: { type: String, optional: true },
+        error_msg: { type: String, optional: true },
+        initialized_on: { type: String, optional: true },
+        started_on: { type: String, optional: true },
+        ended_on: { type: String, optional: true },
+        aborted_on: { type: String, optional: true },
         context: { type: Object, optional: true },
         domain: { type: [Array, Function], optional: true },
     };
@@ -34,86 +52,130 @@ export class BJSpinner extends Component {
 
         this.orm = useService("orm");
         this.busService = this.env.services.bus_service;
+        this.channel = "res.background_job";
 
-        this.name = parent.name;
-        this.options = this.nodeOptions || {};
+        this.state = useState({
+            spinner_name: this.props.spinner_name || "...",
+            spinner_state: this.props.spinner_state || "init",
+            state_msg: this.props.state_msg || _t("Starting ..."),
+            completion_rate: this.props.completion_rate || 0,
+            current_status: this.props.current_status || "",
+            error_msg: this.props.error_msg || "",
+            initialized_on: this.props.initialized_on || "",
+            started_on: this.props.started_on || "",
+            ended_on: this.props.ended_on || "",
+            aborted_on: this.props.aborted_on || "",
+        });
 
-        const self = this;
+        // El bus avisa el avance de TODOS los trabajos: sólo se atiende el que muestra este widget.
+        this.onNotification = (payload) => {
+            const id = this.jobId;
+            if (!payload || (id && payload.id && payload.id !== id)) {
+                return;
+            }
+            this._update_spinner(payload);
+        };
 
-        this.busService = this.env.services.bus_service;
+        onWillStart(async () => {
+            await this._get_current_state();
+        });
 
-        this.channel = "res.background_job"
-        this.busService.addChannel(this.channel)
-        this.busService.subscribe("notification", this._update_spinner.bind(this))
+        if (this.busService) {
+            this.busService.addChannel(this.channel);
+            this.busService.subscribe("notification", this.onNotification);
+            onWillUnmount(() => {
+                this.busService.unsubscribe("notification", this.onNotification);
+            });
+        }
     }
 
-    onWillUnmount() {
-        this.busService.unsubscribe('res.background_job', 'notification');
-        super.onWillUnmount();
+    /** Id del trabajo que muestra el widget (el many2one del registro). */
+    get jobId() {
+        const valor = this.props.record && this.props.record.data[this.props.name];
+        if (!valor) {
+            return false;
+        }
+        return Array.isArray(valor) ? valor[0] : valor.id || false;
+    }
+
+    // Lo que lee la plantilla. Van como getters para que el template siga escribiéndose con los
+    // nombres de siempre y los valores salgan del estado reactivo.
+    get spinner_name() {
+        return this.state.spinner_name;
+    }
+    get spinner_state() {
+        return this.state.spinner_state;
+    }
+    get state_msg() {
+        return this.state.state_msg;
+    }
+    get completion_rate() {
+        return this.state.completion_rate;
+    }
+    get current_status() {
+        return this.state.current_status;
+    }
+    get error_msg() {
+        return this.state.error_msg;
     }
 
     async click_abort() {
-        const orm = this.env.services.orm;
-
-        let record_id = this.props.value && this.props.value[0];
-        let self = this
-        if (record_id) {
-            this.orm.call(
-                'res.background_job',
-                'try_to_abort',
-                [record_id]
-            );
-
-            this.spinner_state = 'aborting';
-            this.render();
-
-            if (this.spinner_state === 'started') {
-                const self = this;
-                setTimeout(() => self._get_current_state(), 10000);
-            }
+        const id = this.jobId;
+        if (!id) {
+            return;
         }
+        await this.orm.call("res.background_job", "try_to_abort", [id]);
+        this.state.spinner_state = "aborting";
+        this.state.state_msg = _t("Aborting ...");
+        // El cierre lo confirma el propio trabajo por el bus; si no llegara, se relee.
+        setTimeout(() => this._get_current_state(), 10000);
     }
 
-    async _update_spinner(vals) {
+    _update_spinner(vals) {
         vals = vals || {};
-        this.spinner_name = vals.name || this.spinner_name;
-        this.spinner_state = vals.state || this.state;
-        this.completion_rate = vals.completion_rate || 0;
-        this.current_status = vals.current_status || '';
-        this.error_msg = vals.error || '';
-        this.initialized_on = vals.initialized_on;
-        this.started_on = vals.started_on;
-        this.ended_on = vals.ended_on;
-        this.aborted_on = vals.aborted_on;
-
-        this.render();
+        Object.assign(this.state, {
+            spinner_name: vals.name || this.state.spinner_name,
+            spinner_state: vals.state || this.state.spinner_state,
+            completion_rate: vals.completion_rate || 0,
+            current_status: vals.current_status || "",
+            error_msg: vals.error || "",
+            initialized_on: vals.initialized_on || this.state.initialized_on,
+            started_on: vals.started_on || this.state.started_on,
+            ended_on: vals.ended_on || this.state.ended_on,
+            aborted_on: vals.aborted_on || this.state.aborted_on,
+        });
+        this.state.state_msg = this._state_msg(this.state);
     }
 
     async _get_current_state() {
-        const orm = this.env.services.orm;
-
-        let record_id = this.props.value && this.props.value[0];
-        let self = this;
-        if (record_id) {
-            let values = await this.orm.call(
-                'res.background_job',
-                'read',
-                [record_id],
-                [
-                    'name',
-                    'state',
-                    'completion_rate',
-                    'current_status',
-                    'error',
-                    'initialized_on',
-                    'started_on',
-                    'ended_on',
-                    'aborted_on'
-                ]
-            );
-
-            this._update_spinner();
+        const id = this.jobId;
+        if (!id) {
+            return;
         }
+        const valores = await this.orm.read("res.background_job", [id], CAMPOS);
+        if (valores && valores.length) {
+            this._update_spinner(valores[0]);
+        }
+    }
+
+    /** Descripción del estado, con las fechas que correspondan. */
+    _state_msg(datos) {
+        const mensajes = {
+            init: _t("Initializing: ") + (datos.initialized_on || ""),
+            started: _t("Started: ") + (datos.started_on || ""),
+            ended:
+                _t("Started: ") +
+                (datos.started_on || "") +
+                _t(" - Ended: ") +
+                (datos.ended_on || ""),
+            aborting: _t("Aborting ..."),
+            aborted:
+                _t("Started: ") +
+                (datos.started_on || "") +
+                _t(" - Aborted: ") +
+                (datos.aborted_on || ""),
+        };
+        return mensajes[datos.spinner_state] || _t("Starting ...");
     }
 }
 
@@ -122,39 +184,10 @@ export const bjSpinnerField = {
     displayName: _t("BJSpinner"),
     supportedOptions: [],
     supportedTypes: ["many2one"],
-    extractProps: ({ attrs, field }, dynamicInfo) => {
-        let state_msg = {
-            init: _t('Initializing: ') + attrs.initialized_on,
-            started: _t('Started: ') + attrs.started_on,
-            ended: _t('Started: ') + attrs.started_on +
-                _t(' - Ended: ') + attrs.ended_on +
-                _t(' - Duración: ') + attrs.ended_on + '-' + attrs.started_on,
-            aborting: _t('Aborting ...'),
-            aborted: _t('Started: ') + attrs.started_on +
-                _t(' - Aborted: ') + attrs.aborted_on +
-                _t(' - Duración: ') + attrs.aborted_on + ' - ' + attrs.started_on
-        }[attrs.spinner_state]
-        if (!state_msg) {
-            state_msg = '';
-        }
-
-        return {
-            state_msg: state_msg || _t('Starting ...'),
-            spinner_name: attrs.spinner_name || '...',
-            spinner_state: attrs.spinner_state || 'init',
-            completion_rate: attrs.completion_rate || 0,
-            current_status: attrs.current_status || '...',
-            error_msg: attrs.error_msg || '',
-            initialized_on: attrs.initialized_on || '',
-            started_on: attrs.started_on || '',
-            ended_on: attrs.ended_on || '',
-            aborted_on: attrs.aborted_on || '',
-            context: dynamicInfo.context,
-            domain: dynamicInfo.domain,
-        };
-    }
+    extractProps: (_fieldInfo, dynamicInfo) => ({
+        context: dynamicInfo.context,
+        domain: dynamicInfo.domain,
+    }),
 };
 
-
 registry.category("fields").add("bj_spinner", bjSpinnerField);
-
