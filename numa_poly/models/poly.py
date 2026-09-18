@@ -93,6 +93,19 @@ if typing.TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 
+# Marca de contexto para los creates que hace el PROPIO poly sobre otro modelo de la jerarquía
+# (dispatch al modelo concreto, sub-create de las bases). Sólo en esos vals puede venir un valor
+# que era válido en el modelo de origen y no lo es en el destino —el caso que motivó el filtrado de
+# Selection—, y sólo ahí corresponde descartarlo. Un create pedido derecho por un llamador tiene
+# que fallar como en Odoo estándar: descartar el valor en silencio pierde el dato y esconde el bug.
+POLY_PROPAGATED = 'poly_propagated_vals'
+
+
+def poly_vals_propagados(env):
+    """¿Estos vals los propagó poly desde otro modelo, en vez de pedirlos el llamador?"""
+    return bool(env.context.get(POLY_PROPAGATED))
+
+
 def poly_selection_value_is_valid(field, value):
     """
     Whether `value` is acceptable for a Selection-like field on this model.
@@ -4037,7 +4050,12 @@ class PolyBase(_original_BaseModel):
             # This prevents cross-model state pollution when poly sub-creates pass
             # a value that is valid on the parent but not on this model (e.g.
             # conversation.message.state='new' -> fsm.instance.state).
-            if self._name != 'ir.poly_base':
+            #
+            # SÓLO sobre vals PROPAGADOS por poly: en un create pedido derecho por un llamador, un
+            # valor inválido es un error y le toca a Odoo rechazarlo. Filtrarlo en silencio dejaba
+            # el registro creado sin ese dato y sin que nadie se enterara — así se perdió el tipo
+            # de 73 documentos importados, y sólo quedó rastro en un WARNING del log.
+            if self._name != 'ir.poly_base' and poly_vals_propagados(self.env):
                 clean_list = []
                 for vals in data_list:
                     clean_vals = {}
@@ -4158,7 +4176,8 @@ class PolyBase(_original_BaseModel):
 
             if target_name and target_name != self._name:
                 _logger.debug(f'Creating subclass {target_name} with {new_vals_list}')
-                return self.env[target_name].create(new_vals_list)
+                return self.env[target_name].with_context(
+                    **{POLY_PROPAGATED: True}).create(new_vals_list)
 
             # target == self (o ir.model inexistente): seguir el create normal sin el campo.
             data_list = new_vals_list
@@ -4227,6 +4246,7 @@ class PolyBase(_original_BaseModel):
                     if (v is not False and v is not None
                             and isinstance(f, fields.Selection)
                             and k not in poly_links
+                            and poly_vals_propagados(self.env)
                             and not poly_selection_value_is_valid(f, v)):
                          _logger.warning(
                               "[poly] Filtering out Selection field %s=%r from %s create: not a valid value %s",
@@ -4347,7 +4367,8 @@ class PolyBase(_original_BaseModel):
                 existing_base = base_model.search([('id', '=', new_id)], limit=1)
                 if not existing_base:
                     _logger.debug(f'[poly] Sub-create for {base} from {self._name}: data={base_data}')
-                    created_base = base_model.create([base_data])
+                    created_base = base_model.with_context(
+                        **{POLY_PROPAGATED: True}).create([base_data])
                     dep_record_ids[base] = created_base.id
                 else:
                     _logger.debug(f'[poly] Sub-write for {base} from {self._name}: data={base_data}')
