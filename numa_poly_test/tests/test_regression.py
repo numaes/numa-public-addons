@@ -281,11 +281,16 @@ class TestPolySearchReadAggregate(TransactionCase):
         self.assertEqual(found, t4)
 
     def test_read_group_by_inherited_field(self):
-        """read_group agrupando por un campo heredado (a1) cuenta correctamente."""
+        """Agrupar por un campo heredado (a1) cuenta correctamente.
+
+        [poly][20.0] read_group cambió de firma y de forma de retorno: ya no toma
+        ``fields=`` ni devuelve diccionarios con ``<campo>_count``, sino
+        ``aggregates=`` y una lista de tuplas (models.py:1932-1940).
+        """
         self._make('G1'); self._make('G1'); self._make('G2')
         groups = self.env['test.test4'].read_group(
-            [('a2', '=', self.MARK)], fields=['a1'], groupby=['a1'])
-        counts = {g['a1']: g['a1_count'] for g in groups}
+            [('a2', '=', self.MARK)], groupby=['a1'], aggregates=['__count'])
+        counts = dict(groups)
         self.assertEqual(counts.get('G1'), 2)
         self.assertEqual(counts.get('G2'), 1)
 

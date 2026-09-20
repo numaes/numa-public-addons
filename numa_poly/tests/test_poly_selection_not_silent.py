@@ -42,3 +42,22 @@ class TestSelectionInvalidaNoSeDescarta(TransactionCase):
         })
         self.assertTrue(att.exists())
         self.assertNotEqual(att.type, 'no-existe')
+
+    def test_04_una_seleccion_en_tupla_tambien_se_valida(self):
+        """Odoo 20 entrega ``field.selection`` como tupla, no como lista.
+
+        Cuando el filtro exigía una lista, daba por válido todo y no filtraba nunca.
+        """
+        from ..models.poly import poly_selection_value_is_valid
+        campo = self.env['ir.attachment']._fields['type']
+        self.assertNotIsInstance(campo.selection, list, "si esto cambia, revisar el filtro")
+        self.assertTrue(poly_selection_value_is_valid(campo, 'url'))
+        self.assertFalse(poly_selection_value_is_valid(campo, 'no-existe'))
+
+    def test_05_una_seleccion_armada_en_ejecucion_se_deja_pasar(self):
+        """No hay contra qué compararla, así que no se descarta nada."""
+        from ..models.poly import poly_selection_value_is_valid
+
+        class CampoFalso:
+            selection = staticmethod(lambda model: [('a', 'A')])
+        self.assertTrue(poly_selection_value_is_valid(CampoFalso(), 'lo-que-sea'))

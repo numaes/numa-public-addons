@@ -1,5 +1,10 @@
 # numa_poly on Odoo 20.0 — redesign specification
 
+> **Estado: completado el 2026-09-20.** Las fases 1 a 7 están hechas y la suite
+> corre en verde: 216 tests de `numa_poly` y `numa_poly_test`, 0 fallos, sobre
+> base limpia. Lo que sigue se deja como está porque documenta *por qué* el
+> resultado es el que es; las notas de cada fase dicen qué terminó pasando.
+
 Written 2026-09-20, after auditing every patch point listed in `UPGRADE.md`
 against the Odoo 20.0 source at `numa-public-odoo-20.0-numa`.
 
@@ -301,8 +306,28 @@ pass.
    the new operator set. Delete the `auto_join` and `any` assertions.
 6. **Stabilization anchor**, if anything still needs one after step 3.
 7. **Security, data, manifest**, and the JS decision from §4.
-8. `numa_poly_test` (another ~1,500 lines), then the four dependants:
-   `numa_big_id`, `numa_fsm`, `numa_fsm_crm`, `numa_fsm_hr`.
+8. `numa_poly_test` — hecho, se migró junto con las fases 3 a 7. Quedan los
+   cuatro dependientes: `numa_big_id`, `numa_fsm`, `numa_fsm_crm`,
+   `numa_fsm_hr`.
+
+**Lo que el trabajo enseñó, y la especificación no anticipaba:**
+
+- La contribución de definiciones corre ANTES del setup, así que `_fields` está
+  vacío y hay que leer `_field_definitions`. Fue lo que hizo fallar el primer
+  intento de la fase 4.
+- `_inherit` da el MRO correcto pero duplica las columnas de la base en cada
+  tabla derivada. Se resuelve declarando los campos de la base como `related`,
+  que además los hace escribibles hacia la base y no-compartibles de regalo.
+- Varias cosas estaban rotas EN SILENCIO desde antes de la migración:
+  `_patch_ir_ui_view` buscaba una clase renombrada y no instalaba nada;
+  `poly_selection_value_is_valid` exigía una `list` donde Odoo 20 entrega una
+  tupla, y daba por válido todo; `_setup_base` no existe, así que
+  `_build_poly_fields` nunca corría; tres `_sql_constraints` no creaban ninguna
+  constraint. Ninguna de esas las habría encontrado leyendo el inventario de
+  parches: las encontró la suite.
+- El N+1 al leer un campo heredado sale de que `_compute_related` recorre
+  registro por registro (`fields.py:760`): la `PolyReference` tiene que hacer
+  viajar el prefetch del origen, no el id suelto.
 
 Each phase ends with the suite run and the result recorded. A phase that needs
 a test changed is a phase that needs a conversation first.

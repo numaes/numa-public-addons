@@ -44,10 +44,14 @@ class TestPolyAdvancedAPI(TransactionCase):
         self.assertEqual(len(projects), 10)
         
         # 3. Validar contador de queries
-        # Odoo 18 prefetching debería cargar 'field_a' para todos los registros 
-        # en la primera iteración o durante la carga inicial del recordset.
-        # N debe ser un número bajo (ej. 1 query para los IDs de behavior.a 
-        # y 1 query para los datos de behavior.a).
+        # El prefetch debería cargar 'field_a' para todos los registros en la
+        # primera iteración, no uno por registro: eso es lo que se mide.
+        #
+        # Hay que vaciar la caché antes de medir. Sin esto los valores ya están
+        # en memoria desde el create, la lectura no toca la base, y
+        # assertQueryCount corta con "did not detect any queries": no es que el
+        # prefetch ande de más, es que no se midió nada.
+        self.env.invalidate_all()
         with self.assertQueryCount(3):
             for project in projects:
                 # Acceder al campo inyectado

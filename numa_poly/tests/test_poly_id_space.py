@@ -92,16 +92,21 @@ class TestPolyIdSpace(TransactionCase):
         return bool(self.env.cr.fetchone())
 
     def test_03_claiming_is_idempotent(self):
-        """Se re-aplica en cada actualización, así que tiene que poder correr dos veces."""
+        """Se re-aplica en cada actualización, así que tiene que poder correr dos veces.
+
+        Antes esto comparaba contra el estado PREVIO de res.partner, dando por sentado que
+        ya estaba reclamada. Eso depende de qué módulos haya instalados, no del método: lo
+        que se prueba acá es que la segunda pasada no cambie lo que dejó la primera.
+        """
         model = self.env['res.partner']
-        antes = self._column_default(model._table)
 
         model._poly_claim_shared_id_space()
+        tras_la_primera = self._column_default(model._table)
         model._poly_claim_shared_id_space()
 
-        self.assertEqual(self._column_default(model._table), antes,
+        self.assertEqual(self._column_default(model._table), tras_la_primera,
                          "reclamar dos veces cambió algo")
-        self.assertIn(POLY_ID_SEQUENCE, self._column_default(model._table))
+        self.assertIn(POLY_ID_SEQUENCE, tras_la_primera)
 
     def test_04_non_polymorphic_models_are_left_alone(self):
         """El espacio compartido es de quien participa; el resto conserva su secuencia."""

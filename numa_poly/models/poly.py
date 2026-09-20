@@ -126,13 +126,21 @@ def poly_selection_value_is_valid(field, value):
     `fields.Reference` subclasses `fields.Selection`, but its stored value is
     ``"model,id"`` while its selection keys are bare model names. Comparing the two
     directly rejects every well-formed reference, so a Reference is validated on its
-    model part alone. Anything whose selection is not a plain list (a callable, or a
-    selection built at runtime) is left alone: there is nothing to check it against.
+    model part alone. Una selección que se arma en tiempo de ejecución -un callable,
+    o el nombre de un método- se deja pasar: no hay contra qué compararla.
+
+    [poly][20.0] Antes esto exigía ``isinstance(selection, list)``, y en Odoo 20
+    ``field.selection`` es una TUPLA de tuplas. Con esa condición el filtro daba
+    por válido todo valor de todo campo Selection y no filtraba nunca: justo la
+    falla silenciosa que esta función existe para evitar.
     """
     selection = field.selection
-    if not isinstance(selection, list):
+    if callable(selection) or isinstance(selection, str):
         return True
-    valid_keys = {entry[0] for entry in selection}
+    try:
+        valid_keys = {entry[0] for entry in selection}
+    except TypeError:
+        return True
     if not valid_keys:
         return True
     if isinstance(field, fields.Reference):
@@ -1788,7 +1796,14 @@ class PolyReference(fields.Many2one):
         # Standard polymorphic reference: IDs match in polymorphic hierarchy
         try:
             comodel = record.pool[self.comodel_name]
-            return comodel(record.env, (record.id,), (record.id,))
+            # [poly][20.0] El prefetch que viaja es el del ORIGEN, no el id suelto.
+            # _compute_related recorre registro por registro (fields.py:760), asi
+            # que si cada destino sale con prefetch de un id, leer un campo
+            # heredado sobre N registros cuesta N consultas: el N+1 que el test
+            # test_11_performance_n_plus_one vigila. Base y derivado comparten el
+            # espacio de ids, asi que los ids del origen son ids validos en la
+            # base y los N destinos se leen de una.
+            return comodel(record.env, (record.id,), record._prefetch_ids or (record.id,))
         except Exception:
             try:
                 return record.env[self.comodel_name].browse()
@@ -1841,7 +1856,8 @@ class PolyReference(fields.Many2one):
                 return records.pool[self.comodel_name](records.env, (), ())
             
         # multirecord case: use mapped IDs to build a related recordset
-        return records.pool[self.comodel_name](records.env, tuple(records.ids), tuple(records.ids))
+        return records.pool[self.comodel_name](
+            records.env, tuple(records.ids), records._prefetch_ids or tuple(records.ids))
 
     @property
     def _description_searchable(self):
