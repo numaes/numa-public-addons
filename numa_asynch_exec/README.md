@@ -16,6 +16,20 @@ This module provides a robust, persistent, and traceable infrastructure for exec
 - **Configurable Retries**: A configurable number of attempts with a delay, reusing the same job record. A database conflict is retried on its own budget, since it means the job collided rather than failed.
 - **Thread Pool Management**: Uses a global `ThreadPoolExecutor` with a configurable number of worker threads.
 - **Dependency Management**: Jobs can depend on other jobs, enabling complex asynchronous workflows.
+- **Visible queue**: the jobs are a list under **Settings → Technical → Database Structure → Asynchronous Jobs**, with a **Requeue** button for whatever got stuck.
+
+## Looking at the queue
+
+**Settings → Technical → Database Structure → Asynchronous Jobs** opens the
+list, filtered on the jobs that have not finished yet; remove the filter to see
+the whole history. The form shows the call as it was stored (model, ids,
+arguments, context), the reason the last attempt failed, and both sides of the
+dependency graph: what the job waits for, and what waits for it.
+
+The **Requeue** button puts a job back in the queue with a fresh budget of
+attempts. It is the way out for a job left in `running` by a process that died,
+and for a failed job once its cause is fixed. It refuses jobs that already
+finished successfully, since running them again would repeat what they did.
 
 ## Access rights
 
@@ -245,8 +259,8 @@ recordset.job_wait().validate_rules().job_wait().check_permissions().process().n
 
 A job whose process died while it was running stays in `running`, and the
 recovery cron leaves it alone: it has no way to tell a dead worker from a job
-that is simply taking a long time. Such a job has to be moved back to
-`pending` by hand. This is a known gap.
+that is simply taking a long time. Use the **Requeue** button on such a job,
+once you are sure nothing is still running it.
 
 ### Circular Dependencies
 
@@ -292,6 +306,8 @@ Changes of behaviour that came with the migration:
   database connection for nothing.
 - **`asynch_exec()` returns the job id** instead of `True`, and does not hand
   the caller a `sudo()` recordset.
+- **The queue has a user interface.** The module used to have no view at all:
+  the only way to see what it was doing was SQL or a shell.
 
 Structure: the models moved to one file per model (`numa_asynch_job.py`,
 `numa_asynch_job_dependency.py`, `base.py`), and the proxies, which are not

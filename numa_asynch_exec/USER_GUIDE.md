@@ -288,7 +288,12 @@ Jobs can be in one of these states:
 A job in **Failed** never releases what waits for it: a chain stops at its
 first failure, on purpose. A job left in **Running** by a process that died
 stays there; the recovery cron cannot tell it from a job that is simply slow,
-so it has to be moved back to `pending` by hand.
+so somebody has to say so, with the **Requeue** button.
+
+The queue is at **Settings → Technical → Database Structure → Asynchronous
+Jobs**, filtered on the unfinished jobs. **Requeue** puts a job back with a
+fresh budget of attempts; it refuses jobs that already finished, since running
+them again would repeat what they did.
 
 ### Checking Job Status
 

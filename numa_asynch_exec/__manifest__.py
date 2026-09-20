@@ -30,12 +30,15 @@ Key Features:
   Odoo configuration file.
 * **Retries:** a configurable number of attempts, with a delay, reusing the
   same job record.
+* **Visible:** the queue is a list under Settings > Technical > Database
+  Structure, with a Requeue button for whatever got stuck.
 
 Migrated to Odoo 20.0. See README.md for the list of API changes.
 """,
     'depends': ['numa_exceptions'],
     'data': [
         'security/ir.access.csv',
+        'views/numa_asynch_job_views.xml',
         'data/numa_asynch_exec_data.xml',
     ],
     'post_init_hook': 'post_init_hook',

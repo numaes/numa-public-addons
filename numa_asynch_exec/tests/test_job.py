@@ -4,6 +4,7 @@
 
 from psycopg2.errors import SerializationFailure
 
+from odoo.exceptions import UserError
 from odoo.tools import mute_logger
 
 from .common import AsynchCommon
@@ -241,3 +242,78 @@ class TestConcurrencyRetry(AsynchCommon):
         job.write({'concurrency_retries': 50})
 
         self.assertEqual(job._next_delay(), 3200)
+
+
+class TestRequeue(AsynchCommon):
+    """The way out for a job that got stuck."""
+
+    def test_a_failed_job_goes_back_to_the_queue(self):
+        job = self.make_job(state='failed', retry_count=3, error="ValueError: boom")
+
+        with self.collect_queue() as submitted:
+            job.action_requeue()
+
+        self.assertEqual(job.state, 'pending')
+        self.assertEqual([entry['job_id'] for entry in submitted], [job.id])
+
+    def test_requeueing_gives_a_fresh_budget(self):
+        job = self.make_job(state='failed', retry_count=3, concurrency_retries=5,
+                            error="ValueError: boom")
+
+        with self.collect_queue():
+            job.action_requeue()
+
+        self.assertEqual(job.retry_count, 0)
+        self.assertEqual(job.concurrency_retries, 0)
+        self.assertFalse(job.error)
+
+    def test_a_job_stuck_in_running_can_be_requeued(self):
+        # A process that died leaves its job in 'running' forever.
+        job = self.make_job(state='running')
+
+        with self.collect_queue() as submitted:
+            job.action_requeue()
+
+        self.assertEqual(job.state, 'pending')
+        self.assertEqual(len(submitted), 1)
+
+    def test_a_job_with_unmet_dependencies_goes_back_to_waiting(self):
+        blocker = self.make_job(state='pending')
+        blocked = self.make_job(state='failed')
+        self.env['numa.asynch.job.dependency'].create({
+            'job_id': blocked.id, 'depends_on_id': blocker.id,
+        })
+
+        with self.collect_queue() as submitted:
+            blocked.action_requeue()
+
+        self.assertEqual(blocked.state, 'waiting')
+        self.assertFalse(submitted, "it must not run before what it waits for")
+
+    def test_a_finished_job_is_not_run_again(self):
+        job = self.make_job(state='done')
+
+        with self.assertRaises(UserError) as caught:
+            job.action_requeue()
+
+        self.assertIn('1', str(caught.exception), "the message names how many")
+        self.assertEqual(job.state, 'done')
+
+    def test_requeueing_several_jobs_at_once(self):
+        first = self.make_job(state='failed')
+        second = self.make_job(state='running')
+
+        with self.collect_queue() as submitted:
+            (first | second).action_requeue()
+
+        self.assertEqual(first.state, 'pending')
+        self.assertEqual(second.state, 'pending')
+        self.assertEqual(len(submitted), 2)
+
+
+class TestDisplayName(AsynchCommon):
+
+    def test_a_job_says_what_it_calls(self):
+        job = self.make_job()
+
+        self.assertEqual(job.display_name, 'res.partner.write #%s' % job.id)

@@ -4,6 +4,7 @@
 import logging
 
 from odoo import api, fields, models
+from odoo.exceptions import UserError
 from odoo.sql_db import PG_CONCURRENCY_EXCEPTIONS_TO_RETRY
 
 _logger = logging.getLogger(__name__)
@@ -73,6 +74,35 @@ class NumaAsynchJob(models.Model):
     def _compute_has_dependencies(self):
         for record in self:
             record.has_dependencies = bool(record.dependency_ids)
+
+    @api.depends('model_name', 'method_name')
+    def _compute_display_name(self):
+        for record in self:
+            record.display_name = "%s.%s #%s" % (
+                record.model_name or '?', record.method_name or '?', record.id)
+
+    def action_requeue(self):
+        """Put the selected jobs back in the queue, with a fresh budget.
+
+        This is the way out for a job left in ``running`` by a process that
+        died: nothing can tell such a job apart from one that is merely slow,
+        so somebody has to say so.
+        """
+        finished = self.filtered(lambda job: job.state == 'done')
+        if finished:
+            raise UserError(self.env._(
+                "%(count)s of the selected jobs already finished successfully, and running "
+                "them again could repeat what they did. Unselect them, or pick only the jobs "
+                "that are Failed, Waiting or Running.",
+                count=len(finished)))
+        for job in self:
+            job.write({'retry_count': 0, 'concurrency_retries': 0, 'error': False})
+            if job._all_dependencies_done():
+                job.write({'state': 'pending'})
+                job._queue()
+            else:
+                job.write({'state': 'waiting'})
+        return True
 
     def _all_dependencies_done(self):
         """Tell whether every job this one waits for has finished successfully."""

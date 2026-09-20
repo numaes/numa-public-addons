@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="numa_asynch_job_view_list" model="ir.ui.view">
+        <field name="name">numa.asynch.job.list</field>
+        <field name="model">numa.asynch.job</field>
+        <field name="arch" type="xml">
+            <list string="Asynchronous Jobs" create="0" edit="0" default_order="id desc"
+                  decoration-danger="state == 'failed'"
+                  decoration-info="state == 'running'"
+                  decoration-muted="state == 'done'">
+                <field name="create_date" string="Queued"/>
+                <field name="model_name"/>
+                <field name="method_name"/>
+                <field name="uid" optional="show"/>
+                <field name="retry_count" optional="hide"/>
+                <field name="concurrency_retries" optional="hide"/>
+                <field name="error" optional="hide"/>
+                <field name="state" widget="badge"
+                       decoration-danger="state == 'failed'"
+                       decoration-success="state == 'done'"
+                       decoration-info="state == 'running'"
+                       decoration-warning="state == 'waiting'"/>
+                <button name="action_requeue" type="object" string="Requeue" icon="fa-repeat"
+                        invisible="state == 'done'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="numa_asynch_job_view_form" model="ir.ui.view">
+        <field name="name">numa.asynch.job.form</field>
+        <field name="model">numa.asynch.job</field>
+        <field name="arch" type="xml">
+            <form string="Asynchronous Job" create="0">
+                <header>
+                    <button name="action_requeue" type="object" string="Requeue"
+                            class="btn-primary" invisible="state == 'done'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="pending,waiting,running,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="display_name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group string="Call">
+                            <field name="model_name"/>
+                            <field name="method_name"/>
+                            <field name="res_ids" widget="json"/>
+                            <field name="args" widget="json"/>
+                            <field name="kwargs" widget="json"/>
+                        </group>
+                        <group string="Execution">
+                            <field name="db_name"/>
+                            <field name="uid"/>
+                            <field name="create_date" string="Queued"/>
+                            <field name="write_date" string="Last change"/>
+                            <field name="max_retries"/>
+                            <field name="retry_count"/>
+                            <field name="concurrency_retries"/>
+                            <field name="retry_delay"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Error" name="error" invisible="not error">
+                            <field name="error" readonly="1"/>
+                        </page>
+                        <page string="Waits For" name="dependencies">
+                            <field name="dependency_ids" readonly="1">
+                                <list string="Waits For">
+                                    <field name="depends_on_id"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Waited On By" name="dependents">
+                            <field name="dependent_ids" readonly="1">
+                                <list string="Waited On By">
+                                    <field name="job_id"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Context" name="context">
+                            <field name="context" widget="json"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="numa_asynch_job_view_search" model="ir.ui.view">
+        <field name="name">numa.asynch.job.search</field>
+        <field name="model">numa.asynch.job</field>
+        <field name="arch" type="xml">
+            <search string="Asynchronous Jobs">
+                <field name="model_name"/>
+                <field name="method_name"/>
+                <field name="uid"/>
+                <filter string="Unfinished" name="unfinished"
+                        domain="[('state', 'not in', ['done', 'failed'])]"/>
+                <filter string="Failed" name="failed" domain="[('state', '=', 'failed')]"/>
+                <separator/>
+                <filter string="Pending" name="pending" domain="[('state', '=', 'pending')]"/>
+                <filter string="Waiting" name="waiting" domain="[('state', '=', 'waiting')]"/>
+                <filter string="Running" name="running" domain="[('state', '=', 'running')]"/>
+                <filter string="Done" name="done" domain="[('state', '=', 'done')]"/>
+                <separator/>
+                <filter string="Retried" name="retried" domain="[('retry_count', '&gt;', 0)]"/>
+                <group name="group_by">
+                    <filter string="State" name="group_by_state" context="{'group_by': 'state'}"/>
+                    <filter string="Model" name="group_by_model" context="{'group_by': 'model_name'}"/>
+                    <filter string="Method" name="group_by_method" context="{'group_by': 'method_name'}"/>
+                    <filter string="User" name="group_by_uid" context="{'group_by': 'uid'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="numa_asynch_job_action" model="ir.actions.act_window">
+        <field name="name">Asynchronous Jobs</field>
+        <field name="res_model">numa.asynch.job</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_unfinished': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Nothing is queued right now.
+            </p>
+            <p>
+                A job appears here as soon as some code defers a call with
+                <code>asynch_exec()</code> or <code>job_wait()</code>. The filter starts on
+                the jobs that have not finished; remove it to see the whole history.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="numa_asynch_job_menu"
+              action="numa_asynch_job_action"
+              parent="base.next_id_9"
+              groups="base.group_system"
+              sequence="98"/>
+</odoo>
