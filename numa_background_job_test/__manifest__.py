@@ -1,49 +1,27 @@
 # -*- coding: utf-8 -*-
-##############################################################################
-#
-#    NUMA Extreme Systems (www.numaes.com)
-#    Copyright (C) 2017
-#
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU Lesser General Public License as
-#    published by the Free Software Foundation, either version 3 of the
-#    License, or (at your option) any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU Lesser General Public License for more details.
-#
-#    You should have received a copy of the GNU Lesser General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-##############################################################################
-
-
+# Part of NUMA Extreme Systems. See LICENSE file for full copyright and licensing details.
 {
     'name': 'NUMA Background Job - Test',
-    'version': '18.0.0.1',
+    'version': '20.0.1.0.0',
     'category': 'Extra Tools',
+    'summary': 'Demonstration wizard and test suite for numa_background_job',
     'description': """
-NUMA Background Job Test Suite
-==============================
+NUMA Background Job - Test
+==========================
 
-This module adds a test menu to test background job functionality and 
-an example of usage.
+A wizard that starts a background job counting to ten, so the widget can be
+watched moving, and the test suite that runs the same job end to end.
 
-
+Three runs are offered: one that finishes, one that reports an error halfway,
+and one that raises. There is no reason to install this in production.
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'numa_background_job'],
+    'depends': ['numa_background_job'],
     'data': [
-        'security/security.xml',
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'views/background_job_test_view.xml',
     ],
-    'test': [],
-    'qweb': [],
     'installable': True,
     'license': 'LGPL-3',
 }
-# vim:expandtab:smartindent:tabstop=4:softtabstop=4:shiftwidth=4:

@@ -2,12 +2,12 @@
 <templates id="template" xml:space="preserve" >
 
     <!--
-      Barra de avance del trabajo de fondo.
+      Progress bar of a background job.
 
-      La barra se arma UNA sola vez (antes había una copia por estado, todas con un bloque de ancho
-      fijo: se veía toda gris, sin mostrar el avance). Ahora la porción avanzada tiene el ancho del
-      porcentaje y el color lo da el estado; lo que cambia por estado es sólo el botón de cancelar
-      y el mensaje de error.
+      The bar is built ONCE. There used to be one copy per state, each with a fixed-width
+      block, so it showed up all grey and never moved. The filled part now has the width of
+      the percentage and takes its colour from the state; what changes with the state is
+      only the cancel button and the error message.
     -->
     <t t-name="numa_background_job.bj_spinner" owl="1" >
         <div class="bj_spinner">

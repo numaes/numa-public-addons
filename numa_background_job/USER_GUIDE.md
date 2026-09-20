@@ -52,7 +52,9 @@ Use the list filters to show only Initialized, Started, Ended, or Aborted jobs. 
 
 ### 1.5 Automatic Cleanup
 
-Completed and aborted jobs are pruned automatically by a scheduled action that runs daily. Jobs whose **Initialized on** date is older than 8 days are deleted. No manual cleanup is required.
+Completed and aborted jobs are pruned automatically by a scheduled action that runs daily. A **finished** job whose **Initialized on** date is older than the retention period is deleted; a job still running is never deleted, however long it has been at it. The period is 8 days by default and is set with the `numa_background_job.retention_days` system parameter, where `0` disables the cleanup. No manual cleanup is required.
+
+You only see your own jobs. The list at **Settings → Technical → Background Jobs** is filtered to the ones you asked for, and their progress reaches your browser and nobody else's.
 
 ---
 
@@ -98,12 +100,8 @@ Create a job only when you are ready to run it; the thread starts after the **cu
 ```python
 def action_long_export(self):
     self.ensure_one()
-    self.env['res.background_job'].create({
-        'name': f'Export {self.name}',
-        'model': self._name,
-        'res_id': self.id,
-        'method': 'run_export',
-    })
+    self.env['res.background_job']._launch(
+        f'Export {self.name}', self, 'run_export')
     return {
         'type': 'ir.actions.client',
         'tag': 'display_notification',
@@ -116,13 +114,20 @@ def action_long_export(self):
     }
 ```
 
-Do not depend on the job having already started before the create() returns; the thread starts after commit.
+Do not depend on the job having already started before `_launch()` returns; the thread starts after the commit.
+
+`_launch` is the way to start a job. Ordinary users cannot write the job table
+directly, because a row in it names a method the server will call, which would
+turn every private method into something reachable from a browser. `_launch`
+goes through `sudo()` and records the real user as the owner, and it is not
+callable over RPC.
 
 ### 2.5 Transaction and Cursor Behaviour
 
-- The **worker** runs in a **separate thread** with a **new cursor**. It must commit or rollback its own work. The framework commits after `start()`, after `end()` / `abort()`, and after `update_status()` (via the method’s internal commit and bus send).
+- The **worker** runs in a **separate thread** with a **new cursor**. It must commit or rollback its own work. Every status change (`start`, `update_status`, `end`, `abort`) is written on a **cursor of its own** and committed there, so progress is visible while the worker's transaction is still open and survives that transaction rolling back.
 - The worker can perform multiple operations and commits in a single run. If the method returns without calling `end()` or `abort()`, and the state is still `started`, the framework calls `end()` when the method returns.
-- If the worker raises an exception, the framework rolls back the worker’s cursor and calls `abort()` with the traceback.
+- If the worker raises an exception, the framework rolls back the worker's cursor, logs the failure through `numa_exceptions`, and calls `abort()` with the traceback. **The job is not retried**: its method already had whatever effect it had before failing.
+- If the job was called off before the worker picked it up, the worker notices that its `start()` had no effect and runs nothing.
 
 ---
 
@@ -154,13 +159,17 @@ Do not depend on the job having already started before the create() returns; the
 | `bkJob.was_aborted()` | Returns `True` if the job is no longer in state `started` (e.g. user requested abort). The worker should check this in long loops and exit. |
 | `bkJob.update_status(rate=None, statusMsg=None, errorMsg=None)` | Updates `completion_rate`, `current_status`, and optionally `error` for a job in state `started`, then notifies the UI. |
 | `bkJob.get_current_state()` | Returns `(state, completion_rate)`. Useful for the worker to inspect current state. |
-| `bkJob.refresh_state()` | Pushes current state to the bus (normally called internally). |
-| `prune()` (model method) | Deletes jobs initialized more than 8 days ago. Called by the daily cron. |
+| `prune()` (model method) | Deletes **finished** jobs older than the retention period. Called by the daily cron. |
+| `env['res.background_job']._launch(name, record, method)` | Creates a job and starts it, on behalf of the current user. |
+
+`refresh_state()` is gone: status is published by whoever writes it, so there
+is nothing left to push by hand.
 
 ### 3.3 Creating a Job
 
-- **API:** `env['res.background_job'].create({'name': ..., 'model': ..., 'res_id': ..., 'method': ...})`.
-- **Effect:** A record is created; after the current transaction commits, a daemon thread starts and runs the given method on the given record, passing the job record.
+- **API:** `env['res.background_job']._launch(name, record, method, reference_id=None)`.
+- **Effect:** A record is created, owned by the current user; after the current transaction commits, a daemon thread starts and runs the given method on the given record, passing the job record.
+- **Rights:** writing the job table directly needs `base.group_system`. `_launch` is what ordinary code uses.
 
 ---
 
@@ -200,12 +209,8 @@ def run_batch_import(self, bkJob):
 ```python
 def action_generate_report(self):
     self.ensure_one()
-    self.env['res.background_job'].create({
-        'name': f'Report: {self.name}',
-        'model': self._name,
-        'res_id': self.id,
-        'method': 'run_generate_report',
-    })
+    self.env['res.background_job']._launch(
+        f'Report: {self.name}', self, 'run_generate_report')
     return {
         'type': 'ir.actions.client',
         'tag': 'display_notification',
@@ -264,8 +269,9 @@ def run_long_sync(self, bkJob):
 | "No method defined!" | The `method` name must match a method on the model; the record `res_id` must exist. |
 | Job stays "Started" after method returns | The framework calls `end()` when the method returns if state is still `started`. If it does not, check for uncommitted rollback or another process changing state. |
 | Abort not taking effect | The worker must call `was_aborted()` and exit (and call `abort()` or `end()`). If the worker does not check, it will run to completion. |
-| UI not updating | Progress is sent via the bus channel `res.background_job`. Ensure the front end subscribes to that channel if you need live updates. |
-| Old jobs not deleted | The cron "AutoVacuum background jobs objects" runs daily and prunes jobs older than 8 days. Ensure the cron is active. |
+| UI not updating | Progress is sent to the **owner's** bus channel, under the notification type `res.background_job/state`. A front end of your own subscribes to that type; there is no channel to join, the server already put the owner on it. Check that the job's owner is the user watching. |
+| Old jobs not deleted | The cron "Background jobs: delete the old ones" runs daily. It only deletes finished jobs, and only past the retention period; check `numa_background_job.retention_days` is not 0. |
+| `AccessError` on creating a job | Users cannot write the job table any more. Call `_launch()` instead of `create()`. |
 
 ### 5.3 Dependencies
 
@@ -273,5 +279,5 @@ def run_long_sync(self, bkJob):
 
 ---
 
-**Module:** numa_background_job · **Version:** 18.0  
+**Module:** numa_background_job · **Version:** 20.0  
 **See also:** [README.md](README.md), [CHANGES.rst](CHANGES.rst)

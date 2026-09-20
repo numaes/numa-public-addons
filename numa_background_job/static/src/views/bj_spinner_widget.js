@@ -1,12 +1,13 @@
 /** @odoo-module **/
 
 /**
- * Widget del trabajo de fondo: barra de avance, último paso y botón de cancelar.
+ * Background job widget: a progress bar, the last step reported, and a cancel button.
  *
- * El avance llega por el bus (`res.background_job.refresh_state` manda un `notification` al canal
- * `res.background_job` con el id del trabajo). El estado inicial se lee del propio trabajo al
- * montar: antes se tomaba de atributos del XML que nadie completa, así que el widget arrancaba
- * vacío hasta la primera notificación.
+ * Progress arrives over the bus. `res.background_job._notify_owner` sends a
+ * `res.background_job/state` notification to the channel of the user who asked for the
+ * job, so there is no channel to join here: the server already put the owner on it.
+ * The initial state is read from the job itself on mount, since the form was loaded
+ * before any notification was sent.
  */
 
 import { Component, onWillStart, onWillUnmount, useState } from "@odoo/owl";
@@ -17,7 +18,9 @@ import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 
-const CAMPOS = [
+const NOTIFICATION_TYPE = "res.background_job/state";
+
+const JOB_FIELDS = [
     "name",
     "state",
     "completion_rate",
@@ -32,19 +35,8 @@ const CAMPOS = [
 export class BJSpinner extends Component {
     static template = "numa_background_job.bj_spinner";
     static components = {};
-    static defaultProps = { dynamicPlaceholder: false };
     static props = {
         ...standardFieldProps,
-        spinner_name: { type: String, optional: true },
-        spinner_state: { type: String, optional: true },
-        state_msg: { type: String, optional: true },
-        completion_rate: { type: Number, optional: true },
-        current_status: { type: String, optional: true },
-        error_msg: { type: String, optional: true },
-        initialized_on: { type: String, optional: true },
-        started_on: { type: String, optional: true },
-        ended_on: { type: String, optional: true },
-        aborted_on: { type: String, optional: true },
         context: { type: Object, optional: true },
         domain: { type: [Array, Function], optional: true },
     };
@@ -54,59 +46,52 @@ export class BJSpinner extends Component {
 
         this.orm = useService("orm");
         this.action = useService("action");
-        this.busService = this.env.services.bus_service;
-        this.channel = "res.background_job";
-        // Al montar todavía no hubo transición: lo que se lee del trabajo ya vino con el
-        // formulario, así que no corresponde recargar nada.
-        this.montado = false;
+        this.bus = useService("bus_service");
+        // Nothing has changed at mount time: what is read from the job came with the
+        // form, so there is nothing to reload yet.
+        this.mounted = false;
 
         this.state = useState({
-            spinner_name: this.props.spinner_name || "...",
-            spinner_state: this.props.spinner_state || "init",
-            state_msg: this.props.state_msg || _t("Starting ..."),
-            completion_rate: this.props.completion_rate || 0,
-            current_status: this.props.current_status || "",
-            error_msg: this.props.error_msg || "",
-            initialized_on: this._fecha(this.props.initialized_on),
-            started_on: this._fecha(this.props.started_on),
-            ended_on: this._fecha(this.props.ended_on),
-            aborted_on: this._fecha(this.props.aborted_on),
+            spinner_name: "...",
+            spinner_state: "init",
+            state_msg: _t("Starting ..."),
+            completion_rate: 0,
+            current_status: "",
+            error_msg: "",
+            initialized_on: "",
+            started_on: "",
+            ended_on: "",
+            aborted_on: "",
         });
 
-        // El bus avisa el avance de TODOS los trabajos: sólo se atiende el que muestra este widget.
-        this.onNotification = (payload) => {
+        onWillStart(async () => {
+            await this._getCurrentState();
+            this.mounted = true;
+        });
+
+        // The owner hears about every job of theirs: only the one this widget shows matters.
+        const onNotification = (payload) => {
             const id = this.jobId;
             if (!payload || (id && payload.id && payload.id !== id)) {
                 return;
             }
-            this._update_spinner(payload);
+            this._updateSpinner(payload);
         };
-
-        onWillStart(async () => {
-            await this._get_current_state();
-            this.montado = true;
-        });
-
-        if (this.busService) {
-            this.busService.addChannel(this.channel);
-            this.busService.subscribe("notification", this.onNotification);
-            onWillUnmount(() => {
-                this.busService.unsubscribe("notification", this.onNotification);
-            });
-        }
+        const unsubscribe = this.bus.subscribe(NOTIFICATION_TYPE, onNotification);
+        onWillUnmount(unsubscribe);
     }
 
-    /** Id del trabajo que muestra el widget (el many2one del registro). */
+    /** Id of the job this widget shows (the many2one on the record). */
     get jobId() {
-        const valor = this.props.record && this.props.record.data[this.props.name];
-        if (!valor) {
+        const value = this.props.record && this.props.record.data[this.props.name];
+        if (!value) {
             return false;
         }
-        return Array.isArray(valor) ? valor[0] : valor.id || false;
+        return Array.isArray(value) ? value[0] : value.id || false;
     }
 
-    // Lo que lee la plantilla. Van como getters para que el template siga escribiéndose con los
-    // nombres de siempre y los valores salgan del estado reactivo.
+    // What the template reads. Getters, so the template keeps the names it always had
+    // while the values come from the reactive state.
     get spinner_name() {
         return this.state.spinner_name;
     }
@@ -126,10 +111,10 @@ export class BJSpinner extends Component {
         return this.state.error_msg;
     }
 
-    /** Porcentaje ya recorrido, acotado a 0..100: es el ancho de la porción con color. */
+    /** How much is done, clamped to 0..100: the width of the coloured part. */
     get progress_pct() {
-        const valor = Math.round(Number(this.state.completion_rate) || 0);
-        return Math.max(0, Math.min(100, valor));
+        const value = Math.round(Number(this.state.completion_rate) || 0);
+        return Math.max(0, Math.min(100, value));
     }
 
     async click_abort() {
@@ -140,99 +125,100 @@ export class BJSpinner extends Component {
         await this.orm.call("res.background_job", "try_to_abort", [id]);
         this.state.spinner_state = "aborting";
         this.state.state_msg = _t("Aborting ...");
-        // El cierre lo confirma el propio trabajo por el bus; si no llegara, se relee.
-        browser.setTimeout(() => this._get_current_state(), 10000);
+        // The job itself confirms it stopped, over the bus; if that never arrives, re-read.
+        browser.setTimeout(() => this._getCurrentState(), 10000);
     }
 
-    _update_spinner(vals) {
-        vals = vals || {};
-        const anterior = this.state.spinner_state;
+    _updateSpinner(values) {
+        values = values || {};
+        const previous = this.state.spinner_state;
         Object.assign(this.state, {
-            spinner_name: vals.name || this.state.spinner_name,
-            spinner_state: vals.state || this.state.spinner_state,
-            completion_rate: vals.completion_rate || 0,
-            current_status: vals.current_status || "",
-            error_msg: vals.error || "",
-            initialized_on: this._fecha(vals.initialized_on) || this.state.initialized_on,
-            started_on: this._fecha(vals.started_on) || this.state.started_on,
-            ended_on: this._fecha(vals.ended_on) || this.state.ended_on,
-            aborted_on: this._fecha(vals.aborted_on) || this.state.aborted_on,
+            spinner_name: values.name || this.state.spinner_name,
+            spinner_state: values.state || this.state.spinner_state,
+            completion_rate: values.completion_rate || 0,
+            current_status: values.current_status || "",
+            error_msg: values.error || "",
+            initialized_on: this._date(values.initialized_on) || this.state.initialized_on,
+            started_on: this._date(values.started_on) || this.state.started_on,
+            ended_on: this._date(values.ended_on) || this.state.ended_on,
+            aborted_on: this._date(values.aborted_on) || this.state.aborted_on,
         });
-        this.state.state_msg = this._state_msg(this.state);
-        if (this.montado && anterior !== "ended" && this.state.spinner_state === "ended") {
-            this._recargar_al_terminar();
+        this.state.state_msg = this._stateMessage(this.state);
+        if (this.mounted && previous !== "ended" && this.state.spinner_state === "ended") {
+            this._reloadOnCompletion();
         }
     }
 
     /**
-     * Cuando el trabajo TERMINA BIEN, el formulario sigue mostrando lo que se leyó al abrirlo (el
-     * estado del registro, los contadores): el widget se entera por el bus, el resto no. Se recarga
-     * la vista para que lo que se ve sea lo que quedó.
+     * When a job ENDS WELL, the form still shows what was read when it was opened: the
+     * record's state, its counters. The widget hears about the change over the bus, the
+     * rest of the form does not, so the view is reloaded to show what was left behind.
      *
-     * Sólo al terminar bien. Si se canceló o falló, no se toca nada: el usuario tiene que poder
-     * leer el mensaje de error y lo que quedó a medias.
+     * Only when it ends well. If it was cancelled or failed, nothing is touched: the user
+     * has to be able to read the error and whatever was left half done.
      *
-     * Tampoco se recarga si hay cambios sin guardar: recargar los perdería.
+     * Nor is it reloaded while there are unsaved changes, which a reload would lose.
      */
-    _recargar_al_terminar() {
-        // Un respiro antes de recargar: el trabajo confirma su última tanda justo después de
-        // avisar que terminó.
+    _reloadOnCompletion() {
+        // A breath before reloading: the job commits its last batch right after saying
+        // that it finished.
         browser.setTimeout(async () => {
-            const registro = this.props.record;
-            if (registro && (await registro.isDirty())) {
-                return;         // hay cambios sin guardar: recargar los perdería
+            const record = this.props.record;
+            if (record && (await record.isDirty())) {
+                return; // unsaved changes: reloading would lose them
             }
             this.action.doAction({ type: "ir.actions.client", tag: "soft_reload" });
         }, 1500);
     }
 
-    async _get_current_state() {
+    async _getCurrentState() {
         const id = this.jobId;
         if (!id) {
             return;
         }
-        const valores = await this.orm.read("res.background_job", [id], CAMPOS);
-        if (valores && valores.length) {
-            this._update_spinner(valores[0]);
+        const values = await this.orm.read("res.background_job", [id], JOB_FIELDS);
+        if (values && values.length) {
+            this._updateSpinner(values[0]);
         }
     }
 
     /**
-     * Fecha del trabajo, en la hora del usuario.
+     * A job date, in the user's own timezone.
      *
-     * Tanto el bus como el ORM mandan la fecha en UTC —el bus, además, como el texto "False"
-     * cuando está vacía—, así que el widget mostraba una hora que no coincidía con la del resto
-     * del formulario: "Started: 20:00:57" al lado de un "Inicio 17:00:57" del mismo trabajo.
+     * Both the bus and the ORM send the date in UTC - the bus also sends the string
+     * "False" when it is empty - so the widget used to show a time that did not match the
+     * rest of the form: "Started: 20:00:57" next to an "Initialized 17:00:57" of the same
+     * job.
      */
-    _fecha(valor) {
-        if (!valor || valor === "False") {
+    _date(value) {
+        if (!value || value === "False") {
             return "";
         }
         try {
-            return formatDateTime(deserializeDateTime(valor));
+            return formatDateTime(deserializeDateTime(value));
         } catch {
-            return valor;        // formato inesperado: mejor mostrarlo crudo que perderlo
+            return value; // unexpected format: better shown raw than lost
         }
     }
 
-    /** Descripción del estado, con las fechas que correspondan. */
-    _state_msg(datos) {
-        const mensajes = {
-            init: _t("Initializing: ") + (datos.initialized_on || ""),
-            started: _t("Started: ") + (datos.started_on || ""),
+    /** What the state reads as, with whatever dates apply. */
+    _stateMessage(data) {
+        const messages = {
+            init: _t("Initializing: ") + (data.initialized_on || ""),
+            started: _t("Started: ") + (data.started_on || ""),
             ended:
                 _t("Started: ") +
-                (datos.started_on || "") +
+                (data.started_on || "") +
                 _t(" - Ended: ") +
-                (datos.ended_on || ""),
+                (data.ended_on || ""),
             aborting: _t("Aborting ..."),
             aborted:
                 _t("Started: ") +
-                (datos.started_on || "") +
+                (data.started_on || "") +
                 _t(" - Aborted: ") +
-                (datos.aborted_on || ""),
+                (data.aborted_on || ""),
         };
-        return mensajes[datos.spinner_state] || _t("Starting ...");
+        return messages[data.spinner_state] || _t("Starting ...");
     }
 }
 

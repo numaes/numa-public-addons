@@ -1,0 +1,3 @@
+id,name,model_id,group_id/id,operation,domain
+access_res_background_job_own,res.background_job own,res.background_job,base.group_user,ru,"[('user_id', '=', user.id)]"
+access_res_background_job_system,res.background_job system,res.background_job,base.group_system,crud,

@@ -1,101 +1,118 @@
-<?xml version="1.0" encoding="UTF-8"?>
-
+<?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data>
-        <menuitem name="Background Jobs" parent="base.menu_custom" id="background_jobs_submenu"/>
+    <record id="background_job_view_list" model="ir.ui.view">
+        <field name="name">res.background_job.list</field>
+        <field name="model">res.background_job</field>
+        <field name="arch" type="xml">
+            <list string="Background Jobs" create="0" default_order="id desc"
+                  decoration-danger="state == 'aborted'"
+                  decoration-info="state == 'started'"
+                  decoration-muted="state == 'ended'">
+                <field name="name"/>
+                <field name="user_id" optional="hide"/>
+                <field name="model"/>
+                <field name="res_id" optional="hide"/>
+                <field name="method"/>
+                <field name="reference_id" optional="hide"/>
+                <field name="completion_rate" widget="progressbar"/>
+                <field name="current_status" optional="show"/>
+                <field name="initialized_on"/>
+                <field name="started_on" optional="hide"/>
+                <field name="ended_on" optional="hide"/>
+                <field name="aborted_on" optional="hide"/>
+                <field name="state" widget="badge"
+                       decoration-danger="state == 'aborted'"
+                       decoration-success="state == 'ended'"
+                       decoration-info="state == 'started'"
+                       decoration-warning="state == 'aborting'"/>
+            </list>
+        </field>
+    </record>
 
-        <record model="ir.ui.view" id="background_job_tree">
-            <field name="name">NUMA Background job tree</field>
-            <field name="model">res.background_job</field>
-            <field name="arch" type="xml">
-                <list string="Background Jobs">
-                    <field name="name"/>
-
-                    <field name="model"/>
-                    <field name="res_id"/>
-                    <field name="method"/>
-                    <field name="reference_id"/>
-
-                    <field name="completion_rate"/>
-                    <field name="current_status"/>
-
-                    <field name="initialized_on"/>
-                    <field name="started_on"/>
-                    <field name="ended_on"/>
-                    <field name="aborted_on"/>
-
-                    <field name="state"/>
-                </list>
-            </field>
-        </record>
-
-        <record model="ir.ui.view" id="background_job_form">
-            <field name="name">NUMA Background job form</field>
-            <field name="model">res.background_job</field>
-            <field name="arch" type="xml">
-                <form string="Background Job" version="7.0">
-                    <header>
-                        <button name="abort" invisible="state == 'started'" type="object" string="Abort" />
-                        <field name="state" widget="statusbar" 
-                               statusbar_visible="init,started,ended,aborted" 
-                               statusbar_colors='{"canceled":"red","init":"blue"}'/>
-                    </header>
-                    <sheet width="90%">
-                      <h1>
-                          <field name="name" class="oe_inline" readonly="1"/>
-                      </h1>
-                      <group name="main_info">
-                        <field name="model"/>
-                        <field name="res_id"/>
-                        <field name="method"/>
-                        <field name="reference_id"/>
-                      </group>
-                      <group name="current_state">
-                        <field name="completion_rate"/>
-                        <field name="current_status"/>
-                        <field name="error" colspan="4"/>
-                      </group>
-                      <group name="dates">
-                        <field name="initialized_on"/>
-                        <field name="started_on"/>
-                        <field name="ended_on"/>
-                        <field name="aborted_on"/>
-                      </group>
-                   </sheet>
-                </form>
-            </field>
-        </record>
-
-        <record model="ir.ui.view" id="background_job_search" >
-            <field name="name">NUMA Background job search</field>
-            <field name="model">res.background_job</field>
-            <field name="arch" type="xml">
-                <search string="Search background jobs">
-                    <filter string="Initialized" name="initialized" domain="[('state','=','init')]" />
-                    <filter string="Started" name="started" domain="[('state','=','started')]" />
-                    <filter string="Ended" name="ended" domain="[('state','=','ended')]" />
-                    <filter string="Aborted" name="aborted" domain="[('state','=','aborted')]" />
-                    <field name="name"/>
-                    <field name="model"/>
-                    <group expand="0" string="Grouped by..." colspan="4" col="10">
-                        <filter string="State" name="group_by_state" domain="[]" context="{'group_by':'state'}"/>
-                        <filter string="Model" name="group_by_model" domain="[]" context="{'group_by':'model'}"/>
+    <record id="background_job_view_form" model="ir.ui.view">
+        <field name="name">res.background_job.form</field>
+        <field name="model">res.background_job</field>
+        <field name="arch" type="xml">
+            <form string="Background Job" create="0">
+                <header>
+                    <!-- Asking a job to stop only means anything while it runs -->
+                    <button name="try_to_abort" type="object" string="Abort"
+                            class="btn-primary" invisible="state != 'started'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="init,started,ended"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                    </div>
+                    <group>
+                        <group name="main_info" string="Call">
+                            <field name="user_id"/>
+                            <field name="model"/>
+                            <field name="res_id"/>
+                            <field name="method"/>
+                            <field name="reference_id"/>
+                        </group>
+                        <group name="dates" string="Timeline">
+                            <field name="initialized_on"/>
+                            <field name="started_on"/>
+                            <field name="ended_on"/>
+                            <field name="aborted_on"/>
+                        </group>
                     </group>
-                </search>
-            </field>
-        </record>
+                    <group name="current_state" string="Progress">
+                        <field name="completion_rate" widget="progressbar"/>
+                        <field name="current_status"/>
+                    </group>
+                    <group name="failure" string="Error" invisible="not error">
+                        <field name="error" nolabel="1" readonly="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
 
-        <record id="background_job_action" model="ir.actions.act_window">
-            <field name="name">Background job</field>
-            <field name="res_model">res.background_job</field>
-            <field name="view_mode">tree,form</field>
-        </record>
+    <record id="background_job_view_search" model="ir.ui.view">
+        <field name="name">res.background_job.search</field>
+        <field name="model">res.background_job</field>
+        <field name="arch" type="xml">
+            <search string="Search background jobs">
+                <field name="name"/>
+                <field name="model"/>
+                <field name="user_id"/>
+                <filter string="Unfinished" name="unfinished"
+                        domain="[('state', 'not in', ['ended', 'aborted'])]"/>
+                <separator/>
+                <filter string="Initializing" name="initialized" domain="[('state', '=', 'init')]"/>
+                <filter string="Started" name="started" domain="[('state', '=', 'started')]"/>
+                <filter string="Ended" name="ended" domain="[('state', '=', 'ended')]"/>
+                <filter string="Aborted" name="aborted" domain="[('state', '=', 'aborted')]"/>
+                <separator/>
+                <filter string="Failed" name="failed" domain="[('error', '!=', False)]"/>
+                <group name="group_by">
+                    <filter string="State" name="group_by_state" context="{'group_by': 'state'}"/>
+                    <filter string="Model" name="group_by_model" context="{'group_by': 'model'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
 
-        <menuitem id="background_job_menu"
-            action="background_job_action"
-            parent="background_jobs_submenu" 
-            sequence="10"/>
-            
+    <record id="background_job_action" model="ir.actions.act_window">
+        <field name="name">Background Jobs</field>
+        <field name="res_model">res.background_job</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                No background job yet.
+            </p>
+            <p>
+                A job appears here when some feature sends a long task to the background.
+                You only see your own.
+            </p>
+        </field>
+    </record>
 
-    </data>
+    <menuitem id="background_jobs_submenu" name="Background Jobs" parent="base.menu_custom"/>
+    <menuitem id="background_job_menu" action="background_job_action"
+              parent="background_jobs_submenu" sequence="10"/>
 </odoo>

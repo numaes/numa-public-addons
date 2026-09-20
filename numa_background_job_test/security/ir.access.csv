@@ -1,0 +1,2 @@
+id,name,model_id,group_id/id,operation,domain
+access_res_background_job_test,res.background_job_test,res.background_job_test,base.group_user,crud,
