@@ -94,18 +94,60 @@ every model gains the poly API: it happens before any registry is built, so it
 flows into the model definitions naturally. What goes is the *per-model,
 post-setup* re-injection and the proxy-class rebasing.
 
-**Open question for implementation:** how a concrete model declares its poly
-base. Either the module rewrites `_inherit` on the model definitions before the
-registry reads them, or polymorphic models declare it themselves. The first
-keeps today's transparency, the second is honest Odoo. Decide with a spike
-before writing the phase.
+**Answered by the phase 2 spike (2026-09-20).** The mechanism is
+`odoo.orm.model_classes.add_to_registry(registry, model_def)`
+(`model_classes.py:165`), which is how Odoo's own suite contributes a model
+definition at runtime (`odoo/addons/test_base/tests/test_orm/test_fields.py:4694-4773`).
+
+numa_poly builds, per polymorphic concrete model, a synthetic model definition:
+
+```python
+class PolyContribution(models.Model):
+    _module = None
+    _name = <concrete model>
+    _inherit = [<concrete model>]
+    <the base's fields, as real class attributes>
+
+add_to_registry(registry, PolyContribution)
+registry._setup_models__(cr, [])
+```
+
+Because the fields are declared on a real Python class that ends up in the
+model's MRO, `add_field`'s guard (§1.2) is satisfied **by construction**. And
+because Odoo computes `_base_classes__` from the definitions itself, the assert
+of §1.1 holds **by construction**: nothing rebases anything.
+
+Verified against a live registry: the definition is absorbed into
+`_base_classes__`, the fields appear in `_fields`, `_prepare_setup` does not
+complain, and the injected fields can be written, read and searched.
 
 ### 2.2 Own the fields instead of mutating shared ones
 
-`add_field(model_cls, name, field, shareable=False)`
-(`model_classes.py:628`) takes a `shareable` flag precisely to opt a field out
-of the shared cache. Every field numa_poly creates or alters must be its own
-instance, added with `shareable=False`, and never mutated after setup.
+**Answered by the phase 2 spike.** The supported opt-out is a field argument,
+not an `add_field` call. `fields.py:422-423`:
+
+```python
+if self._shareable and (self._args__.get('related') or not self._args__.get('_shareable', True)):
+    self._shareable = False
+```
+
+A field is non-shareable when it is declared `_shareable=False`, **or when it
+is `related`**. Setting `_shareable=True` explicitly is warned against
+(`fields.py:469-470`), so `False` is the sanctioned direction.
+
+That second clause matters more than the first: numa_poly's strategy is
+injecting base fields *as related*, and a related field is therefore already
+excluded from `SHARED_FIELD_CACHE` by construction. The exposure of §1.3 is
+narrower than it looked.
+
+Verified: a plain `Char` comes out shareable, one declared `_shareable=False`
+does not, a `related` does not, neither of the latter two is in the global
+cache, and both survive an incremental `_setup_models__`.
+
+Passing an already-set-up field back through `add_field` corrupts it
+(`_args__` is freed after setup, `fields.py:430`), so the flag has to be set at
+declaration. Every field numa_poly creates must be its own instance, declared
+non-shareable, and never mutated after setup.
 
 The `create()` dance that flips `store`/`related`/`inherited` on live fields
 has to go. What it achieves — writing a base field through a concrete record —
@@ -135,6 +177,14 @@ Odoo 20 gives that idea a first-class home:
 
 **`expression.py` is deleted.** It is replaced by roughly thirty lines on
 `PolyReference`.
+
+**Verified by the phase 2 spike.** A non-stored field declared with both a
+Python `compute` and `compute_sql=lambda field, table: table["id"]` reads
+correctly in Python *and* resolves correctly in SQL: searching it matched the
+right record and excluded the others. `compute_sql` without a `compute` warns
+and yields nothing on the Python side (`fields.py:473`), and it wants an
+explicit `compute_sudo` (`fields.py:475`) — both pairs are required, not
+optional.
 
 The scaffolding must not be ported. It injects fake `Id` fields and swallows
 `Exception` to survive an incomplete `_fields` during registry build. Odoo 20
@@ -236,9 +286,12 @@ pass.
 
 1. **Import.** Straight renames from §3, delete `expression.py` and the dead
    patches. Goal: `import` succeeds. No behaviour yet.
-2. **Spike §2.1.** Can a concrete model declare its poly base through
-   `_inherit` and come out with the fields it needs? This decides everything
-   after it; answer it with throwaway code before writing phase 3.
+2. ~~**Spike §2.1.**~~ **Done, 2026-09-20. Answer: yes, on every point.** The
+   mechanism is `add_to_registry` with a synthetic model definition; the
+   non-shareable opt-out is a field argument, and `related` already implies it;
+   a non-stored field with `compute` + `compute_sql` reads and searches
+   correctly. The three walls of §1 all have a legal path. Phases 3 to 5 are
+   executable.
 3. **Declare instead of inject.** Replace the MRO injection and
    `_poly_inject_field` with the result of the spike. Retire
    `_poly_sync_proxy_class`.
