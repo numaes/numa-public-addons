@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Numa FSM CRM',
-    'version': '18.0.1.0.0',
+    'version': '20.0.1.0.0',
     'summary': 'Integrates FSM capabilities into CRM Leads',
     'description': """
 Numa FSM CRM
@@ -23,15 +23,13 @@ Key Features:
     'license': 'LGPL-3',
     'category': 'Sales/CRM',
     'depends': [
-        'base',
         'crm',
         'mail',
         'numa_fsm',
         'numa_poly',
     ],
     'data': [
-        'security/security.xml',
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'views/crm_bot_views.xml',
         'views/crm_lead_views.xml',
         'views/menu_views.xml',
