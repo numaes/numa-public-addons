@@ -1,5 +1,11 @@
 # User Guide: NUMA Real-Time Observability
 
+**Status: migrated to Odoo 20.0.** The bus channel changed and the JavaScript
+examples below changed with it: the model name is now the notification *type*,
+and the channel is the **Real-Time Observer** group. A user must be in that
+group to receive anything. See the migration section of
+[README.md](README.md#8-migration-to-odoo-200).
+
 This guide provides usage examples and recommended practices for the Real-Time Observability mixin in server-side (Python) and frontend (JavaScript) contexts. For an overview, installation, and API summary, see [README.md](README.md). For implementation details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Table of Contents
@@ -156,15 +162,18 @@ import json
 class NotificationListener(models.Model):
     _name = 'notification.listener'
     
-    def process_notification(self, channel, message):
+    def process_notification(self, notification_type, payload):
         """
         Process a notification received from the bus.
         Typically invoked by an external bus listener service.
+
+        The channel is the observer group; what tells you which model it is
+        about is the notification type, or the 'model' key of the payload.
         """
-        if channel.startswith('observability/'):
-            model_name = channel.replace('observability/', '')
-            record_id = message.get('id')
-            notification_data = message.get('notification_data', {})
+        if notification_type.startswith('observability/'):
+            model_name = payload.get('model')
+            record_id = payload.get('id')
+            notification_data = payload.get('notification_data', {})
             
             event = notification_data.get('event')
             
@@ -190,30 +199,25 @@ class NotificationListener(models.Model):
 
 ### Basic Example: Subscribing to Notifications
 
-In an Odoo JavaScript module, subscribe to the model’s channel and handle incoming messages:
+In an Odoo JavaScript module, subscribe to the model's **notification type**.
+There is no channel to join: a member of the observer group is already on it.
 
 ```javascript
-import { bus } from "@web/core/bus/bus";
-import { Component, onMounted, onWillUnmount } from "@odoo/owl";
+import { useService } from "@web/core/utils/hooks";
+import { Component, onWillUnmount } from "@odoo/owl";
 
 export class NotificationListener extends Component {
     setup() {
-        this.channel = "observability/sale.order";
-        
-        onMounted(() => {
-            // Subscribe to notifications
-            bus.subscribe(this.channel, this.onNotification.bind(this));
-        });
-        
-        onWillUnmount(() => {
-            // Unsubscribe when component is destroyed
-            bus.unsubscribe(this.channel, this.onNotification.bind(this));
-        });
+        this.bus = useService("bus_service");
+        // subscribe() returns its own unsubscribe function
+        const stop = this.bus.subscribe(
+            "observability/sale.order", this.onNotification.bind(this));
+        onWillUnmount(stop);
     }
     
-    onNotification(notification) {
-        const { id, notification_data } = notification;
-        console.log("Received notification:", notification);
+    onNotification(payload) {
+        const { id, model, notification_data } = payload;
+        console.log("Received notification about", model, id);
         
         if (notification_data.event === 'order_confirmed') {
             this.handleOrderConfirmed(id, notification_data);
@@ -235,35 +239,35 @@ export class NotificationListener extends Component {
 
 ### Example: Using the Bus Service
 
-When using Odoo’s bus service for channel management:
+`addChannel()` is for joining a channel the server did not give you. The
+observer group is given automatically, so this is only needed if you send to a
+channel of your own:
 
 ```javascript
-import { busService } from "@web/core/bus_service";
+import { useService } from "@web/core/utils/hooks";
+import { Component, onWillUnmount } from "@odoo/owl";
 
 export class MyComponent extends Component {
     setup() {
-        this.busService = this.env.services.bus_service;
-        this.channel = "observability/project.task";
-        
-        onMounted(() => {
-            // Add channel and subscribe
-            this.busService.addChannel(this.channel);
-            this.busService.subscribe("notification", this.onNotification.bind(this));
-        });
-        
+        this.bus = useService("bus_service");
+
+        // Only needed for a channel of your own; the observer group is
+        // already subscribed by the server for its members.
+        this.bus.addChannel("my_own_channel");
+
+        const stop = this.bus.subscribe(
+            "observability/project.task", this.onNotification.bind(this));
         onWillUnmount(() => {
-            // Clean up
-            this.busService.unsubscribe(this.channel, "notification", this.onNotification);
+            stop();
+            this.bus.deleteChannel("my_own_channel");
         });
     }
     
-    onNotification(notification) {
-        if (notification.channel === this.channel) {
-            const { id, notification_data } = notification.payload;
-            
-            if (notification_data.event === 'task_started') {
-                this.showTaskNotification(id, notification_data);
-            }
+    onNotification(payload) {
+        const { id, notification_data } = payload;
+        
+        if (notification_data.event === 'task_started') {
+            this.showTaskNotification(id, notification_data);
         }
     }
     

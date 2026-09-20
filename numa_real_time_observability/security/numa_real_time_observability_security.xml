@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="group_observer" model="res.groups">
+        <field name="name">Real-Time Observer</field>
+        <field name="comment">Receives the real-time notifications published by the observability mixin. The group record is the bus channel, so a user outside it cannot reach the notifications.</field>
+        <field name="implied_by_ids" eval="[Command.link(ref('base.group_system'))]"/>
+    </record>
+</odoo>

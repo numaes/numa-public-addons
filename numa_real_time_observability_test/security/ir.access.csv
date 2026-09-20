@@ -1,0 +1,2 @@
+id,name,model_id,group_id/id,operation,domain
+access_numa_observability_probe_system,numa.observability.probe system,numa.observability.probe,base.group_system,crud,

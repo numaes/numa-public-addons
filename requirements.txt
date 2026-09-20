@@ -5,3 +5,9 @@ lxml
 phonenumbers
 email-validator
 
+# Optional in Odoo, but without it mail renders markdown attachments as raw text
+markdown2
+
+# Needed to run the websocket tests (odoo.addons.bus.tests.common.WebsocketCase
+# skips itself when it is missing)
+websocket-client
