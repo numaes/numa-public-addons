@@ -1629,7 +1629,10 @@ def poly_many2many_read(self, records):
     
     # [poly] Technical Check: ensure comodel_name is present to avoid KeyError: None
     if not self.comodel_name:
-        return records.env.cache.insert_missing(records, self, [()] * len(records))
+        # [poly][20.0] Era `env.cache.insert_missing(records, self, ...)`. Ese método
+        # no existe en Odoo 20 -- la caché se manipula desde el campo
+        # (fields.py:1769) -- asi que esta linea habria levantado AttributeError.
+        return self._insert_cache(records, [()] * len(records))
 
     # [poly] AGGRESSIVE FIX: If the field is Many2many but has NO relation table,
     # and we are in a polymorphic model, it might be a broken field from Odoo 18
@@ -4553,7 +4556,11 @@ class PolyBase(_original_BaseModel):
 
                 # [poly] After flush, invalidate the cache for these records so Odoo reads
                 # the values from DB using the descriptors we are about to restore.
-                self.env.cache.invalidate([(f, new_records._ids) for k in base_data.keys() if (f := self._fields.get(k))])
+                # [poly][20.0] `env.cache.invalidate` esta deprecado (environments.py:655);
+                # el idioma de 20.0 es pedirselo al campo.
+                for k in base_data.keys():
+                    if (f := self._fields.get(k)) is not None:
+                        f._invalidate_cache(self.env, new_records._ids)
 
                 # [poly] For related fields, also invalidate the target model cache
                 # because the inversion might have put False/None there during create.
@@ -4571,7 +4578,7 @@ class PolyBase(_original_BaseModel):
                                        target_field_name = f.related.split('.')[-1]
                                        if target_field_name in target_model._fields:
                                             target_field = target_model._fields[target_field_name]
-                                            self.env.cache.invalidate([(target_field, tuple(target_ids))])
+                                            target_field._invalidate_cache(self.env, tuple(target_ids))
                          except Exception:
                              pass
             finally:
@@ -5764,7 +5771,7 @@ class IrModel(models.Model):
         all_model_names = list(model_names)
         
         # Odoo 18: Get the module being initialized
-        module = self._context.get('module')
+        module = self.env.context.get("module")
         
         # Add all polymorphic models that are currently in the registry
         # but might have been missed by standard reflection.
@@ -6198,33 +6205,36 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
     # with "Compute method failed to assign ..." because they can't access their dependencies.
     if _removed_fields and not self.pool.ready:
         for f_name in _removed_fields:
-            # We use cache.update_raw to avoid triggering further fetches or compute loops
-            # This is critical for res.lang which accesses flag_image during boot.
+            # Se escribe el vacío directamente en la caché para no disparar otra lectura
+            # ni un bucle de compute. Es crítico para res.lang, que accede a flag_image
+            # durante el arranque.
             try:
-                # Odoo 18: ensure records are not just browse(None) or empty
-                if self:
-                    # use update_raw to avoid side effects and handle len mismatch if any
-                    # We process each record individually to avoid 'Expected singleton' if Cache.update/update_raw
-                    # doesn't handle multiple IDs with a single value correctly in some Odoo 18 versions
-                    field = self._fields[f_name]
-                    # Odoo 18.0 cache.update and update_raw expect a list of values of the same length as the recordset
-                    for record in self:
-                         # [poly] Determine the correct empty value for the field type
-                         # Relational fields (Many2one, One2many, Many2many) should NOT be False in cache
-                         # as it can lead to returning False instead of an empty recordset, 
-                         # causing TypeError: 'bool' object is not iterable in mapped()
-                         empty_value = False
-                         if field.relational:
-                             if field.type == 'many2one':
-                                 empty_value = None
-                             else:
-                                 empty_value = ()
-                         
-                         self.env.cache.update_raw(record, field, [empty_value])
-                    
+                if not self:
+                    continue
+                field = self._fields[f_name]
+                # [poly] El vacío depende del tipo: un relacional NO puede ser False en la
+                # caché, porque después devuelve False en vez de un recordset vacío y
+                # cualquier mapped() revienta con "'bool' object is not iterable".
+                empty_value = False
+                if field.relational:
+                    empty_value = None if field.type == 'many2one' else ()
 
-            except Exception as e:
-                _logger.debug("[poly] Failed to update cache for filtered field %s: %s", f_name, e)
+                # [poly][20.0] Era `env.cache.update_raw(record, field, [empty_value])`,
+                # registro por registro porque en 18.0 se dudaba de que Cache.update
+                # manejara un solo valor para varios ids. `Field._update_cache`
+                # (fields.py:1783) escribe EL MISMO valor para todo el recordset, que es
+                # justo lo que hace falta acá, así que el bucle sobra. Lo único que
+                # aportaba `update_raw` sobre `update` era el contexto para los campos
+                # traducidos (environments.py:1264); eso se conserva.
+                destino = self.with_context(prefetch_langs=True) if field.translate else self
+                field._update_cache(destino, empty_value)
+            except Exception:
+                # No puede abortar el arranque, pero tampoco puede ser invisible: hasta
+                # ahora esto era un _logger.debug y un fallo acá no se veía en ningún lado.
+                _logger.warning(
+                    "[poly] no se pudo escribir el vacío en la caché de %s.%s; los computes "
+                    "que dependan de ese campo van a fallar al no encontrarlo",
+                    self._name, f_name, exc_info=True)
         
     return res
 
@@ -6684,7 +6694,7 @@ def poly_validate_view(self, node, model_name, view_type=None, editable=True, no
     # DEFERRED VALIDATION: During module loading (_init), we skip all validations
     # to avoid 'Unknown field' errors while the polymorphic MRO is incomplete.
     # UNLESS we are in the final validation phase (poly_final_validation context flag).
-    if not self.pool.loaded and not self._context.get('poly_final_validation'):
+    if not self.pool.loaded and not self.env.context.get("poly_final_validation"):
         # Se ANOTA para la validación final. Antes solo quedaban anotadas las `noupdate` (vía
         # _validate_module_views); las demás se salteaban sin anotarse y no se validaban nunca.
         if self.ids:

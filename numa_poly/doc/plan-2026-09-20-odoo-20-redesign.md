@@ -418,3 +418,45 @@ padre"— señala el archivo y la línea, que es donde sirve.
 Vale como regla general: **diferir un paso que otro paso usa como precondición
 no es diferir, es saltear.** Si `_validate_view` normaliza el árbol para el
 RNG, los dos se difieren juntos.
+
+---
+
+## Corregido después: `env.cache` y `self._context`
+
+`Environment.cache` quedó deprecado en 20.0 —*"use fields method directly for
+cache manipulation"* (`environments.py:655`)— y `self._context` en 19.0. poly
+usaba el primero en cuatro lugares y el segundo en dos.
+
+Uno de los cuatro no era estilo sino código roto: `Cache.insert_missing`, que
+`poly_many2many_read` llamaba cuando un Many2many llega sin `comodel_name`, **ya
+no existe** en Odoo 20. Esa línea habría levantado `AttributeError` el día que
+se ejecutara. Su equivalente es `Field._insert_cache` (`fields.py:1769`), con la
+misma semántica de `setdefault`.
+
+Los otros tres:
+
+- `env.cache.invalidate([(f, ids), …])` → `f._invalidate_cache(env, ids)`, que es
+  literalmente lo que hace el `Cache.invalidate` de 20.0 por dentro.
+- `env.cache.update_raw(record, field, [valor])`, llamado registro por registro
+  porque en 18.0 se dudaba de que `Cache.update` manejara un solo valor para
+  varios ids → `Field._update_cache(records, valor)`, que escribe el mismo valor
+  para todo el recordset. Lo único que `update_raw` aportaba sobre `update` era
+  el contexto `prefetch_langs` para campos traducidos; eso se conserva.
+- Ese mismo bloque tragaba cualquier excepción con un `_logger.debug`. Un fallo
+  ahí deja sin dependencias a los computes que las necesitan y no se veía en
+  ningún lado; ahora es un `warning` que nombra el modelo y el campo. Sigue sin
+  abortar el arranque, que es un arranque.
+
+### El warning no sirve de guarda
+
+El primer test que escribí escuchaba `DeprecationWarning` durante un `create`
+polimórfico. Pasaba en verde **con el accesor viejo puesto**, por dos razones:
+`Environment.cache` es un `cached_property`, así que avisa una vez por entorno
+y no más; y el `stacklevel` atribuye el warning a `environments.py`, no al
+archivo que lo llamó, así que filtrar por `numa_poly` en el nombre del archivo
+no encuentra nada nunca.
+
+El guarda que sí funciona lee el fuente de `poly.py` y falla nombrando la línea
+—verificado poniendo el accesor viejo de vuelta y viendo el test en rojo—. Vale
+la pena anotarlo: cuando un mecanismo avisa una vez, o avisa en nombre de otro,
+no se puede construir una prueba encima.
