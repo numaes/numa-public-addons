@@ -103,9 +103,10 @@ class Test4(models.Model):
     # hoja). Dedicado a los tests de SQL constraints (queda NULL en el resto -> sin colisiones).
     code = fields.Char('Code')
 
-    _sql_constraints = [
-        ('test4_code_uniq', 'unique(code)', 'El code de test.test4 debe ser único.'),
-    ]
+    _test4_code_uniq = models.Constraint(
+        'unique(code)',
+        "El code de test.test4 debe ser único.",
+    )
     # Campos para cubrir m2m y computed-stored sobre un modelo poly (patrones de producción).
     tag_ids = fields.Many2many('res.partner.category', string='Tags')
     # one2many a un modelo regular cuyo m2o apunta a este modelo poly.

@@ -1065,10 +1065,10 @@ class PolyBackfillPair(models.Model):
              "row cannot be built while they keep that id; see _poly_renumber_colliding.")
     completed_on = fields.Datetime('Completed On')
 
-    _sql_constraints = [
-        ('numa_poly_backfill_pair_unique', 'unique(concrete_model, base_model)',
-         'A concrete model and base pair is reconstructed once.'),
-    ]
+    _numa_poly_backfill_pair_unique = models.Constraint(
+        'unique(concrete_model, base_model)',
+        "A concrete model and base pair is reconstructed once.",
+    )
 
 
 class PolyBackfill(models.Model):
@@ -1100,10 +1100,10 @@ class PolyBackfill(models.Model):
         'Reviewed',
         help="Tick once a person has confirmed the values the migration guessed.")
 
-    _sql_constraints = [
-        ('numa_poly_backfill_unique', 'unique(res_model, res_id)',
-         'A record can only be backfilled once.'),
-    ]
+    _numa_poly_backfill_unique = models.Constraint(
+        'unique(res_model, res_id)',
+        "A record can only be backfilled once.",
+    )
 
     def action_open_record(self):
         """Jump to the record this entry is about, to correct what was guessed."""
@@ -1730,13 +1730,34 @@ class PolyReference(fields.Many2one):
     polymorphic relationships without additional database columns.
 
     Attributes:
-        auto_join (bool): Always True to enable automatic joining in queries
         store (bool): Always False as these references are computed, not stored
         readonly (bool): Always True as these references cannot be directly modified
+
+    [poly][20.0] ``auto_join`` se fue: el atributo no existe en ninguna parte del
+    fuente de Odoo 20. Lo que decidia entre JOIN y subconsulta es ahora
+    ``bypass_search_access`` (``fields_relational.py:38``), leido por
+    ``Many2one.condition_to_sql`` (``:492-509``).
     """
-    auto_join = True
     store = False
     readonly = True
+    compute_sudo = True
+
+    @staticmethod
+    def _poly_compute_sql(field, table):
+        """La expresion SQL de una PolyReference es la columna ``id``.
+
+        Base y derivado comparten el id, asi que la "clave foranea" hacia la base
+        es el id del propio registro. Sin esto, Odoo rechaza el campo apenas
+        aparece en un dominio: ``domains.py:1021`` exige ``store`` o
+        ``compute_sql`` y si no levanta "Cannot convert ... to SQL because it is
+        not stored".
+
+        Con esto puesto, ``Many2one.condition_to_sql``
+        (``fields_relational.py:484-544``) genera solas las dos formas -JOIN y
+        subconsulta- y ``Many2one.property_to_sql`` (``:477``) hace andar los
+        caminos con punto.
+        """
+        return table['id']
 
     def __init__(self, comodel_name: str | Sentinel = SENTINEL, string: str | Sentinel = SENTINEL, **kwargs):
         """
@@ -1747,6 +1768,8 @@ class PolyReference(fields.Many2one):
             string: The label of the field
             **kwargs: Additional field parameters
         """
+        kwargs.setdefault('compute_sql', PolyReference._poly_compute_sql)
+        kwargs.setdefault('compute_sudo', True)
         super(PolyReference, self).__init__(comodel_name=comodel_name, string=string, **kwargs)
         self.search = self._search_related
 
@@ -1859,9 +1882,14 @@ class PolyReference(fields.Many2one):
         Returns:
             A domain expression for searching
         """
-        # This should never happen to avoid bypassing security checks
-        # and should already be converted to (..., 'in', subquery)
-        assert operator not in ('any', 'not any')
+        # [poly][20.0] En 18.0 esto era un assert: los operadores 'any' no
+        # llegaban aca. En 20.0 si llegan (``domains.py:1052, 1070``), con el
+        # valor ya convertido en un Query (``:1064-1065``). Y son faciles de
+        # contestar: base y derivado comparten el id, asi que "los que cumplen X
+        # en la base" son "los que tienen su id en esa consulta".
+        if operator in ('any', 'not any', 'any!', 'not any!'):
+            dentro = 'not in' if operator.startswith('not') else 'in'
+            return [('id', dentro, value)]
 
         # determine whether the related field can be null
         if isinstance(value, (list, tuple)):
@@ -6840,9 +6868,15 @@ def _poly_contribute_definitions(registry, model_names):
             for fname, campo_base in _poly_base_field_names(registry, base_name).items():
                 if fname in nativos or fname in atributos or fname in _POLY_TECHNICAL_FIELDS:
                     continue
+                # La rama related pone copy=False por omision (fields.py:483), y
+                # un campo heredado se copia como cualquier otro del registro:
+                # sin esto, duplicar un concreto perdia todo lo que vive en la
+                # base. Se respeta lo que la base haya dicho explicitamente.
+                args_base = getattr(campo_base, '_args__', None) or {}
                 atributos[fname] = type(campo_base)(
                     related='%s.%s' % (link_name, fname),
                     readonly=False,
+                    copy=args_base.get('copy', True),
                     _shareable=False,
                 )
 
