@@ -541,3 +541,54 @@ Así que se sacó el `__get__`. El resultado, medido:
 
 Quedan 4 tests. El que importa es `test_02`, que cuenta las llamadas al compute:
 verificado en rojo reponiendo el `__get__`.
+
+---
+
+## Corregido después: modelos declarados dentro de archivos de tests
+
+La suite no se podía instalar con `-i` en una base nueva: `--test-enable` sobre
+una instalación limpia terminaba con `KeyError: 'Field test referenced in related
+field definition test.poly.child.wrong_related_field does not exist'`, y sólo
+andaba con `-u`. Tirando de ese hilo aparecieron tres problemas, todos de la
+misma forma: **un modelo declarado en un archivo de `tests/`**.
+
+Un modelo así entra al registry cuando el archivo se importa, pero ningún módulo
+lo posee: nadie le crea la tabla, nadie lo reflexiona, y nadie lo saca. Los tres
+casos:
+
+1. `numa_poly/tests/test_poly_setup.py` declaraba `test.poly.child` con un
+   `related` roto **a propósito**, para probar `poly_Field_setup_related`, una
+   función deprecada y desactivada. El test que lo usaba estaba permanentemente
+   saltado. Una vez importado el archivo, cualquier reconstrucción posterior del
+   registry levantaba. Sus otros dos tests miraban `numa.planning.node`, un
+   módulo que no está en esta rama, detrás de un `if` que los hacía pasar sin
+   probar nada. Archivo borrado.
+
+2. `numa_poly/tests/test_poly_improvements.py` declaraba `test.circular.a` y
+   `test.circular.b`, que **ningún test usaba**: la única referencia a la primera
+   era la segunda nombrándola como base. Sin tabla, cualquier `init_models` en
+   caliente —crear un `ir.model.fields` alcanza— recorría los modelos
+   polimórficos, llegaba a `test.circular.b` y consultaba una tabla inexistente;
+   la reconstrucción abortaba a mitad y dejaba otros modelos sin los campos
+   declarados al final. `test_poly_id_space` además reportaba las dos tablas como
+   repartiendo ids por su cuenta, que es lo que hace una tabla que no está.
+   Declaraciones borradas, junto con la clase `at_install` cuyo único propósito
+   declarado era forzar un `setup_models()` para que los modelos de los archivos
+   de test llegaran al registry.
+
+3. `numa_poly_test/tests/common.py` declaraba **los mismos seis modelos fixture**
+   que `models/fixture_models.py`. Los modelos se habían copiado a `models/` sin
+   borrar los originales, así que cada nombre existía dos veces y cuál ganaba
+   dependía del orden de importación. Un campo agregado al fixture podía faltar
+   en el modelo que los tests veían, mientras `ir_model_fields` sí lo reflejaba.
+   Ahí estaba la diferencia entre `-u` verde e `-i` rojo. Duplicados borrados.
+
+Lo que valía la pena de los tests muertos se mudó a fixtures reales, en
+`numa_poly_test/tests/test_poly_inherited_relational.py`: que un relacional de la
+base llegue al concreto como `related` y sin almacenamiento propio —el fallo
+reportado era un many2many heredado que el cargador incremental había inyectado
+como almacenado, y leerlo buscaba una tabla de relación inexistente—, y que un
+`fields.Reference` escrito en un modelo polimórfico vuelva a salir.
+
+**Regla: un modelo pertenece a un módulo.** Vive en `models/`, que lo posee y le
+crea la tabla. En `tests/` no se declara nada más que casos de test.

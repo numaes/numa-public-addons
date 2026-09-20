@@ -7,6 +7,11 @@ cross-model Selection pollution used to reject every reference: it compared the 
 ``"model,id"`` string against a set of bare model names. The value was dropped and only
 a warning in the log said so, which made every Reference field on a polymorphic model
 silently useless.
+
+The end-to-end counterpart lives in
+``numa_poly_test/tests/test_poly_inherited_relational.py``: it needs a model with
+a Reference field, and a model can only be registered by a module. It used to sit
+here guarded by a ``skipTest`` on a fixture nothing declared, so it never ran.
 """
 from odoo import fields
 from odoo.tests import tagged, TransactionCase
@@ -53,18 +58,3 @@ class TestPolyReferenceValidation(TransactionCase):
         """A model extends the selection with selection_add; the base may be empty."""
         field = self._reference_field([])
         self.assertTrue(poly_selection_value_is_valid(field, 'res.partner,5'))
-
-
-@tagged('post_install', '-at_install')
-class TestPolyReferenceRoundTrip(TransactionCase):
-    """End to end: a reference written on a polymorphic model must come back out."""
-
-    def test_reference_survives_create_on_a_polymorphic_model(self):
-        if 'test.poly.child' not in self.env:
-            self.skipTest("test.poly.child is not in the registry")
-        model = self.env['test.poly.child']
-        if 'ref_field' not in model._fields:
-            self.skipTest("test.poly.child has no Reference field to exercise")
-        partner = self.env['res.partner'].create({'name': 'Referenced'})
-        record = model.create({'ref_field': f'res.partner,{partner.id}'})
-        self.assertEqual(record.ref_field, partner)

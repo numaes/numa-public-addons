@@ -49,6 +49,12 @@ class TestPolyBase(PolyModel):
     _depend_models = {}
 
     base_field = fields.Char(string='Base Field')
+    # A relational field on the base. Concrete models must reach it through the
+    # link field, without a column or a relation table of their own: the reported
+    # failure was a many2many inherited from a polymorphic base that Odoo's
+    # incremental loader had injected as stored on the concrete model, so reading
+    # it looked for a table that does not exist.
+    base_partner_ids = fields.Many2many('res.partner', string='Base Partners')
 
 
 class TestPolyChildA(PolyModel):
@@ -60,6 +66,11 @@ class TestPolyChildA(PolyModel):
     }
 
     child_a_field = fields.Char(string='Child A Field')
+    # `fields.Reference` subclasses `fields.Selection`, which is why the guard
+    # against cross-model Selection pollution used to drop every reference
+    # written on a polymorphic model, with nothing but a log line to say so.
+    ref_field = fields.Reference(
+        selection=[('res.partner', 'Partner')], string='Reference Field')
 
 
 class TestPolyChildB(PolyModel):

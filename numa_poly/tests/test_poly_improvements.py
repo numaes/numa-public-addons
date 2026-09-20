@@ -9,41 +9,27 @@ These tests validate the improvements made to the module:
 - fields_get() bug fix
 """
 
-from odoo import models, fields
+from odoo import fields
 from odoo.exceptions import ValidationError, AccessError
 from odoo.tests import tagged, TransactionCase
-from collections import OrderedDict
 
-# Test models for validation testing
-class TestCircularA(models.Model):
-    """Test model A for circular dependency testing."""
-    _name = 'test.circular.a'
-    _description = 'Test Circular A'
-    _depend_models = OrderedDict()
-
-
-class TestCircularB(models.Model):
-    """Test model B for circular dependency testing."""
-    _name = 'test.circular.b'
-    _description = 'Test Circular B'
-    _depend_models = {
-        'test.circular.a': 'circular_a_id',
-    }
-
-
-@tagged('at_install', '-post_install')
-class TestPolyInstall(TransactionCase):
-    """At-install smoke test.
-
-    Having at least one at_install test causes Odoo's module loader to call
-    registry.setup_models() after importing the test files.  This ensures that
-    test model classes defined in this package (e.g. test.poly.child) are
-    present in the registry when the post_install tests run.
-    """
-
-    def test_module_installed(self):
-        """Verify that ir.poly_base is accessible after installation."""
-        self.assertIn('ir.poly_base', self.env.registry)
+# [poly][20.0] `test.circular.a` and `test.circular.b` used to be declared right
+# here, at import scope, and no test ever used them: the only reference to
+# `test.circular.a` was `test.circular.b` naming it as its base. A model declared
+# in a test file enters the registry when the file is imported, but no module
+# owns it, so nobody ever creates its table. That is not free:
+#
+#   - any runtime `init_models` -- creating an `ir.model.fields` row is enough --
+#     walks the polymorphic models, reaches `test.circular.b` and queries a table
+#     that does not exist, and the rebuild aborts half-way, leaving other models
+#     without the fields declared last;
+#   - `test_poly_id_space` reported both tables as handing out ids of their own,
+#     which is true of a table that is not there.
+#
+# The same disease killed `test_poly_setup.py`, whose `test.poly.child` declared a
+# deliberately broken `related` and made every later registry build raise. Fixtures
+# belong to a module: they live in `numa_poly_test/models/`, which owns them and
+# creates their tables.
 
 
 @tagged('post_install', '-at_install')

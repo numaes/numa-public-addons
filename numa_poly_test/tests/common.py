@@ -1,71 +1,26 @@
 # -*- coding: utf-8 -*-
-from odoo import models, fields
+"""
+Shared base class for the numa_poly test suite.
+
+The fixture models used to be declared here as well, and were copied to
+``models/fixture_models.py`` without deleting the originals. Both copies then
+registered the same six model names, and which one the registry ended up using
+depended on import order — so a field added to the fixture could be missing from
+the model the tests actually saw, while `ir_model_fields` reflected it. That is
+how the same suite passed on `-u` and failed on `-i`.
+
+A model belongs to a module: it lives under ``models/``, which owns it and
+creates its table. Nothing but test cases is declared in ``tests/``.
+"""
 from odoo.tests.common import TransactionCase
-from odoo.addons.numa_poly.models.poly import PolyModel, PolyBase
 
 
 class PolyTestCommon(TransactionCase):
-    """Base TestCase para los tests de numa_poly.
+    """Base TestCase for the numa_poly tests.
 
-    test_structure.py la importa (`from .common import PolyTestCommon`) pero faltaba
-    definirla → ese archivo no podía importarse y quedó fuera de tests/__init__. Se la
-    agrega para resucitar la suite estructural. Es un TransactionCase estándar; el setUp
-    específico (contexto de jobs, etc.) lo hace cada test en su setUpClass.
+    ``test_structure.py`` imports it (`from .common import PolyTestCommon`) and it
+    was missing, so that file could not be imported and had fallen out of
+    ``tests/__init__``. It is a plain TransactionCase; each test does its own
+    specific setUp.
     """
     pass
-
-
-class TestPolyBehaviorA(PolyModel):
-    """Simple behavior model with a Char field."""
-    _name = 'test.poly.behavior.a'
-    _description = 'Test Poly Behavior A'
-    _depend_models = {}
-
-    field_a = fields.Char(string='Field A')
-
-class TestPolyBehaviorB(PolyModel):
-    """Behavior model with an Integer field."""
-    _name = 'test.poly.behavior.b'
-    _description = 'Test Poly Behavior B'
-    _depend_models = {}
-
-    field_b = fields.Integer(string='Field B')
-
-class TestPolyProject(PolyModel):
-    """Business model injecting two behaviors."""
-    _name = 'test.poly.project'
-    _description = 'Test Poly Project'
-    _depend_models = {
-        'test.poly.behavior.a': 'behavior_a_id',
-        'test.poly.behavior.b': 'behavior_b_id',
-    }
-
-    name = fields.Char(string='Project Name')
-
-class TestPolyBase(PolyModel):
-    """Base model for a polymorphic hierarchy."""
-    _name = 'test.poly.base'
-    _description = 'Test Poly Base'
-    _depend_models = {}
-
-    base_field = fields.Char(string='Base Field')
-
-class TestPolyChildA(PolyModel):
-    """Concrete model inheriting from TestPolyBase."""
-    _name = 'test.poly.child.a'
-    _description = 'Test Poly Child A'
-    _depend_models = {
-        'test.poly.base': 'base_id',
-    }
-
-    child_a_field = fields.Char(string='Child A Field')
-
-class TestPolyChildB(PolyModel):
-    """Another concrete model inheriting from TestPolyBase."""
-    _name = 'test.poly.child.b'
-    _description = 'Test Poly Child B'
-    _depend_models = {
-        'test.poly.base': 'base_id',
-    }
-
-    child_b_field = fields.Char(string='Child B Field')
