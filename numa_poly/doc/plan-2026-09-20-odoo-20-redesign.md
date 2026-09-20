@@ -503,3 +503,41 @@ registry armado —la condición en la que el defecto aparecía— y se verific�
 rojo sacando el filtro. Los otros tres miran la contribución tal como quedó
 construida, que depende justamente del orden de armado, así que describen la
 forma esperada pero no sirven de red.
+
+---
+
+## Corregido después: `PolyReference` declaraba sólo la mitad
+
+Una `PolyReference` no tiene columna: base y derivado comparten el id, así que el
+vínculo hacia la base **es** el id del propio registro. Eso hay que decirlo dos
+veces: con `compute` —el valor en Python— y con `compute_sql` —la misma cosa como
+expresión de consulta, que es lo que permite usar el campo en un dominio
+(`domains.py:1021` exige `store` o `compute_sql`)—. Odoo pide las dos juntas y
+avisa si falta una: *"compute_sql attribute makes sense only if ... is a computed
+field"* (`fields.py:471-473`).
+
+El campo declaraba sólo `compute_sql`, porque derivaba el valor en un `__get__`
+propio —49 líneas en paralelo al del framework, con comparaciones del estilo
+`str(type(records)) == "<class 'member_description'>"` y un `try/except` alrededor
+de todo—.
+
+**El intento fácil no sirve.** Declarar el `compute` y dejar el `__get__` puesto
+hace desaparecer el aviso, y eso es todo lo que hace: medido con un espía sobre
+`field.compute`, el compute corría **cero veces** leyendo por atributo, por
+`read()` y por `mapped()`. Un compute declarado y muerto es decoración que apaga
+un aviso, que es exactamente lo que el aviso quería evitar.
+
+Así que se sacó el `__get__`. El resultado, medido:
+
+- El compute pasa a ser el camino real (1, 2 y 3 llamadas en los tres accesos).
+- `search` sigue sin pasar por Python: resuelve por `compute_sql`, que es el punto.
+- **Las consultas no cambian**: 3628 y 2966 en las dos suites, con y sin el
+  descriptor.
+- El acceso multi-registro sigue andando, ahora por `_Relational.__get__`
+  (`fields_relational.py:41-52`), que en Odoo 20 lo soporta de fábrica. El
+  descriptor propio no estaba agregando eso.
+- Leer el vínculo pasa a chequear acceso de campo, como cualquier campo de Odoo.
+  Se verificó que un usuario `base.group_user` sigue leyéndolo.
+
+Quedan 4 tests. El que importa es `test_02`, que cuenta las llamadas al compute:
+verificado en rojo reponiendo el `__get__`.

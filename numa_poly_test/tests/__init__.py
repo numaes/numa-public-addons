@@ -6,3 +6,4 @@ from . import test_regression
 from . import test_transparency
 from . import test_poly_cache_api
 from . import test_poly_own_fields
+from . import test_poly_reference_forms

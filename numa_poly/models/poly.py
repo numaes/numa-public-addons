@@ -1771,6 +1771,28 @@ class PolyReference(fields.Many2one):
         """
         return table['id']
 
+    @staticmethod
+    def _poly_compute_reference(records):
+        """El valor de una PolyReference es el propio registro, leido por su id.
+
+        Es la contraparte Python de ``_poly_compute_sql``, y Odoo las quiere a las
+        dos: ``compute_sql`` sin ``compute`` avisa "makes sense only if ... is a
+        computed field" (``fields.py:471-473``). Hasta ahora el valor se derivaba
+        en el descriptor y el campo no declaraba compute, asi que la expresion SQL
+        no tenia de que ser la traduccion.
+
+        Odoo llama a un compute invocable con el recordset y nada mas
+        (``fields.py:67-85``): no le dice que campo esta calculando. Por eso se
+        asignan todas las PolyReference del modelo, que ademas es lo que Odoo
+        espera, porque agrupa los campos por metodo de compute
+        (``pool.field_computed``) y los de un grupo se asignan juntos. No cuesta
+        nada: todas valen lo mismo.
+        """
+        for record in records:
+            for nombre, campo in record._fields.items():
+                if isinstance(campo, PolyReference):
+                    record[nombre] = record.id or False
+
     def __init__(self, comodel_name: str | Sentinel = SENTINEL, string: str | Sentinel = SENTINEL, **kwargs):
         """
         Initialize a new PolyReference field.
@@ -1780,6 +1802,7 @@ class PolyReference(fields.Many2one):
             string: The label of the field
             **kwargs: Additional field parameters
         """
+        kwargs.setdefault('compute', PolyReference._poly_compute_reference)
         kwargs.setdefault('compute_sql', PolyReference._poly_compute_sql)
         kwargs.setdefault('compute_sudo', True)
         super(PolyReference, self).__init__(comodel_name=comodel_name, string=string, **kwargs)
@@ -1812,55 +1835,6 @@ class PolyReference(fields.Many2one):
                 return record.env[self.comodel_name].browse()
             except Exception:
                 return None
-
-    def __get__(self, records, owner=None):
-        """
-        Get the value of this field for the given records.
-
-        This method handles both single record and multi-record cases.
-
-        Args:
-            records: The records to get the value for
-            owner: The owner class
-
-        Returns:
-            For a single record: the related record
-            For multiple records: a recordset of related records
-        """
-        # records is None (class level access)
-        if records is None:
-            return self
-
-        if str(type(records)) == '<class \'member_description\'>':
-            raise MissingError
-
-        # Odoo 18 specific: Check if the field is set in _fields of the model
-        if not hasattr(records, '_fields') or self.name not in records._fields:
-            return self
-
-        # Single record case
-        # Odoo 18 specific: records might be a technical descriptor object (e.g. member_descriptor)
-        # without a __len__ method, or records._ids might not be what we expect.
-        _is_single = True
-        try:
-            if hasattr(records, '_ids') and records._ids is not None:
-                # If it has _ids, check length. descriptors like member_descriptor 
-                # might fail here if they leak into this logic.
-                if len(records._ids) > 1:
-                    _is_single = False
-        except (TypeError, AttributeError):
-            # If len() or access fails, treat as single record/technical object
-            pass
-
-        if _is_single:
-            try:
-                return self.convert_to_record(None, records)
-            except Exception:
-                return records.pool[self.comodel_name](records.env, (), ())
-            
-        # multirecord case: use mapped IDs to build a related recordset
-        return records.pool[self.comodel_name](
-            records.env, tuple(records.ids), records._prefetch_ids or tuple(records.ids))
 
     @property
     def _description_searchable(self):
