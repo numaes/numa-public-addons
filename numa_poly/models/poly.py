@@ -6716,10 +6716,52 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
     # [poly] DEPRECATED: Deep fix is no longer needed with the new flattening strategy.
 
-# [poly][20.0] Modelos a los que ya se les contribuyo la definicion, por registry.
-# Contribuir dos veces reordenaria _base_classes__, porque LastOrderedSet se queda
-# con la ultima aparicion.
-_POLY_CONTRIBUTED: "dict[int, set]" = {}
+# [poly][20.0] Contribuir dos veces al mismo modelo reordenaria _base_classes__,
+# porque LastOrderedSet se queda con la ultima aparicion. La marca va en el
+# registry mismo y no en un diccionario indexado por id(): los ids de objetos se
+# reciclan, y un registry nuevo heredaba la marca de uno viejo ya liberado, de
+# modo que sus modelos nunca se declaraban.
+_POLY_CONTRIBUTED_ATTR = '_poly_contributed__' 
+
+
+def _poly_declared_fields(cls):
+    """[poly][20.0] Campos declarados en las clases de DEFINICION de *cls*.
+
+    ``_fields`` solo se puebla durante ``_setup`` (``model_classes.py:391`` lo
+    vacia al empezar cada pasada), y la contribucion corre antes: leerlo ahi
+    devuelve vacio. Las definiciones, en cambio, existen desde que se importo el
+    modulo, porque ``Field.__set_name__`` las va apilando en
+    ``_field_definitions`` al crearse la clase.
+
+    :return: ``{nombre: definicion_del_campo}``
+    """
+    declarados = {}
+    for klass in cls.mro():
+        if getattr(klass, 'pool', None) is not None:
+            continue                       # clase de registry, no de definicion
+        for field in getattr(klass, '_field_definitions', ()):
+            declarados.setdefault(field.name, field)
+    return declarados
+
+
+def _poly_base_field_names(registry, base_name, _vistos=None):
+    """Campos que *va a tener* una base polimorfica, transitivamente.
+
+    Camina ``_depend_models`` hacia arriba porque, al momento de contribuir, la
+    base todavia no recibio nada de sus propias bases: eso recien pasa cuando
+    ``_setup_models__`` rearma todo.
+    """
+    if _vistos is None:
+        _vistos = set()
+    if base_name in _vistos or base_name not in registry:
+        return {}
+    _vistos.add(base_name)
+    base_cls = registry[base_name]
+    declarados = dict(_poly_declared_fields(base_cls))
+    for abuelo in _poly_collect_depend_models(base_cls):
+        for nombre, campo in _poly_base_field_names(registry, abuelo, _vistos).items():
+            declarados.setdefault(nombre, campo)
+    return declarados
 
 
 def _poly_contribute_definitions(registry, model_names):
@@ -6742,7 +6784,10 @@ def _poly_contribute_definitions(registry, model_names):
     """
     from odoo.orm.model_classes import add_to_registry
 
-    done = _POLY_CONTRIBUTED.setdefault(id(registry), set())
+    done = registry.__dict__.get(_POLY_CONTRIBUTED_ATTR)
+    if done is None:
+        done = set()
+        setattr(registry, _POLY_CONTRIBUTED_ATTR, done)
     contributed = []
     for model_name in sorted(model_names):
         if model_name in done or model_name == 'ir.poly_base' or model_name not in registry:
@@ -6773,12 +6818,33 @@ def _poly_contribute_definitions(registry, model_names):
             '_name': model_name,
             '_inherit': [model_name] + parents,
         }
+        # Lo que el modelo declara por su cuenta es suyo y no se reemplaza por una
+        # version relacionada a la base: es la regla de no-sombra.
+        nativos = set(_poly_declared_fields(model_class))
+
         for base_name, link_name in dep_map.items():
             if base_name not in registry or not link_name:
                 continue
-            if link_name in model_class._fields:
-                continue
-            atributos[link_name] = PolyReference(base_name, _shareable=False)
+            if link_name not in nativos:
+                atributos[link_name] = PolyReference(base_name, _shareable=False)
+
+            # Los campos que solo existen en la base se declaran RELACIONADOS a
+            # traves del campo de enlace: escribir uno escribe la fila de la base,
+            # que es lo que en 18.0 se conseguia dando vuelta store/related sobre
+            # el Field compartido. readonly=False es lo que lo hace escribible: la
+            # rama related de _get_attrs pone readonly=True por omision
+            # (fields.py:484), y un related de solo lectura acepta la escritura y
+            # la descarta, que es justo la falla que este modulo existe para
+            # evitar. Un related ya es no-compartible por construccion
+            # (fields.py:422), asi que no entra en SHARED_FIELD_CACHE.
+            for fname, campo_base in _poly_base_field_names(registry, base_name).items():
+                if fname in nativos or fname in atributos or fname in _POLY_TECHNICAL_FIELDS:
+                    continue
+                atributos[fname] = type(campo_base)(
+                    related='%s.%s' % (link_name, fname),
+                    readonly=False,
+                    _shareable=False,
+                )
 
         definition = odoo.models.MetaModel(
             'PolyContribution_%s' % model_name.replace('.', '_'),
