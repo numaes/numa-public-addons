@@ -104,7 +104,12 @@
                     <field name="bot_id"/>
                     <field name="has_fsm"/>
                 </field>
-                <filter name="my_team" position="after">
+                <!-- [hr][20.0] El ancla era ``my_team``, un filtro que hr no
+                     tiene. Antes era ``my_employees``, que tampoco existía: la
+                     vista venía rota de dos versiones atrás. ``message_needaction``
+                     está en hr desde hace años y es el primer filtro de la vista. -->
+                <filter name="message_needaction" position="after">
+                    <separator/>
                     <filter string="With Active FSM" name="has_fsm" domain="[('has_fsm', '=', True)]"/>
                     <filter string="With Bot" name="has_bot" domain="[('bot_id', '!=', False)]"/>
                 </filter>

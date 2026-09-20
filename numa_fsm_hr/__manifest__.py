@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Numa FSM HR',
-    'version': '18.0.1.0.0',
+    'version': '20.0.1.0.0',
     'summary': 'Integrates FSM capabilities into HR Employees',
     'description': """
 Numa FSM HR
@@ -23,24 +23,17 @@ Key Features:
     'license': 'LGPL-3',
     'category': 'Human Resources',
     'depends': [
-        'base',
         'hr',
         'mail',
         'numa_fsm',
         'numa_poly',
     ],
     'data': [
-        'security/security.xml',
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'views/hr_bot_views.xml',
         'views/hr_employee_views.xml',
         'views/menu_views.xml',
     ],
-    'assets': {
-        'web.assets_backend': [
-            'numa_fsm_hr/static/src/css/*.css',
-        ],
-    },
     'installable': True,
     'application': False,
     'auto_install': False,

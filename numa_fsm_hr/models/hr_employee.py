@@ -11,12 +11,50 @@ class HrEmployee(models.Model):
     
     Each employee can be converted into a Finite State Machine instance,
     allowing automated workflows and bot-driven employee processing.
+    
+    El empleado NO es la instancia: la tiene. Hasta Odoo 18 heredaba ``fsm.instance``
+    con ``_inherit``, y el empleado pasaba a ser la instancia sin campo aparte. Eso
+    dejó de linealizar en Odoo 20: ``fsm.instance`` hereda ``mail.thread`` y
+    ``mail.activity.mixin``, que ``hr.employee`` ya hereda por su cuenta, y C3 pide
+    que lo más derivado vaya primero mientras la construcción de bases las deja
+    antes. En 18.0 no se notaba porque numa_poly rearmaba ``__bases__`` a mano y
+    de paso deshacía el conflicto; desde que las bases se declaran, el orden lo
+    calcula Odoo y el choque sale a la luz.
+
+    El vínculo explícito dice lo mismo sin pelearse con el MRO, y además separa
+    dos ciclos de vida que nunca fueron uno: un empleado puede existir sin workflow,
+    y su instancia puede reiniciarse sin tocar el empleado.
     """
     _name = 'hr.employee'
-    _inherit = ['hr.employee', 'fsm.instance']
-    _depend_models = {}
+    _inherit = ['hr.employee']
 
-    # Bot assignment field (similar to conversation.session and crm.lead)
+    fsm_instance_id = fields.Many2one(
+        'fsm.instance',
+        string='FSM Instance',
+        copy=False,
+        ondelete='set null',
+        help="The FSM instance that runs this employee's workflow, created when a definition "
+             "is assigned.",
+    )
+
+    # Lo que el formulario y los filtros leían del empleado cuando era la instancia.
+    # Siguen llamándose igual, así que las vistas no cambian.
+    fsm_state = fields.Selection(
+        related='fsm_instance_id.fsm_state', string='Execution State', readonly=True)
+    current_state_id = fields.Char(
+        related='fsm_instance_id.current_state_id', string='Current State Node ID', readonly=True)
+    instance_variables = fields.Json(
+        related='fsm_instance_id.instance_variables', string='Instance Variables', readonly=True)
+    debug_mode = fields.Selection(
+        related='fsm_instance_id.debug_mode', string='Debug Mode', readonly=False)
+    next_node_id = fields.Char(
+        related='fsm_instance_id.next_node_id', string='Next Node to Execute', readonly=True)
+    # El diagrama se puede dibujar aunque todavía no haya instancia, así que
+    # sale de la definición y no del vínculo.
+    json_ui_schema = fields.Json(
+        related='definition_id.json_ui_schema', string='UI Schema (JSON)', readonly=True)
+
+    # Bot assignment field (similar to conversation.session)
     bot_id = fields.Many2one(
         'hr.bot',
         string='HR Bot',
@@ -60,7 +98,7 @@ class HrEmployee(models.Model):
                 # Don't clear if manually set
                 pass
 
-    @api.depends('current_state_id')
+    @api.depends('fsm_instance_id.current_state_id')
     def _compute_bot_state(self):
         """Compute bot_state from FSM instance current state."""
         for employee in self:
@@ -88,7 +126,7 @@ class HrEmployee(models.Model):
             else:
                 employee.bot_state = False
 
-    @api.depends('fsm_state', 'definition_id')
+    @api.depends('fsm_instance_id.fsm_state', 'definition_id')
     def _compute_has_fsm(self):
         """Compute if employee has an active FSM instance."""
         for employee in self:
@@ -105,10 +143,30 @@ class HrEmployee(models.Model):
         """
         if operator not in ('=', '!='):
             raise UserError(_('Unsupported operator for has_fsm: %s') % operator)
-        active_states = ['running', 'paused']
+        # El dominio negativo es la negación literal del positivo, no su espejo
+        # escrito a mano: un empleado con definición pero todavía sin instancia tiene
+        # ``fsm_state`` vacío, y un ``not in`` sobre la travesía no lo alcanzaría.
+        activo = ['&', ('definition_id', '!=', False),
+                  ('fsm_instance_id.fsm_state', 'in', ['running', 'paused'])]
         if (operator == '=') == bool(value):
-            return [('definition_id', '!=', False), ('fsm_state', 'in', active_states)]
-        return ['|', ('definition_id', '=', False), ('fsm_state', 'not in', active_states)]
+            return activo
+        return ['!'] + activo
+
+    def _ensure_fsm_instance(self):
+        """Devolver la instancia de este empleado, creándola si todavía no tiene.
+
+        Cuando el empleado ERA la instancia esto no hacía falta. Ahora es el único
+        lugar donde se crea, para que el resto del módulo no tenga que saber si
+        ya existía.
+        """
+        self.ensure_one()
+        if not self.fsm_instance_id:
+            if not self.definition_id:
+                raise UserError(_("No FSM definition assigned to this employee."))
+            self.fsm_instance_id = self.env['fsm.instance'].create({
+                'definition_id': self.definition_id.id,
+            })
+        return self.fsm_instance_id
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -123,8 +181,8 @@ class HrEmployee(models.Model):
             if employee.definition_id and employee.definition_id.state == 'production':
                 # Auto-start FSM for new employees with bots
                 try:
-                    if employee.fsm_state == 'init':
-                        employee.start()
+                    if employee.fsm_state in (False, 'init'):
+                        employee._ensure_fsm_instance().start()
                 except Exception as e:
                     _logger.warning(f"Failed to auto-start FSM for employee {employee.id}: {e}")
         
@@ -143,9 +201,9 @@ class HrEmployee(models.Model):
         if 'bot_id' in vals or 'definition_id' in vals:
             for employee in self:
                 # Start FSM if definition is set and instance is in init state
-                if employee.definition_id and employee.fsm_state == 'init':
+                if employee.definition_id and employee.fsm_state in (False, 'init'):
                     try:
-                        employee.start()
+                        employee._ensure_fsm_instance().start()
                     except Exception as e:
                         _logger.warning(f"Failed to start FSM for employee {employee.id}: {e}")
         
@@ -158,7 +216,7 @@ class HrEmployee(models.Model):
             'type': 'ir.actions.act_window',
             'name': _('Assign HR Bot'),
             'res_model': 'hr.bot',
-            'view_mode': 'tree,form',
+            'view_mode': 'list,form',
             'target': 'new',
             'domain': [('state', '=', 'production')],
             'context': {
@@ -173,11 +231,11 @@ class HrEmployee(models.Model):
         if not self.definition_id:
             raise UserError(_("No FSM definition assigned to this employee. Please assign a bot first."))
         
-        if self.fsm_state != 'init':
+        if self.fsm_state not in (False, 'init'):
             raise UserError(_("FSM is already running or has ended. Current state: %s") % self.fsm_state)
         
         try:
-            self.start()
+            self._ensure_fsm_instance().start()
             return {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
@@ -201,7 +259,7 @@ class HrEmployee(models.Model):
             raise UserError(_("FSM is not running. Current state: %s") % self.fsm_state)
         
         # Set debug mode to pause on next breakpoint
-        self.write({'debug_mode': 'step_by_step'})
+        self.fsm_instance_id.debug_mode = 'step_by_step'
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
@@ -222,7 +280,7 @@ class HrEmployee(models.Model):
         if self.fsm_state != 'paused':
             raise UserError(_("FSM is not paused. Current state: %s") % self.fsm_state)
         
-        self.action_debug_continue()
+        self.fsm_instance_id.action_debug_continue()
         return {
             'type': 'ir.actions.client',
             'tag': 'display_notification',
@@ -243,7 +301,7 @@ class HrEmployee(models.Model):
         if self.fsm_state != 'paused':
             raise UserError(_("FSM is not paused. Current state: %s") % self.fsm_state)
         
-        self.action_debug_next_step()
+        self.fsm_instance_id.action_debug_next_step()
         return {
             'type': 'ir.actions.client',
             'tag': 'reload',
