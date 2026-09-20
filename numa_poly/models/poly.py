@@ -59,6 +59,7 @@ Architecture & Design Decisions:
 """
 
 import copy
+import functools
 import logging
 import ctypes
 import warnings
@@ -72,18 +73,30 @@ from psycopg2.extras import Json as PsycopgJson
 
 # Odoo imports
 import odoo
+# [poly][20.0] `odoo` es un namespace package: importarlo ya no arrastra los
+# submodulos, asi que los que se usan por ruta completa van declarados aca.
+import odoo.fields
+import odoo.models
+import odoo.modules.loading
+import odoo.modules.registry
 from odoo import api, models, fields, _, Command
 from odoo import SUPERUSER_ID
-from odoo.models import BaseModel, LOG_ACCESS_COLUMNS, INSERT_BATCH_SIZE, UPDATE_BATCH_SIZE, GC_UNLINK_LIMIT
+from odoo.models import BaseModel, LOG_ACCESS_COLUMNS
+from odoo.orm.models import INSERT_BATCH_SIZE, UPDATE_BATCH_SIZE
+from odoo.orm import model_classes as _poly_model_classes
+from odoo.orm.fields_relational import _Relational
+from odoo.orm.query import Query
+from odoo.tools.constants import GC_UNLINK_LIMIT
 from odoo.exceptions import AccessError, MissingError, ValidationError, UserError
-from odoo.tools import OrderedSet, Query, split_every, SQL, sql
+from odoo.fields import Domain
+from odoo.tools import OrderedSet, split_every, SQL, sql
 from odoo.tools.misc import LastOrderedSet, Sentinel, SENTINEL
-from odoo.api import Self, ValuesType, IdType
+from typing import Self
+
+from odoo.api import ValuesType, IdType
 from collections import deque
 
 # Local imports
-from . import expression
-
 # Type checking imports
 if typing.TYPE_CHECKING:
     from collections.abc import Reversible
@@ -321,9 +334,14 @@ def _poly_leaf_columns(cr, table):
 
 
 # [poly] Professional Patch for _inherits_check to avoid KeyError: None
-_original_inherits_check = odoo.models.BaseModel._inherits_check
-def poly_inherits_check(self):
-    cls = type(self)
+# [poly][20.0] _inherits_check dejo de ser un metodo de BaseModel: ahora es la
+# funcion _check_inherits(model_cls) de odoo.orm.model_classes, que ademas solo
+# valida y ya no repara (model_classes.py:497-510). El cuerpo de abajo todavia
+# repara, y escribe en cls._fields, que en 20.0 es un MappingProxyType de solo
+# lectura (model_classes.py:204). Fase 3 del rediseno lo reemplaza; ver
+# doc/plan-2026-09-20-odoo-20-redesign.md seccion 2.1.
+_original_inherits_check = _poly_model_classes._check_inherits
+def poly_inherits_check(cls):
     if hasattr(cls, '_inherits') and cls._inherits:
         # [poly] Odoo 18: _inherits = {'parent_model': 'field_name'}
         for parent_model, field_name in list(cls._inherits.items()):
@@ -370,8 +388,8 @@ def poly_inherits_check(self):
                     "campos de %s.", cls._name, parent_model, field_name, parent_model)
                 del cls._inherits[parent_model]
                 
-    return _original_inherits_check(self)
-odoo.models.BaseModel._inherits_check = poly_inherits_check
+    return _original_inherits_check(cls)
+_poly_model_classes._check_inherits = poly_inherits_check
 
 # [poly] Vistas anotadas durante la carga para validarlas cuando termina.
 def _pending_poly_views(self):
@@ -664,13 +682,13 @@ def _poly_inject_field(cls, fname: str, field) -> None:
 
 
 # [poly] Track processed models for incremental Deep Fix
-@odoo.tools.lazy_property
+@functools.cached_property
 def _poly_processed_models(self):
     """ {model_name: set(module_names)} """
     return defaultdict(set)
 
 # [poly] Track injected MRO for incremental Phase 1
-@odoo.tools.lazy_property
+@functools.cached_property
 def _poly_injected_mro(self):
     """ {model_name: tuple(base_classes)} """
     return {}
@@ -752,7 +770,7 @@ odoo.modules.registry.Registry._poly_hierarchy_model_names = None
 # Save the original Odoo methods to avoid cyclic inheritance
 _original_Field_get = odoo.fields.Field.__get__
 _original_Field_set = odoo.fields.Field.__set__
-_original_Relational_get = odoo.fields._Relational.__get__
+_original_Relational_get = _Relational.__get__
 _original_One2many_get = odoo.fields.One2many.__get__
 
 _POLY_MISSING_BASE_WARNED = set()
@@ -1013,7 +1031,7 @@ def _poly_One2many_get(self, records, owner=None):
 
 odoo.fields.Field.__get__ = _poly_Field_get
 odoo.fields.Field.__set__ = _poly_Field_set
-odoo.fields._Relational.__get__ = _poly_Relational_get
+_Relational.__get__ = _poly_Relational_get
 odoo.fields.One2many.__get__ = _poly_One2many_get
 
 _original_BaseModel = odoo.models.BaseModel
@@ -1862,8 +1880,8 @@ class PolyReference(fields.Many2one):
             value_is_null = value is False or value is None
 
         can_be_null = (  # (..., '=', False) or (..., 'not in', [truthy vals])
-            (operator not in expression.NEGATIVE_TERM_OPERATORS and value_is_null)
-            or (operator in expression.NEGATIVE_TERM_OPERATORS and not value_is_null)
+            (operator not in Domain.NEGATIVE_OPERATORS and value_is_null)
+            or (operator in Domain.NEGATIVE_OPERATORS and not value_is_null)
         )
 
         def make_domain(path, model):
@@ -1879,11 +1897,11 @@ class PolyReference(fields.Many2one):
             if not isinstance(field, PolyReference):
                 domain = [(prefix, 'in', comodel._search(make_domain(suffix, comodel)))]
                 if can_be_null and field.type == 'many2one' and not field.required:
-                    return expression.OR([domain, [(prefix, '=', False)]])
+                    return Domain.OR([domain, [(prefix, '=', False)]])
             else:
                 domain = [('id', 'in', comodel._search(make_domain(suffix, comodel)))]
                 if can_be_null and field.type == 'many2one' and not field.required:
-                    return expression.OR([domain, [('id', '=', False)]])
+                    return Domain.OR([domain, [('id', '=', False)]])
 
             return domain
 
@@ -6207,15 +6225,21 @@ odoo.models.BaseModel._fetch_query = poly_BaseModel_fetch_query
 
 
 # PATCH: BaseModel._add_field Interceptor para forzar campos polimórficos
-_original_BaseModel_add_field = odoo.models.BaseModel._add_field
-def poly_BaseModel_add_field(self, name, field):
+# [poly][20.0] _add_field dejo de ser un metodo de BaseModel: ahora es la funcion
+# add_field(model_cls, name, field, shareable) de odoo.orm.model_classes, que
+# ademas rechaza con ValidationError todo nombre que ninguna clase Python del MRO
+# declare y que no empiece con 'x_' (model_classes.py:632-639). El cuerpo de abajo
+# asume lo contrario. Fase 3/4 del rediseno lo reemplaza; ver
+# doc/plan-2026-09-20-odoo-20-redesign.md secciones 2.1 y 2.2.
+_original_BaseModel_add_field = _poly_model_classes.add_field
+def poly_BaseModel_add_field(self, name, field, shareable=False):
     # [poly] Use _POLY_TECHNICAL_FIELDS (includes display_name, id, audit fields) so that
     # Odoo's own _inherits delegation for these fields is not overridden here.
     # Phase 3 of _poly_registry_setup_models handles display_name separately.
     if name not in _POLY_TECHNICAL_FIELDS:
         # [poly] STRICT ISOLATION: Delegate immediately if not a poly model
         if not _poly_is_polymorphic(self):
-            return _original_BaseModel_add_field(self, name, field)
+            return _original_BaseModel_add_field(self, name, field, shareable)
 
         model_class = type(self)
         # Buscar en la jerarquía polimórfica si este campo debería ser un related.
@@ -6278,8 +6302,8 @@ def poly_BaseModel_add_field(self, name, field):
             # [poly] REMOVED delattr logic: Odoo 18 manages its descriptors.
             # Mutating the field object is enough.
 
-    return _original_BaseModel_add_field(self, name, field)
-odoo.models.BaseModel._add_field = poly_BaseModel_add_field
+    return _original_BaseModel_add_field(self, name, field, shareable)
+_poly_model_classes.add_field = poly_BaseModel_add_field
 
 # PATCH: Field.setup Interceptor to force polymorphic fields to be related/non-stored
 _original_Field_setup = odoo.fields.Field.setup
@@ -6716,7 +6740,6 @@ def _patch_ir_ui_view():
         pass
 
 # PATCH: tools.convert.convert_xml_import to ensure patches are applied
-import odoo.tools.convert
 _original_convert_xml_import = odoo.tools.convert.convert_xml_import
 
 def poly_convert_xml_import(env, module, fp, idref, mode, noupdate):
@@ -6730,7 +6753,7 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
     # [poly] DEPRECATED: Deep fix is no longer needed with the new flattening strategy.
 
-_original_Registry_setup_models = odoo.modules.registry.Registry.setup_models
+_original_Registry_setup_models = odoo.modules.registry.Registry._setup_models__
 
 def _poly_registry_setup_models(self, cr):
     """
@@ -7342,9 +7365,21 @@ def _poly_registry_load(self, cr, module):
     return res
 
 odoo.modules.registry.Registry.load = _poly_registry_load
-odoo.modules.registry.Registry.setup_models = _poly_registry_setup_models
+odoo.modules.registry.Registry._setup_models__ = _poly_registry_setup_models
 
-_original_registry_signal_changes = odoo.modules.registry.Registry.signal_changes
+# [poly][20.0] Registry.signal_changes no existe. Lo mas parecido,
+# Registry._signal_changes(cr, names) (registry.py:1124), es otro contrato: se
+# dispara por transaccion desde environments.py:976, con un conjunto de nombres
+# de cache, y no una vez al final de la carga bajo el lock. Registry.new ahora
+# termina en `registry.ready = True` (registry.py:264-267) sin punto de enganche,
+# y registry._init, registry.registry_invalidated y registry.cache_invalidated,
+# que _poly_stabilize_registry lee y restaura, tampoco existen.
+#
+# Elegir el anclaje nuevo es la fase 6 del rediseno, y depende de cuanto de esta
+# estabilizacion siga haciendo falta una vez que la fase 3 deje de inyectar MRO.
+# Adivinarlo ahora seria inventar. Ver doc/plan-2026-09-20-odoo-20-redesign.md
+# seccion 2.4.
+_original_registry_signal_changes = None
 
 
 def _poly_stabilize_registry(registry):
@@ -7386,11 +7421,10 @@ def _poly_signal_changes(self):
     return _original_registry_signal_changes(self)
 
 
-odoo.modules.registry.Registry.signal_changes = _poly_signal_changes
+# [poly][20.0] Sin enganche: ver la nota de _original_registry_signal_changes.
 
 
 # PATCH: load_module_graph to intercept the end of module loading
-import odoo.modules.loading
 _original_load_module_graph = odoo.modules.loading.load_module_graph
 
 def poly_load_module_graph(env, graph, status=None, perform_checks=True,

@@ -1,7 +1,7 @@
 {
     'name': 'Numa Poly',
-    'version': '18.0.1.1.0',
-    'summary': 'Polymorphic model inheritance for Odoo 18.0 (patches ORM internals — '
+    'version': '20.0.1.0.0',
+    'summary': 'Polymorphic model inheritance for Odoo 20.0 (patches ORM internals - '
                'version-specific; see doc/UPGRADE.md).',
     'author': 'NUMA Extreme Systems',
     'website': 'https://www.numaes.com',
