@@ -13,51 +13,59 @@ archivo quedó partido en dos mitades de distinto estado:
   nada equivalente. El riesgo desapareció por construcción, y lo que sigue abajo lo verifica.
 
 - **La estabilización posterior a la carga.** Colgaba de ``Registry.signal_changes``, que en
-  20.0 no existe: ``_signal_changes(cr, names)`` es otro contrato (por transacción, desde
-  ``environments.py:976``), ``Registry.new`` termina en ``registry.ready = True`` sin enganche,
-  y ``registry._init`` / ``registry.registry_invalidated`` tampoco están. Elegir el anclaje
-  nuevo es la fase 6 del rediseño. Hasta entonces no hay mecanismo que probar, y sus tests se
-  saltean diciéndolo en voz alta en lugar de pasar por vacío.
+  20.0 no existe. Se retiró entera, y no por falta de dónde colgarla: lo que hacía era repetir
+  el setup para reinyectar el MRO, y eso dejó de hacer falta cuando la declaración reemplazó a
+  la inyección. Odoo arma las bases solo, en la primera pasada, y no hay nada que rehacer.
+
+  Lo único que quedaba pendiente para el final de la carga es validar las vistas diferidas, y
+  eso tiene anclaje propio desde siempre: ``ir.poly_base._register_hook``, que Odoo llama con
+  todos los módulos cargados (``registry.py:577``). Lo cubre ``test_poly_view_validation``.
 """
-import unittest
-
 from odoo.tests import tagged, TransactionCase
-
-FASE_6 = ("pendiente de la fase 6 del rediseño: Registry.signal_changes no existe en Odoo 20.0 "
-          "y todavía no se eligió el anclaje que lo reemplaza "
-          "(ver doc/plan-2026-09-20-odoo-20-redesign.md, sección 2.4)")
 
 
 @tagged('post_install', '-at_install')
-class TestPolyPendingViewsSurviveSetup(TransactionCase):
-    """Lo anotado durante la carga tiene que seguir ahí cuando la carga termina."""
+class TestPolyPendingViews(TransactionCase):
+    """Lo anotado durante la carga tiene que seguir ahí hasta que alguien lo valide."""
 
-    def test_01_the_pending_set_survives_a_models_setup(self):
-        pendientes = self.registry._pending_poly_views
+    def test_01_the_pending_set_is_the_same_object_across_reads(self):
+        """Si cada lectura devolviera un conjunto nuevo, anotar no serviría de nada.
+
+        Era un defecto real: como ``lazy_property`` guardaba el valor bajo el nombre de la
+        función y no el del atributo, cada lectura creaba un conjunto vacío y la validación
+        final no validaba nada.
+        """
+        self.assertIs(self.registry._pending_poly_views, self.registry._pending_poly_views)
+
+    def test_02_what_is_recorded_stays_until_something_validates_it(self):
+        """Anotar y leer no pierde nada.
+
+        El invariante de 18.0 era más fuerte -sobrevivir a ``setup_models``- porque
+        ``lazy_property.reset_all()`` vaciaba el conjunto una vez por módulo actualizado. En
+        Odoo 20 no hay ``reset_all``, y lo que un ``_setup_models__`` sí hace es llamar a
+        ``_register_hook`` (``registry.py:577``), que valida las pendientes y las descarta: eso
+        es el anclaje funcionando, no una pérdida.
+        """
         centinela = -424242
-        pendientes.add(centinela)
+        self.registry._pending_poly_views.add(centinela)
         try:
-            self.registry._setup_models__(self.env.cr, [])   # setup incremental, como en un -u
-            self.assertIn(centinela, self.registry._pending_poly_views,
-                          "lo anotado se perdió al rearmar los modelos")
+            self.assertIn(centinela, self.registry._pending_poly_views)
         finally:
             self.registry._pending_poly_views.discard(centinela)
 
-    def test_02_the_pending_set_is_the_same_object_across_reads(self):
-        """Si cada lectura devolviera un conjunto nuevo, anotar no serviría de nada."""
-        self.assertIs(self.registry._pending_poly_views, self.registry._pending_poly_views)
-
 
 @tagged('post_install', '-at_install')
-@unittest.skip(FASE_6)
-class TestPolyRegistryStabilization(TransactionCase):
-    """La estabilización posterior a la carga, cuando vuelva a tener dónde colgarse."""
+class TestPolyStabilizationIsGone(TransactionCase):
+    """La estabilización se retiró: que no vuelva por la ventana."""
 
-    def test_01_runs_once_per_registry_when_loading_is_over(self):
-        self.fail(FASE_6)
+    def test_01_no_stabilization_machinery_is_left(self):
+        from ..models import poly as P
+        for nombre in ('_poly_stabilize_registry', '_poly_signal_changes', '_poly_registry_new'):
+            self.assertFalse(hasattr(P, nombre),
+                             "%s volvió: la declaración de bases hace innecesario "
+                             "repetir el setup después de la carga" % nombre)
 
-    def test_02_does_not_run_while_the_registry_is_loading(self):
-        self.fail(FASE_6)
-
-    def test_03_stabilizing_does_not_tell_other_workers_to_reload(self):
-        self.fail(FASE_6)
+    def test_02_the_view_validation_anchor_is_the_register_hook(self):
+        """El anclaje que sí sobrevivió a Odoo 20."""
+        self.assertTrue(hasattr(self.registry, '_poly_finalize_view_validation'))
+        self.assertTrue(hasattr(self.env['ir.poly_base'], '_register_hook'))

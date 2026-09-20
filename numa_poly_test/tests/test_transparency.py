@@ -61,7 +61,9 @@ class TestPolyFixtureTransparency(TransactionCase):
             self.registry._pending_poly_views.update(previos)
         self.addCleanup(restaurar)
 
-        with patch.object(self.registry, '_init', True):
+        # [poly][20.0] "durante la carga" era registry._init = True;
+        # ahora es registry.loaded = False (registry.py:114).
+        with patch.object(self.registry, 'loaded', False):
             vista = self.env['ir.ui.view'].create({
                 'name': 'poly subtipo inválida', 'model': 'test.poly.child.a', 'type': 'form',
                 'arch': '<form><field name="x_no_existe_en_el_subtipo"/></form>'})

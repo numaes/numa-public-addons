@@ -737,9 +737,10 @@ def _poly_finalize_view_validation(self, cr):
             failures.append((label, reason))
             _logger.error("[poly] Validation failed for view %s: %s", label, e)
 
-    # Registry.clear_caches() no existe en Odoo 18; la llamada anterior reventaba con
-    # AttributeError cada vez que había vistas pendientes.
-    self.clear_cache()
+    # [poly][20.0] Ni Registry.clear_caches() ni Registry.clear_cache() existen ya.
+    # El ormcache se invalida por transacción (environments.py:833), que es como
+    # lo hacen los addons del core.
+    env.transaction.invalidate_ormcache()
 
     if not failures:
         _logger.info("[poly] Las %d vistas diferidas validan.", len(view_ids))
@@ -6714,21 +6715,29 @@ def _patch_ir_ui_view():
     if _original_validate_view is not None:
         return
     
-    try:
-        import odoo.addons.base.models.ir_ui_view as ir_ui_view_mod
-        if hasattr(ir_ui_view_mod, 'View'):
-            _original_validate_view = ir_ui_view_mod.View._validate_view
-            ir_ui_view_mod.View._validate_view = poly_validate_view
-            
-            _original_validate_module_views = ir_ui_view_mod.View._validate_module_views
-            ir_ui_view_mod.View._validate_module_views = poly_validate_module_views
+    import odoo.addons.base.models.ir_ui_view as ir_ui_view_mod
 
-            _original_NameManager_must_have_fields = ir_ui_view_mod.NameManager.must_have_fields
-            ir_ui_view_mod.NameManager.must_have_fields = poly_NameManager_must_have_fields
-            
-            _logger.debug("[poly] Patched ir.ui.view classes")
-    except ImportError:
-        pass
+    # [poly][20.0] La clase paso a llamarse IrUiView (ir_ui_view.py:146); en 18.0
+    # era View. Antes esto era `if hasattr(mod, 'View')`, asi que al cambiar el
+    # nombre el parche dejo de instalarse EN SILENCIO: las vistas ya no se
+    # diferian y la validacion durante la carga volvia a fallar por campos
+    # polimorficos todavia incompletos. Si maniana vuelve a cambiar, que se vea.
+    View = getattr(ir_ui_view_mod, 'IrUiView', None) or getattr(ir_ui_view_mod, 'View', None)
+    if View is None:
+        raise ImportError(
+            "[poly] no se encontro la clase de ir.ui.view en %s: numa_poly no puede "
+            "diferir la validacion de vistas durante la carga" % ir_ui_view_mod.__name__)
+
+    _original_validate_view = View._validate_view
+    View._validate_view = poly_validate_view
+
+    _original_validate_module_views = View._validate_module_views
+    View._validate_module_views = poly_validate_module_views
+
+    _original_NameManager_must_have_fields = ir_ui_view_mod.NameManager.must_have_fields
+    ir_ui_view_mod.NameManager.must_have_fields = poly_NameManager_must_have_fields
+
+    _logger.debug("[poly] parcheada la clase de ir.ui.view (%s)", View.__name__)
 
 # PATCH: tools.convert.convert_xml_import to ensure patches are applied
 _original_convert_xml_import = odoo.tools.convert.convert_xml_import
@@ -7288,61 +7297,18 @@ def _poly_registry_load(self, cr, module):
 
 odoo.modules.registry.Registry._setup_models__ = _poly_registry_setup_models
 
-# [poly][20.0] Registry.signal_changes no existe. Lo mas parecido,
-# Registry._signal_changes(cr, names) (registry.py:1124), es otro contrato: se
-# dispara por transaccion desde environments.py:976, con un conjunto de nombres
-# de cache, y no una vez al final de la carga bajo el lock. Registry.new ahora
-# termina en `registry.ready = True` (registry.py:264-267) sin punto de enganche,
-# y registry._init, registry.registry_invalidated y registry.cache_invalidated,
-# que _poly_stabilize_registry lee y restaura, tampoco existen.
+# [poly][20.0] Aca vivia la estabilizacion posterior a la carga, colgada de
+# Registry.signal_changes. Ese punto de enganche no existe en Odoo 20, y lo que
+# la estabilizacion hacia -repetir el setup para reinyectar el MRO- dejo de
+# hacer falta cuando la fase 3 cambio la inyeccion por la declaracion: Odoo arma
+# las bases solo, en la primera pasada, y no hay nada que rehacer despues.
 #
-# Elegir el anclaje nuevo es la fase 6 del rediseno, y depende de cuanto de esta
-# estabilizacion siga haciendo falta una vez que la fase 3 deje de inyectar MRO.
-# Adivinarlo ahora seria inventar. Ver doc/plan-2026-09-20-odoo-20-redesign.md
-# seccion 2.4.
-_original_registry_signal_changes = None
-
-
-def _poly_stabilize_registry(registry):
-    """[poly] Estabilización polimórfica con el registry ya cargado.
-
-    Repite el setup de modelos con todos los módulos presentes (inyección de MRO y sincronización de
-    campos) y valida las vistas diferidas que queden.
-
-    Antes lo hacía un wrapper de ``Registry.new``, con tres problemas. numa_poly se importa DENTRO de
-    ``Registry.new``, así que en el primer arranque de cada proceso —cada worker— el wrapper no
-    aplicaba y esto no corría nunca: solo en recargas posteriores. Cuando corría, lo hacía después de
-    que ``new`` soltara el lock, con el registry ya visible para otros hilos. Y dejaba
-    ``registry_invalidated`` en True, así que la siguiente señal hacía recargar a los demás workers.
-    """
-    t0 = time.monotonic()
-    invalidated = registry.registry_invalidated
-    registry.ready = False
-    try:
-        with registry.cursor() as cr:
-            registry.setup_models(cr)
-            registry._poly_finalize_view_validation(cr)
-    except Exception:
-        _logger.error("[poly] Error crítico en la estabilización post-carga de %s",
-                      getattr(registry, 'db_name', '?'), exc_info=True)
-        raise
-    registry.ready = True
-    # Re-armar los modelos no cambia nada que los otros procesos deban recargar.
-    registry.registry_invalidated = invalidated
-    _logger.info("[poly] Registry estabilizado después de la carga en %.2fs", time.monotonic() - t0)
-
-
-def _poly_signal_changes(self):
-    """[poly] ``Registry.new`` llama a ``signal_changes`` al final: con la carga terminada, todavía
-    bajo el lock del registry, y también en el primer arranque de cada proceso. Ahí se estabiliza,
-    una sola vez por registry."""
-    if not self.__dict__.get('_poly_stabilized') and not self.loaded:
-        self.__dict__['_poly_stabilized'] = True
-        _poly_stabilize_registry(self)
-    return _original_registry_signal_changes(self)
-
-
-# [poly][20.0] Sin enganche: ver la nota de _original_registry_signal_changes.
+# Lo unico que quedaba pendiente para el final de la carga es validar las vistas
+# que se difirieron, y eso tiene su propio anclaje desde siempre:
+# ir.poly_base._register_hook, que Odoo llama con todos los modulos cargados
+# (registry.py:577). Es ademas el unico que sirve en un arranque en frio, porque
+# numa_poly se importa DENTRO de load_module_graph y un wrapper de esa funcion
+# no llega a aplicarse la primera vez.
 
 
 # PATCH: load_module_graph to intercept the end of module loading

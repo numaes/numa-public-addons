@@ -37,7 +37,9 @@ class TestPolyDeferredViewValidation(TransactionCase):
         self.addCleanup(restaurar)
 
     def _crear_durante_la_carga(self, arch, nombre):
-        with patch.object(self.registry, '_init', True):
+        # [poly][20.0] "durante la carga" era registry._init = True; ahora es
+        # registry.loaded = False (registry.py:114), con el sentido invertido.
+        with patch.object(self.registry, 'loaded', False):
             return self.env['ir.ui.view'].create({
                 'name': nombre, 'model': 'res.currency', 'type': 'form', 'arch': arch})
 
@@ -48,8 +50,8 @@ class TestPolyDeferredViewValidation(TransactionCase):
     def test_00_the_pending_set_survives_between_reads(self):
         """Cada lectura tiene que devolver el mismo conjunto. Cuando era un ``lazy_property`` guardado
         bajo el nombre de una función distinta del atributo, cada lectura creaba uno nuevo: todo lo
-        anotado se perdía y la validación final no validaba nada. (Que además sobreviva al
-        ``reset_all`` de ``setup_models`` lo cubre test_poly_registry_stabilization.)"""
+        anotado se perdía y la validación final no validaba nada. (Que además sobreviva a un
+        ``_setup_models__`` lo cubre test_poly_registry_stabilization.)"""
         pendientes = self.registry._pending_poly_views
         self.assertIs(self.registry._pending_poly_views, pendientes)
 
@@ -89,9 +91,10 @@ class TestPolyDeferredViewValidation(TransactionCase):
                 'name': 'poly inmediata', 'model': 'res.currency', 'type': 'form', 'arch': INVALIDA})
 
     def test_08_the_registry_hook_triggers_the_final_validation(self):
-        """El disparador real: Odoo llama a ``_register_hook`` con todos los módulos cargados. El
-        wrapper de ``load_module_graph`` no sirve en un arranque, porque poly se importa dentro de
-        esa misma llamada."""
+        """El disparador real: Odoo llama a ``_register_hook`` con todos los módulos cargados
+        (``registry.py:577``). El wrapper de ``load_module_graph`` no sirve en un arranque, porque
+        poly se importa dentro de esa misma llamada. Es el anclaje que sobrevivió a Odoo 20,
+        donde ``Registry.signal_changes`` -del que colgaba la estabilización- desapareció."""
         self._crear_durante_la_carga(INVALIDA, 'poly diferida desde el hook')
         with patch.dict(config.options, {'poly_strict_view_validation': True}), \
                 mute_logger(LOGGER), self.assertRaises(ValidationError) as ctx:
