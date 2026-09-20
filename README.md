@@ -54,8 +54,8 @@ for each module, with no gated or commercial-only variants.
 
 | Module | Domain | Version | License | Status |
 |---|---|---|---|---|
-| [`numa_poly`](#numa_poly) | Core Architecture | 18.0.1.0.0 | AGPL-3 | ✅ Available for everyone |
-| [`numa_big_id`](#numa_big_id) | Core Architecture | 18.0.1.0.0 | AGPL-3 | ✅ Available for everyone |
+| [`numa_poly`](#numa_poly) | Core Architecture | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_big_id`](#numa_big_id) | Core Architecture | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
 | [`numa_exceptions`](#numa_exceptions) | Core Architecture | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
 | [`numa_asynch_exec`](#numa_asynch_exec) | Core Architecture | 1.0 | LGPL-3 | ✅ Available for everyone |
 | [`numa_background_job`](#numa_background_job) | Core Architecture | 18.0.0.0 | LGPL-3 | ✅ Available for everyone |
@@ -78,7 +78,7 @@ for each module, with no gated or commercial-only variants.
 | [`numa_periodic_services`](#numa_periodic_services) | Product & Business | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
 | [`numa_imap`](#numa_imap) | Mail & Communications | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
 | [`numa_fixed_output_mail`](#numa_fixed_output_mail) | Mail & Communications | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_poly_test`](#test--demonstration-modules) | Tests & Demos | 18.0.1.0.0 | AGPL-3 | ✅ Available for everyone |
+| [`numa_poly_test`](#test--demonstration-modules) | Tests & Demos | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
 | [`numa_background_job_test`](#test--demonstration-modules) | Tests & Demos | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
 
 ---
@@ -101,7 +101,7 @@ delegation pattern and the linear-only `_inherit` extension pattern.
 - **Dedicated web assets**: polymorphic list renderer and field widget for the backend.
 - Architectural foundation of `numa_fsm`.
 - ⚠️ Patches ORM internals and is therefore version-specific — see `numa_poly/doc/UPGRADE.md`.
-- Status: **✅ Available for everyone** · License: AGPL-3 · Depends on: `base`, `web`
+- Status: **✅ Available for everyone** · License: LGPL-3 · Depends on: `base`, `web`
 
 #### `numa_big_id`
 **Converts every integer ID and foreign key to BIGINT (`int8`).**
@@ -114,7 +114,7 @@ a hard requirement for `numa_poly`, which unifies sequences and consumes IDs fas
 - **ORM monkey patch** forcing `Integer` fields to map to BIGINT for all newly created columns.
 - **Safety guard**: refuses to migrate databases above 500k records in critical tables (manual DBA migration required) and commits periodically to avoid lock exhaustion.
 - ⚠️ Must be installed **before** any polymorphic module; the migration is irreversible without manual intervention.
-- Status: **✅ Available for everyone** · License: AGPL-3 · Depends on: `base`
+- Status: **✅ Available for everyone** · License: LGPL-3 · Depends on: `base`
 
 #### `numa_exceptions`
 **Advanced exception logging, persistence and traceability.**
@@ -401,7 +401,7 @@ For bug reports, please use the GitHub Issues tracker.
 
 ## 📄 License
 
-Modules in this repository are licensed under the **GNU LESSER GENERAL PUBLIC LICENSE, Version 3 (LGPLv3)**, except `numa_poly`, `numa_poly_test` and `numa_big_id`, which are licensed under the **GNU AFFERO GENERAL PUBLIC LICENSE, Version 3 (AGPLv3)**. Please see the [LICENSE](./LICENSE) and [COPYRIGHT](./COPYRIGHT) files for more information.
+Every module in this repository is licensed under the **GNU LESSER GENERAL PUBLIC LICENSE, Version 3 (LGPLv3)**. Please see the [LICENSE](./LICENSE) and [COPYRIGHT](./COPYRIGHT) files for more information.
 
 <div align="center">
   <br/>

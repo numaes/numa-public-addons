@@ -5,7 +5,7 @@
                'version-specific; see doc/UPGRADE.md).',
     'author': 'NUMA Extreme Systems',
     'website': 'https://www.numaes.com',
-    'license': 'AGPL-3',
+    'license': 'LGPL-3',
     'category': 'Extra Tools',
     'depends': [
         'base',

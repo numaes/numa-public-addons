@@ -55,4 +55,4 @@ llegue con la forma exacta que espera el `.po`.
 
 ## Licencia
 
-AGPL-3. NUMA Extreme Systems.
+LGPL-3. NUMA Extreme Systems.

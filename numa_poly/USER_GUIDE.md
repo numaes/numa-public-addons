@@ -617,7 +617,7 @@ If you're migrating from Odoo 17 or earlier versions:
 For issues, questions, or contributions:
 - **Author**: NUMA Extreme Systems
 - **Website**: https://www.numaes.com
-- **License**: AGPL-3
+- **License**: LGPL-3
 
 ---
 

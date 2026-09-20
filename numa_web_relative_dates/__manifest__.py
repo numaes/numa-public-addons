@@ -36,7 +36,7 @@ Both would require forking core conversion logic. See ``docs/filtros_fecha_relat
     """,
     'author': 'NUMA Extreme Systems',
     'website': 'https://www.numaes.com',
-    'license': 'AGPL-3',
+    'license': 'LGPL-3',
     'category': 'Extra Tools',
     'depends': [
         'web',

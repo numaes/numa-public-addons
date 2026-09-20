@@ -252,4 +252,4 @@ NUMA Extreme Systems
 
 ## License
 
-AGPL-3
+LGPL-3

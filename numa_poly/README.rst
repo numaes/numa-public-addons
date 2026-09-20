@@ -7,9 +7,9 @@ Numa Poly
    !! See README.md for the source material.           !!
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-.. |badge1| image:: https://img.shields.io/badge/licence-AGPL--3-blue.png
+.. |badge1| image:: https://img.shields.io/badge/licence-LGPL--3-blue.png
     :target: http://www.gnu.org/licenses/agpl-3.0-standalone.html
-    :alt: License: AGPL-3
+    :alt: License: LGPL-3
 
 |badge1|
 
