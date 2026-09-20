@@ -23,10 +23,28 @@ If the switch is off, or the server has no `smtp_user`, nothing is touched.
 
 ## 2. Why
 
-Some providers require the `From` domain to match the credentials used to authenticate
-(SPF/DKIM/DMARC). If Odoo puts an end user's personal mailbox in `From` while sending
-through a departmental account, alignment breaks and replies and bounces go to the wrong
-place.
+**The case this module is for is a multi-company installation whose companies do not share
+a mail domain.** Each company has its own mailbox, and its people's mail must leave through
+that mailbox — with that company's address on it, and with replies and bounces coming back
+to it.
+
+Underneath, the reason it cannot be left to the `From` header alone is that providers
+require the `From` domain to match the credentials used to authenticate (SPF/DKIM/DMARC).
+If Odoo puts an end user's personal mailbox in `From` while authenticating with the
+company's account, alignment breaks.
+
+### 2.0 What has to be configured
+
+| | |
+|---|---|
+| One `ir.mail_server` per company | with that company's mailbox in **Username** (`smtp_user`) |
+| **FROM Filtering** (`from_filter`) on each server | set to that company's domain, e.g. `alpha.example.com` |
+| **Force SMTP Sender** | on, on each of them |
+| One `mail.alias.domain` per company | pointed at from `res.company.alias_domain_id`, which is how Odoo already separates companies by domain |
+
+The `from_filter` is not decoration, and it is not only Odoo's: **this module refuses to
+force the sender when the server declares a `from_filter` that the message's `From` does
+not match.** The reason is in 2.2.
 
 ### 2.1 What Odoo already does, and where this differs
 
@@ -54,6 +72,34 @@ this module is what does that.
 None of this is new in Odoo 20: the alias-domain machinery predates it. The overlap was
 already there in 18.0.
 
+For the multi-company case specifically, Odoo's mechanism gives every company the same
+kind of address — its alias domain's `notifications@` — which is the right answer when
+what matters is the domain. It is not the right answer when what matters is that replies
+land in the mailbox a team actually reads.
+
+### 2.2 The guard: one company's mail never leaves through another's mailbox
+
+`ir.mail_server._find_mail_server` picks the server by `from_filter`, matching the full
+address first and then the domain. When nothing matches it **still returns a server** —
+the first one without a filter, or failing that any server at all, logging that nothing
+matched.
+
+That fallback is reasonable for Odoo, which then spoofs the From with the notification
+address. It would be dangerous here: forcing the sender on a fallback server means taking
+one company's mail out of another company's mailbox, with that other company's address on
+it, silently.
+
+So the rule is:
+
+| Server's `from_filter` | Message's `From` | Forced? |
+|---|---|---|
+| empty | anything | yes — the server makes no claim, and there is nothing to cross |
+| set, matches | | yes |
+| set, does not match | | **no**, and a warning names the address, the server and its filter |
+
+An empty `from_filter` is the single-company setup. In a multi-company database, leaving it
+empty is what turns the fallback into a leak, which is why it is in the table in 2.0.
+
 Forcing `Return-Path` is worth knowing about: Odoo takes the bounce address from that
 header when it is set, so bounces reach the SMTP user instead of the alias domain's bounce
 address. That is the intent — the departmental inbox gets them — but it does override the
@@ -74,10 +120,18 @@ odoo-bin -d <database> -i numa_fixed_output_mail --without-demo \
          --test-enable --test-tags=/numa_fixed_output_mail --stop-after-init
 ```
 
-Seven tests: that the switch off changes nothing, that the switch on without an
-`smtp_user` changes nothing, that the display name survives, that a message with no
-display name gets the company's, that an address which already matches is left alone, that
-no header is duplicated, and that `send_email` actually goes through the rewrite.
+Fourteen tests, over two companies with their own domains, alias domains and servers.
+
+The basics: the switch off changes nothing, the switch on without an `smtp_user` changes
+nothing, the display name survives, a message with no display name gets the owning
+company's, an address that already matches is left alone, no header is duplicated, and
+`send_email` actually goes through the rewrite.
+
+The multi-company part: the owning company is derived from the mailbox's domain, an
+address belonging to another company is **not** claimed and says so in the log, a server
+with no filter claims everything, each company goes out through its own mailbox, and the
+routing this all rests on — `from_filter` deciding which server a `From` selects — is
+asserted against Odoo's own `_find_mail_server`.
 
 ---
 
@@ -92,7 +146,11 @@ around the rewrite, so the message was returned **untouched**: exactly the case 
 exists for. It was logged as "Failed to enforce SMTP sender headers", so it was visible,
 but nothing else said so.
 
-It now reads `self.env.company.name`, falling back to the server name.
+It now derives the company from the mailbox's **domain**, through the `mail.alias.domain`
+that a company points at. That is deliberate and not the same as `self.env.company`: in a
+multi-company database the sending context is whoever happens to be running the cron,
+which has nothing to do with whose mailbox is being used. The server's own name is the
+last resort.
 
 ### 5.2 The test suite never ran
 

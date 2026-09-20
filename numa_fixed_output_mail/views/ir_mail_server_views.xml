@@ -7,6 +7,15 @@
         <field name="arch" type="xml">
             <xpath expr="//field[@name='smtp_user']" position="after">
                 <field name="force_smtp_sender"/>
+                <!-- The switch and the filter are read together: with a from_filter set,
+                     the sender is only forced for addresses inside it. Showing them apart
+                     is how a multi-company setup ends up with one company's mail leaving
+                     through another's mailbox. -->
+                <div class="text-warning"
+                     invisible="not force_smtp_sender or from_filter">
+                    Without a FROM Filtering value this server claims every address. In a
+                    multi-company database, set it to this company's domain.
+                </div>
             </xpath>
         </field>
     </record>

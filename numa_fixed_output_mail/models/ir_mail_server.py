@@ -3,6 +3,7 @@ import logging
 from email.utils import formataddr, parseaddr
 
 from odoo import api, fields, models
+from odoo.tools.mail import email_domain_extract, email_normalize
 
 _logger = logging.getLogger(__name__)
 
@@ -17,6 +18,42 @@ class IrMailServer(models.Model):
             "address as the From/Reply-To/Return-Path, preserving the original display name."
         ),
     )
+
+    def _numa_owner_company(self):
+        """The company this mailbox belongs to, or an empty recordset.
+
+        Outgoing mail servers are not company-scoped in Odoo: what ties a mailbox to a
+        company is its **domain**. Each company points at a ``mail.alias.domain``
+        (``res.company.alias_domain_id``), so the domain of ``smtp_user`` answers the
+        question, and it answers it the same way from a cron as from a user session --
+        which ``self.env.company`` does not.
+        """
+        self.ensure_one()
+        domain = email_domain_extract(email_normalize(self.smtp_user or '') or '')
+        if not domain:
+            return self.env['res.company']
+        alias_domain = self.env['mail.alias.domain'].sudo().search(
+            [('name', '=ilike', domain)], limit=1)
+        return alias_domain.company_ids[:1]
+
+    def _numa_may_force(self, email_from):
+        """Whether this server may claim ``email_from`` as its own.
+
+        A ``from_filter`` is the server's statement about which addresses it sends for.
+        When it is set and the address is outside it, this server was picked as a
+        fallback -- ``_find_mail_server`` returns one anyway, logging that nothing
+        matched -- and forcing the sender there would take one company's mail out of
+        another company's mailbox. In a multi-company database where the companies do
+        not share a domain, that is the failure this whole module exists to avoid, so
+        the flag is not honoured in that case.
+
+        With no ``from_filter`` the server makes no claim, and the switch is taken at
+        face value: that is the single-company setup, where there is nothing to cross.
+        """
+        self.ensure_one()
+        if not self.from_filter:
+            return True
+        return self._match_from_filter(email_from, self.from_filter)
 
     def _force_sender_on_message(self, message):
         """Rewrite the sender headers when this server asks for it.
@@ -36,17 +73,28 @@ class IrMailServer(models.Model):
         if not (self.force_smtp_sender and smtp_user):
             return message
 
+        if not self._numa_may_force(message.get('From') or ''):
+            _logger.warning(
+                "[numa_fixed_output_mail] Not forcing the sender: %s is outside the "
+                "from_filter of server %s (%s). This server was a fallback for an "
+                "address it does not serve; rewriting From to %s would send it out of "
+                "another mailbox.",
+                message.get('From'), self.name, self.from_filter, smtp_user)
+            return message
+
         try:
             # Get the display name from the current From
             current_from = message.get('From') or ''
             display_name, _addr = parseaddr(current_from)
-            # Fall back to the company or the server name when there is no name at all.
+            # Fall back to the company that owns this mailbox, then to the server's own
+            # name, when there is no display name at all.
             # This used to read `self.company_id`, a field `ir.mail_server` does not have
             # and never had. The AttributeError landed in the `except` below, so a message
             # whose From carried no display name was returned UNTOUCHED -- the one case
             # this branch exists for. It was at least logged, as an "enforce failed".
             if not display_name:
-                display_name = self.env.company.name or self.name or ''
+                company = self._numa_owner_company()
+                display_name = company.name or self.name or ''
 
             forced_from = formataddr((display_name, smtp_user))
 
