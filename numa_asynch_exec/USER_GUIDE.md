@@ -1,5 +1,8 @@
 # Numa Asynch Exec - User Guide
 
+**Status: migrated to Odoo 20.0.** `job_wait()` works now; in earlier versions
+it raised on the first call. See `README.md` for the full list of changes.
+
 ## Introduction
 
 The **Numa Asynch Exec** module allows you to execute Odoo methods asynchronously in background threads. This enables long-running operations to execute without blocking the main transaction, improving user experience and system responsiveness.
@@ -7,7 +10,7 @@ The **Numa Asynch Exec** module allows you to execute Odoo methods asynchronousl
 **Key Benefits:**
 - Non-blocking execution of heavy operations
 - Automatic retry on failure
-- Job persistence and recovery
+- Job persistence, and recovery of jobs whose process died
 - Chained execution with dependencies
 - Parallel execution support
 
@@ -23,6 +26,10 @@ The **Numa Asynch Exec** module allows you to execute Odoo methods asynchronousl
    [options]
    numa_asynch_max_threads = 5
    ```
+
+Deferring a call needs no particular rights. Reading the job tables does: they
+are restricted to the system administrator, because a row there names a method
+that a worker thread runs as superuser.
 
 ### Basic Example
 
@@ -98,10 +105,18 @@ recordset.asynch_exec(retry=3, retry_delay=1000).method()
 
 ### Important Notes
 
-- **Post-Commit Execution**: Jobs execute **after** the current transaction commits
-- **Separate Transaction**: Each job runs in its own database transaction
-- **User Context**: Jobs execute with the same user and context as the caller
-- **No Return Values**: Methods executed asynchronously cannot return values directly
+- **Post-Commit Execution**: Jobs execute **after** the current transaction
+  commits. A job queued by a transaction that is rolled back never runs.
+- **Separate Transaction**: Each job runs in its own database transaction.
+- **Superuser, not the caller**: the method runs as superuser, with the context
+  the caller had. The requesting user is kept on the job's `uid` field, for
+  audit, but record rules do not apply during execution. Do not defer a method
+  that relies on the caller's rights to decide what it may touch.
+- **No Return Values**: a deferred call returns the id of the job it created,
+  never the result of the method. Nothing has run yet.
+- **Collisions are retried**: two jobs writing the same record make PostgreSQL
+  cancel one of them. That is a collision, not a failure: the job comes back,
+  with a backoff, without spending the retries you configured.
 
 ---
 
@@ -268,7 +283,12 @@ Jobs can be in one of these states:
 - **Running**: Job is currently executing
 - **Done**: Job completed successfully
 - **Failed**: Job failed and has no retries left
-- **Waiting**: Job is waiting for dependencies to complete (new state for `job_wait()`)
+- **Waiting**: Job is waiting for dependencies to complete (only `job_wait()` produces it)
+
+A job in **Failed** never releases what waits for it: a chain stops at its
+first failure, on purpose. A job left in **Running** by a process that died
+stays there; the recovery cron cannot tell it from a job that is simply slow,
+so it has to be moved back to `pending` by hand.
 
 ### Checking Job Status
 
@@ -284,7 +304,12 @@ for job in jobs:
     print(f"Job {job.id}: {job.state}")
     if job.state == 'waiting':
         print(f"  Waiting for: {[dep.depends_on_id.id for dep in job.dependency_ids]}")
+    if job.state == 'failed':
+        print(f"  Failed with: {job.error}")
 ```
+
+Reading the jobs requires the system administrator group; from ordinary code,
+go through `sudo()`.
 
 ---
 

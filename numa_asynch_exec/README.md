@@ -1,5 +1,9 @@
 # Asynchronous Execution Infrastructure (`numa_asynch_exec`)
 
+**Status: migrated to Odoo 20.0** (module version `20.0.1.0.0`). See
+[Migration to Odoo 20.0](#migration-to-odoo-200) for the API changes, the
+security change and the two features that used to be broken.
+
 This module provides a robust, persistent, and traceable infrastructure for executing Odoo methods asynchronously in background threads.
 
 ## Features
@@ -7,11 +11,19 @@ This module provides a robust, persistent, and traceable infrastructure for exec
 - **Fluent API**: Trigger asynchronous execution with a simple `.asynch_exec()` call.
 - **Chained Execution**: Use `.job_wait()` to create dependent job chains with sequential and parallel execution.
 - **Persistence**: Jobs are stored in the database (`numa.asynch.job`), allowing for status tracking (Pending, Running, Done, Failed, Waiting for Dependencies).
-- **Automatic Recovery**: Interrupted or pending jobs are automatically re-queued when the Odoo server starts.
+- **Automatic Recovery**: A cron re-queues jobs that never ran, every five minutes, and the module does the same on install and update.
 - **Error Handling**: Comprehensive logging of exceptions using the `numa_exceptions` module.
-- **Configurable Retries**: Support for multiple retries with configurable delays.
+- **Configurable Retries**: A configurable number of attempts with a delay, reusing the same job record. A database conflict is retried on its own budget, since it means the job collided rather than failed.
 - **Thread Pool Management**: Uses a global `ThreadPoolExecutor` with a configurable number of worker threads.
 - **Dependency Management**: Jobs can depend on other jobs, enabling complex asynchronous workflows.
+
+## Access rights
+
+Only the system administrator (`base.group_system`) may read or write the job
+tables. A row there names a model and a method that a worker thread runs **as
+superuser**, so anyone able to write one could run anything. Deferring a call
+does not need those rights: `asynch_exec()` and `job_wait()` create the job
+through `sudo()`, so any user can use them.
 
 ## Configuration
 
@@ -36,8 +48,11 @@ To execute any method asynchronously, simply call `asynch_exec()` before calling
 recordset.my_heavy_method(arg1, arg2)
 
 # Use:
-recordset.asynch_exec().my_heavy_method(arg1, arg2)
+job_id = recordset.asynch_exec().my_heavy_method(arg1, arg2)
 ```
+
+The call returns the id of the job it created, not the result of the method:
+the method has not run yet.
 
 ### With Retries and Delay
 
@@ -61,9 +76,16 @@ recordset.job_wait().method1().method2()
 
 #### Parallel Execution
 
+`job_wait()` in the middle of a chain runs the next method *alongside* the
+previous one instead of after it. Whatever follows waits for every branch
+opened since.
+
 ```python
 # method1 and method2 run simultaneously, method3 runs after both complete
 recordset.job_wait().method1().job_wait().method2().method3()
+
+# three branches: method1, method2 and method3 together, then method4
+recordset.job_wait().method1().job_wait().method2().job_wait().method3().method4()
 ```
 
 #### Complex Chains
@@ -90,12 +112,17 @@ recordset.job_wait(retry=3, retry_delay=500).validate().process().save()
 2. **Job Registration**: When a method is called on the proxy, it creates a `numa.asynch.job` record containing all necessary metadata (model, IDs, method name, args, kwargs, context, etc.).
 3. **Post-Commit Submission**: The job is submitted to the global `ThreadPoolExecutor` only **after** the current database transaction is successfully committed. This ensures the background thread can see the job record and any data changes made in the original transaction.
 4. **Execution**: The background thread:
-    - Waits for the `retry_delay`.
+    - Waits for the `retry_delay`, before opening any cursor.
     - Opens a new database cursor.
-    - Recreates the environment (`api.Environment`) with the original user and context.
-    - Executes the method.
+    - Checks that the model, the records and the method are still there.
+    - Claims the job with a conditional `UPDATE`, so the executor and the
+      recovery cron can never both run it.
+    - Executes the method **as superuser**, with the stored context. The
+      requesting user stays on `uid` for audit.
     - Updates the job state to `done` or `failed`.
-5. **Recovery**: On server startup, a `post_init_hook` triggers `_recover_pending_jobs()`, which finds any jobs still in `pending` state and re-submits them to the executor.
+5. **Recovery**: The `Asynchronous jobs: recover pending` cron re-queues every
+   job still in `pending` or `waiting`, every five minutes, and the module
+   does the same through its `post_init_hook` on install and update.
 
 #### Chained Execution (`job_wait`)
 
@@ -136,7 +163,9 @@ Stores asynchronous job records with all metadata needed for execution.
 - `args`, `kwargs`: Method arguments
 - `state`: Current state (pending, running, done, failed, waiting)
 - `dependency_ids`: Jobs this job depends on
-- `dependent_job_ids`: Jobs that depend on this job
+- `dependent_ids`: Jobs that depend on this job
+- `error`: why the last attempt failed
+- `retry_count` / `concurrency_retries`: attempts spent on failures and on database conflicts
 
 #### `numa.asynch.job.dependency`
 
@@ -209,7 +238,15 @@ recordset.job_wait().validate_rules().job_wait().check_permissions().process().n
 
 - Check if dependency jobs completed
 - Verify dependency relationships
-- Check if dependencies failed
+- Check if dependencies failed. A failed dependency never releases what waits
+  for it: the chain stops there, on purpose.
+
+### Jobs Stuck in 'running'
+
+A job whose process died while it was running stays in `running`, and the
+recovery cron leaves it alone: it has no way to tell a dead worker from a job
+that is simply taking a long time. Such a job has to be moved back to
+`pending` by hand. This is a known gap.
 
 ### Circular Dependencies
 
@@ -218,6 +255,60 @@ recordset.job_wait().validate_rules().job_wait().check_permissions().process().n
 - Ensure no job depends on itself
 
 ---
+
+## Migration to Odoo 20.0
+
+| Odoo 18.0 | Odoo 20.0 |
+| --- | --- |
+| `security/ir.model.access.csv` | the `ir.model.access` model is gone; ACLs and record rules are unified in `security/ir.access.csv`. A row **without a group now restricts instead of granting**, so the old group-less rows could not be carried over as they were |
+| `_rec_name = 'display_name'` with a stored computed `display_name` | `display_name` is computed by the ORM; the circular definition is gone |
+| `odoo.models.BaseModel` | `odoo.orm.models.BaseModel` |
+
+Changes of behaviour that came with the migration:
+
+- **The job tables are restricted to `base.group_system`.** They used to be
+  readable and writable by every user, portal included, while a row there names
+  a model and a method that a worker runs as superuser. Any authenticated user
+  could therefore have arbitrary code executed with full rights.
+- **`job_wait()` works.** It never did: it called `job.refresh()`, a method
+  Odoo has not had for years, and nothing ever created the jobs of the root
+  chain, so a chain was built and thrown away. The proxy now stores each job as
+  the chain is written, which is what a fluent interface with no terminal call
+  requires.
+- **Recovery happens on a cron.** A `post_init_hook` runs on install and
+  update, never on a restart, so the documented "recovery on server startup"
+  did not exist.
+- **A job cannot run twice.** The transitions into `running`, and out of
+  `waiting`, are conditional `UPDATE`s. The recovery cron and the executor can
+  hold the same job, and several dependencies can finish at once.
+- **A retry reuses the job record** instead of copying it. An unbounded retry
+  (`retry=-1`, which polling threads use) grew the table once per attempt.
+- **A database conflict is not a failure.** A serialization failure or a
+  deadlock means the job collided with another transaction; it is retried, with
+  a backoff, on a budget of its own that does not consume `max_retries`.
+- **The thread pool is built on first use**, not when the module is imported,
+  so the worker count is read after Odoo has parsed its configuration.
+- **The delay is waited out before a cursor is opened**, instead of holding a
+  database connection for nothing.
+- **`asynch_exec()` returns the job id** instead of `True`, and does not hand
+  the caller a `sudo()` recordset.
+
+Structure: the models moved to one file per model (`numa_asynch_job.py`,
+`numa_asynch_job_dependency.py`, `base.py`), and the proxies, which are not
+models, moved out of `models/` into `proxies.py`.
+
+## Tests
+
+```bash
+odoo-bin -d <database> -i numa_asynch_exec --without-demo \
+         --test-enable --test-tags=/numa_asynch_exec --stop-after-init
+```
+
+The suite covers the serialization helpers, the job lifecycle (what can run,
+who claims it, what a failure does), the shape of the graph each chain builds,
+the release of waiting jobs, cycle detection, recovery, and the access rights.
+It never starts a thread: the queueing contract is asserted by capturing what
+would have been submitted.
 
 ## See Also
 
