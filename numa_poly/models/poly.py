@@ -6832,7 +6832,7 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 _POLY_CONTRIBUTED_ATTR = '_poly_contributed__' 
 
 
-def _poly_declared_fields(cls):
+def _poly_declared_fields(cls, propios_de=None):
     """[poly][20.0] Campos declarados en las clases de DEFINICION de *cls*.
 
     ``_fields`` solo se puebla durante ``_setup`` (``model_classes.py:391`` lo
@@ -6841,23 +6841,62 @@ def _poly_declared_fields(cls):
     modulo, porque ``Field.__set_name__`` las va apilando en
     ``_field_definitions`` al crearse la clase.
 
+    :param propios_de: si se indica un nombre de modelo, solo se devuelven los
+        campos declarados POR ese modelo -- los que vienen de un mixin que el
+        modelo hereda con ``_inherit`` quedan afuera. Ver
+        ``_poly_base_field_names`` para el porque.
     :return: ``{nombre: definicion_del_campo}``
     """
     declarados = {}
     for klass in cls.mro():
         if getattr(klass, 'pool', None) is not None:
             continue                       # clase de registry, no de definicion
+        if propios_de is not None and not _poly_class_declares_model(klass, propios_de):
+            continue
         for field in getattr(klass, '_field_definitions', ()):
             declarados.setdefault(field.name, field)
     return declarados
 
 
+def _poly_class_declares_model(klass, model_name):
+    """True si *klass* es una clase de definicion DEL modelo *model_name*.
+
+    Lo es la que lo declara (``_name == model_name``) y la que lo extiende desde
+    otro modulo (``_name`` ausente o igual, con ``model_name`` en ``_inherit``).
+    No lo es un mixin: ``MailThread`` tiene ``_name = 'mail.thread'``, y sus
+    campos son de mail.thread, no de quien lo hereda.
+    """
+    nombre = getattr(klass, '_name', None)
+    if nombre in (None, model_name):
+        return True
+    heredados = getattr(klass, '_inherit', None) or ()
+    if isinstance(heredados, str):
+        heredados = (heredados,)
+    return model_name in heredados
+
+
 def _poly_base_field_names(registry, base_name, _vistos=None):
-    """Campos que *va a tener* una base polimorfica, transitivamente.
+    """Campos PROPIOS de una base polimorfica, transitivamente por ``_depend_models``.
 
     Camina ``_depend_models`` hacia arriba porque, al momento de contribuir, la
     base todavia no recibio nada de sus propias bases: eso recien pasa cuando
     ``_setup_models__`` rearma todo.
+
+    "Propios" excluye lo que la base hereda de un mixin, y no es una preferencia
+    de estilo: sin ese filtro, el conjunto dependia de si la clase de registry de
+    la base ya estaba armada cuando corrio la contribucion. En un arranque
+    limpio ``registry[base]`` es la clase cruda y ``fsm.definition`` daba 14
+    campos; en una reconstruccion posterior ya trae a ``mail.thread`` y
+    ``mail.activity.mixin`` en el MRO y daba 42. **El mismo codigo y la misma
+    base producian un modelo polimorfico distinto segun el orden de armado**: en
+    la variante gorda, ``message_ids`` pasaba a leerse de la fila de la base en
+    vez de la propia, y 17 campos calculados quedaban declarados ``compute`` y
+    ``related`` a la vez (Odoo avisaba y descartaba el compute).
+
+    El filtro tambien es el correcto de fondo: la contribucion declara
+    ``_inherit = [modelo] + bases``, asi que todo lo que la base hereda de un
+    mixin le llega al concreto por el mismo camino. Redirigirlo con un
+    ``related`` no agrega nada; solo hay que redirigir lo que es dato de la base.
     """
     if _vistos is None:
         _vistos = set()
@@ -6865,7 +6904,7 @@ def _poly_base_field_names(registry, base_name, _vistos=None):
         return {}
     _vistos.add(base_name)
     base_cls = registry[base_name]
-    declarados = dict(_poly_declared_fields(base_cls))
+    declarados = dict(_poly_declared_fields(base_cls, propios_de=base_name))
     for abuelo in _poly_collect_depend_models(base_cls):
         for nombre, campo in _poly_base_field_names(registry, abuelo, _vistos).items():
             declarados.setdefault(nombre, campo)

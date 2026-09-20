@@ -93,3 +93,46 @@ class TestPlainDelegateChild(models.Model):
 
     parent_id = fields.Many2one('test.plain.delegate.parent', required=True, ondelete='cascade')
     code = fields.Char(string='Code')
+
+
+class TestPolyMixin(models.AbstractModel):
+    """Mixin con campos propios, para distinguir lo que es de la base de lo que
+    la base hereda.
+
+    numa_poly redirige con ``related`` los campos de la base hacia su fila. Un
+    campo que la base recibe de un mixin no es dato de la base: le llega al
+    concreto por el mismo ``_inherit`` y redirigirlo no agrega nada. Peor: el
+    conjunto dependía de si la clase de registry de la base ya estaba armada
+    cuando corría la contribución, así que el mismo código producía un modelo
+    distinto según el orden de armado.
+    """
+    _name = 'test.poly.mixin'
+    _description = 'Test Poly Mixin'
+
+    mixin_field = fields.Char(string='Mixin Field')
+    mixin_computed = fields.Char(string='Mixin Computed', compute='_compute_mixin_computed')
+
+    def _compute_mixin_computed(self):
+        for registro in self:
+            registro.mixin_computed = 'calculado por el mixin'
+
+
+class TestPolyMixedBase(PolyModel):
+    """Base polimórfica que además hereda un mixin."""
+    _name = 'test.poly.mixed.base'
+    _description = 'Test Poly Mixed Base'
+    _inherit = ['test.poly.mixin']
+    _depend_models = {}
+
+    dato_de_la_base = fields.Char(string='Dato de la base')
+
+
+class TestPolyMixedChild(PolyModel):
+    """Concreto sobre una base que hereda un mixin."""
+    _name = 'test.poly.mixed.child'
+    _description = 'Test Poly Mixed Child'
+    _depend_models = {
+        'test.poly.mixed.base': 'mixed_base_id',
+    }
+
+    dato_del_concreto = fields.Char(string='Dato del concreto')

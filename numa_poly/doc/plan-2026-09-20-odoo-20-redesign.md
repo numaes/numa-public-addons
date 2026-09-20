@@ -460,3 +460,46 @@ El guarda que sí funciona lee el fuente de `poly.py` y falla nombrando la líne
 —verificado poniendo el accesor viejo de vuelta y viendo el test en rojo—. Vale
 la pena anotarlo: cuando un mecanismo avisa una vez, o avisa en nombre de otro,
 no se puede construir una prueba encima.
+
+---
+
+## Corregido después: la superficie polimórfica dependía del orden de armado
+
+El síntoma eran 17 avisos por modelo polimórfico: *"Field crm.bot.message_has_error
+is both compute and related. Set one of them to None."*, todos sobre campos de
+`mail.thread` y `mail.activity.mixin`.
+
+La causa estaba más abajo. `_poly_base_field_names` leía los campos de la base
+del MRO de `registry[base]`, y ese MRO no es el mismo en todos los momentos:
+
+| Cuándo | `registry['fsm.definition']` | Campos que devolvía |
+|---|---|---|
+| Arranque limpio, antes del primer `_setup_models__` | clase cruda de definición | **14** (los de fsm.definition) |
+| Reconstrucción posterior | clase ya armada, con los mixins en el MRO | **42** (+`mail.thread`, +`mail.activity.mixin`) |
+
+O sea: **el mismo código y la misma base producían un modelo polimórfico
+distinto según cuándo corriera la contribución.** En la variante gorda,
+`message_ids` pasaba a leerse de la fila de la base en vez de la propia, y 17
+campos calculados quedaban declarados `compute` y `related` a la vez, con lo que
+Odoo avisaba y descartaba el compute (`fields.py:477`). La variante que termina
+en el registry que se sirve es la de 14, así que el arreglo no cambia lo que hoy
+anda: lo vuelve determinista.
+
+El filtro es `_poly_declared_fields(cls, propios_de=...)`: sólo cuenta los campos
+declarados por clases **del propio modelo** —la que lo declara (`_name` igual) y
+la que lo extiende desde otro módulo (`_name` en `_inherit`)—, no los de un mixin
+que la base hereda. `MailThread` tiene `_name = 'mail.thread'`, así que sus
+campos son de mail.thread y quedan afuera.
+
+Y es el criterio correcto de fondo, no sólo el que silencia el aviso: la
+contribución declara `_inherit = [modelo] + bases`, así que todo lo que la base
+hereda de un mixin le llega al concreto por ese mismo camino. Redirigirlo con un
+`related` no agrega nada. Lo único que hay que redirigir es el dato de la base,
+que es lo que si no se declarara tomaría columna propia en la tabla del
+concreto.
+
+El guarda es `test_01_the_base_fields_are_the_bases_own`, que corre con el
+registry armado —la condición en la que el defecto aparecía— y se verificó en
+rojo sacando el filtro. Los otros tres miran la contribución tal como quedó
+construida, que depende justamente del orden de armado, así que describen la
+forma esperada pero no sirven de red.
