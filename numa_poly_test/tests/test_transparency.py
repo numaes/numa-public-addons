@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Transparencia de numa_poly con modelos reales del módulo de fixtures.
+numa_poly transparency against real models from the fixtures module.
 
-Complementa los tests de numa_poly, que no pueden asumir modelos polimórficos instalados:
+Complements the numa_poly tests, which cannot assume polymorphic models are installed:
 
-- los fixtures polimórficos figuran en el mapa de jerarquías y conservan el camino de poly;
-- una tabla M2M compartida solo se tolera entre modelos de la misma jerarquía;
-- a un modelo común con ``_inherits`` bien declarado poly no le cambia nada;
-- si el campo de enlace no está declarado (Odoo 18 no lo crea solo y el arranque caería), poly
-  descarta la delegación para poder cargar, pero ahora lo avisa en vez de callarlo;
-- una vista rota de un subtipo se rechaza en la validación final.
+- the polymorphic fixtures appear in the hierarchy map and keep poly's path;
+- a shared M2M table is only tolerated between models of the same hierarchy;
+- poly changes nothing for a plain model with a properly declared ``_inherits``;
+- if the link field is not declared (Odoo 18 does not create it and boot would fail), poly
+  drops the delegation in order to load, but now warns instead of keeping quiet;
+- a broken subtype view is rejected at the final validation.
 """
 from unittest.mock import patch
 
@@ -42,7 +42,7 @@ class TestPolyFixtureTransparency(TransactionCase):
         hijo = jerarquia('test.poly.child.a')
         self.assertIn('test.poly.base', hijo)
         for comun in ('res.currency', 'res.country') + COMUNES:
-            self.assertFalse(jerarquia(comun), "%s no debería tener jerarquía poly" % comun)
+            self.assertFalse(jerarquia(comun), "%s should not have a poly hierarchy" % comun)
 
     def test_03_a_declared_plain_inherits_is_left_intact(self):
         Child = self.env['test.plain.delegate.child']
@@ -61,11 +61,11 @@ class TestPolyFixtureTransparency(TransactionCase):
             self.registry._pending_poly_views.update(previos)
         self.addCleanup(restaurar)
 
-        # [poly][20.0] "durante la carga" era registry._init = True;
-        # ahora es registry.loaded = False (registry.py:114).
+        # [poly][20.0] "during loading" used to be registry._init = True;
+        # it is now registry.loaded = False (registry.py:114).
         with patch.object(self.registry, 'loaded', False):
             vista = self.env['ir.ui.view'].create({
-                'name': 'poly subtipo inválida', 'model': 'test.poly.child.a', 'type': 'form',
+                'name': 'poly invalid subtype', 'model': 'test.poly.child.a', 'type': 'form',
                 'arch': '<form><field name="x_no_existe_en_el_subtipo"/></form>'})
         self.assertIn(vista.id, self.registry._pending_poly_views)
         with patch.dict(config.options, {'poly_strict_view_validation': True}), \
@@ -75,8 +75,8 @@ class TestPolyFixtureTransparency(TransactionCase):
         self.assertIn('x_no_existe_en_el_subtipo', str(ctx.exception))
 
     def test_05_an_undeclared_link_field_is_dropped_loudly(self):
-        """Odoo 18 no crea el campo de enlace de un ``_inherits``: sin declararlo el arranque cae.
-        poly descarta la delegación para poder cargar, y ahora lo dice."""
+        """Odoo 18 does not create an ``_inherits`` link field: without declaring it boot fails.
+        poly drops the delegation in order to load, and now it says so."""
         class ModeloSinEnlace:
             _name = 'test.poly.sin.enlace'
             _inherits = {'res.partner': 'partner_link_id'}

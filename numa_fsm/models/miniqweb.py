@@ -1,26 +1,26 @@
 # -*- coding: utf-8 -*-
 """
-miniqweb: el subconjunto de QWeb con el que numa_fsm renderiza páginas de portal y mails.
+miniqweb: the subset of QWeb with which numa_fsm renders portal pages and mails.
 
-La plantilla puede ser un fragmento: texto plano, varios elementos en la raíz, o el HTML que guarda
-un campo Html (``<br>``, ``&nbsp;``). La salida se serializa como HTML.
+The template may be a fragment: plain text, several elements at the root, or the HTML stored by
+an Html field (``<br>``, ``&nbsp;``). The output is serialized as HTML.
 
-Directivas:
+Directives:
 
-- ``t-if`` / ``t-elif`` / ``t-else``, en elementos hermanos consecutivos.
-- ``t-foreach`` + ``t-as``: repite el elemento. Define ``<as>``, ``<as>_value``, ``<as>_index``,
-  ``<as>_size``, ``<as>_first``, ``<as>_last``, ``<as>_parity``, ``<as>_even``, ``<as>_odd`` y
-  ``<as>_all``, que no salen del bucle. Un entero itera ``range(n)``; un dict, sus claves.
-- ``t-while``: repite el elemento mientras la expresión sea verdadera, con un tope de iteraciones.
-- ``t-set`` con ``t-value``, o con el contenido renderizado como valor.
-- ``t-esc`` (texto escapado) y ``t-raw`` (markup insertado tal cual, sin evaluar directivas):
-  reemplazan el contenido del elemento. ``None`` y ``False`` no emiten nada.
-- ``t-att-<nombre>`` (con ``None`` o ``False`` se omite), ``t-att`` (dict o pares) y
-  ``t-attf-<nombre>`` (``#{expr}``, ``{{ expr }}`` o ``{variable}``).
-- Los elementos ``<t-break/>`` y ``<t-continue/>``, dentro de un bucle.
+- ``t-if`` / ``t-elif`` / ``t-else``, on consecutive sibling elements.
+- ``t-foreach`` + ``t-as``: repeats the element. Defines ``<as>``, ``<as>_value``, ``<as>_index``,
+  ``<as>_size``, ``<as>_first``, ``<as>_last``, ``<as>_parity``, ``<as>_even``, ``<as>_odd`` and
+  ``<as>_all``, which do not leave the loop. An integer iterates ``range(n)``; a dict, its keys.
+- ``t-while``: repeats the element while the expression is true, with a cap on the iterations.
+- ``t-set`` with ``t-value``, or with its content rendered as the value.
+- ``t-esc`` (escaped text) and ``t-raw`` (markup inserted as is, without evaluating directives):
+  they replace the content of the element. ``None`` and ``False`` emit nothing.
+- ``t-att-<name>`` (omitted when ``None`` or ``False``), ``t-att`` (dict or pairs) and
+  ``t-attf-<name>`` (``#{expr}``, ``{{ expr }}`` or ``{variable}``).
+- The ``<t-break/>`` and ``<t-continue/>`` elements, inside a loop.
 
-``<t>`` no genera elemento: aporta su texto y su contenido. Los comentarios no se emiten. Una
-directiva que no está en esta lista es un error, no un atributo más.
+``<t>`` generates no element: it contributes its text and its content. Comments are not emitted. A
+directive that is not in this list is an error, not just another attribute.
 """
 import html
 import html.entities
@@ -75,9 +75,9 @@ def _start_tag(match):
     def attribute(attribute_match):
         key, value = attribute_match.groups()
         if value is None:
-            value = '"%s"' % key  # atributo booleano de HTML: multiple, checked, disabled…
+            value = '"%s"' % key  # HTML boolean attribute: multiple, checked, disabled…
         elif value[0] in '"\'':
-            # XML no admite '<' en un valor: una expresión como t-att-title="'<br>'" se truncaba.
+            # XML rejects '<' in a value: an expression like t-att-title="'<br>'" was truncated.
             value = value[0] + value[1:-1].replace('<', '&lt;') + value[-1]
         else:
             value = '"%s"' % value
@@ -89,10 +89,10 @@ def _start_tag(match):
 
 
 def _as_xml(template):
-    """El HTML de un campo Html, como XML que lxml puede parsear: sin declaración, con los elementos
-    vacíos cerrados, los atributos con valor entre comillas y las entidades con nombre como
-    referencias numéricas. Un atributo sin valor no es XML válido, y el parser tolerante lo
-    descartaba: el ``multiple`` del input de archivos del portal se perdía."""
+    """The HTML of an Html field, as XML that lxml can parse: without declaration, with the empty
+    elements closed, the attribute values quoted and the named entities as numeric
+    references. An attribute without a value is not valid XML, and the tolerant parser
+    dropped it: the ``multiple`` of the portal file input was lost."""
     text = _XML_DECLARATION.sub('', template)
     text = _VOID_CLOSE.sub('', text)
     text = _START_TAG.sub(_start_tag, text)
@@ -103,12 +103,12 @@ def _as_xml(template):
             return match.group(0)
         return '&#%d;' % html.entities.name2codepoint[name]
 
-    # Un '&' suelto (una URL con varios parámetros, "a & b") no es XML válido.
+    # A bare '&' (a URL with several parameters, "a & b") is not valid XML.
     return _BARE_AMPERSAND.sub('&amp;', _NAMED_ENTITY.sub(entity, text))
 
 
 def _parse(template):
-    """Parsea un fragmento dentro de un elemento contenedor. Devuelve el contenedor o None."""
+    """Parses a fragment inside a container element. Returns the container or None."""
     source = '<%s>%s</%s>' % (_FRAGMENT, _as_xml(str(template)), _FRAGMENT)
     try:
         return lxml.etree.fromstring(source.encode('UTF-8'), parser=xml_parser)
@@ -118,8 +118,8 @@ def _parse(template):
 
 
 def _evaluate(expression, params):
-    # [fsm][20.0] safe_eval(expr, /, context=None, *, mode, filename): el espacio
-    # de nombres pasa posicional, y el keyword locals_dict ya no existe
+    # [fsm][20.0] safe_eval(expr, /, context=None, *, mode, filename): the namespace
+    # is passed positionally, and the locals_dict keyword no longer exists
     # (tools/safe_eval/evaluation.py:388).
     return safe_eval(expression, params)
 
@@ -129,7 +129,8 @@ def _text(value):
 
 
 def _append_text(target, text):
-    """Agrega texto al final de lo ya emitido en ``target``: a la cola del último hijo, o a su texto."""
+    """Appends text at the end of what was already emitted into ``target``: to the tail of the
+    last child, or to its text."""
     if not text:
         return
     if len(target):
@@ -140,7 +141,7 @@ def _append_text(target, text):
 
 
 def _append_markup(target, value):
-    """Inserta markup al final de ``target``, tal cual: sus directivas no se evalúan."""
+    """Inserts markup at the end of ``target``, as is: its directives are not evaluated."""
     if value is None or value is False:
         return
     fragment = _parse(value)
@@ -164,21 +165,21 @@ def _check_directives(node, attributes):
 
 
 def _render_children(source, target, params):
-    """Renderiza el texto y los hijos de ``source`` al final de ``target``."""
+    """Renders the text and the children of ``source`` at the end of ``target``."""
     _append_text(target, source.text)
     chain = None
     for child in source:
         if isinstance(child.tag, str):
             chain = _render_node(child, target, params, chain)
-        # Un comentario o una instrucción de procesamiento no se emite, pero su cola sí.
+        # A comment or a processing instruction is not emitted, but its tail is.
         _append_text(target, child.tail)
 
 
 def _render_node(node, target, params, chain, attributes=None):
-    """Renderiza ``node`` al final de ``target``.
+    """Renders ``node`` at the end of ``target``.
 
-    Devuelve el estado de la cadena t-if / t-elif / t-else para el hermano siguiente: None fuera de
-    una cadena, True si ya se tomó una rama, False si todavía no."""
+    Returns the state of the t-if / t-elif / t-else chain for the next sibling: None outside of
+    a chain, True if a branch was already taken, False if not yet."""
     if node.tag == 't-break':
         raise TBreak()
     if node.tag == 't-continue':
@@ -326,7 +327,7 @@ def _format(template, params):
 
 
 def render(template: str, **params) -> str:
-    """Renderiza ``template`` con ``params``. Devuelve HTML, sin espacios al principio ni al final."""
+    """Renders ``template`` with ``params``. Returns HTML, without leading or trailing spaces."""
     if template is None or template is False:
         return ''
     fragment = _parse(template)

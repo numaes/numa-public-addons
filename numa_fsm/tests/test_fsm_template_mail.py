@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Mails de plantilla de una instancia FSM (``action_send_template_mail``).
+Template mails of an FSM instance (``action_send_template_mail``).
 
-El asunto se renderizaba con miniqweb, que parsea XML: con texto plano —el caso normal de un
-asunto— fallaba con AttributeError, y quien lo llamaba dentro de un try (el pedido de
-documentación de alfy_synch) nunca mandaba el mail. El cuerpo con varios elementos en la raíz se
-truncaba en silencio al primero.
+The subject was rendered with miniqweb, which parses XML: with plain text —the normal case for a
+subject— it failed with AttributeError, and whoever called it inside a try (the documentation
+request of alfy_synch) never sent the mail. A body with several elements at the root was silently
+truncated to the first one.
 """
 from unittest.mock import patch
 

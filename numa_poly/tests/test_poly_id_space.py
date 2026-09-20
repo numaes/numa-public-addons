@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Un solo asignador para todo el espacio de ids compartido.
+A single allocator for the whole shared id space.
 
-Un registro polimórfico y sus componentes comparten un id, así que todas esas tablas viven
-en un mismo espacio. Cada una nació con su propio ``SERIAL``, y por lo tanto con su propia
-secuencia: treinta asignadores repartiendo sobre un mismo espacio. Que no chocaran dependía
-de que absolutamente toda alta pasara por ``create()`` de poly, que provee el id explícito y
-nunca usa el ``DEFAULT`` de la columna.
+A polymorphic record and its components share an id, so all of those tables live in one and
+the same space. Each one was born with its own ``SERIAL``, and therefore with its own
+sequence: thirty allocators handing out over a single space. That they did not collide
+depended on absolutely every insert going through poly's ``create()``, which supplies the
+explicit id and never uses the column's ``DEFAULT``.
 
-Cualquier inserción por fuera disparaba la secuencia propia de la tabla, que no sabe nada
-del espacio compartido. Y el síntoma dependía de la tabla: donde ``MAX(id)`` era alto
-explotaba con clave duplicada, y donde era bajo entregaba 1, 2, 3 — libres en esa tabla y
-ocupados en el espacio. Eso no falla, corrompe. Son las 560 colisiones de producción.
+Any insert outside of that fired the table's own sequence, which knows nothing about the
+shared space. And the symptom depended on the table: where ``MAX(id)`` was high it blew up
+with a duplicate key, and where it was low it handed out 1, 2, 3 - free in that table and
+taken in the space. That does not fail, it corrupts. Those are the 560 collisions in
+production.
 
-Ver doc/ID_SPACE.md.
+See doc/ID_SPACE.md.
 """
 from odoo.tests import tagged, TransactionCase
 
@@ -24,7 +25,7 @@ from ..models.poly import POLY_ID_SEQUENCE
 class TestPolyIdSpace(TransactionCase):
 
     def _shared_tables(self):
-        """Toda tabla del espacio: la de cada modelo polimórfico y las de sus bases."""
+        """Every table in the space: that of each polymorphic model and those of its bases."""
         tables = set()
         for name in self.env.registry.models:
             model = self.env[name]
@@ -49,29 +50,29 @@ class TestPolyIdSpace(TransactionCase):
         return (row and row[0]) or ''
 
     def test_01_every_shared_table_draws_from_the_one_allocator(self):
-        """La invariante estructural: ninguna tabla del espacio con secuencia propia."""
+        """The structural invariant: no table of the space with a sequence of its own."""
         tables = self._shared_tables()
-        self.assertTrue(tables, "no se detectó ninguna tabla polimórfica")
+        self.assertTrue(tables, "no polymorphic table was detected")
 
         propias = [t for t in tables if POLY_ID_SEQUENCE not in self._column_default(t)]
 
         self.assertFalse(
             propias,
-            "estas tablas del espacio compartido todavía reparten ids por su cuenta, y una "
-            "inserción que no pase por create() les va a entregar un id ya ocupado:\n  %s"
-            % '\n  '.join('%s -> %s' % (t, self._column_default(t) or '(sin default)')
+            "these tables of the shared space still hand out ids on their own, and an "
+            "insert that does not go through create() will give them an id already taken:\n  %s"
+            % '\n  '.join('%s -> %s' % (t, self._column_default(t) or '(no default)')
                           for t in propias))
 
     def test_02_a_raw_insert_lands_in_the_shared_space(self):
-        """El camino que corrompía: insertar sin pasar por el ORM.
+        """The path that corrupted: inserting without going through the ORM.
 
-        Antes tomaba de la secuencia propia de la tabla. Ahora toma del asignador único, y
-        el id que recibe está libre en todo el espacio.
+        It used to draw from the table's own sequence. Now it draws from the single
+        allocator, and the id it receives is free across the whole space.
         """
         cr = self.env.cr
         table = 'conversation_bot'
         if not self.env['ir.model'].sudo().search([('model', '=', 'conversation.bot')]):
-            self.skipTest("conversation.bot no está instalado")
+            self.skipTest("conversation.bot is not installed")
 
         cr.execute("SELECT last_value FROM %s" % POLY_ID_SEQUENCE)
         antes = cr.fetchone()[0]
@@ -79,24 +80,25 @@ class TestPolyIdSpace(TransactionCase):
         nuevo = cr.fetchone()[0]
 
         self.assertGreater(nuevo, antes - 1,
-                           "el insert crudo no tomó su id del asignador único")
+                           "the raw insert did not take its id from the single allocator")
 
         ocupadas = [t for t in self._shared_tables() if t != table
                     and self._id_exists(t, nuevo)]
         self.assertFalse(
             ocupadas,
-            "el id %s que recibió el insert crudo ya estaba en uso en %s" % (nuevo, ocupadas))
+            "the id %s the raw insert received was already in use in %s" % (nuevo, ocupadas))
 
     def _id_exists(self, table, record_id):
         self.env.cr.execute("SELECT 1 FROM %s WHERE id = %%s" % table, (record_id,))
         return bool(self.env.cr.fetchone())
 
     def test_03_claiming_is_idempotent(self):
-        """Se re-aplica en cada actualización, así que tiene que poder correr dos veces.
+        """It is re-applied on every update, so it has to be able to run twice.
 
-        Antes esto comparaba contra el estado PREVIO de res.partner, dando por sentado que
-        ya estaba reclamada. Eso depende de qué módulos haya instalados, no del método: lo
-        que se prueba acá es que la segunda pasada no cambie lo que dejó la primera.
+        This used to compare against the PREVIOUS state of res.partner, taking for granted
+        that it was already claimed. That depends on which modules are installed, not on the
+        method: what is tested here is that the second pass does not change what the first
+        one left behind.
         """
         model = self.env['res.partner']
 
@@ -105,13 +107,13 @@ class TestPolyIdSpace(TransactionCase):
         model._poly_claim_shared_id_space()
 
         self.assertEqual(self._column_default(model._table), tras_la_primera,
-                         "reclamar dos veces cambió algo")
+                         "claiming twice changed something")
         self.assertIn(POLY_ID_SEQUENCE, tras_la_primera)
 
     def test_04_non_polymorphic_models_are_left_alone(self):
-        """El espacio compartido es de quien participa; el resto conserva su secuencia."""
+        """The shared space belongs to whoever takes part; the rest keep their own sequence."""
         default = self._column_default('ir_logging')
         self.assertNotIn(
             POLY_ID_SEQUENCE, default,
-            "ir.logging no participa de ninguna jerarquía polimórfica y no debería estar "
-            "consumiendo del asignador compartido")
+            "ir.logging takes part in no polymorphic hierarchy and should not be consuming "
+            "from the shared allocator")

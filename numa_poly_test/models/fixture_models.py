@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Modelos fixture para los tests de comportamiento/API de numa_poly.
+Fixture models for the numa_poly behavior/API tests.
 
-Antes vivian en tests/common.py, pero los modelos definidos en tests/ se cargan demasiado
-tarde y NO quedan registrados -> test_advanced_api / test_orm_behavior fallaban con
-`KeyError: 'test.poly.child.a'`. Se mueven a models/ (igual que test.test1..4) para que se
-registren con el modulo.
+They used to live in tests/common.py, but models defined under tests/ load too late
+and are NOT registered -> test_advanced_api / test_orm_behavior failed with
+`KeyError: 'test.poly.child.a'`. They are moved to models/ (like test.test1..4) so that
+they get registered with the module.
 """
 
 from odoo import fields, models
@@ -31,7 +31,7 @@ class TestPolyBehaviorB(PolyModel):
 
 
 class TestPolyProject(PolyModel):
-    """Business model injecting two behaviors (diamante: 2 _depend_models)."""
+    """Business model injecting two behaviors (diamond: 2 _depend_models)."""
     _name = 'test.poly.project'
     _description = 'Test Poly Project'
     _depend_models = {
@@ -85,7 +85,7 @@ class TestPolyChildB(PolyModel):
 
 
 class TestPlainDelegateParent(models.Model):
-    """Modelo común (no polimórfico), padre de un ``_inherits``."""
+    """Plain (non-polymorphic) model, parent of an ``_inherits``."""
     _name = 'test.plain.delegate.parent'
     _description = 'Test Plain Delegate Parent'
 
@@ -93,10 +93,10 @@ class TestPlainDelegateParent(models.Model):
 
 
 class TestPlainDelegateChild(models.Model):
-    """Modelo común (no polimórfico) con ``_inherits`` bien declarado.
+    """Plain (non-polymorphic) model with a properly declared ``_inherits``.
 
-    numa_poly reemplaza el chequeo de ``_inherits`` de Odoo para todos los modelos; este fixture
-    verifica que a un modelo común con el enlace declarado no le cambia nada.
+    numa_poly replaces Odoo's ``_inherits`` check for every model; this fixture verifies
+    that nothing changes for a plain model whose link field is declared.
     """
     _name = 'test.plain.delegate.child'
     _description = 'Test Plain Delegate Child'
@@ -107,15 +107,15 @@ class TestPlainDelegateChild(models.Model):
 
 
 class TestPolyMixin(models.AbstractModel):
-    """Mixin con campos propios, para distinguir lo que es de la base de lo que
-    la base hereda.
+    """Mixin with its own fields, to tell apart what belongs to the base from
+    what the base inherits.
 
-    numa_poly redirige con ``related`` los campos de la base hacia su fila. Un
-    campo que la base recibe de un mixin no es dato de la base: le llega al
-    concreto por el mismo ``_inherit`` y redirigirlo no agrega nada. Peor: el
-    conjunto dependía de si la clase de registry de la base ya estaba armada
-    cuando corría la contribución, así que el mismo código producía un modelo
-    distinto según el orden de armado.
+    numa_poly redirects the base's fields to its row with ``related``. A field
+    the base receives from a mixin is not base data: it reaches the concrete
+    model through that same ``_inherit`` and redirecting it adds nothing. Worse:
+    the set depended on whether the base's registry class was already built when
+    the contribution ran, so the same code produced a different model depending
+    on the build order.
     """
     _name = 'test.poly.mixin'
     _description = 'Test Poly Mixin'
@@ -125,25 +125,25 @@ class TestPolyMixin(models.AbstractModel):
 
     def _compute_mixin_computed(self):
         for registro in self:
-            registro.mixin_computed = 'calculado por el mixin'
+            registro.mixin_computed = 'computed by the mixin'
 
 
 class TestPolyMixedBase(PolyModel):
-    """Base polimórfica que además hereda un mixin."""
+    """Polymorphic base that also inherits a mixin."""
     _name = 'test.poly.mixed.base'
     _description = 'Test Poly Mixed Base'
     _inherit = ['test.poly.mixin']
     _depend_models = {}
 
-    dato_de_la_base = fields.Char(string='Dato de la base')
+    dato_de_la_base = fields.Char(string='Base Data')
 
 
 class TestPolyMixedChild(PolyModel):
-    """Concreto sobre una base que hereda un mixin."""
+    """Concrete model over a base that inherits a mixin."""
     _name = 'test.poly.mixed.child'
     _description = 'Test Poly Mixed Child'
     _depend_models = {
         'test.poly.mixed.base': 'mixed_base_id',
     }
 
-    dato_del_concreto = fields.Char(string='Dato del concreto')
+    dato_del_concreto = fields.Char(string='Concrete Data')

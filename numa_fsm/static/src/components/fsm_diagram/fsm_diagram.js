@@ -27,12 +27,12 @@ export class FSMDiagram extends Component {
             return true;
         }
 
-        // Si estamos en un modelo de FSM o Bot, forzamos editabilidad a menos que el registro esté explícitamente bloqueado
+        // On an FSM or Bot model, force editability unless the record is explicitly locked
         const forceEditableModels = ['fsm.definition', 'conversation.bot', 'conversation.analysis.report'];
         const isForceModel = record.resModel && (forceEditableModels.includes(record.resModel) || record.resModel.startsWith('fsm.'));
         
         if (isForceModel) {
-            // En modo edición de Odoo, permitimos siempre a menos que se indique lo contrario
+            // In Odoo's edit mode, always allow it unless told otherwise
             return record.mode === 'readonly';
         }
         

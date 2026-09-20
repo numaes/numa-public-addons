@@ -6,9 +6,9 @@
             <field name="sequence">50</field>
         </record>
 
-        <!-- [fsm][20.0] res.groups.category_id ya no existe: el agrupador de
-             grupos es ahora res.groups.privilege (res_groups_privilege.py:5),
-             que sí apunta a una ir.module.category. -->
+        <!-- [fsm][20.0] res.groups.category_id no longer exists: the grouper
+             of groups is now res.groups.privilege (res_groups_privilege.py:5),
+             which does point to an ir.module.category. -->
         <record model="res.groups.privilege" id="fsm_services_privilege">
             <field name="name">FSM Services</field>
             <field name="category_id" ref="module_category_fsm_services"/>
@@ -24,9 +24,9 @@
             <field name="name">FSM Administrator</field>
             <field name="privilege_id" ref="fsm_services_privilege"/>
             <field name="implied_ids" eval="[Command.link(ref('numa_fsm.viewer_group'))]"/>
-            <!-- [fsm][20.0] Antes el módulo editaba base.group_system para
-                 agregarse a sus implied_ids. El idioma de 20.0 es declararlo
-                 desde acá, sin tocar un registro ajeno. -->
+            <!-- [fsm][20.0] The module used to edit base.group_system to add
+                 itself to its implied_ids. The 20.0 idiom is to declare it
+                 from here, without touching a record owned by someone else. -->
             <field name="implied_by_ids" eval="[Command.link(ref('base.group_system'))]"/>
         </record>
     </data>

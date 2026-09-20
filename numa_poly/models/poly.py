@@ -73,8 +73,8 @@ from psycopg2.extras import Json as PsycopgJson
 
 # Odoo imports
 import odoo
-# [poly][20.0] `odoo` es un namespace package: importarlo ya no arrastra los
-# submodulos, asi que los que se usan por ruta completa van declarados aca.
+# [poly][20.0] `odoo` is a namespace package: importing it no longer pulls in the
+# submodules, so the ones used by full path are declared here.
 import odoo.fields
 import odoo.models
 import odoo.modules.loading
@@ -106,16 +106,16 @@ if typing.TYPE_CHECKING:
 _logger = logging.getLogger(__name__)
 
 
-# Marca de contexto para los creates que hace el PROPIO poly sobre otro modelo de la jerarquía
-# (dispatch al modelo concreto, sub-create de las bases). Sólo en esos vals puede venir un valor
-# que era válido en el modelo de origen y no lo es en el destino —el caso que motivó el filtrado de
-# Selection—, y sólo ahí corresponde descartarlo. Un create pedido derecho por un llamador tiene
-# que fallar como en Odoo estándar: descartar el valor en silencio pierde el dato y esconde el bug.
+# Context marker for the creates that poly ITSELF makes on another model of the hierarchy
+# (dispatch to the concrete model, sub-create of the bases). Only those vals can carry a value that
+# was valid on the source model and is not on the target -the case that motivated the Selection
+# filtering-, and only there is discarding it the right thing. A create asked directly by a caller
+# has to fail as in standard Odoo: discarding the value silently loses the data and hides the bug.
 POLY_PROPAGATED = 'poly_propagated_vals'
 
 
 def poly_vals_propagados(env):
-    """¿Estos vals los propagó poly desde otro modelo, en vez de pedirlos el llamador?"""
+    """Were these vals propagated by poly from another model, instead of asked by the caller?"""
     return bool(env.context.get(POLY_PROPAGATED))
 
 
@@ -126,13 +126,13 @@ def poly_selection_value_is_valid(field, value):
     `fields.Reference` subclasses `fields.Selection`, but its stored value is
     ``"model,id"`` while its selection keys are bare model names. Comparing the two
     directly rejects every well-formed reference, so a Reference is validated on its
-    model part alone. Una selección que se arma en tiempo de ejecución -un callable,
-    o el nombre de un método- se deja pasar: no hay contra qué compararla.
+    model part alone. A selection that is built at runtime -a callable, or the name
+    of a method- is let through: there is nothing to compare it against.
 
-    [poly][20.0] Antes esto exigía ``isinstance(selection, list)``, y en Odoo 20
-    ``field.selection`` es una TUPLA de tuplas. Con esa condición el filtro daba
-    por válido todo valor de todo campo Selection y no filtraba nunca: justo la
-    falla silenciosa que esta función existe para evitar.
+    [poly][20.0] This used to demand ``isinstance(selection, list)``, and in Odoo 20
+    ``field.selection`` is a TUPLE of tuples. With that condition the filter took
+    every value of every Selection field as valid and never filtered: exactly the
+    silent failure this function exists to prevent.
     """
     selection = field.selection
     if callable(selection) or isinstance(selection, str):
@@ -151,15 +151,15 @@ def poly_selection_value_is_valid(field, value):
 
 
 class _PolyRelatedFieldNoiseFilter(logging.Filter):
-    """Silencia warnings BENIGNOS que la inyección de campos related de numa_poly produce de forma
-    inherente y masiva, ensuciando el log.
+    """Silences BENIGN warnings that numa_poly's related-field injection produces inherently and
+    massively, cluttering the log.
 
-    Un subtipo poly hereda por MRO las definiciones de campos de su base (Selection con `selection`,
-    campos con `default`), y numa_poly superpone una versión `related`. Odoo entonces avisa que
-    selection/selection_add/default se ignoran en el campo related — es correcto y esperado (el valor
-    sale del origen), pero se emite una vez por campo/modelo (decenas de líneas). No se puede evitar
-    en el origen sin romper la herencia poly (el warning mira `_base_fields`, la def del base en el
-    MRO). Se filtran SÓLO estos 3 mensajes de `odoo.fields`."""
+    A poly subtype inherits its base's field definitions through the MRO (Selection with
+    `selection`, fields with `default`), and numa_poly overlays a `related` version. Odoo then warns
+    that selection/selection_add/default are ignored on the related field - correct and expected
+    (the value comes from the source), but emitted once per field/model (dozens of lines). It cannot
+    be avoided at the source without breaking poly inheritance (the warning looks at `_base_fields`,
+    the base's definition in the MRO). ONLY these 3 `odoo.fields` messages are filtered."""
 
     _NOISE = (
         'selection attribute will be ignored as the field is related',
@@ -175,12 +175,12 @@ class _PolyRelatedFieldNoiseFilter(logging.Filter):
         return not any(n in msg for n in self._NOISE)
 
 
-# Se instala una sola vez a nivel de import (activo durante setup_models, que es cuando se emiten).
+# Installed once at import level (active during setup_models, which is when they are emitted).
 logging.getLogger('odoo.fields').addFilter(_PolyRelatedFieldNoiseFilter())
 
-# Cache de sincronización de secuencia por instancia de registry.
-# id(registry) cambia en cada recarga, por lo que el caché se invalida
-# automáticamente al instalar/actualizar módulos o al reiniciar el servidor.
+# Sequence synchronisation cache, per registry instance.
+# id(registry) changes on every reload, so the cache is invalidated
+# automatically when installing/updating modules or restarting the server.
 _poly_sequence_synced_registries: set = set()
 _poly_table_sequence_synced: set = set()
 
@@ -342,12 +342,12 @@ def _poly_leaf_columns(cr, table):
 
 
 # [poly] Professional Patch for _inherits_check to avoid KeyError: None
-# [poly][20.0] _inherits_check dejo de ser un metodo de BaseModel: ahora es la
-# funcion _check_inherits(model_cls) de odoo.orm.model_classes, que ademas solo
-# valida y ya no repara (model_classes.py:497-510). El cuerpo de abajo todavia
-# repara, y escribe en cls._fields, que en 20.0 es un MappingProxyType de solo
-# lectura (model_classes.py:204). Fase 3 del rediseno lo reemplaza; ver
-# doc/plan-2026-09-20-odoo-20-redesign.md seccion 2.1.
+# [poly][20.0] _inherits_check stopped being a method of BaseModel: it is now the
+# function _check_inherits(model_cls) of odoo.orm.model_classes, which moreover only
+# validates and no longer repairs (model_classes.py:497-510). The body below still
+# repairs, and writes into cls._fields, which in 20.0 is a read-only MappingProxyType
+# (model_classes.py:204). Phase 3 of the redesign replaces it; see
+# doc/plan-2026-09-20-odoo-20-redesign.md section 2.1.
 _original_inherits_check = _poly_model_classes._check_inherits
 def poly_inherits_check(cls):
     if hasattr(cls, '_inherits') and cls._inherits:
@@ -383,32 +383,33 @@ def poly_inherits_check(cls):
                     except Exception:
                         field.__dict__['ondelete'] = 'cascade'
             elif _poly_hierarchy_names(cls):
-                # Modelo polimórfico sin el enlace todavía: lo inyecta después _build_poly_fields.
+                # Polymorphic model without the link yet: _build_poly_fields injects it later.
                 del cls._inherits[parent_model]
             else:
-                # Modelo común con el campo de enlace sin declarar. Odoo 18 no lo crea solo: su
-                # _add_field rechaza campos que no están en la clase Python, y el arranque caería.
-                # Se descarta la delegación para que cargue, pero se avisa: el modelo queda sin los
-                # campos del padre. Antes pasaba en silencio (así se rompió alfy.reuters.chat).
+                # Common model with the link field undeclared. Odoo 18 does not create it by
+                # itself: its _add_field rejects fields absent from the Python class, and the
+                # startup would fall over. The delegation is dropped so that it loads, but it is
+                # reported: the model is left without the parent's fields. It used to happen in
+                # silence (that is how alfy.reuters.chat broke).
                 _logger.warning(
-                    "[poly] %s: se descarta el _inherits hacia %s porque el campo de enlace '%s' no "
-                    "está declarado en la clase (Odoo 18 exige declararlo); el modelo queda sin los "
-                    "campos de %s.", cls._name, parent_model, field_name, parent_model)
+                    "[poly] %s: dropping the _inherits towards %s because the link field '%s' is "
+                    "not declared in the class (Odoo 18 requires declaring it); the model is left "
+                    "without the fields of %s.", cls._name, parent_model, field_name, parent_model)
                 del cls._inherits[parent_model]
                 
     return _original_inherits_check(cls)
 _poly_model_classes._check_inherits = poly_inherits_check
 
-# [poly] Vistas anotadas durante la carga para validarlas cuando termina.
+# [poly] Views recorded during the load, to validate them when it finishes.
 def _pending_poly_views(self):
-    """Ids de las vistas cuya validación se difirió durante la carga del registry.
+    """Ids of the views whose validation was deferred during the registry load.
 
-    Es un atributo común del registry y, a propósito, NO un lazy_property. Con lazy_property hubo
-    dos defectos: la función se llamaba distinto del atributo (lazy_property guarda el valor bajo
-    fget.__name__), así que cada lectura creaba un conjunto nuevo; y aun con el nombre correcto,
-    Registry.setup_models llama a lazy_property.reset_all(), que borra todos los lazy_property, y
-    durante un -u hay un setup_models por módulo actualizado. Sobrevivía solo lo anotado después
-    del último: 1 vista de cientos en una actualización de 36 módulos.
+    It is a plain registry attribute and, on purpose, NOT a lazy_property. With lazy_property there
+    were two defects: the function was named differently from the attribute (lazy_property stores
+    the value under fget.__name__), so every read created a new set; and even with the right name,
+    Registry.setup_models calls lazy_property.reset_all(), which wipes every lazy_property, and
+    during a -u there is one setup_models per updated module. Only what was recorded after the
+    last one survived: 1 view out of hundreds in an update of 36 modules.
     """
     pending = self.__dict__.get('_poly_pending_view_ids')
     if pending is None:
@@ -444,8 +445,8 @@ _poly_is_polymorphic_cache: dict = {}
 
 def _poly_is_polymorphic(model):
     """
-    Determina si un modelo es polimórfico analizando su cadena de MRO y la presencia de _depend_models.
-    Un modelo es polimórfico si él o cualquiera de sus bases (CON EL MISMO _name) tiene _depend_models.
+    Determine whether a model is polymorphic by analysing its MRO chain and the presence of _depend_models.
+    A model is polymorphic if it, or any of its bases (WITH THE SAME _name), has _depend_models.
     """
     if model is None or not hasattr(model, '_name'):
         return False
@@ -499,14 +500,14 @@ def _poly_is_polymorphic(model):
 
 
 def _poly_registry_hierarchy_models(registry):
-    """Modelos que participan de alguna jerarquía polimórfica: los que declaran
-    ``_depend_models`` (``{}`` una base, un dict de padres un subtipo) y todo modelo nombrado como
-    padre en alguna de esas declaraciones.
+    """Models that take part in some polymorphic hierarchy: those that declare
+    ``_depend_models`` (``{}`` a base, a dict of parents a subtype) and every model named as a
+    parent in any of those declarations.
 
-    El criterio es el VALOR, nunca la presencia del atributo: ``PolyBase`` declara
-    ``_depend_models = None`` y está en el MRO de todos los modelos, así que
-    ``'_depend_models' in base.__dict__`` es verdadero para los 839 modelos de una instalación
-    real, no para los ~40 polimórficos.
+    The criterion is the VALUE, never the presence of the attribute: ``PolyBase`` declares
+    ``_depend_models = None`` and is in the MRO of every model, so
+    ``'_depend_models' in base.__dict__`` is true for the 839 models of a real installation,
+    not for the ~40 polymorphic ones.
     """
     names = set()
     for name in list(registry):
@@ -525,13 +526,13 @@ def _poly_registry_hierarchy_models(registry):
 
 
 def _poly_is_outside_hierarchy(records):
-    """True solo cuando hay CERTEZA de que ``records`` es de un modelo ajeno a toda jerarquía poly,
-    y por lo tanto puede servirlo el camino original de Odoo.
+    """True only when it is CERTAIN that ``records`` belongs to a model outside every poly
+    hierarchy, and can therefore be served by Odoo's original path.
 
-    La certeza exige un registry que terminó de cargar (``ready``) y el mapa de jerarquías
-    construido al final del último ``setup_models``. Mientras el registry se arma, poly reescribe
-    bases y campos de muchas clases y el camino tolerante hace falta para todos: durante el setup
-    esto responde False y nada cambia respecto de antes.
+    The certainty demands a registry that finished loading (``ready``) and the hierarchy map built
+    at the end of the last ``setup_models``. While the registry is being assembled, poly rewrites
+    bases and fields of many classes and the tolerant path is needed by all of them: during the
+    setup this answers False and nothing changes with respect to before.
     """
     pool = getattr(records, 'pool', None)
     if pool is None or not getattr(pool, 'ready', False):
@@ -660,22 +661,23 @@ def _poly_ensure_poly_ref(cls, target_model_name: str, dep_map: OrderedDict) -> 
 
 
 def _poly_inject_field(cls, fname: str, field) -> None:
-    """Registrar *field* como *fname* en la clase de modelo *cls*.
+    """Register *field* as *fname* on the model class *cls*.
 
-    Pasa por ``add_field`` en lugar de escribir ``cls._fields``, que en Odoo 20
-    es un ``MappingProxyType`` de solo lectura sobre ``_fields__``
-    (``model_classes.py:204``). ``add_field`` tambien corre ``__set_name__``, que
-    es lo que resuelve ``comodel_name`` y el resto de ``_args__``; antes eso lo
-    hacia una llamada suelta a ``_setup_attrs`` envuelta en un ``except`` que se
-    comia el fallo.
+    It goes through ``add_field`` instead of writing ``cls._fields``, which in
+    Odoo 20 is a read-only ``MappingProxyType`` over ``_fields__``
+    (``model_classes.py:204``). ``add_field`` also runs ``__set_name__``, which
+    is what resolves ``comodel_name`` and the rest of ``_args__``; before, a
+    loose call to ``_setup_attrs`` did that, wrapped in an ``except`` that
+    swallowed the failure.
 
-    Se registra con ``shareable=False``: el campo es de este registry y de nadie
-    mas, asi que no entra en ``SHARED_FIELD_CACHE`` y mutarlo no toca las otras
-    bases que atiende el mismo worker (``model_classes.py:34``).
+    It is registered with ``shareable=False``: the field belongs to this registry
+    and to nobody else, so it does not enter ``SHARED_FIELD_CACHE`` and mutating
+    it does not touch the other databases served by the same worker
+    (``model_classes.py:34``).
     """
-    # El add_field de odoo.orm.model_classes esta interceptado por este mismo
-    # modulo mas abajo; esta es una inyeccion propia de poly y no tiene que
-    # volver a entrar en esa logica, asi que va directo al original.
+    # The add_field of odoo.orm.model_classes is intercepted by this very module
+    # further down; this is poly's own injection and must not re-enter that
+    # logic, so it goes straight to the original.
     _original_BaseModel_add_field(cls, fname, field, shareable=False)
 
 
@@ -692,13 +694,13 @@ def _poly_injected_mro(self):
     return {}
 
 def _poly_strict_view_validation():
-    """¿Una vista inválida detectada al final de la carga aborta la carga, o solo se reporta?
+    """Does an invalid view detected at the end of the load abort the load, or is it only reported?
 
-    Lo decide la opción ``poly_strict_view_validation`` del archivo de configuración. Sin la opción
-    es estricta cuando se corren tests (``--test-enable``) y no lo es en un servidor normal: un
-    ``-u`` sobre una instalación con vistas rotas latentes —que antes pasaban sin validar— no debe
-    dejar de arrancar de un día para el otro, pero sí tiene que decirlo; y una corrida de tests sí
-    tiene que fallar.
+    The ``poly_strict_view_validation`` option of the configuration file decides. Without the
+    option it is strict when tests are run (``--test-enable``) and it is not on a normal server: a
+    ``-u`` on an installation with latent broken views -which used to pass unvalidated- must not
+    stop starting from one day to the next, but it does have to say so; and a test run does have
+    to fail.
     """
     value = odoo.tools.config.get('poly_strict_view_validation')
     if value is None or value == '':
@@ -710,21 +712,22 @@ def _poly_strict_view_validation():
 
 def _poly_finalize_view_validation(self, cr):
     """
-    [poly] Valida, terminada la carga, las vistas cuya validación se difirió.
+    [poly] Validate, once the load is over, the views whose validation was deferred.
 
-    Mientras se cargan módulos el MRO polimórfico puede estar incompleto, así que
-    ``poly_validate_view`` no valida: anota la vista. Acá se validan todas con el registry
-    completo; una vista que falla acá está rota de verdad. Se reportan todas, no solo la primera.
+    While modules are being loaded the polymorphic MRO can be incomplete, so
+    ``poly_validate_view`` does not validate: it records the view. Here they are all validated with
+    the registry complete; a view that fails here is really broken. All are reported, not just the
+    first.
     """
     if not self._pending_poly_views:
         return
 
-    _logger.info("[poly] Validando %d vista(s) diferida(s) al terminar la carga", len(self._pending_poly_views))
+    _logger.info("[poly] Validating %d deferred view(s) at the end of the load", len(self._pending_poly_views))
     env = odoo.api.Environment(cr, odoo.SUPERUSER_ID, {})
     View = env['ir.ui.view']
     view_ids = sorted(self._pending_poly_views)
-    # Se vacía antes de validar: si la validación aborta, lo pendiente no debe sobrevivir y
-    # reaparecer en la carga siguiente como si fuera nuevo.
+    # It is emptied before validating: if the validation aborts, what is pending must not
+    # survive and reappear in the next load as if it were new.
     self._pending_poly_views.clear()
 
     failures = []
@@ -745,25 +748,25 @@ def _poly_finalize_view_validation(self, cr):
             failures.append((label, reason))
             _logger.error("[poly] Validation failed for view %s: %s", label, e)
 
-    # [poly][20.0] Ni Registry.clear_caches() ni Registry.clear_cache() existen ya.
-    # El ormcache se invalida por transacción (environments.py:833), que es como
-    # lo hacen los addons del core.
+    # [poly][20.0] Neither Registry.clear_caches() nor Registry.clear_cache() exists any more.
+    # The ormcache is invalidated per transaction (environments.py:833), which is
+    # how the core addons do it.
     env.transaction.invalidate_ormcache()
 
     if not failures:
-        _logger.info("[poly] Las %d vistas diferidas validan.", len(view_ids))
+        _logger.info("[poly] The %d deferred views validate.", len(view_ids))
         return
 
-    summary = "[poly] %d vista(s) inválida(s) al terminar la carga:\n%s" % (
+    summary = "[poly] %d invalid view(s) at the end of the load:\n%s" % (
         len(failures), '\n'.join('  - %s: %s' % f for f in failures))
     if _poly_strict_view_validation():
         raise ValidationError(summary)
-    _logger.warning("%s\n(no se aborta la carga: poly_strict_view_validation está desactivada)", summary)
+    _logger.warning("%s\n(the load is not aborted: poly_strict_view_validation is off)", summary)
 
 
 odoo.modules.registry.Registry._pending_poly_views = property(_pending_poly_views)
 odoo.modules.registry.Registry._poly_finalize_view_validation = _poly_finalize_view_validation
-# Mapa de modelos en jerarquías poly; se reconstruye al final de cada setup_models.
+# Map of the models in poly hierarchies; rebuilt at the end of every setup_models.
 odoo.modules.registry.Registry._poly_hierarchy_model_names = None
 
 # Save the original Odoo methods to avoid cyclic inheritance
@@ -782,7 +785,7 @@ POLY_BACKFILL_LIMIT_PARAM = 'numa_poly.backfill_inline_limit'
 POLY_BACKFILL_DEFERRED_PARAM = 'numa_poly.backfill_deferred_models'
 POLY_RENUMBER_COLLISIONS_PARAM = 'numa_poly.renumber_collisions'
 
-# El unico asignador de ids del espacio compartido. Ver _poly_claim_shared_id_space.
+# The single id allocator of the shared space. See _poly_claim_shared_id_space.
 POLY_ID_SEQUENCE = 'ir_poly_base_id_seq'
 
 
@@ -964,9 +967,9 @@ def _poly_Relational_get(self, records, owner=None):
     if records is None or isinstance(records, type):
         return self
 
-    # [poly] Fuera de toda jerarquía poly y con el registry listo: camino original de Odoo.
-    # (El chequeo anterior buscaba `_depend_models` en el __dict__ de cada base; PolyBase lo
-    # declara en None y está en el MRO de todos, así que nunca delegaba.)
+    # [poly] Outside every poly hierarchy and with the registry ready: Odoo's original path.
+    # (The previous check looked for `_depend_models` in each base's __dict__; PolyBase declares
+    # it as None and is in everyone's MRO, so it never delegated.)
     if _poly_is_outside_hierarchy(records):
         return _original_Relational_get(self, records, owner=owner)
 
@@ -1001,9 +1004,9 @@ def _poly_One2many_get(self, records, owner=None):
     if records is None or isinstance(records, type):
         return self
 
-    # [poly] Fuera de toda jerarquía poly y con el registry listo: camino original de Odoo.
-    # (El chequeo anterior buscaba `_depend_models` en el __dict__ de cada base; PolyBase lo
-    # declara en None y está en el MRO de todos, así que nunca delegaba.)
+    # [poly] Outside every poly hierarchy and with the registry ready: Odoo's original path.
+    # (The previous check looked for `_depend_models` in each base's __dict__; PolyBase declares
+    # it as None and is in everyone's MRO, so it never delegated.)
     if _poly_is_outside_hierarchy(records):
         return _original_One2many_get(self, records, owner=owner)
 
@@ -1152,13 +1155,13 @@ class IrPolyBase(models.Model):
     )
 
     def _register_hook(self):
-        """Valida las vistas cuya validación se difirió durante la carga.
+        """Validate the views whose validation was deferred during the load.
 
-        Odoo llama a ``_register_hook`` una sola vez por modelo, con todos los módulos ya cargados
-        (loading.py, STEP 9). Es el primer punto garantizado después de la carga. El wrapper de
-        ``load_module_graph`` no sirve para eso: numa_poly se importa DENTRO de esa llamada, así
-        que la invocación en curso es la original y, en un arranque o un ``-u``, la validación
-        final nunca corría.
+        Odoo calls ``_register_hook`` exactly once per model, with every module already loaded
+        (loading.py, STEP 9). It is the first guaranteed point after the load. The
+        ``load_module_graph`` wrapper is no good for that: numa_poly is imported INSIDE that call,
+        so the invocation in progress is the original one and, in a startup or a ``-u``, the final
+        validation never ran.
         """
         super()._register_hook()
         self.pool._poly_finalize_view_validation(self.env.cr)
@@ -1411,9 +1414,9 @@ def poly_many2one_convert_to_read(self, value, record, use_display_name=True):
 
 
 def _poly_hierarchy_names(model):
-    """Nombres de la jerarquía poly de ``model``: los ``_name`` de sus bases poly (las que
-    declaran ``_depend_models``) más las claves de esos ``_depend_models`` (los ancestros con
-    PK compartida). Ej.: persona.fisica -> {'persona.fisica', 'res.partner'}."""
+    """Names of the poly hierarchy of ``model``: the ``_name`` of its poly bases (the ones that
+    declare ``_depend_models``) plus the keys of those ``_depend_models`` (the ancestors with a
+    shared PK). E.g.: persona.fisica -> {'persona.fisica', 'res.partner'}."""
     names = set()
     for base in _poly_get_safe_mro(model if isinstance(model, type) else type(model)):
         if '_depend_models' in base.__dict__:
@@ -1426,9 +1429,9 @@ def _poly_hierarchy_names(model):
 
 
 def _poly_value_is_subtype_of_comodel(value_name, comodel_name, pool):
-    """True si ``value_name`` es un subtipo poly cuya jerarquía incluye ``comodel_name`` como
-    base ancestro (PK compartida). En ese caso ``value.id`` es un id válido del comodel, así que
-    asignar el subtipo a un Many2one que apunta a la base es correcto (mismo registro)."""
+    """True if ``value_name`` is a poly subtype whose hierarchy includes ``comodel_name`` as an
+    ancestor base (shared PK). In that case ``value.id`` is a valid id of the comodel, so assigning
+    the subtype to a Many2one that points at the base is correct (same record)."""
     if value_name == comodel_name:
         return True
     model = pool.get(value_name)
@@ -1438,10 +1441,10 @@ def _poly_value_is_subtype_of_comodel(value_name, comodel_name, pool):
 
 
 def _poly_same_hierarchy(name_a, name_b, pool):
-    """True si ``name_a`` y ``name_b`` pertenecen a la MISMA jerarquía poly (comparten PK / mismo
-    id): uno es base ancestro del otro, o comparten una base poly común. Simétrico. Como el id es
-    único en toda la jerarquía (misma secuencia ir_poly_base), comparar por id entre sus miembros
-    es seguro."""
+    """True if ``name_a`` and ``name_b`` belong to the SAME poly hierarchy (they share the PK /
+    same id): one is an ancestor base of the other, or they share a common poly base. Symmetric.
+    Since the id is unique across the whole hierarchy (same ir_poly_base sequence), comparing by
+    id between its members is safe."""
     if name_a == name_b:
         return True
     a = pool.get(name_a)
@@ -1594,19 +1597,19 @@ def _poly_id_owners(cr, ids):
 _original_Many2one_convert_to_cache = odoo.fields.Many2one.convert_to_cache
 
 def poly_many2one_convert_to_cache(self, value, record, validate=True):
-    """[poly] Permite asignar a un Many2one un registro de un SUBTIPO poly cuando el comodel es
-    su base ancestro (mismo id por PK compartida). El core rechaza ``value._name != comodel_name``
-    con "Wrong value for ...", pero el caso legítimo es un campo autorreferencial de la base
-    (p. ej. ``res.partner.commercial_partner_id`` / ``parent_id``) que Odoo computa sobre un
-    subtipo (persona.fisica) haciendo ``rec.field = rec``: ``rec`` es el subtipo pero su id es un
-    id válido de la base. Reexpresamos el value como recordset del comodel y delegamos al core
-    (que mantiene la lógica de ``delegate``/NewId). El camino normal (mismo modelo) no se toca."""
+    """[poly] Allows assigning to a Many2one a record of a poly SUBTYPE when the comodel is its
+    ancestor base (same id through the shared PK). The core rejects ``value._name != comodel_name``
+    with "Wrong value for ...", but the legitimate case is a self-referencing field of the base
+    (e.g. ``res.partner.commercial_partner_id`` / ``parent_id``) that Odoo computes on a subtype
+    (persona.fisica) doing ``rec.field = rec``: ``rec`` is the subtype but its id is a valid id of
+    the base. We re-express the value as a recordset of the comodel and delegate to the core (which
+    keeps the ``delegate``/NewId logic). The normal path (same model) is untouched."""
     if (validate and self.comodel_name and isinstance(value, BaseModel)
             and value._name != self.comodel_name and len(value) <= 1):
         try:
             if _poly_value_is_subtype_of_comodel(value._name, self.comodel_name, record.pool):
                 value = record.env[self.comodel_name].browse(value._ids)
-        except Exception:  # noqa: BLE001 — ante cualquier duda, delegar al core (que validará)
+        except Exception:  # noqa: BLE001 — on any doubt, delegate to the core (which will validate)
             pass
     return _original_Many2one_convert_to_cache(self, value, record, validate=validate)
 
@@ -1618,9 +1621,9 @@ def poly_many2many_read(self, records):
     table and directly joins it. If the field is related (as often in polymorphic
     models), it should traverse the relation instead.
     """
-    # [poly] Fuera de toda jerarquía poly y con el registry listo: camino original de Odoo.
-    # (El chequeo anterior buscaba `_depend_models` en el __dict__ de cada base; PolyBase lo
-    # declara en None y está en el MRO de todos, así que nunca delegaba.)
+    # [poly] Outside every poly hierarchy and with the registry ready: Odoo's original path.
+    # (The previous check looked for `_depend_models` in each base's __dict__; PolyBase declares
+    # it as None and is in everyone's MRO, so it never delegated.)
     if _poly_is_outside_hierarchy(records):
         return _original_Many2many_read(self, records)
 
@@ -1629,9 +1632,9 @@ def poly_many2many_read(self, records):
     
     # [poly] Technical Check: ensure comodel_name is present to avoid KeyError: None
     if not self.comodel_name:
-        # [poly][20.0] Era `env.cache.insert_missing(records, self, ...)`. Ese método
-        # no existe en Odoo 20 -- la caché se manipula desde el campo
-        # (fields.py:1769) -- asi que esta linea habria levantado AttributeError.
+        # [poly][20.0] It used to be `env.cache.insert_missing(records, self, ...)`. That
+        # method does not exist in Odoo 20 -- the cache is manipulated from the field
+        # (fields.py:1769) -- so this line would have raised AttributeError.
         return self._insert_cache(records, [()] * len(records))
 
     # [poly] AGGRESSIVE FIX: If the field is Many2many but has NO relation table,
@@ -1699,10 +1702,10 @@ def poly_many2many_setup_nonrelated(self, model):
         is_poly_counterpart = False
         model_class = model if isinstance(model, type) else type(model)
         
-        # Solo una contraparte de la MISMA jerarquía poly puede compartir la tabla. El chequeo
-        # anterior usaba la presencia de `_depend_models` (verdadera para todos por PolyBase) y
-        # sumaba `base._name` de PolyBase, que es None, a los dos conjuntos: la intersección {None}
-        # nunca era vacía y se toleraba cualquier colisión, poly o no.
+        # Only a counterpart of the SAME poly hierarchy can share the table. The previous check
+        # used the presence of `_depend_models` (true for everyone because of PolyBase) and added
+        # PolyBase's `base._name`, which is None, to both sets: the intersection {None} was never
+        # empty and any collision was tolerated, poly or not.
         self_poly_bases = _poly_hierarchy_names(model_class)
         if self_poly_bases:
             for other in fields:
@@ -1745,9 +1748,9 @@ class PolyReference(fields.Many2one):
         store (bool): Always False as these references are computed, not stored
         readonly (bool): Always True as these references cannot be directly modified
 
-    [poly][20.0] ``auto_join`` se fue: el atributo no existe en ninguna parte del
-    fuente de Odoo 20. Lo que decidia entre JOIN y subconsulta es ahora
-    ``bypass_search_access`` (``fields_relational.py:38``), leido por
+    [poly][20.0] ``auto_join`` is gone: the attribute exists nowhere in the Odoo 20
+    source. What decided between JOIN and subquery is now
+    ``bypass_search_access`` (``fields_relational.py:38``), read by
     ``Many2one.condition_to_sql`` (``:492-509``).
     """
     store = False
@@ -1756,37 +1759,37 @@ class PolyReference(fields.Many2one):
 
     @staticmethod
     def _poly_compute_sql(field, table):
-        """La expresion SQL de una PolyReference es la columna ``id``.
+        """The SQL expression of a PolyReference is the ``id`` column.
 
-        Base y derivado comparten el id, asi que la "clave foranea" hacia la base
-        es el id del propio registro. Sin esto, Odoo rechaza el campo apenas
-        aparece en un dominio: ``domains.py:1021`` exige ``store`` o
-        ``compute_sql`` y si no levanta "Cannot convert ... to SQL because it is
-        not stored".
+        Base and derived share the id, so the "foreign key" towards the base is
+        the id of the record itself. Without this, Odoo rejects the field as soon
+        as it appears in a domain: ``domains.py:1021`` demands ``store`` or
+        ``compute_sql`` and otherwise raises "Cannot convert ... to SQL because it
+        is not stored".
 
-        Con esto puesto, ``Many2one.condition_to_sql``
-        (``fields_relational.py:484-544``) genera solas las dos formas -JOIN y
-        subconsulta- y ``Many2one.property_to_sql`` (``:477``) hace andar los
-        caminos con punto.
+        With this in place, ``Many2one.condition_to_sql``
+        (``fields_relational.py:484-544``) generates both forms -JOIN and
+        subquery- on its own, and ``Many2one.property_to_sql`` (``:477``) makes
+        the dotted paths work.
         """
         return table['id']
 
     @staticmethod
     def _poly_compute_reference(records):
-        """El valor de una PolyReference es el propio registro, leido por su id.
+        """The value of a PolyReference is the record itself, read by its id.
 
-        Es la contraparte Python de ``_poly_compute_sql``, y Odoo las quiere a las
-        dos: ``compute_sql`` sin ``compute`` avisa "makes sense only if ... is a
-        computed field" (``fields.py:471-473``). Hasta ahora el valor se derivaba
-        en el descriptor y el campo no declaraba compute, asi que la expresion SQL
-        no tenia de que ser la traduccion.
+        It is the Python counterpart of ``_poly_compute_sql``, and Odoo wants both
+        of them: ``compute_sql`` without ``compute`` warns "makes sense only if ...
+        is a computed field" (``fields.py:471-473``). Until now the value was
+        derived in the descriptor and the field declared no compute, so the SQL
+        expression had nothing to be the translation of.
 
-        Odoo llama a un compute invocable con el recordset y nada mas
-        (``fields.py:67-85``): no le dice que campo esta calculando. Por eso se
-        asignan todas las PolyReference del modelo, que ademas es lo que Odoo
-        espera, porque agrupa los campos por metodo de compute
-        (``pool.field_computed``) y los de un grupo se asignan juntos. No cuesta
-        nada: todas valen lo mismo.
+        Odoo calls a callable compute with the recordset and nothing else
+        (``fields.py:67-85``): it does not tell it which field it is computing.
+        That is why every PolyReference of the model is assigned, which is also
+        what Odoo expects, because it groups fields by compute method
+        (``pool.field_computed``) and the ones in a group are assigned together.
+        It costs nothing: they are all worth the same.
         """
         for record in records:
             for nombre, campo in record._fields.items():
@@ -1822,13 +1825,13 @@ class PolyReference(fields.Many2one):
         # Standard polymorphic reference: IDs match in polymorphic hierarchy
         try:
             comodel = record.pool[self.comodel_name]
-            # [poly][20.0] El prefetch que viaja es el del ORIGEN, no el id suelto.
-            # _compute_related recorre registro por registro (fields.py:760), asi
-            # que si cada destino sale con prefetch de un id, leer un campo
-            # heredado sobre N registros cuesta N consultas: el N+1 que el test
-            # test_11_performance_n_plus_one vigila. Base y derivado comparten el
-            # espacio de ids, asi que los ids del origen son ids validos en la
-            # base y los N destinos se leen de una.
+            # [poly][20.0] The prefetch that travels is the SOURCE's, not the bare id.
+            # _compute_related walks record by record (fields.py:760), so if every
+            # target comes out with a prefetch of one id, reading an inherited
+            # field over N records costs N queries: the N+1 that the test
+            # test_11_performance_n_plus_one watches for. Base and derived share
+            # the id space, so the source's ids are valid ids in the base and the
+            # N targets are read in one go.
             return comodel(record.env, (record.id,), record._prefetch_ids or (record.id,))
         except Exception:
             try:
@@ -1876,11 +1879,11 @@ class PolyReference(fields.Many2one):
         Returns:
             A domain expression for searching
         """
-        # [poly][20.0] En 18.0 esto era un assert: los operadores 'any' no
-        # llegaban aca. En 20.0 si llegan (``domains.py:1052, 1070``), con el
-        # valor ya convertido en un Query (``:1064-1065``). Y son faciles de
-        # contestar: base y derivado comparten el id, asi que "los que cumplen X
-        # en la base" son "los que tienen su id en esa consulta".
+        # [poly][20.0] In 18.0 this was an assert: the 'any' operators did not
+        # reach here. In 20.0 they do (``domains.py:1052, 1070``), with the value
+        # already converted into a Query (``:1064-1065``). And they are easy to
+        # answer: base and derived share the id, so "the ones that satisfy X in
+        # the base" are "the ones whose id is in that query".
         if operator in ('any', 'not any', 'any!', 'not any!'):
             dentro = 'not in' if operator.startswith('not') else 'in'
             return [('id', dentro, value)]
@@ -2015,9 +2018,9 @@ class PolyBase(_original_BaseModel):
 
     def _get_all_poly_bases(self):
         """
-        Retorna un conjunto de todos los modelos base (polimórficos o no) en la jerarquía.
-        Esta exploración es recursiva y abarca todos los módulos cargados al utilizar
-        el registro (env) de Odoo.
+        Return a set of every base model (polymorphic or not) in the hierarchy.
+        This exploration is recursive and covers every loaded module, because it
+        uses Odoo's registry (env).
         """
         bases = {'ir.poly_base'}
         visited = set()
@@ -2030,13 +2033,13 @@ class PolyBase(_original_BaseModel):
             
             model = self.env[model_name]
             
-            # Explorar bases polimórficas definidas en _depend_models de cualquier módulo
+            # Explore the polymorphic bases declared in _depend_models of any module
             depend_models = getattr(model, '_depend_models', None)
             if depend_models:
                 for base_name in depend_models.keys():
                     collect(base_name)
             
-            # Explorar herencia estándar de Odoo (_inherit) para cubrir todos los módulos
+            # Explore Odoo's standard inheritance (_inherit) to cover every module
             inherits = model._inherit
             if inherits:
                 if isinstance(inherits, str):
@@ -2050,15 +2053,15 @@ class PolyBase(_original_BaseModel):
 
     def _get_max_poly_id(self):
         """
-        Calcula el ID máximo global de TODO el universo polimórfico.
+        Compute the global maximum ID of the WHOLE polymorphic universe.
 
-        No debe limitarse a la jerarquía de ``self._name`` porque el hook puede
-        dispararse desde cualquier modelo polimórfico y, si se usa un subconjunto,
-        la secuencia puede quedar por detrás de otras tablas (p.ej. ``res_partner``).
+        It must not be limited to the hierarchy of ``self._name``, because the hook
+        can fire from any polymorphic model and, if a subset is used, the sequence
+        can fall behind other tables (e.g. ``res_partner``).
         """
         max_id = 0
 
-        # 1) Referencia canónica: ir_poly_base
+        # 1) Canonical reference: ir_poly_base
         try:
             self.env.cr.execute("SELECT COALESCE(MAX(id), 0) FROM ir_poly_base")
             res = self.env.cr.fetchone()
@@ -2066,14 +2069,14 @@ class PolyBase(_original_BaseModel):
         except Exception:
             pass
 
-        # 2) Defensa para migraciones: recorrer todas las tablas de modelos
-        # polimórficos registradas en la instancia actual, MÁS las de sus bases.
+        # 2) Defence for migrations: walk every table of the polymorphic models
+        # registered in the current instance, PLUS those of their bases.
         #
-        # Una base participa de la jerarquía pero es además un modelo por derecho propio:
-        # puede tener registros no polimórficos creados directamente, que consumen ids de
-        # su propia secuencia. Esos ids quedan inutilizables para la jerarquía, así que el
-        # id de un registro polimórfico debe estar por encima del máximo de TODAS las
-        # tablas involucradas, no sólo de las de los modelos polimórficos.
+        # A base takes part in the hierarchy but is also a model in its own right:
+        # it can have non-polymorphic records created directly, which consume ids from
+        # its own sequence. Those ids become unusable for the hierarchy, so the id of a
+        # polymorphic record must sit above the maximum of ALL the tables involved, not
+        # only of those of the polymorphic models.
         candidate_models = {'ir.poly_base'}
         for model_name, model in self.env.registry.models.items():
             try:
@@ -2106,31 +2109,31 @@ class PolyBase(_original_BaseModel):
 
     def _sync_poly_sequence(self):
         """
-        Sincroniza ir_poly_base_id_seq con el ID máximo real de la jerarquía.
-        Solo se ejecuta una vez por instancia de registry para evitar la contención
-        del advisory lock y el costo de escanear todas las tablas en cada create().
+        Synchronise ir_poly_base_id_seq with the real maximum ID of the hierarchy.
+        It runs only once per registry instance, to avoid the contention of the
+        advisory lock and the cost of scanning every table on each create().
         """
         registry_id = id(self.pool)
         if registry_id in _poly_sequence_synced_registries:
             return
 
-        # Lock consultivo basado en el hash del nombre de la secuencia (1347374169)
-        # Solo bloquea a otros procesos que intenten sincronizar la misma secuencia.
+        # Advisory lock based on the hash of the sequence name (1347374169).
+        # It only blocks other processes trying to synchronise the same sequence.
         self.env.cr.execute("SELECT pg_advisory_xact_lock(1347374169)")
 
         max_id = self._get_max_poly_id()
 
-        # Obtenemos el valor actual de la secuencia para evitar setval innecesarios
+        # Read the current value of the sequence to avoid unnecessary setvals
         try:
             self.env.cr.execute("SELECT last_value FROM ir_poly_base_id_seq")
             res = self.env.cr.fetchone()
             current_seq_val = res[0] if res else 0
         except Exception:
-            # Si la secuencia no existe aún o hay problemas de acceso
+            # The sequence does not exist yet, or there are access problems
             current_seq_val = 0
 
         if max_id > current_seq_val:
-            _logger.debug("Sincronizando secuencia ir_poly_base_id_seq a %s para evitar colisiones", max_id + 1)
+            _logger.debug("Synchronising sequence ir_poly_base_id_seq to %s to avoid collisions", max_id + 1)
             self.env.cr.execute(SQL(
                 "SELECT setval('ir_poly_base_id_seq', %s, true)",
                 max_id
@@ -2140,9 +2143,9 @@ class PolyBase(_original_BaseModel):
 
     def _sync_table_id_sequence_once(self):
         """
-        Sincroniza una sola vez por registry+tabla la secuencia física ``id``
-        del modelo actual para evitar colisiones por secuencias atrasadas en
-        bases restauradas/migradas.
+        Synchronise, once per registry+table, the physical ``id`` sequence of the
+        current model, to avoid collisions caused by lagging sequences in
+        restored/migrated databases.
         """
         table = getattr(self, '_table', None)
         if not table:
@@ -2152,8 +2155,8 @@ class PolyBase(_original_BaseModel):
         if registry_key in _poly_table_sequence_synced:
             return
 
-        # Lock consultivo por tabla para evitar setval concurrentes.
-        # hashtext() es estable dentro de la base y suficiente para este uso.
+        # Per-table advisory lock, to avoid concurrent setvals.
+        # hashtext() is stable within the database and enough for this use.
         self.env.cr.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [f'poly_table_seq:{table}'])
 
         if not sql.table_exists(self.env.cr, table):
@@ -3017,8 +3020,8 @@ class PolyBase(_original_BaseModel):
     @api.model
     def _poly_backfill_inline_limit(self):
         """How many missing rows this model will backfill during an upgrade."""
-        # get_int devuelve el default cuando el parametro no esta o no es un
-        # entero, asi que ya no hace falta el try/except que habia aca.
+        # get_int returns the default when the parameter is absent or is not an
+        # integer, so the try/except that used to be here is no longer needed.
         param = self.env['ir.config_parameter'].sudo().get_int(
             POLY_BACKFILL_LIMIT_PARAM, POLY_BACKFILL_INLINE_LIMIT)
         try:
@@ -3416,10 +3419,10 @@ class PolyBase(_original_BaseModel):
         if not _poly_is_polymorphic(self):
             return
 
-        # Un solo asignador para todo el espacio de ids compartido. Se re-aplica en cada
-        # actualizacion, sin preguntar si hace falta: la sentencia es idempotente y barata,
-        # y preguntar primero es justamente la clase de astucia que dejo el problema abierto
-        # durante un año.
+        # A single allocator for the whole shared id space. It is re-applied on every
+        # update, without asking whether it is needed: the statement is idempotent and
+        # cheap, and asking first is exactly the kind of cleverness that left the problem
+        # open for a year.
         self._poly_claim_shared_id_space()
         try:
             if not self._poly_backfill_pending_pairs():
@@ -3598,11 +3601,11 @@ class PolyBase(_original_BaseModel):
         # the ORM omits them from INSERTs.  Legacy migrations may have created these
         # columns with NOT NULL; drop the constraint for every such column found.
         if hasattr(self, '_table'):
-            # NOTA: NO se exige field.column_type. Los campos poly inyectados
-            # (concrete_model_id, old_id, poly_payload, ...) son Many2one/Text computados
-            # con store=False cuyo column_type puede ser falsy; aun asi pueden tener una
-            # columna fisica NOT NULL legacy. El SELECT de abajo ya filtra a columnas que
-            # EXISTEN y son NOT NULL, asi que basta con `not field.store`.
+            # NOTE: field.column_type is NOT demanded. The injected poly fields
+            # (concrete_model_id, old_id, poly_payload, ...) are computed Many2one/Text
+            # with store=False whose column_type can be falsy; even so they may have a
+            # legacy physical NOT NULL column. The SELECT below already filters to columns
+            # that EXIST and are NOT NULL, so `not field.store` is enough.
             non_stored_cols = [
                 fname for fname, field in self._fields.items()
                 if not field.store
@@ -3644,8 +3647,8 @@ class PolyBase(_original_BaseModel):
         # left by a legacy migration would break every INSERT.
         if hasattr(self, '_table'):
             try:
-                # Sin exigir field.column_type (ver nota en _auto_init): incluye los campos
-                # poly inyectados no-stored aunque su column_type sea falsy.
+                # Without demanding field.column_type (see the note in _auto_init): it
+                # includes the injected non-stored poly fields even if column_type is falsy.
                 non_stored_cols = [
                     fname for fname, field in self._fields.items()
                     if not field.store
@@ -3667,15 +3670,15 @@ class PolyBase(_original_BaseModel):
             except Exception:
                 pass
 
-        # Ejecutar una sola vez desde el modelo base para evitar sincronizar
-        # con subconjuntos de jerarquía según el orden de hooks.
+        # Run only once, from the base model, to avoid synchronising with subsets of
+        # the hierarchy depending on the order of the hooks.
         if self._name == 'ir.poly_base':
             # Ensure ir.poly_base sequence starts AFTER the max ID of any participant table
             try:
                 self._sync_poly_sequence()
             except Exception:
-                # Si falla algo en la transacción, no podemos continuar con el reajuste
-                # de la secuencia aquí.
+                # If something fails in the transaction, we cannot go on readjusting
+                # the sequence here.
                 return
 
     @classmethod
@@ -3828,8 +3831,8 @@ class PolyBase(_original_BaseModel):
                 excluded_related = getattr(cls, '_poly_exclude_related_fields', None) or set()
                 if fname in excluded_related:
                     continue
-                # Respetar campos declarados explícitamente en la clase destino
-                # para no pisar overrides locales con inyección poly.
+                # Respect fields declared explicitly on the target class, so that
+                # poly injection does not overwrite local overrides.
                 local_decl = cls.__dict__.get(fname)
                 if isinstance(local_decl, fields.Field):
                     continue
@@ -3872,8 +3875,8 @@ class PolyBase(_original_BaseModel):
                 new_field = _poly_force_related(
                     copy.copy(field), '{}.{}'.format(link, origin_fname))
                 if getattr(new_field, 'type', None) == 'selection':
-                    # Reconstruir Selection related sin `selection` explícita
-                    # para evitar warnings de atributo ignorado.
+                    # Rebuild the related Selection without an explicit `selection`
+                    # to avoid ignored-attribute warnings.
                     new_field = fields.Selection(
                         string=getattr(field, 'string', None),
                         related='{}.{}'.format(link, origin_fname),
@@ -3881,7 +3884,7 @@ class PolyBase(_original_BaseModel):
                         store=False,
                         help=getattr(field, 'help', None),
                     )
-                # Evitar warnings de atributos ignorados en campos related.
+                # Avoid ignored-attribute warnings on related fields.
                 for _attr in ('selection', 'selection_add', 'default'):
                     try:
                         if hasattr(new_field, _attr):
@@ -4005,14 +4008,14 @@ class PolyBase(_original_BaseModel):
         _is_poly = _poly_is_polymorphic(self)
         _logger.debug('[poly] create() called for %s, is_poly=%s', self._name, _is_poly)
         if self._name == 'ir.poly_base' or not _is_poly:
-            # Defensa global: en modelos no-polimórficos (o antes de que el
-            # wiring poly esté activo), asegurar que la secuencia física de la
-            # tabla no esté por detrás del MAX(id). Se hace una sola vez por
-            # tabla/registry para no impactar rendimiento.
+            # Global defence: on non-polymorphic models (or before the poly
+            # wiring is active), make sure the physical sequence of the table is
+            # not behind MAX(id). It is done once per table/registry so as not
+            # to hurt performance.
             if self._name != 'ir.poly_base':
-                # Un error de la base (transacción ya abortada, conflicto de concurrencia) no se
-                # tapa: taparlo solo lo corre a la consulta siguiente, lejos de la causa, y le
-                # quita a Odoo la posibilidad de reintentar el request.
+                # A database error (transaction already aborted, concurrency conflict) is not
+                # hidden: hiding it only moves it to the next query, far from the cause, and
+                # takes away Odoo's chance to retry the request.
                 try:
                     self._sync_table_id_sequence_once()
                 except psycopg2.Error:
@@ -4048,10 +4051,10 @@ class PolyBase(_original_BaseModel):
             # a value that is valid on the parent but not on this model (e.g.
             # conversation.message.state='new' -> fsm.instance.state).
             #
-            # SÓLO sobre vals PROPAGADOS por poly: en un create pedido derecho por un llamador, un
-            # valor inválido es un error y le toca a Odoo rechazarlo. Filtrarlo en silencio dejaba
-            # el registro creado sin ese dato y sin que nadie se enterara — así se perdió el tipo
-            # de 73 documentos importados, y sólo quedó rastro en un WARNING del log.
+            # ONLY on vals PROPAGATED by poly: in a create asked directly by a caller, an
+            # invalid value is an error and it is Odoo's job to reject it. Filtering it silently
+            # left the record created without that data and with nobody the wiser — that is how
+            # the type of 73 imported documents was lost, with only a WARNING in the log left.
             if self._name != 'ir.poly_base' and poly_vals_propagados(self.env):
                 clean_list = []
                 for vals in data_list:
@@ -4098,9 +4101,9 @@ class PolyBase(_original_BaseModel):
 
         # If this is a polymorphic create of a subclass handle it recursively
 
-        # Acumulador de los registros creados. DEBE arrancar vacío: create() puede invocarse
-        # sobre un recordset NO vacío (p.ej. record.copy() llama self.create(vals)), y devolver
-        # `self` mezclado con los nuevos rompe la semántica (copy() devolvía original + copia).
+        # Accumulator of the created records. It MUST start empty: create() can be invoked
+        # on a NON-empty recordset (e.g. record.copy() calls self.create(vals)), and returning
+        # `self` mixed with the new ones breaks the semantics (copy() returned original + copy).
         new_records = self.browse()
         concrete_model_id = None
 
@@ -4148,23 +4151,24 @@ class PolyBase(_original_BaseModel):
 
         data_list = processed_vals_list
 
-        # Capturar los nombres de campo del input ANTES de que el loop de creación los consuma
-        # (rutea/pop-ea los campos heredados hacia las sub-creaciones de las bases). Se usan al
-        # final para disparar las @api.constrains del concreto sobre campos heredados.
+        # Capture the field names of the input BEFORE the creation loop consumes them
+        # (it routes/pops the inherited fields towards the sub-creates of the bases). They are
+        # used at the end to fire the concrete model's @api.constrains on inherited fields.
         _poly_input_fnames = set()
         for _vals in data_list:
             _poly_input_fnames.update(_vals.keys())
 
         if concrete_model_id:
             concrete_model = self.env['ir.model'].browse(concrete_model_id).exists()
-            # OJO: `concrete_model` es un registro de ir.model; el nombre técnico del modelo
-            # concreto vive en su campo `.model` (ej. 'test.test4'), NO en `._name` (que para
-            # un recordset de ir.model siempre es 'ir.model'). concrete_model_id puede llegar en
-            # los vals como dispatch desde una base (redirigir al modelo concreto) o arrastrado
-            # por copy() (campo heredado de ir.poly_base): en ese caso target == self y sólo hay
-            # que descartar el bookkeeping, no redirigir (si no, se intentaba crear un ir.model).
+            # CAREFUL: `concrete_model` is an ir.model record; the technical name of the
+            # concrete model lives in its `.model` field (e.g. 'test.test4'), NOT in `._name`
+            # (which for an ir.model recordset is always 'ir.model'). concrete_model_id can
+            # arrive in the vals as a dispatch from a base (redirect to the concrete model) or
+            # dragged along by copy() (field inherited from ir.poly_base): in that case
+            # target == self and the bookkeeping must only be dropped, not redirected (otherwise
+            # it tried to create an ir.model).
             target_name = concrete_model.model if concrete_model else None
-            # Descartar el bookkeeping field de los vals en ambos casos.
+            # Drop the bookkeeping field from the vals in both cases.
             new_vals_list = []
             for data in data_list:
                 new_data = dict(data)
@@ -4176,7 +4180,8 @@ class PolyBase(_original_BaseModel):
                 return self.env[target_name].with_context(
                     **{POLY_PROPAGATED: True}).create(new_vals_list)
 
-            # target == self (o ir.model inexistente): seguir el create normal sin el campo.
+            # target == self (or a non-existent ir.model): go on with the normal create
+            # without the field.
             data_list = new_vals_list
 
         # Get all related fields and their definitions
@@ -4281,18 +4286,18 @@ class PolyBase(_original_BaseModel):
         # fields like personal_stage_type_id on project.task, or company-dependent
         # account fields on res.partner) into the leaf INSERT, which would raise
         # "column ... does not exist".
-        # _poly_leaf_columns cachea por tabla; sql.table_columns consulta
-        # information_schema.columns cada vez. Medido sobre res.partner: 5,64 ms de los
-        # 13,7 ms de SQL de un create -- el 41%, y el costo unitario mas grande del alta,
-        # por leer un catalogo que no cambia en runtime.
+        # _poly_leaf_columns caches per table; sql.table_columns queries
+        # information_schema.columns every time. Measured on res.partner: 5.64 ms out of the
+        # 13.7 ms of SQL of a create -- 41%, and the largest single cost of the insert, for
+        # reading a catalogue that does not change at runtime.
         _poly_leaf_cols = set()
         if getattr(self, '_table', None):
             _poly_leaf_cols = _poly_leaf_columns(self.env.cr, self._table)
 
-        # En modelos polimórficos, si hay altas sin id explícito, asegurar una vez
-        # por registry que la secuencia global de ir.poly_base esté alineada.
-        # Evita colisiones de PK cuando el proceso entra directamente por la rama
-        # polimórfica (ej. creación de res.partner desde res.users).
+        # On polymorphic models, if there are inserts without an explicit id, make sure
+        # once per registry that the global ir.poly_base sequence is aligned.
+        # It avoids PK collisions when the process enters directly through the
+        # polymorphic branch (e.g. creating a res.partner from res.users).
         if any('id' not in data for data in data_list):
             self._sync_poly_sequence()
 
@@ -4311,9 +4316,9 @@ class PolyBase(_original_BaseModel):
                 new_id = linked_id
                 data['id'] = new_id
             else:
-                # Ahora creamos en ir.poly_base confiando en la secuencia ya sincronizada.
-                # Si aun así falla por un ID insertado justo después del cálculo del max_id,
-                # Odoo lanzará la excepción de integridad (comportamiento optimista).
+                # Now we create in ir.poly_base trusting the already synchronised sequence.
+                # If it still fails because of an ID inserted right after the max_id was
+                # computed, Odoo will raise the integrity exception (optimistic behaviour).
                 
                 # [poly] Ensure concrete_model_id is passed when creating poly base
                 # We use SQL to bypass any field filtering in Odoo 18 for this technical base
@@ -4326,9 +4331,9 @@ class PolyBase(_original_BaseModel):
                 new_id = self.env.cr.fetchone()[0]
                 _logger.debug('Creating poly base for %s, id = %s (via SQL)', self._name, new_id)
 
-            # [poly] Use the UNFILTERED original values (processed_vals_list es paralelo a
-            # data_list por indice; current_idx viene del enumerate -> robusto ante dicts
-            # limpios iguales, que con data_list.index(data) cruzaba registros en bulk create).
+            # [poly] Use the UNFILTERED original values (processed_vals_list is parallel to
+            # data_list by index; current_idx comes from the enumerate -> robust against equal
+            # clean dicts, which with data_list.index(data) crossed records in a bulk create).
             orig_data = processed_vals_list[current_idx]
 
             # Enrich orig_data with main model defaults
@@ -4373,8 +4378,8 @@ class PolyBase(_original_BaseModel):
                     dep_record_ids[base] = existing_base.id
 
             # Finally, create the record in this model.
-            # Use the UNFILTERED original values (por current_idx del enumerate) para
-            # encontrar los campos heredados que se guardan en la tabla de este modelo.
+            # Use the UNFILTERED original values (by current_idx from the enumerate) to
+            # find the inherited fields that are stored in this model's table.
             orig_data = processed_vals_list[current_idx]
         
             base_data = data.copy()
@@ -4424,12 +4429,13 @@ class PolyBase(_original_BaseModel):
             # AND we MUST ensure Odoo sees them as stored BEFORE they are classified.
         
             # [poly] Re-classify fields after our forced restoration.
-            # Principio (sin hardcodes de consumidores): un campo se fuerza al base_data de la HOJA
-            # sólo si es un campo PROPIO (no related). Los campos related/heredados (ej. `active`,
-            # o `name` en un subtipo de res.partner) pertenecen a una base y se rutean a su
-            # sub-create, NO a la tabla hoja (si no, INSERT falla: la columna no existe en la hoja).
-            # (Antes: lista hardcodeada `('name','provider','active','facebook_account_id','driver_id')`
-            # — scar de estabilización — forzaba `active` a la hoja y rompía personas poly de res.partner.)
+            # Principle (no hardcoded consumer names): a field is forced into the LEAF base_data
+            # only if it is an OWN field (not related). Related/inherited fields (e.g. `active`,
+            # or `name` on a subtype of res.partner) belong to a base and are routed to its
+            # sub-create, NOT to the leaf table (otherwise the INSERT fails: the column does not
+            # exist on the leaf). (Before: the hardcoded list
+            # `('name','provider','active','facebook_account_id','driver_id')` — a stabilization
+            # scar — forced `active` onto the leaf and broke poly persons of res.partner.)
             # [poly] Fields skipped here because they have no physical column on the
             # leaf table (genuinely non-stored computed/company-dependent fields).
             # Their values are applied after the INSERT via write() -> inverse.
@@ -4530,8 +4536,8 @@ class PolyBase(_original_BaseModel):
 
                 # [poly] After flush, invalidate the cache for these records so Odoo reads
                 # the values from DB using the descriptors we are about to restore.
-                # [poly][20.0] `env.cache.invalidate` esta deprecado (environments.py:655);
-                # el idioma de 20.0 es pedirselo al campo.
+                # [poly][20.0] `env.cache.invalidate` is deprecated (environments.py:655);
+                # the 20.0 idiom is to ask the field for it.
                 for k in base_data.keys():
                     if (f := self._fields.get(k)) is not None:
                         f._invalidate_cache(self.env, new_records._ids)
@@ -4570,11 +4576,11 @@ class PolyBase(_original_BaseModel):
                             f.inherited = f._poly_old_inherited
                             del f._poly_old_inherited
 
-        # [poly] Disparar las @api.constrains del modelo concreto para los campos del input que
-        # son HEREDADOS (related, viven en una base): el super().create() de la hoja sólo valida
-        # SUS columnas propias, así que un constraint sobre un campo heredado (ej. a1, en
-        # test.test1) no se evaluaba en create (sí en write -> asimetría / bypass de validación).
-        # Validamos explícitamente esos campos sobre los registros creados.
+        # [poly] Fire the concrete model's @api.constrains for the input fields that are
+        # INHERITED (related, they live on a base): the leaf's super().create() only validates
+        # ITS own columns, so a constraint on an inherited field (e.g. a1, in test.test1) was
+        # not evaluated on create (it was on write -> asymmetry / validation bypass).
+        # We validate those fields explicitly on the created records.
         if new_records:
             _inherited_fnames = [
                 fn for fn in _poly_input_fnames
@@ -4641,12 +4647,12 @@ class PolyBase(_original_BaseModel):
 
     def copy_data(self, default=None):
         """
-        Al copiar un registro polimórfico hay que descartar los campos que gestiona poly
-        internamente: el bookkeeping de ir.poly_base (id, old_id, concrete_model_id, poly_payload,
-        poly_base_id) y TODOS los links a las bases (PolyReference: testN_id, etc.). Si se copiaran
-        verbatim apuntarían a las bases del ORIGINAL (o a columnas que no existen en la tabla hoja,
-        ej. poly_base_id en test_test2). Quitándolos, el create() de poly regenera identidad propia
-        y bases frescas a partir de los datos copiados.
+        When copying a polymorphic record the fields poly manages internally must be dropped:
+        the ir.poly_base bookkeeping (id, old_id, concrete_model_id, poly_payload, poly_base_id)
+        and ALL the links to the bases (PolyReference: testN_id, etc.). Copied verbatim they
+        would point at the ORIGINAL's bases (or at columns that do not exist on the leaf table,
+        e.g. poly_base_id in test_test2). With them removed, poly's create() regenerates an
+        identity of its own and fresh bases out of the copied data.
         """
         vals_list = super().copy_data(default=default)
         if not _poly_is_polymorphic(self):
@@ -4677,9 +4683,9 @@ class PolyBase(_original_BaseModel):
         if getattr(self, '_depend_models', None) is not None:
             for base_model_name, link_field in self._depend_models.items():
                 try:
-                    # Acceso POR-REGISTRO (no self.mapped): mapped() sobre el PolyReference
-                    # entra en loop en su __get__ (Field.mapped re-dispara el descriptor); el
-                    # acceso directo por registro resuelve el link sin colgar.
+                    # PER-RECORD access (not self.mapped): mapped() over the PolyReference
+                    # loops in its __get__ (Field.mapped re-fires the descriptor); direct
+                    # per-record access resolves the link without hanging.
                     linked_ids = [lid for rec in self if (lid := rec[link_field].id)]
                 except Exception:
                     linked_ids = original_ids  # fallback: assume id-sharing
@@ -4854,34 +4860,35 @@ class PolyBase(_original_BaseModel):
         return len(self._poly_owned_base_ids(ids)) >= len(ids)
 
     def _poly_claim_shared_id_space(self):
-        """Hacer que la tabla de este modelo, y las de sus bases, tomen su id del unico asignador.
+        """Make this model's table, and those of its bases, take their id from the one allocator.
 
-        Un registro polimorfico y sus componentes comparten un id, asi que todas esas
-        tablas viven en un mismo espacio. Pero cada una nacio con su propio ``SERIAL`` y
-        por lo tanto con su propia secuencia: treinta asignadores independientes repartiendo
-        sobre el mismo espacio. Que no chocaran dependia de que absolutamente toda alta
-        pasara por ``create()`` de poly, que provee el id explicito y nunca usa el default
-        de la columna. Cualquier insercion por fuera -- SQL directo, una carga de datos, un
-        camino del ORM que inserta sin id -- disparaba una secuencia que no sabe nada del
-        espacio compartido.
+        A polymorphic record and its components share an id, so all of those tables live
+        in one and the same space. But each one was born with its own ``SERIAL`` and
+        therefore with its own sequence: thirty independent allocators handing out over
+        the same space. That they did not collide depended on absolutely every insert
+        going through poly's ``create()``, which supplies the explicit id and never uses
+        the column default. Any insert outside of that -- direct SQL, a data load, an ORM
+        path that inserts without an id -- fired a sequence that knows nothing about the
+        shared space.
 
-        Lo insidioso es que el sintoma depende de la tabla. ``res_partner_id_seq`` estaba en
-        119 con ``MAX(id) = 14763``: ahi un insert por default explota fuerte con clave
-        duplicada. ``conversation_bot_id_seq`` estaba en 0 con la tabla vacia: entrega 1, 2,
-        3 -- libres en *esa* tabla y ocupados en el espacio compartido. Eso no falla,
-        corrompe. Es el mecanismo de las 560 colisiones que aparecieron en produccion.
+        What is insidious is that the symptom depends on the table. ``res_partner_id_seq``
+        was at 119 with ``MAX(id) = 14763``: there an insert by default blows up loudly with
+        a duplicate key. ``conversation_bot_id_seq`` was at 0 with the table empty: it hands
+        out 1, 2, 3 -- free in *that* table and taken in the shared space. That does not
+        fail, it corrupts. It is the mechanism behind the 560 collisions that showed up in
+        production.
 
-        La reconciliacion periodica (``_get_max_poly_id`` escaneando 26 tablas y
-        ``_sync_poly_sequence`` haciendo ``setval`` bajo advisory lock) no puede cerrar eso:
-        sincroniza asignadores que se vuelven a separar en cuanto termina. Con un unico
-        asignador el requisito "el id debe ser mayor que el de todas las bases" desaparece.
-        No hace falta "mayor que"; hace falta "nunca entregado antes", que es lo que una
-        secuencia da gratis, de forma atomica y sin bloquear: 8 sesiones concurrentes
-        generaron 2000 ids sin un solo duplicado en 121 ms.
+        Periodic reconciliation (``_get_max_poly_id`` scanning 26 tables and
+        ``_sync_poly_sequence`` doing a ``setval`` under an advisory lock) cannot close that:
+        it synchronises allocators that drift apart again as soon as it finishes. With a
+        single allocator the requirement "the id must be greater than that of every base"
+        disappears. "Greater than" is not what is needed; "never handed out before" is, and
+        that is what a sequence gives for free, atomically and without blocking: 8
+        concurrent sessions generated 2000 ids without a single duplicate in 121 ms.
 
-        Se re-aplica en cada actualizacion a proposito. El ``ALTER`` toca el catalogo, no
-        reescribe la tabla, y es idempotente; y hacerlo incremental -- cada modelo reclama
-        su propia cadena -- evita depender del orden en que se cargan los modulos.
+        It is re-applied on every update on purpose. The ``ALTER`` touches the catalogue, it
+        does not rewrite the table, and it is idempotent; and doing it incrementally -- each
+        model claims its own chain -- avoids depending on the order in which modules load.
         """
         cr = self.env.cr
         tablas = []
@@ -4902,9 +4909,9 @@ class PolyBase(_original_BaseModel):
                 row = cr.fetchone()
                 ya_estaba = bool(row and row[0] and POLY_ID_SEQUENCE in row[0])
 
-                # La secuencia solo avanza. Subirla por encima del maximo de esta tabla
-                # antes de reclamarla deja el invariante cerrado sin coordinacion global:
-                # despues de recorrer todas, quedo por encima del maximo de todas.
+                # The sequence only moves forward. Raising it above this table's maximum
+                # before claiming it closes the invariant without global coordination:
+                # after walking them all, it sits above the maximum of all of them.
                 cr.execute(SQL("SELECT COALESCE(MAX(id), 0) FROM %s", SQL.identifier(table)))
                 max_id = (cr.fetchone() or [0])[0] or 0
                 cr.execute("SELECT last_value, is_called FROM %s" % POLY_ID_SEQUENCE)
@@ -4912,19 +4919,19 @@ class PolyBase(_original_BaseModel):
                 actual = last if called else last - 1
                 if max_id > actual:
                     cr.execute("SELECT setval(%s, %s, true)", (POLY_ID_SEQUENCE, max_id))
-                    _logger.info("[poly] %s adelantada a %s por %s", POLY_ID_SEQUENCE, max_id, table)
+                    _logger.info("[poly] %s advanced to %s because of %s", POLY_ID_SEQUENCE, max_id, table)
 
                 cr.execute(SQL(
                     "ALTER TABLE %s ALTER COLUMN id SET DEFAULT nextval(%s)",
                     SQL.identifier(table), SQL(repr(POLY_ID_SEQUENCE)),
                 ))
                 if not ya_estaba:
-                    _logger.info("[poly] %s: su columna id ahora toma del asignador unico %s",
+                    _logger.info("[poly] %s: its id column now draws from the one allocator %s",
                                  table, POLY_ID_SEQUENCE)
             except Exception:  # noqa: BLE001
-                # Una tabla que no se puede reclamar no debe impedir reclamar las demas;
-                # la proxima actualizacion lo reintenta.
-                _logger.warning("[poly] no pude apuntar %s al asignador unico", table,
+                # A table that cannot be claimed must not prevent claiming the others;
+                # the next update retries it.
+                _logger.warning("[poly] could not point %s at the one allocator", table,
                                 exc_info=True)
 
     @api.model
@@ -5422,8 +5429,8 @@ class PolyBase(_original_BaseModel):
                         break
             
             if is_model_related_error:
-                # [poly] NO TOCAR LAS RUTAS de related en caliente si falla.
-                # Delegamos en Odoo tras reportar el error con contexto para depuración.
+                # [poly] DO NOT TOUCH the related PATHS at runtime if it fails.
+                # We delegate to Odoo after reporting the error with context for debugging.
                 _logger.error("[poly] KeyError in fields_get for %s (Key: %s). Traceback shows potential related route corruption.", self._name, faulty_key)
                 raise e
             
@@ -5445,9 +5452,9 @@ class PolyBase(_original_BaseModel):
         Override to avoid ValueError on polymorphic models when a field is not
         found on the current model but might exist in the polymorphic hierarchy.
         """
-        # [poly][20.0] field_names=None significa "todos los campos prefetchables"
-        # (models.py:3180-3182), y no hay lista que filtrar. Es como llega desde
-        # search_fetch (models.py:1485), que en 18.0 no ejercitaba este camino.
+        # [poly][20.0] field_names=None means "every prefetchable field"
+        # (models.py:3180-3182), and there is no list to filter. That is how it arrives from
+        # search_fetch (models.py:1485), which in 18.0 did not exercise this path.
         if field_names is None:
             return super()._determine_fields_to_fetch(None, ignore_when_in_cache)
         # [poly] Odoo 18: Aggressive safety for core models (res.users, ir.module.module, etc.)
@@ -5668,9 +5675,9 @@ class PolyBase(_original_BaseModel):
         if not _poly_is_polymorphic(self):
             return super()._field_to_sql(alias, fname, query, flush)
 
-        # [poly] Prevención de recursión infinita mediante stack en el Environment
-        # Odoo 18 llama a _field_to_sql recursivamente para campos relacionados.
-        # En modelos polimórficos, estas rutas pueden volverse circulares.
+        # [poly] Infinite-recursion prevention by means of a stack on the Environment.
+        # Odoo 18 calls _field_to_sql recursively for related fields.
+        # On polymorphic models, those paths can become circular.
         if not hasattr(self.env, '_poly_field_sql_stack'):
             self.env._poly_field_sql_stack = set()
         
@@ -5689,14 +5696,14 @@ class PolyBase(_original_BaseModel):
             field = self._fields.get(fname)
             if not field:
                 if not self.pool.ready:
-                    # Durante el arranque, algunos campos podrían no estar registrados aún.
+                    # During startup, some fields may not be registered yet.
                     if fname in ('id', 'name', 'state', 'sequence', 'company_id'):
                         from odoo.tools import SQL
                         return SQL.identifier(fname)
                 raise ValueError(f"Invalid field {fname!r} on model {self._name!r}")
 
             if not field.store and not self.pool.ready:
-                # [poly] RECOVERY: Si un campo no almacenado se usa en order/search durante el boot
+                # [poly] RECOVERY: a non-stored field used in order/search during the boot
                 if self.pool.loaded:
                     _logger.warning("[poly] Skipping non-stored field %s.%s in _field_to_sql during boot", self._name, fname)
                 from odoo.tools import SQL
@@ -5722,8 +5729,8 @@ class PolyBase(_original_BaseModel):
             try:
                 return super()._field_to_sql(alias, fname, query, flush)
             except KeyError as e:
-                # [poly] NO TOCAR LAS RUTAS de related en caliente si falla.
-                # Reportar el error para depuración pero delegar en Odoo.
+                # [poly] DO NOT TOUCH the related PATHS at runtime if it fails.
+                # Report the error for debugging but delegate to Odoo.
                 _logger.error("[poly] KeyError in _field_to_sql for %s.%s: %s. Related path: %s", 
                               self._name, fname, e, getattr(field, 'related', 'N/A'))
                 raise e
@@ -5826,8 +5833,8 @@ class IrModelFields(models.Model):
         if missing_models:
             # If some models are not reflected yet, force their reflection
             IrModel._reflect_models(missing_models)
-            # _get_id esta bajo @api.ormcache(cache='stable') (ir_model.py:338), asi que
-            # hay que invalidar ESE subconjunto y no el 'default'
+            # _get_id sits under @api.ormcache(cache='stable') (ir_model.py:338), so THAT
+            # subset has to be invalidated and not the 'default' one
             IrModel.env.transaction.invalidate_ormcache('stable')
         
         # Deduplicate model_names: if the same model appears twice, Odoo's upsert
@@ -6056,20 +6063,20 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
 # --- Odoo 18 Registry Finalization Hook ---
 
-# ESTRATEGIA DE RESOLUCIÓN PARA ODOO 18:
-# Odoo 18 ha introducido cambios significativos en la introspección de modelos durante la fase de carga.
-# Específicamente, intenta clonar atributos de campos (como 'related') basándose en la jerarquía de 
-# clases (MRO). Esto causa conflictos con numa_poly porque Odoo inyecta rutas 'related' que 
-# apuntan directamente a nombres de modelos base (ej. related='conversation.driver.name') 
-# en lugar de usar los campos de enlace polimórficos definidos en _depend_models (ej. driver_id.name).
+# RESOLUTION STRATEGY FOR ODOO 18:
+# Odoo 18 introduced significant changes in model introspection during the loading phase.
+# Specifically, it tries to clone field attributes (such as 'related') based on the class
+# hierarchy (MRO). That conflicts with numa_poly because Odoo injects 'related' paths that
+# point directly at base model names (e.g. related='conversation.driver.name')
+# instead of using the polymorphic link fields declared in _depend_models (e.g. driver_id.name).
 #
-# La solución implementada consiste en:
-# 1. Parchear 'Field.setup_related' para interceptar rutas que comiencen con nombres de modelos.
-# 2. Redirigir automáticamente estas rutas a través del campo de enlace detectado en _depend_models.
-# 3. Aplicar un mecanismo de "failsafe" iterativo que limpia prefijos de modelos de las rutas 
-#    'related' si Odoo no logra encontrarlos como campos, evitando KeyErrors fatales.
-# 4. Asegurar que los campos Many2many polimórficos se marquen como 'related' y 'store=False'
-#    para evitar que Odoo intente acceder a tablas de relación físicas inexistentes en el modelo hijo.
+# The solution implemented consists of:
+# 1. Patching 'Field.setup_related' to intercept paths that start with model names.
+# 2. Automatically redirecting those paths through the link field detected in _depend_models.
+# 3. Applying an iterative "failsafe" mechanism that strips model prefixes from the 'related'
+#    paths when Odoo cannot find them as fields, avoiding fatal KeyErrors.
+# 4. Making sure polymorphic Many2many fields are marked as 'related' and 'store=False'
+#    to prevent Odoo from accessing physical relation tables that do not exist on the child model.
 
 # [poly] PATCH: Technical models column error workaround (res.users, ir.model, ir.ui.view)
 # This fixes psycopg2.errors.UndefinedColumn for technical columns added by mixins (website, etc.)
@@ -6179,35 +6186,35 @@ def poly_BaseModel_fetch_query(self, query, fields=None):
     # with "Compute method failed to assign ..." because they can't access their dependencies.
     if _removed_fields and not self.pool.ready:
         for f_name in _removed_fields:
-            # Se escribe el vacío directamente en la caché para no disparar otra lectura
-            # ni un bucle de compute. Es crítico para res.lang, que accede a flag_image
-            # durante el arranque.
+            # The empty value is written straight into the cache so as not to trigger
+            # another read nor a compute loop. It is critical for res.lang, which accesses
+            # flag_image during the startup.
             try:
                 if not self:
                     continue
                 field = self._fields[f_name]
-                # [poly] El vacío depende del tipo: un relacional NO puede ser False en la
-                # caché, porque después devuelve False en vez de un recordset vacío y
-                # cualquier mapped() revienta con "'bool' object is not iterable".
+                # [poly] The empty value depends on the type: a relational one can NOT be
+                # False in the cache, because it then returns False instead of an empty
+                # recordset and any mapped() blows up with "'bool' object is not iterable".
                 empty_value = False
                 if field.relational:
                     empty_value = None if field.type == 'many2one' else ()
 
-                # [poly][20.0] Era `env.cache.update_raw(record, field, [empty_value])`,
-                # registro por registro porque en 18.0 se dudaba de que Cache.update
-                # manejara un solo valor para varios ids. `Field._update_cache`
-                # (fields.py:1783) escribe EL MISMO valor para todo el recordset, que es
-                # justo lo que hace falta acá, así que el bucle sobra. Lo único que
-                # aportaba `update_raw` sobre `update` era el contexto para los campos
-                # traducidos (environments.py:1264); eso se conserva.
+                # [poly][20.0] It used to be `env.cache.update_raw(record, field,
+                # [empty_value])`, record by record because in 18.0 it was doubted that
+                # Cache.update handled a single value for several ids. `Field._update_cache`
+                # (fields.py:1783) writes THE SAME value for the whole recordset, which is
+                # exactly what is needed here, so the loop is redundant. The only thing
+                # `update_raw` added over `update` was the context for translated fields
+                # (environments.py:1264); that is kept.
                 destino = self.with_context(prefetch_langs=True) if field.translate else self
                 field._update_cache(destino, empty_value)
             except Exception:
-                # No puede abortar el arranque, pero tampoco puede ser invisible: hasta
-                # ahora esto era un _logger.debug y un fallo acá no se veía en ningún lado.
+                # It cannot abort the startup, but it cannot be invisible either: until
+                # now this was a _logger.debug and a failure here was nowhere to be seen.
                 _logger.warning(
-                    "[poly] no se pudo escribir el vacío en la caché de %s.%s; los computes "
-                    "que dependan de ese campo van a fallar al no encontrarlo",
+                    "[poly] could not write the empty value into the cache of %s.%s; the "
+                    "computes that depend on that field will fail for not finding it",
                     self._name, f_name, exc_info=True)
         
     return res
@@ -6216,13 +6223,13 @@ _original_BaseModel_fetch_query = odoo.models.BaseModel._fetch_query
 odoo.models.BaseModel._fetch_query = poly_BaseModel_fetch_query
 
 
-# PATCH: BaseModel._add_field Interceptor para forzar campos polimórficos
-# [poly][20.0] _add_field dejo de ser un metodo de BaseModel: ahora es la funcion
-# add_field(model_cls, name, field, shareable) de odoo.orm.model_classes, que
-# ademas rechaza con ValidationError todo nombre que ninguna clase Python del MRO
-# declare y que no empiece con 'x_' (model_classes.py:632-639). El cuerpo de abajo
-# asume lo contrario. Fase 3/4 del rediseno lo reemplaza; ver
-# doc/plan-2026-09-20-odoo-20-redesign.md secciones 2.1 y 2.2.
+# PATCH: BaseModel._add_field interceptor, to force polymorphic fields
+# [poly][20.0] _add_field stopped being a method of BaseModel: it is now the function
+# add_field(model_cls, name, field, shareable) of odoo.orm.model_classes, which
+# moreover rejects with a ValidationError every name that no Python class of the MRO
+# declares and that does not start with 'x_' (model_classes.py:632-639). The body below
+# assumes the opposite. Phase 3/4 of the redesign replaces it; see
+# doc/plan-2026-09-20-odoo-20-redesign.md sections 2.1 and 2.2.
 _original_BaseModel_add_field = _poly_model_classes.add_field
 def poly_BaseModel_add_field(self, name, field, shareable=False):
     # [poly] Use _POLY_TECHNICAL_FIELDS (includes display_name, id, audit fields) so that
@@ -6234,7 +6241,7 @@ def poly_BaseModel_add_field(self, name, field, shareable=False):
             return _original_BaseModel_add_field(self, name, field, shareable)
 
         model_class = type(self)
-        # Buscar en la jerarquía polimórfica si este campo debería ser un related.
+        # Look in the polymorphic hierarchy for whether this field should be a related.
         # Use __dict__.get (not getattr) to avoid finding _depend_models inherited from
         # poly-injected parent classes (e.g. test.test2's deps leaking into test.test4).
         _target_related = None
@@ -6246,7 +6253,7 @@ def poly_BaseModel_add_field(self, name, field, shareable=False):
             for dep_model, dep_field in dep_models.items():
                 if dep_model not in self.pool: continue
 
-                # Si el campo existe en la base polimórfica, lo forzamos a ser related
+                # If the field exists on the polymorphic base, we force it to be related
                 base_poly_class = self.pool[dep_model]
                 if name in base_poly_class._fields:
                     _target_related = f'{dep_field}.{name}'
@@ -6287,7 +6294,7 @@ def poly_BaseModel_add_field(self, name, field, shareable=False):
                 # happen, which is why it only ever showed up under `-u`.
                 _poly_drop_base_declarations(field, model_class)
                 return _original_BaseModel_add_field(self, name, field)
-            # Forzamos los atributos del objeto field directamente antes de que Odoo lo registre
+            # Force the attributes of the field object directly, before Odoo registers it
             _poly_force_related(field, _target_related)
             field.automatic = True
 
@@ -6379,11 +6386,11 @@ def poly_Field_setup(self, model):
     return _original_Field_setup(self, model)
 odoo.fields.Field.setup = poly_Field_setup
 
-# PATCH: BaseModel.__repr__ para evitar recursión en CacheMiss
+# PATCH: BaseModel.__repr__, to avoid recursion on CacheMiss
 _original_BaseModel_repr = odoo.models.BaseModel.__repr__
 def poly_BaseModel_repr(self):
     try:
-        # Acceso directo a los datos internos para evitar __getattribute__
+        # Direct access to the internal data, to avoid __getattribute__
         _name = object.__getattribute__(self, '_name')
         _ids = object.__getattribute__(self, '_ids')
         return f"{_name}{_ids}"
@@ -6391,12 +6398,12 @@ def poly_BaseModel_repr(self):
         return "BaseModel()"
 odoo.models.BaseModel.__repr__ = poly_BaseModel_repr
 
-# PATCH: BaseModel.__contains__ poly-aware — permite ``record in recordset`` entre modelos
-# poly-hermanos (comparten PK / mismo id en la jerarquía). El core exige ``self._name ==
-# item._name`` y si no levanta 'inconsistent models'; pero un subtipo (persona.fisica) y su base
-# (res.partner) son el MISMO registro por id. Caso real: account_peppol._compute_peppol_endpoint
-# hace ``persona.fisica._origin in res.partner(...)`` al computar sobre el subtipo. Se compara por
-# id sólo si son de la misma jerarquía poly; el camino normal (mismo modelo o str) no se toca.
+# PATCH: poly-aware BaseModel.__contains__ — allows ``record in recordset`` between poly-sibling
+# models (they share the PK / the same id in the hierarchy). The core demands ``self._name ==
+# item._name`` and otherwise raises 'inconsistent models'; but a subtype (persona.fisica) and its
+# base (res.partner) are the SAME record by id. Real case: account_peppol._compute_peppol_endpoint
+# does ``persona.fisica._origin in res.partner(...)`` when computing on the subtype. It compares by
+# id only if they are of the same poly hierarchy; the normal path (same model or str) is untouched.
 _original_BaseModel_contains = odoo.models.BaseModel.__contains__
 
 def poly_BaseModel_contains(self, item):
@@ -6405,17 +6412,17 @@ def poly_BaseModel_contains(self, item):
         try:
             if _poly_same_hierarchy(item_name, self._name, self.pool):
                 return len(item) == 1 and item.id in self._ids
-        except Exception:  # noqa: BLE001 — ante cualquier duda, delegar al core (que validará)
+        except Exception:  # noqa: BLE001 — on any doubt, delegate to the core (which will validate)
             pass
     return _original_BaseModel_contains(self, item)
 odoo.models.BaseModel.__contains__ = poly_BaseModel_contains
 
 
 def _poly_coerce_operand(self, other):
-    """Si ``other`` es un recordset de un modelo poly-hermano de ``self`` (misma jerarquía / PK
-    compartida), lo reexpresa como recordset del modelo de ``self`` (mismo id) para que las
-    operaciones de conjunto del core no rechacen por 'inconsistent models'. Si no aplica (modelo
-    ajeno o no-recordset), devuelve ``other`` intacto y el core valida/rechaza como siempre."""
+    """If ``other`` is a recordset of a poly-sibling model of ``self`` (same hierarchy / shared
+    PK), re-expresses it as a recordset of ``self``'s model (same id) so that the core's set
+    operations do not reject it with 'inconsistent models'. If it does not apply (a foreign model
+    or a non-recordset), returns ``other`` untouched and the core validates/rejects as always."""
     other_name = getattr(other, '_name', None)
     if other_name is not None and other_name != self._name:
         try:
@@ -6425,11 +6432,11 @@ def _poly_coerce_operand(self, other):
             pass
     return other
 
-# PATCH: operadores de conjunto poly-aware. self - other (__sub__) y self & other (__and__)
-# devuelven SIEMPRE un subconjunto de self (los ids de other sólo se usan como test de
-# pertenencia), así que reexpresar other al modelo de self (mismo id por PK compartida) es
-# seguro y da el resultado correcto. Caso real: lógica de followers/recipients del chatter que
-# resta un res.partner de un recordset del subtipo poly. No se tocan union/concat/__eq__.
+# PATCH: poly-aware set operators. self - other (__sub__) and self & other (__and__)
+# ALWAYS return a subset of self (the ids of other are only used as a membership test),
+# so re-expressing other to self's model (same id through the shared PK) is safe and gives
+# the correct result. Real case: the chatter's followers/recipients logic, which subtracts
+# a res.partner from a recordset of the poly subtype. union/concat/__eq__ are not touched.
 _original_BaseModel_sub = odoo.models.BaseModel.__sub__
 def poly_BaseModel_sub(self, other):
     return _original_BaseModel_sub(self, _poly_coerce_operand(self, other))
@@ -6519,7 +6526,7 @@ def poly_Field_setup_related(self, model):
         prefix = parts[0]
         registry = model.pool or model.env.registry
         
-        # Si el prefijo es un padre polimórfico, redirigir a través del campo link
+        # If the prefix is a polymorphic parent, redirect through the link field
         depend_models = getattr(model, '_depend_models', {}) or {}
         link_fname = None
         
@@ -6530,14 +6537,14 @@ def poly_Field_setup_related(self, model):
             if prefix in model._fields and isinstance(model._fields[prefix], (PolyReference, fields.Many2one)):
                  link_fname = prefix
             else:
-                # Búsqueda agresiva por nombre de modelo
+                # Aggressive search by model name
                 for mname, lfname in depend_models.items():
                     if prefix == mname:
                         link_fname = lfname
                         break
         
-        # [poly] Si no se encontró el campo link en el modelo actual, 
-        # buscar recursivamente en sus padres polimórficos
+        # [poly] If the link field was not found on the current model,
+        # search recursively in its polymorphic parents
         if prefix and not link_fname:
             for mname, lfname in depend_models.items():
                 parent_model = registry.get(mname)
@@ -6548,14 +6555,14 @@ def poly_Field_setup_related(self, model):
                         break
 
         if link_fname:
-            # REDIRECCIÓN: Usamos el campo link en lugar del nombre del modelo
+            # REDIRECTION: we use the link field instead of the model name
             new_path = f"{link_fname}.{'.'.join(parts[1:])}"
-            _logger.debug("[poly] Redirigiendo ruta polimórfica %s.%s: %s -> %s", model._name, self.name, related, new_path)
+            _logger.debug("[poly] Redirecting polymorphic path %s.%s: %s -> %s", model._name, self.name, related, new_path)
             
             self.related = new_path
             if hasattr(self, '_args'): self._args['related'] = self.related
             self.store = False
-            related = new_path # Para los siguientes pasos
+            related = new_path # For the following steps
 
     # [poly] Iterative failsafe to avoid KeyError crash in Odoo 18
     # Global recursion prevention: track fields being setup in the current call stack
@@ -6615,8 +6622,8 @@ def poly_Field_get_depends(self, model):
     if stack_key in odoo.fields.Field._poly_depends_stack:
         return [], set()
     
-    # [poly] Proteccion para campos related con cadena rota (related_field is None).
-    # Aplica siempre: durante boot, reset_changes o cualquier reconstrucción del registry.
+    # [poly] Protection for related fields with a broken chain (related_field is None).
+    # It always applies: during boot, reset_changes or any rebuild of the registry.
     _in_setup = not model.pool.loaded or not getattr(model.pool, 'ready', True)
     if self.related and (not hasattr(self, 'related_field') or self.related_field is None):
         return [self.related], set()
@@ -6669,8 +6676,9 @@ def poly_validate_view(self, node, model_name, view_type=None, editable=True, no
     # to avoid 'Unknown field' errors while the polymorphic MRO is incomplete.
     # UNLESS we are in the final validation phase (poly_final_validation context flag).
     if not self.pool.loaded and not self.env.context.get("poly_final_validation"):
-        # Se ANOTA para la validación final. Antes solo quedaban anotadas las `noupdate` (vía
-        # _validate_module_views); las demás se salteaban sin anotarse y no se validaban nunca.
+        # It is RECORDED for the final validation. Before, only the `noupdate` ones were
+        # recorded (through _validate_module_views); the rest were skipped without being
+        # recorded and were never validated.
         if self.ids:
             self.pool._pending_poly_views.update(self.ids)
         return True
@@ -6713,21 +6721,21 @@ def poly_validate_module_views(self, module):
 _original_check_xml = None
 
 def poly_check_xml(self):
-    """[poly] Diferir la validacion entera, no la mitad.
+    """[poly] Defer the whole validation, not half of it.
 
-    ``poly_validate_view`` difiere ``_validate_view`` mientras se cargan modulos,
-    pero ``_check_xml`` corre despues el RelaxNG sobre EL MISMO arbol y cuenta con
-    que ``_validate_view`` ya lo haya normalizado: ``_validate_tag_search`` saca el
-    ``<searchpanel>`` de adentro del ``<search>`` justamente porque el RNG no sabe
-    validar sus campos (``icon``, ``icon_class`` y ``enable_counters`` no estan en
-    common.rng). Con la mitad diferida el panel seguia ahi y el RNG rechazaba una
-    vista que Odoo considera valida: ningun modulo podia extender una vista de
-    busqueda con searchpanel —``hr.view_employee_filter``, por ejemplo— mientras
-    numa_poly estuviera instalado.
+    ``poly_validate_view`` defers ``_validate_view`` while modules are loading,
+    but ``_check_xml`` then runs the RelaxNG over THE SAME tree and counts on
+    ``_validate_view`` having normalized it already: ``_validate_tag_search`` takes
+    the ``<searchpanel>`` out of the ``<search>`` precisely because the RNG does not
+    know how to validate its fields (``icon``, ``icon_class`` and ``enable_counters``
+    are not in common.rng). With half of it deferred the panel was still there and
+    the RNG rejected a view that Odoo considers valid: no module could extend a
+    search view with a searchpanel —``hr.view_employee_filter``, for instance— while
+    numa_poly was installed.
 
-    Lo que si se hace ahora es resolver la herencia. No depende del MRO, y su error
-    ("tal elemento no se encuentra en la vista padre") senala el archivo y la linea,
-    que es donde sirve; diferirlo lo dejaria sin contexto.
+    What IS done now is resolving the inheritance. It does not depend on the MRO, and
+    its error ("such element cannot be located in parent view") points at the file and
+    the line, which is where it helps; deferring it would leave it without context.
     """
     if self.pool.loaded or self.env.context.get('poly_final_validation'):
         return _original_check_xml(self)
@@ -6758,16 +6766,16 @@ def _patch_ir_ui_view():
     
     import odoo.addons.base.models.ir_ui_view as ir_ui_view_mod
 
-    # [poly][20.0] La clase paso a llamarse IrUiView (ir_ui_view.py:146); en 18.0
-    # era View. Antes esto era `if hasattr(mod, 'View')`, asi que al cambiar el
-    # nombre el parche dejo de instalarse EN SILENCIO: las vistas ya no se
-    # diferian y la validacion durante la carga volvia a fallar por campos
-    # polimorficos todavia incompletos. Si maniana vuelve a cambiar, que se vea.
+    # [poly][20.0] The class was renamed to IrUiView (ir_ui_view.py:146); in 18.0
+    # it was View. This used to be `if hasattr(mod, 'View')`, so when the name
+    # changed the patch stopped being installed IN SILENCE: views were no longer
+    # deferred and validation during the load went back to failing on polymorphic
+    # fields that were still incomplete. If it changes again tomorrow, let it show.
     View = getattr(ir_ui_view_mod, 'IrUiView', None) or getattr(ir_ui_view_mod, 'View', None)
     if View is None:
         raise ImportError(
-            "[poly] no se encontro la clase de ir.ui.view en %s: numa_poly no puede "
-            "diferir la validacion de vistas durante la carga" % ir_ui_view_mod.__name__)
+            "[poly] the ir.ui.view class was not found in %s: numa_poly cannot defer "
+            "view validation during the load" % ir_ui_view_mod.__name__)
 
     _original_validate_view = View._validate_view
     View._validate_view = poly_validate_view
@@ -6782,7 +6790,7 @@ def _patch_ir_ui_view():
     _original_NameManager_must_have_fields = ir_ui_view_mod.NameManager.must_have_fields
     ir_ui_view_mod.NameManager.must_have_fields = poly_NameManager_must_have_fields
 
-    _logger.debug("[poly] parcheada la clase de ir.ui.view (%s)", View.__name__)
+    _logger.debug("[poly] the ir.ui.view class has been patched (%s)", View.__name__)
 
 # PATCH: tools.convert.convert_xml_import to ensure patches are applied
 _original_convert_xml_import = odoo.tools.convert.convert_xml_import
@@ -6798,33 +6806,32 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
     # [poly] DEPRECATED: Deep fix is no longer needed with the new flattening strategy.
 
-# [poly][20.0] Contribuir dos veces al mismo modelo reordenaria _base_classes__,
-# porque LastOrderedSet se queda con la ultima aparicion. La marca va en el
-# registry mismo y no en un diccionario indexado por id(): los ids de objetos se
-# reciclan, y un registry nuevo heredaba la marca de uno viejo ya liberado, de
-# modo que sus modelos nunca se declaraban.
+# [poly][20.0] Contributing twice to the same model would reorder _base_classes__,
+# because LastOrderedSet keeps the last appearance. The mark goes on the registry
+# itself and not in a dictionary keyed by id(): object ids are recycled, and a new
+# registry inherited the mark of an old one already freed, so that its models were
+# never declared.
 _POLY_CONTRIBUTED_ATTR = '_poly_contributed__' 
 
 
 def _poly_declared_fields(cls, propios_de=None):
-    """[poly][20.0] Campos declarados en las clases de DEFINICION de *cls*.
+    """[poly][20.0] Fields declared in the DEFINITION classes of *cls*.
 
-    ``_fields`` solo se puebla durante ``_setup`` (``model_classes.py:391`` lo
-    vacia al empezar cada pasada), y la contribucion corre antes: leerlo ahi
-    devuelve vacio. Las definiciones, en cambio, existen desde que se importo el
-    modulo, porque ``Field.__set_name__`` las va apilando en
-    ``_field_definitions`` al crearse la clase.
+    ``_fields`` is only populated during ``_setup`` (``model_classes.py:391``
+    empties it at the start of each pass), and the contribution runs before that:
+    reading it there returns empty. The definitions, on the other hand, exist from
+    the moment the module was imported, because ``Field.__set_name__`` stacks them
+    up in ``_field_definitions`` as the class is created.
 
-    :param propios_de: si se indica un nombre de modelo, solo se devuelven los
-        campos declarados POR ese modelo -- los que vienen de un mixin que el
-        modelo hereda con ``_inherit`` quedan afuera. Ver
-        ``_poly_base_field_names`` para el porque.
-    :return: ``{nombre: definicion_del_campo}``
+    :param propios_de: if a model name is given, only the fields declared BY that
+        model are returned -- the ones coming from a mixin the model inherits with
+        ``_inherit`` are left out. See ``_poly_base_field_names`` for the why.
+    :return: ``{name: field_definition}``
     """
     declarados = {}
     for klass in cls.mro():
         if getattr(klass, 'pool', None) is not None:
-            continue                       # clase de registry, no de definicion
+            continue                       # registry class, not a definition class
         if propios_de is not None and not _poly_class_declares_model(klass, propios_de):
             continue
         for field in getattr(klass, '_field_definitions', ()):
@@ -6833,12 +6840,12 @@ def _poly_declared_fields(cls, propios_de=None):
 
 
 def _poly_class_declares_model(klass, model_name):
-    """True si *klass* es una clase de definicion DEL modelo *model_name*.
+    """True if *klass* is a definition class OF the model *model_name*.
 
-    Lo es la que lo declara (``_name == model_name``) y la que lo extiende desde
-    otro modulo (``_name`` ausente o igual, con ``model_name`` en ``_inherit``).
-    No lo es un mixin: ``MailThread`` tiene ``_name = 'mail.thread'``, y sus
-    campos son de mail.thread, no de quien lo hereda.
+    The one that declares it (``_name == model_name``) is, and so is the one that
+    extends it from another module (``_name`` absent or equal, with ``model_name``
+    in ``_inherit``). A mixin is not: ``MailThread`` has ``_name = 'mail.thread'``,
+    and its fields belong to mail.thread, not to whoever inherits it.
     """
     nombre = getattr(klass, '_name', None)
     if nombre in (None, model_name):
@@ -6850,27 +6857,27 @@ def _poly_class_declares_model(klass, model_name):
 
 
 def _poly_base_field_names(registry, base_name, _vistos=None):
-    """Campos PROPIOS de una base polimorfica, transitivamente por ``_depend_models``.
+    """OWN fields of a polymorphic base, transitively through ``_depend_models``.
 
-    Camina ``_depend_models`` hacia arriba porque, al momento de contribuir, la
-    base todavia no recibio nada de sus propias bases: eso recien pasa cuando
-    ``_setup_models__`` rearma todo.
+    It walks ``_depend_models`` upwards because, at contribution time, the base has
+    not received anything from its own bases yet: that only happens when
+    ``_setup_models__`` rebuilds everything.
 
-    "Propios" excluye lo que la base hereda de un mixin, y no es una preferencia
-    de estilo: sin ese filtro, el conjunto dependia de si la clase de registry de
-    la base ya estaba armada cuando corrio la contribucion. En un arranque
-    limpio ``registry[base]`` es la clase cruda y ``fsm.definition`` daba 14
-    campos; en una reconstruccion posterior ya trae a ``mail.thread`` y
-    ``mail.activity.mixin`` en el MRO y daba 42. **El mismo codigo y la misma
-    base producian un modelo polimorfico distinto segun el orden de armado**: en
-    la variante gorda, ``message_ids`` pasaba a leerse de la fila de la base en
-    vez de la propia, y 17 campos calculados quedaban declarados ``compute`` y
-    ``related`` a la vez (Odoo avisaba y descartaba el compute).
+    "Own" excludes what the base inherits from a mixin, and that is not a matter of
+    style: without that filter, the set depended on whether the base's registry
+    class was already built when the contribution ran. On a clean startup
+    ``registry[base]`` is the raw class and ``fsm.definition`` gave 14 fields; on a
+    later rebuild it already carries ``mail.thread`` and ``mail.activity.mixin`` in
+    the MRO and gave 42. **The same code and the same base produced a different
+    polymorphic model depending on the build order**: in the fat variant,
+    ``message_ids`` came to be read from the base's row instead of its own, and 17
+    computed fields ended up declared ``compute`` and ``related`` at the same time
+    (Odoo warned and discarded the compute).
 
-    El filtro tambien es el correcto de fondo: la contribucion declara
-    ``_inherit = [modelo] + bases``, asi que todo lo que la base hereda de un
-    mixin le llega al concreto por el mismo camino. Redirigirlo con un
-    ``related`` no agrega nada; solo hay que redirigir lo que es dato de la base.
+    The filter is also the right one on the merits: the contribution declares
+    ``_inherit = [model] + bases``, so everything the base inherits from a mixin
+    reaches the concrete model by that same path. Redirecting it with a ``related``
+    adds nothing; only what is the base's data has to be redirected.
     """
     if _vistos is None:
         _vistos = set()
@@ -6886,22 +6893,22 @@ def _poly_base_field_names(registry, base_name, _vistos=None):
 
 
 def _poly_contribute_definitions(registry, model_names):
-    """[poly][20.0] Declarar las bases polimorficas como definiciones de modelo.
+    """[poly][20.0] Declare the polymorphic bases as model definitions.
 
-    Por cada modelo polimorfico arma una definicion sintetica cuyo ``_inherit``
-    nombra al propio modelo y a sus bases (las de ``_depend_models``, mas
-    ``ir.poly_base``), y la contribuye con ``add_to_registry``. Es el mismo
-    mecanismo que usa el suite de Odoo para agregar definiciones en caliente
+    For each polymorphic model it builds a synthetic definition whose ``_inherit``
+    names the model itself and its bases (those of ``_depend_models``, plus
+    ``ir.poly_base``), and contributes it with ``add_to_registry``. It is the same
+    mechanism Odoo's own suite uses to add definitions at runtime
     (``odoo/addons/test_base/tests/test_orm/test_fields.py:4694``).
 
-    A partir de ahi Odoo calcula ``_base_classes__`` solo: mete las clases de
-    registry de las bases, que es exactamente lo que la inyeccion de MRO hacia a
-    mano, y deja la definicion propia del modelo adelante, que es el orden que la
-    inyeccion queria para que los overrides del concreto ganaran.
+    From there Odoo computes ``_base_classes__`` by itself: it puts in the registry
+    classes of the bases, which is exactly what the MRO injection did by hand, and
+    leaves the model's own definition in front, which is the order the injection
+    wanted so that the concrete model's overrides would win.
 
-    :param registry: el registry en construccion
-    :param model_names: nombres de los modelos polimorficos detectados
-    :return: los nombres a los que se les contribuyo una definicion en esta pasada
+    :param registry: the registry being built
+    :param model_names: names of the polymorphic models detected
+    :return: the names a definition was contributed for in this pass
     """
     from odoo.orm.model_classes import add_to_registry
 
@@ -6924,23 +6931,23 @@ def _poly_contribute_definitions(registry, model_names):
         if not parents:
             continue
 
-        # Los campos de enlace se DECLARAN junto con las bases, por la misma razon:
-        # un campo agregado a la clase de registry despues del setup no sobrevive al
-        # siguiente, porque _setup() reconstruye _fields__ desde las definiciones
-        # (model_classes.py:373). Declarado aca es un atributo de una clase Python
-        # real, asi que se rearma solo en cada pasada.
+        # The link fields are DECLARED together with the bases, for the same reason:
+        # a field added to the registry class after the setup does not survive the
+        # next one, because _setup() rebuilds _fields__ from the definitions
+        # (model_classes.py:373). Declared here it is an attribute of a real Python
+        # class, so it rebuilds itself on every pass.
         #
-        # PolyReference no es compartible por construccion -es no almacenado y
-        # propio de este registry-, asi que se declara con _shareable=False para
-        # que no entre en SHARED_FIELD_CACHE (fields.py:422).
+        # A PolyReference is not shareable by construction -it is non-stored and
+        # belongs to this registry-, so it is declared with _shareable=False so that
+        # it does not enter SHARED_FIELD_CACHE (fields.py:422).
         atributos = {
             '__module__': __name__,
             '_module': None,
             '_name': model_name,
             '_inherit': [model_name] + parents,
         }
-        # Lo que el modelo declara por su cuenta es suyo y no se reemplaza por una
-        # version relacionada a la base: es la regla de no-sombra.
+        # What the model declares on its own is its own and is not replaced by a
+        # version related to the base: that is the no-shadow rule.
         nativos = set(_poly_declared_fields(model_class))
 
         for base_name, link_name in dep_map.items():
@@ -6949,22 +6956,22 @@ def _poly_contribute_definitions(registry, model_names):
             if link_name not in nativos:
                 atributos[link_name] = PolyReference(base_name, _shareable=False)
 
-            # Los campos que solo existen en la base se declaran RELACIONADOS a
-            # traves del campo de enlace: escribir uno escribe la fila de la base,
-            # que es lo que en 18.0 se conseguia dando vuelta store/related sobre
-            # el Field compartido. readonly=False es lo que lo hace escribible: la
-            # rama related de _get_attrs pone readonly=True por omision
-            # (fields.py:484), y un related de solo lectura acepta la escritura y
-            # la descarta, que es justo la falla que este modulo existe para
-            # evitar. Un related ya es no-compartible por construccion
-            # (fields.py:422), asi que no entra en SHARED_FIELD_CACHE.
+            # The fields that only exist on the base are declared RELATED through
+            # the link field: writing one writes the base's row, which is what in
+            # 18.0 was achieved by flipping store/related on the shared Field.
+            # readonly=False is what makes it writable: the related branch of
+            # _get_attrs sets readonly=True by default (fields.py:484), and a
+            # read-only related accepts the write and discards it, which is exactly
+            # the failure this module exists to prevent. A related is already
+            # non-shareable by construction (fields.py:422), so it does not enter
+            # SHARED_FIELD_CACHE.
             for fname, campo_base in _poly_base_field_names(registry, base_name).items():
                 if fname in nativos or fname in atributos or fname in _POLY_TECHNICAL_FIELDS:
                     continue
-                # La rama related pone copy=False por omision (fields.py:483), y
-                # un campo heredado se copia como cualquier otro del registro:
-                # sin esto, duplicar un concreto perdia todo lo que vive en la
-                # base. Se respeta lo que la base haya dicho explicitamente.
+                # The related branch sets copy=False by default (fields.py:483), and
+                # an inherited field is copied like any other of the record: without
+                # this, duplicating a concrete model lost everything that lives on
+                # the base. What the base said explicitly is respected.
                 args_base = getattr(campo_base, '_args__', None) or {}
                 atributos[fname] = type(campo_base)(
                     related='%s.%s' % (link_name, fname),
@@ -6981,15 +6988,15 @@ def _poly_contribute_definitions(registry, model_names):
         try:
             add_to_registry(registry, definition)
         except Exception:
-            _logger.error("[poly] no se pudo declarar la base polimorfica de %s (bases: %s)",
+            _logger.error("[poly] could not declare the polymorphic base of %s (bases: %s)",
                           model_name, parents, exc_info=True)
             continue
         done.add(model_name)
         contributed.append(model_name)
-        _logger.debug("[poly] %s declara sus bases: %s", model_name, parents)
+        _logger.debug("[poly] %s declares its bases: %s", model_name, parents)
 
     if contributed:
-        _logger.info("[poly] %d modelo(s) polimorfico(s) declararon sus bases", len(contributed))
+        _logger.info("[poly] %d polymorphic model(s) declared their bases", len(contributed))
     return contributed
 
 
@@ -7009,8 +7016,8 @@ def _poly_registry_setup_models(self, cr, model_names=None):
     # cached in earlier phases would be stale by later phases.  Clearing here
     # guarantees that every call during setup computes from the live class state.
     _poly_is_polymorphic_cache.clear()
-    # El mapa de jerarquías no vale mientras dura el setup: hasta que se reconstruya al final,
-    # _poly_is_outside_hierarchy responde False y todos toman el camino tolerante.
+    # The hierarchy map is not valid while the setup lasts: until it is rebuilt at the end,
+    # _poly_is_outside_hierarchy answers False and everyone takes the tolerant path.
     self._poly_hierarchy_model_names = None
 
     # [poly] Clear the schema (physical column) caches on every registry (re)build:
@@ -7115,25 +7122,24 @@ def _poly_registry_setup_models(self, cr, model_names=None):
     # DISABLED: This cleanup is causing side effects in standard Odoo models (res.users)
     pass
 
-    # [poly][20.0] Fase 1: declarar las bases, no inyectarlas.
+    # [poly][20.0] Phase 1: declare the bases, do not inject them.
     #
-    # Hasta 18.0 esto asignaba model_class.__bases__ a mano para meter las clases
-    # de registry de las bases polimorficas, y arrastraba consigo todo lo que esa
-    # ilegalidad costaba: re-sincronizar __base_classes porque _add_manual_models
-    # lo pisaba, excluir 'base' para evitar deadlocks de MRO en cascada, forzar
-    # PyType_Modified, restaurar _order/_rec_name que las bases inyectadas
-    # tapaban, y un interceptor de _prepare_setup para diagnosticar la asignacion
-    # que fallara.
+    # Up to 18.0 this assigned model_class.__bases__ by hand to put in the registry
+    # classes of the polymorphic bases, and dragged along everything that illegality
+    # cost: re-synchronising __base_classes because _add_manual_models overwrote it,
+    # excluding 'base' to avoid cascading MRO deadlocks, forcing PyType_Modified,
+    # restoring the _order/_rec_name that the injected bases covered up, and an
+    # interceptor of _prepare_setup to diagnose the assignment that would fail.
     #
-    # Odoo 20 calcula __bases__ desde las definiciones de modelo y afirma que
-    # nadie lo toco despues (model_classes.py:353-360). Asi que ahora se le pide
-    # en lugar de pelearle: una definicion sintetica por modelo polimorfico cuyo
-    # _inherit nombra sus bases. Odoo pone las clases de registry de esas bases en
-    # _base_classes__ por su cuenta, en el mismo orden que la inyeccion queria
-    # (la definicion propia primero, las bases despues), de modo que los overrides
-    # del concreto siguen ganando y no hay nada que restaurar.
+    # Odoo 20 computes __bases__ from the model definitions and asserts that nobody
+    # touched it afterwards (model_classes.py:353-360). So now it is asked instead of
+    # fought: one synthetic definition per polymorphic model whose _inherit names its
+    # bases. Odoo puts the registry classes of those bases in _base_classes__ on its
+    # own, in the same order the injection wanted (the model's own definition first,
+    # the bases after), so that the concrete model's overrides still win and there is
+    # nothing to restore.
     #
-    # Ver doc/plan-2026-09-20-odoo-20-redesign.md, seccion 2.1.
+    # See doc/plan-2026-09-20-odoo-20-redesign.md, section 2.1.
     _poly_contribute_definitions(self, poly_models_names_to_process)
 
     # [poly] Phase 2: Clear the per-class _poly_fields_built flag before every
@@ -7172,15 +7178,16 @@ def _poly_registry_setup_models(self, cr, model_names=None):
     # previous registry state don't persist into the newly rebuilt registry.
     _poly_is_polymorphic_cache.clear()
 
-    # [poly] concrete_model_id pertenece a ir.poly_base; en los SUBTIPOS no debe ser una
-    # columna stored. Por el MRO inyectado (ir.poly_base queda mas derivado que el subtipo),
-    # la definicion required+stored de ir.poly_base gana sobre el override store=False, y Odoo
-    # crearia una columna NOT NULL en el subtipo que el create nunca popula -> NotNullViolation.
-    # Aca, tras el setup, forzamos el campo del subtipo a no-stored computado: el valor se lee
-    # del poly_base compartido (via _compute_concrete_model_id), sin columna propia.
+    # [poly] concrete_model_id belongs to ir.poly_base; on the SUBTYPES it must not be a
+    # stored column. Because of the injected MRO (ir.poly_base ends up more derived than the
+    # subtype), ir.poly_base's required+stored definition wins over the store=False override,
+    # and Odoo would create a NOT NULL column on the subtype that the create never populates
+    # -> NotNullViolation. Here, after the setup, we force the subtype's field to non-stored
+    # computed: the value is read from the shared poly_base (through
+    # _compute_concrete_model_id), with no column of its own.
     for _mname, _mcls in self.items():
         if not getattr(_mcls, '_depend_models', None):
-            continue  # base ({}) o modelo no-poly: dejar el campo como esta
+            continue  # a base ({}) or a non-poly model: leave the field as it is
         _f = _mcls._fields.get('concrete_model_id')
         if _f is not None and getattr(_f, 'store', False):
             _f.store = False
@@ -7189,25 +7196,28 @@ def _poly_registry_setup_models(self, cr, model_names=None):
             _f.compute_sudo = True
             _f.readonly = True
 
-    # [poly] _rec_name: ir.poly_base declara `_rec_name = 'id'` (no tiene campo name), y por el
-    # MRO inyectado ese valor se hereda explicitamente en TODOS los subtipos, pisando el default
-    # automatico de Odoo (`if 'name' in _fields: _rec_name = 'name'`). Resultado: display_name y
-    # name_search de un modelo poly CON campo name mostraban "<modelo>,<id>" en vez del nombre
-    # (rompe el rendering de las listas polimorficas en la UI). Aca restauramos la intencion de
-    # Odoo: si el modelo poly tiene 'name' y quedo con _rec_name='id' heredado, usar 'name'.
+    # [poly] _rec_name: ir.poly_base declares `_rec_name = 'id'` (it has no name field), and
+    # through the injected MRO that value is explicitly inherited by ALL the subtypes, overriding
+    # Odoo's automatic default (`if 'name' in _fields: _rec_name = 'name'`). Result: display_name
+    # and name_search of a poly model WITH a name field showed "<model>,<id>" instead of the name
+    # (it breaks the rendering of the polymorphic lists in the UI). Here we restore Odoo's
+    # intention: if the poly model has 'name' and was left with an inherited _rec_name='id',
+    # use 'name'.
     for _mname, _mcls in self.items():
         if _mname == 'ir.poly_base':
             continue
         if getattr(_mcls, '_depend_models', None) is None:
-            continue  # no es modelo poly
+            continue  # not a poly model
         if getattr(_mcls, '_rec_name', None) == 'id' and 'name' in _mcls._fields:
             _mcls._rec_name = 'name'
 
-    # [poly] display_name: poly usa _inherits con los link fields, y Odoo delega display_name al
-    # PRIMER padre _inherits (un link de infraestructura, ej. behavior_a_id / test2_id). Resultado:
-    # el display_name de un subtipo mostraba el del primer base ("<base>,<id>") en vez del propio
-    # -> rompe el rendering de las listas polimorficas. Acá lo des-delegamos: lo devolvemos al
-    # _compute_display_name estandar de Odoo, que respeta el _rec_name del modelo concreto.
+    # [poly] display_name: poly uses _inherits with the link fields, and Odoo delegates
+    # display_name to the FIRST _inherits parent (an infrastructure link, e.g. behavior_a_id /
+    # test2_id). Result:
+    # the display_name of a subtype showed that of the first base ("<base>,<id>") instead of its
+    # own -> it breaks the rendering of the polymorphic lists. Here we un-delegate it: we hand it
+    # back to Odoo's standard _compute_display_name, which respects the concrete model's
+    # _rec_name.
     for _mname, _mcls in self.items():
         if _mname == 'ir.poly_base':
             continue
@@ -7225,18 +7235,18 @@ def _poly_registry_setup_models(self, cr, model_names=None):
         _dn.compute = '_compute_display_name'
         _dn.compute_sudo = False
         _dn.depends = (_mcls._rec_name,) if _mcls._rec_name and _mcls._rec_name != 'id' else ()
-        # OJO: al venir de un related, el `search` del campo quedaba apuntando a _search_related
-        # (que con related=None matchea todo -> name_search no filtraba). Restaurar el search
-        # estandar de display_name para que name_search use _rec_name.
+        # CAREFUL: coming from a related, the field's `search` was left pointing at
+        # _search_related (which with related=None matches everything -> name_search did not
+        # filter). Restore display_name's standard search so that name_search uses _rec_name.
         _dn.search = '_search_display_name'
 
-    # [poly] Selection injertados: poly inyecta los campos heredados como related. Para un Selection
-    # related, el setup de Odoo deja `.selection` como CALLABLE (lo resuelve del target). Eso rompe
-    # codigo que introspecciona `.selection` asumiendo lista, p.ej. el default de account:
+    # [poly] Grafted Selections: poly injects the inherited fields as related. For a related
+    # Selection, Odoo's setup leaves `.selection` as a CALLABLE (it resolves it from the target).
+    # That breaks code introspecting `.selection` assuming a list, e.g. account's default:
     #   display_invoice_edi_format = Boolean(default=lambda self: len(self._fields['invoice_edi_format'].selection))
-    # -> len(callable) revienta al crear un subtipo poly de res.partner. Resolvemos el callable a la
-    # lista estatica del campo padre (que es de donde sale), preservando la semantica related del
-    # valor pero dejando `.selection` introspectable como lista.
+    # -> len(callable) blows up when creating a poly subtype of res.partner. We resolve the
+    # callable to the static list of the parent field (which is where it comes from), preserving
+    # the related semantics of the value but leaving `.selection` introspectable as a list.
     for _mname, _mcls in self.items():
         if getattr(_mcls, '_depend_models', None) is None:
             continue
@@ -7250,8 +7260,8 @@ def _poly_registry_setup_models(self, cr, model_names=None):
             if isinstance(_tsel, (list, tuple)):
                 _sf.selection = list(_tsel)
 
-    # Modelos que participan de jerarquías poly: los demás vuelven al camino original de Odoo
-    # en runtime (ver _poly_is_outside_hierarchy).
+    # Models that take part in poly hierarchies: the rest go back to Odoo's original path
+    # at runtime (see _poly_is_outside_hierarchy).
     self._poly_hierarchy_model_names = _poly_registry_hierarchy_models(self)
 
     _logger.debug('[poly] Registry setup complete')
@@ -7381,34 +7391,34 @@ def _poly_registry_load(self, cr, module):
 
 odoo.modules.registry.Registry._setup_models__ = _poly_registry_setup_models
 
-# [poly][20.0] Aca vivia la estabilizacion posterior a la carga, colgada de
-# Registry.signal_changes. Ese punto de enganche no existe en Odoo 20, y lo que
-# la estabilizacion hacia -repetir el setup para reinyectar el MRO- dejo de
-# hacer falta cuando la fase 3 cambio la inyeccion por la declaracion: Odoo arma
-# las bases solo, en la primera pasada, y no hay nada que rehacer despues.
+# [poly][20.0] Here lived the post-load stabilization, hanging from
+# Registry.signal_changes. That hook point does not exist in Odoo 20, and what the
+# stabilization did -repeat the setup to re-inject the MRO- stopped being needed
+# when phase 3 swapped injection for declaration: Odoo builds the bases on its own,
+# on the first pass, and there is nothing to redo afterwards.
 #
-# Lo unico que quedaba pendiente para el final de la carga es validar las vistas
-# que se difirieron, y eso tiene su propio anclaje desde siempre:
-# ir.poly_base._register_hook, que Odoo llama con todos los modulos cargados
-# (registry.py:577). Es ademas el unico que sirve en un arranque en frio, porque
-# numa_poly se importa DENTRO de load_module_graph y un wrapper de esa funcion
-# no llega a aplicarse la primera vez.
+# The only thing left pending for the end of the load is validating the views that
+# were deferred, and that has had an anchor of its own all along:
+# ir.poly_base._register_hook, which Odoo calls with every module loaded
+# (registry.py:577). It is moreover the only one that works on a cold startup, because
+# numa_poly is imported INSIDE load_module_graph and a wrapper of that function
+# does not get to apply the first time.
 
 
 # PATCH: load_module_graph to intercept the end of module loading
 _original_load_module_graph = odoo.modules.loading.load_module_graph
 
 def poly_load_module_graph(env, graph, update_module=False, report=None, install_demo=True):
-    """[poly] Validar al final de la carga las vistas que se dejaron pendientes.
+    """[poly] Validate, at the end of the load, the views that were left pending.
 
-    La firma es la de Odoo 20 (``modules/loading.py:114-120``); en 18.0 era
+    The signature is Odoo 20's (``modules/loading.py:114-120``); in 18.0 it was
     ``(env, graph, status, perform_checks, skip_modules, report, models_to_check)``.
     """
     res = _original_load_module_graph(env, graph, update_module=update_module,
                                       report=report, install_demo=install_demo)
     registry = env.registry
     if registry._pending_poly_views:
-        _logger.debug("[poly] terminada la carga de modulos: se validan las vistas pendientes")
+        _logger.debug("[poly] module loading is over: the pending views are validated")
         registry._poly_finalize_view_validation(env.cr)
     return res
 

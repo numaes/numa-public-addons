@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Validación diferida de vistas.
+Deferred view validation.
 
-Mientras se cargan módulos el MRO polimórfico puede estar incompleto, así que poly no valida las
-vistas en el momento: las difiere al final de la carga. Había cuatro defectos encadenados: solo se
-anotaban las vistas ``noupdate``, el conjunto de pendientes se perdía en cada lectura, y la
-validación final colgaba de un wrapper de ``load_module_graph`` que no aplica a la carga en curso
-(numa_poly se importa dentro de esa llamada), y ``Registry.setup_models`` borraba el conjunto al
-empezar cada módulo. No se validaba nada. En una instalación real eso dejó 33 vistas rotas y activas
-—incluidos errores de sintaxis que Odoo rechaza al cargar— sin que ningún ``-u`` avisara, en
-módulos que usaban poly y en los que no.
+While modules are being loaded the polymorphic MRO can be incomplete, so poly does not validate
+the views at that moment: it defers them to the end of the load. There were four chained defects:
+only ``noupdate`` views were recorded, the pending set was lost on every read, the final
+validation hung from a wrapper of ``load_module_graph`` that does not apply to the load in
+progress (numa_poly is imported inside that call), and ``Registry.setup_models`` cleared the set
+when each module started. Nothing was validated. In a real installation that left 33 broken and
+active views -including syntax errors that Odoo rejects at load time- without any ``-u`` warning
+about it, in modules that used poly and in modules that did not.
 """
 from unittest.mock import patch
 
@@ -37,8 +37,8 @@ class TestPolyDeferredViewValidation(TransactionCase):
         self.addCleanup(restaurar)
 
     def _crear_durante_la_carga(self, arch, nombre):
-        # [poly][20.0] "durante la carga" era registry._init = True; ahora es
-        # registry.loaded = False (registry.py:114), con el sentido invertido.
+        # [poly][20.0] "during the load" used to be registry._init = True; now it is
+        # registry.loaded = False (registry.py:114), with the meaning inverted.
         with patch.object(self.registry, 'loaded', False):
             return self.env['ir.ui.view'].create({
                 'name': nombre, 'model': 'res.currency', 'type': 'form', 'arch': arch})
@@ -48,69 +48,70 @@ class TestPolyDeferredViewValidation(TransactionCase):
             self.registry._poly_finalize_view_validation(self.env.cr)
 
     def test_00_the_pending_set_survives_between_reads(self):
-        """Cada lectura tiene que devolver el mismo conjunto. Cuando era un ``lazy_property`` guardado
-        bajo el nombre de una función distinta del atributo, cada lectura creaba uno nuevo: todo lo
-        anotado se perdía y la validación final no validaba nada. (Que además sobreviva a un
-        ``_setup_models__`` lo cubre test_poly_registry_stabilization.)"""
+        """Every read has to return the same set. When it was a ``lazy_property`` stored under
+        the name of a function different from the attribute, every read created a new one:
+        everything recorded was lost and the final validation validated nothing. (That it also
+        survives a ``_setup_models__`` is covered by test_poly_registry_stabilization.)"""
         pendientes = self.registry._pending_poly_views
         self.assertIs(self.registry._pending_poly_views, pendientes)
 
     def test_01_during_loading_an_invalid_view_is_deferred_not_forgotten(self):
-        vista = self._crear_durante_la_carga(INVALIDA, 'poly diferida inválida')
+        vista = self._crear_durante_la_carga(INVALIDA, 'poly deferred invalid')
         self.assertIn(vista.id, self.registry._pending_poly_views,
-                      "la vista no quedó anotada: nunca se iba a validar")
+                      "the view was not recorded: it was never going to be validated")
 
     def test_02_strict_finalization_rejects_it_and_names_the_cause(self):
-        vista = self._crear_durante_la_carga(INVALIDA, 'poly diferida inválida')
+        vista = self._crear_durante_la_carga(INVALIDA, 'poly deferred invalid')
         with mute_logger(LOGGER), self.assertRaises(ValidationError) as ctx:
             self._finalizar(True)
         self.assertIn('x_campo_que_no_existe', str(ctx.exception))
         self.assertNotIn(vista.id, self.registry._pending_poly_views)
 
     def test_03_lenient_finalization_reports_without_aborting(self):
-        vista = self._crear_durante_la_carga(INVALIDA, 'poly diferida inválida')
+        vista = self._crear_durante_la_carga(INVALIDA, 'poly deferred invalid')
         with self.assertLogs(LOGGER, level='ERROR') as logs:
             self._finalizar(False)
         self.assertTrue(any('x_campo_que_no_existe' in line for line in logs.output), logs.output)
         self.assertNotIn(vista.id, self.registry._pending_poly_views)
 
     def test_04_a_valid_deferred_view_passes_silently(self):
-        vista = self._crear_durante_la_carga(VALIDA, 'poly diferida válida')
+        vista = self._crear_durante_la_carga(VALIDA, 'poly deferred valid')
         self.assertIn(vista.id, self.registry._pending_poly_views)
         self._finalizar(True)
         self.assertNotIn(vista.id, self.registry._pending_poly_views)
 
     def test_05_a_view_deleted_before_the_end_is_skipped(self):
-        vista = self._crear_durante_la_carga(INVALIDA, 'poly diferida borrada')
+        vista = self._crear_durante_la_carga(INVALIDA, 'poly deferred deleted')
         vista.unlink()
         self._finalizar(True)
 
     def test_06_outside_loading_nothing_is_deferred(self):
         with self.assertRaises(ValidationError):
             self.env['ir.ui.view'].create({
-                'name': 'poly inmediata', 'model': 'res.currency', 'type': 'form', 'arch': INVALIDA})
+                'name': 'poly immediate', 'model': 'res.currency', 'type': 'form', 'arch': INVALIDA})
 
     def test_08_the_registry_hook_triggers_the_final_validation(self):
-        """El disparador real: Odoo llama a ``_register_hook`` con todos los módulos cargados
-        (``registry.py:577``). El wrapper de ``load_module_graph`` no sirve en un arranque, porque
-        poly se importa dentro de esa misma llamada. Es el anclaje que sobrevivió a Odoo 20,
-        donde ``Registry.signal_changes`` -del que colgaba la estabilización- desapareció."""
-        self._crear_durante_la_carga(INVALIDA, 'poly diferida desde el hook')
+        """The real trigger: Odoo calls ``_register_hook`` with every module loaded
+        (``registry.py:577``). The ``load_module_graph`` wrapper is useless in a startup, because
+        poly is imported inside that very call. It is the anchor that survived Odoo 20, where
+        ``Registry.signal_changes`` -which the stabilization hung from- disappeared."""
+        self._crear_durante_la_carga(INVALIDA, 'poly deferred from the hook')
         with patch.dict(config.options, {'poly_strict_view_validation': True}), \
                 mute_logger(LOGGER), self.assertRaises(ValidationError) as ctx:
             self.env['ir.poly_base']._register_hook()
         self.assertIn('x_campo_que_no_existe', str(ctx.exception))
 
     def test_09_a_search_view_with_searchpanel_can_be_extended_during_loading(self):
-        """Diferir un paso que otro usa como precondición no es diferir, es saltear.
+        """Deferring a step that another one uses as a precondition is not deferring, it is
+        skipping.
 
-        ``_check_xml`` corre el RelaxNG sobre el árbol que ``_validate_view`` ya
-        normalizó: ``_validate_tag_search`` saca el ``<searchpanel>`` de adentro del
-        ``<search>`` porque el RNG no sabe validar sus campos. Cuando poly difería
-        ``_validate_view`` pero dejaba correr el RNG, el panel seguía ahí y el RNG
-        rechazaba una vista válida. Con numa_poly instalado ningún módulo podía
-        extender una vista de búsqueda con searchpanel: ``hr.view_employee_filter``
-        tiene una, y por eso numa_fsm_hr no instalaba.
+        ``_check_xml`` runs the RelaxNG over the tree that ``_validate_view`` has already
+        normalized: ``_validate_tag_search`` takes the ``<searchpanel>`` out of the
+        ``<search>`` because the RNG does not know how to validate its fields. When poly
+        deferred ``_validate_view`` but let the RNG run, the panel was still there and the
+        RNG rejected a valid view. With numa_poly installed no module could extend a
+        search view with a searchpanel: ``hr.view_employee_filter`` has one, and that is
+        why numa_fsm_hr would not install.
         """
         from odoo.tools.view_validation import relaxng
         Vista = self.env['ir.ui.view']
@@ -124,13 +125,13 @@ class TestPolyDeferredViewValidation(TransactionCase):
                 </searchpanel>
             </search>""",
         })
-        # El porqué, medido y no supuesto: sin normalizar, el RNG la rechaza.
+        # The why, measured and not assumed: without normalizing, the RNG rejects it.
         self.assertFalse(relaxng('search').validate(base._get_combined_arch()),
-                         "si el RNG acepta el searchpanel, este test ya no prueba nada")
+                         "if the RNG accepts the searchpanel, this test no longer proves anything")
 
         with patch.object(self.registry, 'loaded', False):
             extension = Vista.create({
-                'name': 'poly extensión de búsqueda', 'model': 'res.partner',
+                'name': 'poly search extension', 'model': 'res.partner',
                 'inherit_id': base.id,
                 'arch': '''<data><field name="name" position="after">
                              <field name="email"/>
@@ -139,10 +140,10 @@ class TestPolyDeferredViewValidation(TransactionCase):
         self._finalizar(True)
 
     def test_10_a_broken_anchor_still_fails_during_loading(self):
-        """Lo que NO se difiere: que la herencia resuelva.
+        """What is NOT deferred: that the inheritance resolves.
 
-        No depende del MRO, y su error nombra el elemento que no se encontró y el
-        archivo donde está escrito. Diferirlo lo dejaría sin contexto.
+        It does not depend on the MRO, and its error names the element that was not found
+        and the file where it is written. Deferring it would leave it without context.
         """
         base = self.env['ir.ui.view'].create({
             'name': 'poly base simple', 'model': 'res.partner',

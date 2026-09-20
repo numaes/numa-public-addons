@@ -111,13 +111,14 @@ class TestBigIntSchema(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestBigIntAutoFalseModels(TransactionCase):
-    """Un modelo ``_auto = False`` escribe su propia DDL, y en el core dice ``id serial``.
+    """A model with ``_auto = False`` writes its own DDL, and in core that DDL says
+    ``id serial``.
 
-    Es la ventana que ni el ``pre_init_hook`` ni el parche de ``create_model_table``
-    cubren: el hook corre antes de que se instalen los ``auto_install``, y esas tablas
-    no pasan por ``create_model_table``. La barrida de ``_register_hook`` existe por
-    esto, y en una instalación limpia ``auth_totp_device`` salía en 32 bits sin que
-    nada se quejara.
+    This is the window that neither ``pre_init_hook`` nor the ``create_model_table``
+    patch covers: the hook runs before the ``auto_install`` modules are installed, and
+    their tables never go through ``create_model_table``. The ``_register_hook`` sweep
+    exists because of this, and on a clean install ``auth_totp_device`` came out at 32
+    bits without anything complaining.
     """
 
     def _tipo_de_id(self, tabla):
@@ -130,17 +131,17 @@ class TestBigIntAutoFalseModels(TransactionCase):
     def test_01_a_hand_written_table_is_wide_too(self):
         tipo = self._tipo_de_id('auth_totp_device')
         if tipo is None:
-            self.skipTest("auth_totp no está instalado en esta base")
+            self.skipTest("auth_totp is not installed on this database")
         self.assertEqual(tipo, 'bigint',
-                         "auth_totp_device es _auto = False: su init() escribe 'id serial', "
-                         "y la barrida final tiene que haberlo ensanchado")
+                         "auth_totp_device is _auto = False: its init() writes 'id serial', "
+                         "and the final sweep must have widened it")
 
     def test_02_no_id_column_is_left_narrow(self):
-        """La invariante entera, dicha sin rodeos."""
+        """The whole invariant, said plainly."""
         self.env.cr.execute("""SELECT table_name FROM information_schema.columns
                                 WHERE table_schema = 'public'
                                   AND column_name = 'id' AND data_type = 'integer'
                              ORDER BY table_name""")
         angostas = [fila[0] for fila in self.env.cr.fetchall()]
         self.assertFalse(angostas,
-                         "estas tablas todavía reparten ids de 32 bits: %s" % ', '.join(angostas))
+                         "these tables still hand out 32-bit ids: %s" % ', '.join(angostas))

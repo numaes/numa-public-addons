@@ -93,9 +93,9 @@ class TestStructure(PolyTestCommon):
         # Search tests. Ensure expression is running ok
         assert t1_1 == t1_model.search([('a1', '=', 'A1')])
         assert t2_2 == t2_model.search([('a1', '=', 'B1')])
-        # t4_1.a1 fue reescrito a 'D1' mas arriba (linea ~68); buscamos por el valor ACTUAL.
-        # (Antes buscaba 'C1' -> inconsistente con su propio write: el test estaba mal, no el
-        # search. Verificado: el write del diamante persiste a test.test1 y el search anda.)
+        # t4_1.a1 was rewritten to 'D1' further up (line ~68); we search by the CURRENT value.
+        # (It used to search for 'C1' -> inconsistent with its own write: the test was wrong, not
+        # the search. Verified: the diamond's write persists to test.test1 and the search works.)
         assert t4_1 == t4_model.search([('a1', '=', 'D1')])
 
         # is normal path working?
@@ -107,12 +107,12 @@ class TestStructure(PolyTestCommon):
         # test path search using polymorphic links
 
         assert t4_1 == t4_model.search([('a3', '=', 'D3')])
-        # a3 esta "sobrecargado" en test4: tiene almacenamiento PROPIO en la hoja (diseno fcf48c1:
-        # los campos declarados por el concreto van a SU columna, no se comparten como related con
-        # la base). Por eso t4_1.a3 lee la columna de test4 (reescrita a 'D3'), pero el valor que ve
-        # el link test2_id.a3 es el que create propago a la base test2 en la creacion ('C3'), y NO
-        # cambia al escribir t4_1.a3 (write solo toca la hoja). => el diamante y su base pueden
-        # divergir en un campo sobrecargado; buscar por test2_id.a3=='C3' SI encuentra, 'D3' NO.
+        # a3 is "overloaded" in test4: it has its OWN storage in the leaf (design fcf48c1: fields
+        # declared by the concrete go to THEIR column, they are not shared as related with the
+        # base). That is why t4_1.a3 reads test4's column (rewritten to 'D3'), while the value the
+        # link test2_id.a3 sees is the one create propagated to the base test2 at creation ('C3'),
+        # and it does NOT change when writing t4_1.a3 (write only touches the leaf). => the diamond
+        # and its base can diverge on an overloaded field; test2_id.a3=='C3' DOES find it, 'D3' NOT.
         assert t4_1 == t4_model.search([('test2_id.a3', '=', 'C3')])
         assert not t4_model.search([('test2_id.a3', '=', 'D3')])
 

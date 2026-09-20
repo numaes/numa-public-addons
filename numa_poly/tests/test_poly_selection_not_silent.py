@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Un valor inválido de Selection no se descarta en silencio.
+"""An invalid Selection value is not discarded silently.
 
-Poly filtra valores de Selection que no valen en el modelo destino. Existe por una razón real: al
-crear un registro polimórfico, los vals del modelo de origen se propagan a los otros modelos de la
-jerarquía, y un `state='new'` válido en `conversation.message` no lo es en `fsm.instance`.
+Poly filters out Selection values that are not valid on the target model. It exists for a real
+reason: when creating a polymorphic record, the vals of the originating model are propagated to the
+other models of the hierarchy, and a `state='new'` that is valid in `conversation.message` is not
+valid in `fsm.instance`.
 
-Pero el filtrado se aplicaba a CUALQUIER create, incluido el que un llamador pide derecho sobre un
-modelo común. Ahí un valor inválido es un error y le toca a Odoo rechazarlo: descartarlo deja el
-registro creado sin ese dato, con el llamador convencido de que se guardó. Pasó de verdad — una
-importación creó 73 documentos perdiendo su tipo, y el único rastro fue un WARNING en el log.
+But the filtering was applied to ANY create, including the one a caller asks for directly on a
+common model. There an invalid value is an error and it is Odoo's job to reject it: discarding it
+leaves the record created without that data, with the caller convinced that it was saved. It really
+happened - an import created 73 documents losing their type, and the only trace was a WARNING in the
+log.
 """
 from odoo.tests import tagged, TransactionCase
 
@@ -19,11 +21,11 @@ from ..models.poly import POLY_PROPAGATED
 class TestSelectionInvalidaNoSeDescarta(TransactionCase):
 
     def test_01_un_create_directo_con_valor_invalido_falla(self):
-        """El llamador pidió ese valor: si no vale, tiene que enterarse."""
+        """The caller asked for that value: if it is not valid, they have to find out."""
         with self.assertRaises(ValueError):
             self.env['ir.attachment'].create({
                 'name': 'prueba.txt',
-                'type': 'no-existe',        # type es Selection: url / binary
+                'type': 'no-existe',        # type is a Selection: url / binary
             })
 
     def test_02_un_create_directo_con_valor_valido_guarda(self):
@@ -32,9 +34,10 @@ class TestSelectionInvalidaNoSeDescarta(TransactionCase):
         self.assertEqual(att.type, 'url')
 
     def test_03_lo_propagado_por_poly_se_sigue_filtrando(self):
-        """La razón por la que el filtro existe: el valor vino de OTRO modelo, no del llamador.
+        """The reason the filter exists: the value came from ANOTHER model, not from the caller.
 
-        Se crea igual, sin el campo ajeno, en vez de romper la creación del registro polimórfico.
+        It is created anyway, without the foreign field, instead of breaking the creation of the
+        polymorphic record.
         """
         att = self.env['ir.attachment'].with_context(**{POLY_PROPAGATED: True}).create({
             'name': 'propagado.txt',
@@ -44,18 +47,18 @@ class TestSelectionInvalidaNoSeDescarta(TransactionCase):
         self.assertNotEqual(att.type, 'no-existe')
 
     def test_04_una_seleccion_en_tupla_tambien_se_valida(self):
-        """Odoo 20 entrega ``field.selection`` como tupla, no como lista.
+        """Odoo 20 hands ``field.selection`` over as a tuple, not as a list.
 
-        Cuando el filtro exigía una lista, daba por válido todo y no filtraba nunca.
+        When the filter demanded a list, it took everything as valid and never filtered.
         """
         from ..models.poly import poly_selection_value_is_valid
         campo = self.env['ir.attachment']._fields['type']
-        self.assertNotIsInstance(campo.selection, list, "si esto cambia, revisar el filtro")
+        self.assertNotIsInstance(campo.selection, list, "if this changes, review the filter")
         self.assertTrue(poly_selection_value_is_valid(campo, 'url'))
         self.assertFalse(poly_selection_value_is_valid(campo, 'no-existe'))
 
     def test_05_una_seleccion_armada_en_ejecucion_se_deja_pasar(self):
-        """No hay contra qué compararla, así que no se descarta nada."""
+        """There is nothing to compare it against, so nothing is discarded."""
         from ..models.poly import poly_selection_value_is_valid
 
         class CampoFalso:

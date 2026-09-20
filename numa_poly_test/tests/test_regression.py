@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Suite de regresión de numa_poly — red para validar antes de tocar producción.
+numa_poly regression suite — the net to validate against before touching production.
 
-Ancla con tests el comportamiento esperado en los cruces con el ORM de Odoo donde poly
-parchea (herencia vs override, CRUD en diamante, campos heredados/sobrecargados,
-concrete_model_id/as_concrete_model). Cada bug encontrado y arreglado (jun-2026) deja acá
-su test para que no vuelva en silencio.
+Pins down with tests the expected behavior at the crossings with Odoo's ORM where poly
+patches (inheritance vs override, CRUD on the diamond, inherited/overloaded fields,
+concrete_model_id/as_concrete_model). Every bug found and fixed (Jun-2026) leaves its test
+here so that it cannot come back in silence.
 
-Jerarquías fixture:
-  Diamante shared-PK:  test.test1 (a1,a2)
+Fixture hierarchies:
+  Shared-PK diamond:   test.test1 (a1,a2)
                          /            \\
                   test.test2 (a3)   test.test3 (a4)
                          \\            /
-                       test.test4 (a3 sobrecargado, a4; override set_a1)
-  Inyección de comportamientos: test.poly.project depende de behavior.a (field_a) + behavior.b (field_b).
+                       test.test4 (a3 overloaded, a4; set_a1 override)
+  Behavior injection: test.poly.project depends on behavior.a (field_a) + behavior.b (field_b).
 """
 
 from psycopg2 import IntegrityError
@@ -24,57 +24,57 @@ from odoo.tools import mute_logger
 
 @tagged('post_install', '-at_install')
 class TestPolyMethodOverride(TransactionCase):
-    """Herencia Y override de métodos a través de la jerarquía poly (fix MRO c377ea5)."""
+    """Method inheritance AND override across the poly hierarchy (MRO fix c377ea5)."""
 
     def test_concrete_override_wins(self):
-        """El override del concreto gana sobre el método del padre (no al revés)."""
+        """The concrete's override wins over the parent's method (not the other way)."""
         t4 = self.env['test.test4'].create({'a1': 'x', 'a2': 'y', 'a3': 'z'})
         t4.set_a1()
         self.assertEqual(t4.a1, 'Set by test4',
-                         "test.test4 debe correr SU override de set_a1, no el de Test1.")
+                         "test.test4 must run ITS OWN set_a1 override, not Test1's.")
 
     def test_base_method_on_base(self):
-        """En el modelo base corre su propio método."""
+        """On the base model its own method runs."""
         t1 = self.env['test.test1'].create({'a1': 'x'})
         t1.set_a1()
         self.assertEqual(t1.a1, 'Set by test1')
 
     def test_inherited_method_when_not_overridden(self):
-        """Un concreto que NO overridea hereda el método del padre (test.test2 no override)."""
+        """A concrete that does NOT override inherits the parent's method (test.test2 does not)."""
         t2 = self.env['test.test2'].create({'a3': 'z'})
         t2.set_a1()
         self.assertEqual(t2.a1, 'Set by test1',
-                         "test.test2 no overridea set_a1 -> hereda el de Test1.")
+                         "test.test2 does not override set_a1 -> it inherits Test1's.")
 
 
 @tagged('post_install', '-at_install')
 class TestPolyDiamondCRUD(TransactionCase):
-    """write / search / unlink en el diamante (test.test4). Guarda el bug de unlink (7ea316e)."""
+    """write / search / unlink on the diamond (test.test4). Guards the unlink bug (7ea316e)."""
 
     def test_write_inherited_field_persists(self):
-        """Escribir un campo heredado (a1, de Test1) persiste y se lee consistente."""
+        """Writing an inherited field (a1, from Test1) persists and reads back consistently."""
         t4 = self.env['test.test4'].create({'a1': 'C1', 'a2': 'C2', 'a3': 'C3'})
         t4.a1 = 'D1'
         t4.flush_recordset()
         t4.invalidate_recordset()
         self.assertEqual(t4.a1, 'D1')
-        # El valor vive en el test1 compartido (mismo id).
+        # The value lives in the shared test1 (same id).
         self.assertEqual(self.env['test.test1'].browse(t4.id).a1, 'D1')
 
     def test_search_inherited_field(self):
-        """Buscar por un campo heredado encuentra el registro del diamante."""
+        """Searching on an inherited field finds the diamond's record."""
         t4 = self.env['test.test4'].create({'a1': 'UNIQUE_A1', 'a2': 'b', 'a3': 'c'})
         found = self.env['test.test4'].search([('a1', '=', 'UNIQUE_A1')])
         self.assertEqual(found, t4)
 
     def test_search_own_field(self):
-        """Buscar por un campo propio del concreto (a4)."""
+        """Searching on a field owned by the concrete (a4)."""
         t4 = self.env['test.test4'].create({'a1': 'a', 'a4': 'OWN_A4'})
         found = self.env['test.test4'].search([('a4', '=', 'OWN_A4')])
         self.assertEqual(found, t4)
 
     def test_unlink_cascades_all_bases(self):
-        """unlink borra el concreto Y todas las bases compartidas; nunca cuelga."""
+        """unlink deletes the concrete AND every shared base; it never hangs."""
         t4 = self.env['test.test4'].create({'a1': 'a', 'a2': 'b', 'a3': 'c', 'a4': 'd'})
         tid = t4.id
         self.assertTrue(self.env['test.test1'].browse(tid).exists())
@@ -88,7 +88,7 @@ class TestPolyDiamondCRUD(TransactionCase):
         self.assertFalse(self.env['ir.poly_base'].browse(tid).exists())
 
     def test_bulk_unlink(self):
-        """unlink de varios registros del diamante a la vez."""
+        """unlink of several diamond records at once."""
         recs = self.env['test.test4'].create([
             {'a1': 'u1', 'a3': 'p'}, {'a1': 'u2', 'a3': 'q'}, {'a1': 'u3', 'a3': 'r'}])
         ids = recs.ids
@@ -98,52 +98,52 @@ class TestPolyDiamondCRUD(TransactionCase):
             self.assertFalse(self.env['test.test1'].browse(tid).exists())
 
     def test_write_mixed_inherited_and_own_fields(self):
-        """write que toca a la vez un campo heredado (a1, de Test1) y uno propio (a4)."""
+        """write touching an inherited field (a1, from Test1) and an own one (a4) at once."""
         t4 = self.env['test.test4'].create({'a1': 'a', 'a4': 'x'})
         t4.write({'a1': 'a2', 'a4': 'y'})
         t4.invalidate_recordset()
         self.assertEqual(t4.a1, 'a2')
         self.assertEqual(t4.a4, 'y')
         self.assertEqual(self.env['test.test1'].browse(t4.id).a1, 'a2',
-                         "El campo heredado debe persistir en la base compartida.")
+                         "The inherited field must persist in the shared base.")
 
     def test_overloaded_field_shares_value(self):
-        """a3 está declarado en Test2 y sobrecargado en Test4: comparten el valor (delegado al mismo id)."""
+        """a3 is declared in Test2 and overloaded in Test4: they share the value (delegated to the same id)."""
         t4 = self.env['test.test4'].create({'a1': 'a', 'a3': 'SHARED'})
         self.assertEqual(t4.a3, 'SHARED')
         self.assertEqual(self.env['test.test2'].browse(t4.id).a3, 'SHARED',
-                         "El campo sobrecargado comparte valor con el del padre (mismo id).")
+                         "The overloaded field shares its value with the parent's (same id).")
 
     def test_copy_creates_new_identity_with_copied_data(self):
-        """copy() crea un nuevo id con su propio ir_poly_base y copia los datos (no los links poly)."""
+        """copy() creates a new id with its own ir_poly_base and copies the data (not the poly links)."""
         t4 = self.env['test.test4'].create({'a1': 'orig', 'a2': 'b', 'a3': 'c', 'a4': 'd'})
         dup = t4.copy()
-        self.assertNotEqual(dup.id, t4.id, "La copia debe tener identidad propia.")
-        # Datos copiados (incl. heredados de las bases):
+        self.assertNotEqual(dup.id, t4.id, "The copy must have an identity of its own.")
+        # Copied data (including what is inherited from the bases):
         self.assertEqual(dup.a1, 'orig')
         self.assertEqual(dup.a2, 'b')
         self.assertEqual(dup.a4, 'd')
-        # Identidad poly fresca y consistente:
+        # Fresh and consistent poly identity:
         self.assertTrue(self.env['ir.poly_base'].browse(dup.id).exists(),
-                        "La copia debe tener su propia entrada en ir_poly_base.")
+                        "The copy must have its own entry in ir_poly_base.")
         self.assertEqual(dup.concrete_model_id.model, 'test.test4')
-        # Las bases de la copia son propias (mismo id que la copia, no las del original):
+        # The copy's bases are its own (same id as the copy, not the original's):
         self.assertEqual(self.env['test.test1'].browse(dup.id).a1, 'orig')
         self.assertTrue(self.env['test.test2'].browse(dup.id).exists())
         self.assertTrue(self.env['test.test3'].browse(dup.id).exists())
-        # El original queda intacto:
+        # The original is left intact:
         self.assertEqual(t4.a1, 'orig')
 
     def test_copy_with_default_override(self):
-        """copy(default=...) aplica overrides sobre los datos copiados."""
+        """copy(default=...) applies overrides over the copied data."""
         t4 = self.env['test.test4'].create({'a1': 'orig', 'a4': 'd'})
         dup = t4.copy({'a4': 'override'})
-        self.assertEqual(dup.a1, 'orig', "Lo no overrideado se copia.")
-        self.assertEqual(dup.a4, 'override', "El default override gana.")
+        self.assertEqual(dup.a1, 'orig', "What is not overridden gets copied.")
+        self.assertEqual(dup.a4, 'override', "The default override wins.")
 
     def test_mapped_filtered_sorted_on_inherited_field(self):
-        """mapped()/filtered()/sorted() sobre un campo heredado en un recordset.
-        Es el patrón exacto que loopeaba en unlink (mapped sobre PolyReference) — guardián."""
+        """mapped()/filtered()/sorted() over an inherited field in a recordset.
+        This is the exact pattern that looped in unlink (mapped over PolyReference) — a guard."""
         recs = self.env['test.test4'].create([
             {'a1': 'm1', 'a2': 'M'}, {'a1': 'm2', 'a2': 'M'}, {'a1': 'm3', 'a2': 'M'}])
         self.assertEqual(sorted(recs.mapped('a1')), ['m1', 'm2', 'm3'])
@@ -151,7 +151,7 @@ class TestPolyDiamondCRUD(TransactionCase):
         self.assertEqual(recs.sorted('a1', reverse=True).mapped('a1'), ['m3', 'm2', 'm1'])
 
     def test_write_via_base_model_reflects_on_concrete(self):
-        """Escribir el campo en el modelo BASE (mismo id) se ve desde el concreto."""
+        """Writing the field on the BASE model (same id) is visible from the concrete."""
         t4 = self.env['test.test4'].create({'a1': 'orig'})
         self.env['test.test1'].browse(t4.id).a1 = 'from_base'
         t4.invalidate_recordset()
@@ -160,7 +160,7 @@ class TestPolyDiamondCRUD(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestPolyConcreteModel(TransactionCase):
-    """concrete_model_id / as_concrete_model y que el subtipo NO almacene el campo (fix a70da3b)."""
+    """concrete_model_id / as_concrete_model, and the subtype NOT storing the field (fix a70da3b)."""
 
     def test_concrete_model_id_value(self):
         t4 = self.env['test.test4'].create({'a1': 'a'})
@@ -172,15 +172,15 @@ class TestPolyConcreteModel(TransactionCase):
         self.assertEqual(base.as_concrete_model()._name, 'test.test4')
 
     def test_concrete_model_id_not_stored_on_subtype(self):
-        """concrete_model_id es de ir.poly_base: en el subtipo debe ser NO-stored (computado)."""
+        """concrete_model_id belongs to ir.poly_base: on the subtype it must be NON-stored (computed)."""
         field = self.env['test.test4']._fields['concrete_model_id']
         self.assertFalse(field.store,
-                         "concrete_model_id no debe ser columna stored del subtipo.")
+                         "concrete_model_id must not be a stored column of the subtype.")
 
 
 @tagged('post_install', '-at_install')
 class TestPolyBehaviorInjection(TransactionCase):
-    """Inyección de comportamientos (test.poly.project: 2 _depend_models). Guarda create/search/unlink."""
+    """Behavior injection (test.poly.project: 2 _depend_models). Guards create/search/unlink."""
 
     def test_create_injects_both_behaviors(self):
         p = self.env['test.poly.project'].create({'name': 'P', 'field_a': 'A', 'field_b': 9})
@@ -213,17 +213,17 @@ class TestPolyBehaviorInjection(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestPolySearchReadAggregate(TransactionCase):
-    """search (orden y operadores sobre campos heredados), read batch, display_name, read_group, m2o.
-    Usa un marcador único en a2 para aislar los registros del test del resto de la tabla."""
+    """search (order and operators on inherited fields), batch read, display_name, read_group, m2o.
+    Uses a unique marker in a2 to isolate the test's records from the rest of the table."""
 
-    MARK = '__SRA__'  # marcador para aislar (campo a2, heredado de Test1)
+    MARK = '__SRA__'  # marker for isolation (field a2, inherited from Test1)
 
     def _make(self, a1, a4=False):
         return self.env['test.test4'].create({'a1': a1, 'a2': self.MARK, 'a4': a4})
 
     def test_order_by_inherited_field(self):
-        """search(order=) por un campo HEREDADO (a1, vive en test_test1) — ancla el patch
-        _order_field_to_sql de expression.py (ordenar por columna ausente de la tabla hoja)."""
+        """search(order=) on an INHERITED field (a1, lives in test_test1) — pins the
+        _order_field_to_sql patch in expression.py (order by a column absent from the leaf table)."""
         self._make('B'); self._make('A'); self._make('C')
         recs_asc = self.env['test.test4'].search([('a2', '=', self.MARK)], order='a1 asc')
         self.assertEqual(recs_asc.mapped('a1'), ['A', 'B', 'C'])
@@ -231,7 +231,7 @@ class TestPolySearchReadAggregate(TransactionCase):
         self.assertEqual(recs_desc.mapped('a1'), ['C', 'B', 'A'])
 
     def test_domain_operators_on_inherited_field(self):
-        """Operadores in / not in / like / != sobre un campo heredado."""
+        """in / not in / like / != operators on an inherited field."""
         self._make('alpha'); self._make('beta'); self._make('gamma')
         base = [('a2', '=', self.MARK)]
         self.assertEqual(
@@ -244,7 +244,7 @@ class TestPolySearchReadAggregate(TransactionCase):
             ['alpha', 'gamma'])
 
     def test_domain_combines_inherited_and_own_fields(self):
-        """Dominio que mezcla campo heredado (a1) y propio (a4) en el mismo search."""
+        """Domain mixing an inherited field (a1) and an own one (a4) in the same search."""
         self._make('x', a4='keep')
         self._make('x', a4='drop')
         found = self.env['test.test4'].search(
@@ -258,7 +258,7 @@ class TestPolySearchReadAggregate(TransactionCase):
             self.env['test.test4'].search_count([('a2', '=', self.MARK), ('a1', '=', 'A')]), 2)
 
     def test_read_batch_mixed_fields(self):
-        """read() de varios campos (heredado a1/a2, sobrecargado a3, propio a4) en una llamada."""
+        """read() of several fields (inherited a1/a2, overloaded a3, own a4) in one call."""
         t4 = self.env['test.test4'].create({'a1': 'i', 'a2': 'ii', 'a3': 'iii', 'a4': 'iv'})
         data = t4.read(['a1', 'a2', 'a3', 'a4'])[0]
         self.assertEqual(data['a1'], 'i')
@@ -267,13 +267,13 @@ class TestPolySearchReadAggregate(TransactionCase):
         self.assertEqual(data['a4'], 'iv')
 
     def test_display_name_is_singleton_string(self):
-        """display_name no rompe sobre un registro poly (no hay _rec_name custom: forma por defecto)."""
+        """display_name does not break on a poly record (no custom _rec_name: default form)."""
         t4 = self.env['test.test4'].create({'a1': 'a'})
         self.assertIsInstance(t4.display_name, str)
         self.assertTrue(t4.display_name)
 
     def test_own_many2one_field(self):
-        """Campo m2o propio del concreto (partner_id en Test4): set, lectura y búsqueda."""
+        """m2o field owned by the concrete (partner_id in Test4): set, read and search."""
         partner = self.env['res.partner'].create({'name': 'Poly Partner SRA'})
         t4 = self.env['test.test4'].create({'a1': 'a', 'a2': self.MARK, 'partner_id': partner.id})
         self.assertEqual(t4.partner_id, partner)
@@ -281,11 +281,11 @@ class TestPolySearchReadAggregate(TransactionCase):
         self.assertEqual(found, t4)
 
     def test_read_group_by_inherited_field(self):
-        """Agrupar por un campo heredado (a1) cuenta correctamente.
+        """Grouping by an inherited field (a1) counts correctly.
 
-        [poly][20.0] read_group cambió de firma y de forma de retorno: ya no toma
-        ``fields=`` ni devuelve diccionarios con ``<campo>_count``, sino
-        ``aggregates=`` y una lista de tuplas (models.py:1932-1940).
+        [poly][20.0] read_group changed its signature and its return shape: it no
+        longer takes ``fields=`` nor returns dictionaries with ``<field>_count``,
+        but ``aggregates=`` and a list of tuples (models.py:1932-1940).
         """
         self._make('G1'); self._make('G1'); self._make('G2')
         groups = self.env['test.test4'].read_group(
@@ -297,11 +297,11 @@ class TestPolySearchReadAggregate(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestPolyPolymorphicRecordset(TransactionCase):
-    """El núcleo de poly: varios concretos comparten una base, y se navega de base a concreto.
-    Usa la jerarquía test.poly.base <- {child.a, child.b} (dos concretos sobre la misma base)."""
+    """The core of poly: several concretes share one base, and navigation goes base to concrete.
+    Uses the hierarchy test.poly.base <- {child.a, child.b} (two concretes over the same base)."""
 
     def test_as_concrete_model_resolves_mixed_types(self):
-        """Distintos concretos sobre la misma base poly se resuelven cada uno a SU tipo."""
+        """Different concretes over the same poly base each resolve to THEIR own type."""
         ca = self.env['test.poly.child.a'].create({'base_field': 'a', 'child_a_field': 'x'})
         cb = self.env['test.poly.child.b'].create({'base_field': 'b', 'child_b_field': 'y'})
         base_a = self.env['ir.poly_base'].browse(ca.id)
@@ -309,10 +309,10 @@ class TestPolyPolymorphicRecordset(TransactionCase):
         self.assertEqual(base_a.as_concrete_model()._name, 'test.poly.child.a')
         self.assertEqual(base_b.as_concrete_model()._name, 'test.poly.child.b')
         self.assertNotEqual(ca.concrete_model_id, cb.concrete_model_id,
-                            "Cada concreto tiene su propio concrete_model_id.")
+                            "Each concrete has its own concrete_model_id.")
 
     def test_shared_base_distinct_identities(self):
-        """child.a y child.b comparten test.poly.base como base, pero tienen ids propios distintos."""
+        """child.a and child.b share test.poly.base as their base, but have distinct ids of their own."""
         ca = self.env['test.poly.child.a'].create({'base_field': 'A', 'child_a_field': '1'})
         cb = self.env['test.poly.child.b'].create({'base_field': 'B', 'child_b_field': '2'})
         self.assertNotEqual(ca.id, cb.id)
@@ -320,27 +320,27 @@ class TestPolyPolymorphicRecordset(TransactionCase):
         self.assertEqual(self.env['test.poly.base'].browse(cb.id).base_field, 'B')
 
     def test_single_parent_full_crud(self):
-        """CRUD completo en jerarquía de 1 nivel (child.a -> base): create/write/search/unlink."""
+        """Full CRUD on a 1-level hierarchy (child.a -> base): create/write/search/unlink."""
         c = self.env['test.poly.child.a'].create({'base_field': 'bf', 'child_a_field': 'cf'})
         cid = c.id
-        # write de campo heredado (base_field) y propio (child_a_field) juntos
+        # write of an inherited field (base_field) and an own one (child_a_field) together
         c.write({'base_field': 'bf2', 'child_a_field': 'cf2'})
         c.invalidate_recordset()
         self.assertEqual(c.base_field, 'bf2')
         self.assertEqual(c.child_a_field, 'cf2')
         self.assertEqual(self.env['test.poly.base'].browse(cid).base_field, 'bf2',
-                         "El heredado persiste en la base compartida.")
-        # search por campo heredado
+                         "The inherited one persists in the shared base.")
+        # search on an inherited field
         found = self.env['test.poly.child.a'].search([('base_field', '=', 'bf2')])
         self.assertEqual(found, c)
-        # unlink cascada a la base
+        # unlink cascades to the base
         c.unlink()
         self.assertFalse(self.env['test.poly.child.a'].browse(cid).exists())
         self.assertFalse(self.env['test.poly.base'].browse(cid).exists())
 
     def test_as_concrete_model_over_mixed_list(self):
-        """as_concrete_model iterando una lista MIXTA de ir.poly_base — base del rendering
-        polimórfico de listas en la UI. Cada base se resuelve a su modelo concreto."""
+        """as_concrete_model iterating over a MIXED list of ir.poly_base — the basis of the
+        polymorphic rendering of lists in the UI. Each base resolves to its concrete model."""
         ca = self.env['test.poly.child.a'].create({'base_field': 'a', 'child_a_field': 'x'})
         cb = self.env['test.poly.child.b'].create({'base_field': 'b', 'child_b_field': 'y'})
         t4 = self.env['test.test4'].create({'a1': 'z'})
@@ -351,19 +351,19 @@ class TestPolyPolymorphicRecordset(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestPolyLinksAndSearch(TransactionCase):
-    """Links PolyReference (navegar concreto->base por el campo link), name_search y paginación."""
+    """PolyReference links (navigating concrete->base through the link field), name_search and pagination."""
 
     def test_polyreference_link_navigation(self):
-        """Los link fields (test2_id/test3_id) apuntan al registro base del MISMO id y dan sus datos."""
+        """The link fields (test2_id/test3_id) point at the base record with the SAME id and give its data."""
         t4 = self.env['test.test4'].create({'a1': 'a', 'a2': 'b', 'a3': 'c', 'a4': 'd'})
         self.assertEqual(t4.test2_id._name, 'test.test2')
-        self.assertEqual(t4.test2_id.id, t4.id, "El link comparte id (shared-PK).")
+        self.assertEqual(t4.test2_id.id, t4.id, "The link shares the id (shared-PK).")
         self.assertEqual(t4.test3_id.id, t4.id)
-        # a3 está en test.test2: vía el link se ve el mismo valor.
+        # a3 lives in test.test2: through the link the same value is seen.
         self.assertEqual(t4.test2_id.a3, t4.a3)
 
     def test_name_search_on_named_model(self):
-        """name_search sobre un modelo poly con campo name (test.poly.project) filtra por name."""
+        """name_search over a poly model with a name field (test.poly.project) filters by name."""
         self.env['test.poly.project'].create({'name': 'Alpha NS', 'field_a': '1'})
         self.env['test.poly.project'].create({'name': 'Beta NS', 'field_a': '2'})
         res = self.env['test.poly.project'].name_search('Alpha')
@@ -372,14 +372,14 @@ class TestPolyLinksAndSearch(TransactionCase):
         self.assertNotIn('Beta NS', names)
 
     def test_display_name_uses_own_name_not_base(self):
-        """display_name de un modelo poly con campo name usa SU name, no el del primer base.
-        Guarda el fix de des-delegación de _inherits sobre display_name (rendering de listas poly)."""
+        """display_name of a poly model with a name field uses ITS name, not the first base's.
+        Guards the _inherits un-delegation fix on display_name (rendering of poly lists)."""
         p = self.env['test.poly.project'].create({'name': 'Proj X', 'field_a': '1'})
         self.assertEqual(p.display_name, 'Proj X',
-                         "display_name debe ser el name propio, no 'test.poly.behavior.a,<id>'.")
+                         "display_name must be the record's own name, not 'test.poly.behavior.a,<id>'.")
 
     def test_search_pagination_on_inherited_field(self):
-        """limit/offset con order por campo heredado devuelven el slice correcto."""
+        """limit/offset with order by an inherited field return the correct slice."""
         mark = '__PAGIN__'
         for v in ['a', 'b', 'c', 'd', 'e']:
             self.env['test.test4'].create({'a1': v, 'a2': mark})
@@ -390,21 +390,21 @@ class TestPolyLinksAndSearch(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestPolyDepthDefaultsM2o(TransactionCase):
-    """Consulta a nivel base (abarca concretos), cadena de 3 niveles, dominio con punto por m2o,
-    default_get, create mínimo, copy 1-nivel, y manejo de un m2o propio (set/clear/change)."""
+    """Base-level query (spanning concretes), 3-level chain, dotted domain through an m2o,
+    default_get, minimal create, 1-level copy, and handling an own m2o (set/clear/change)."""
 
     def test_base_model_search_spans_concretes(self):
-        """search sobre el modelo BASE encuentra los registros de TODOS sus concretos.
-        Es la consulta polimórfica de fondo (una lista de la base ve child.a y child.b)."""
+        """search over the BASE model finds the records of ALL its concretes.
+        This is the underlying polymorphic query (a list of the base sees child.a and child.b)."""
         ca = self.env['test.poly.child.a'].create({'base_field': 'SPAN', 'child_a_field': '1'})
         cb = self.env['test.poly.child.b'].create({'base_field': 'SPAN', 'child_b_field': '2'})
         bases = self.env['test.poly.base'].search([('base_field', '=', 'SPAN')])
         self.assertEqual(set(bases.ids), {ca.id, cb.id},
-                         "La base debe ver los registros de ambos concretos.")
+                         "The base must see the records of both concretes.")
 
     def test_write_via_intermediate_base_propagates(self):
-        """Cadena de 3 niveles: escribir a1 en la base intermedia test.test2 (mismo id) se ve
-        desde el concreto test.test4 Y desde la raíz test.test1."""
+        """3-level chain: writing a1 on the intermediate base test.test2 (same id) is visible
+        from the concrete test.test4 AND from the root test.test1."""
         t4 = self.env['test.test4'].create({'a1': 'orig'})
         self.env['test.test2'].browse(t4.id).a1 = 'via_t2'
         t4.invalidate_recordset()
@@ -412,7 +412,7 @@ class TestPolyDepthDefaultsM2o(TransactionCase):
         self.assertEqual(self.env['test.test1'].browse(t4.id).a1, 'via_t2')
 
     def test_dotted_domain_through_own_m2o(self):
-        """Dominio con punto a través de un m2o propio: buscar test4 por partner_id.name."""
+        """Dotted domain through an own m2o: searching test4 by partner_id.name."""
         partner = self.env['res.partner'].create({'name': 'Dotted Partner ZZ'})
         t4 = self.env['test.test4'].create({'a1': 'a', 'a2': '__DOT__', 'partner_id': partner.id})
         self.env['test.test4'].create({'a1': 'b', 'a2': '__DOT__'})
@@ -421,20 +421,20 @@ class TestPolyDepthDefaultsM2o(TransactionCase):
         self.assertEqual(found, t4)
 
     def test_default_get_returns_dict(self):
-        """default_get no rompe sobre un modelo poly y devuelve un dict para los campos pedidos."""
+        """default_get does not break on a poly model and returns a dict for the requested fields."""
         defaults = self.env['test.test4'].default_get(['a1', 'a4', 'partner_id'])
         self.assertIsInstance(defaults, dict)
 
     def test_create_minimal_then_read(self):
-        """create con vals mínimos ({}) crea un registro poly válido y legible."""
+        """create with minimal vals ({}) creates a valid, readable poly record."""
         t4 = self.env['test.test4'].create({})
         self.assertTrue(t4.exists())
         self.assertTrue(self.env['ir.poly_base'].browse(t4.id).exists())
         self.assertEqual(t4.concrete_model_id.model, 'test.test4')
-        self.assertFalse(t4.a1)  # sin valor -> falsy
+        self.assertFalse(t4.a1)  # no value -> falsy
 
     def test_copy_single_parent_model(self):
-        """copy() en jerarquía de 1 nivel (child.a): identidad nueva, datos copiados, base propia."""
+        """copy() on a 1-level hierarchy (child.a): new identity, copied data, base of its own."""
         c = self.env['test.poly.child.a'].create({'base_field': 'bf', 'child_a_field': 'cf'})
         dup = c.copy()
         self.assertNotEqual(dup.id, c.id)
@@ -443,7 +443,7 @@ class TestPolyDepthDefaultsM2o(TransactionCase):
         self.assertTrue(self.env['test.poly.base'].browse(dup.id).exists())
 
     def test_own_m2o_set_clear_change(self):
-        """m2o propio (partner_id): asignar, limpiar (False) y cambiar a otro."""
+        """Own m2o (partner_id): assign, clear (False) and change to another."""
         p1 = self.env['res.partner'].create({'name': 'P1 ZZ'})
         p2 = self.env['res.partner'].create({'name': 'P2 ZZ'})
         t4 = self.env['test.test4'].create({'a1': 'a', 'partner_id': p1.id})
@@ -458,12 +458,12 @@ class TestPolyDepthDefaultsM2o(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestPolyBatchAndAggregate(TransactionCase):
-    """Operaciones multi-registro y agregación: write batch, read_group SUM, dominio OR, mapped m2o."""
+    """Multi-record operations and aggregation: batch write, read_group SUM, OR domain, mapped m2o."""
 
     MARK = '__BATCH__'
 
     def test_batch_write_inherited_field(self):
-        """write sobre un campo heredado en un recordset de varios -> persiste en todas las bases."""
+        """write on an inherited field over a multi-record recordset -> persists in every base."""
         recs = self.env['test.test4'].create([
             {'a1': 'x', 'a2': self.MARK}, {'a1': 'y', 'a2': self.MARK}, {'a1': 'z', 'a2': self.MARK}])
         recs.write({'a1': 'BATCH'})
@@ -472,14 +472,14 @@ class TestPolyBatchAndAggregate(TransactionCase):
         for r in recs:
             self.assertEqual(self.env['test.test1'].browse(r.id).a1, 'BATCH')
 
-    # NOTA: read_group con SUM sobre un campo INYECTADO (ej. field_b en test.poly.project) NO
-    # funciona, pero es comportamiento estándar de Odoo: los campos inyectados por poly son
-    # related no-stored, y Odoo no puede agregar por SQL una columna que no existe. La agrupación
-    # por valor (groupby + _count) sí anda (ver test_read_group_by_inherited_field). Para sumar,
-    # agregar sobre el modelo base donde el campo es stored (ej. test.poly.behavior.b.field_b).
+    # NOTE: read_group with SUM over an INJECTED field (e.g. field_b in test.poly.project) does
+    # NOT work, but that is standard Odoo behavior: the fields poly injects are non-stored
+    # related, and Odoo cannot aggregate in SQL over a column that does not exist. Grouping by
+    # value (groupby + _count) does work (see test_read_group_by_inherited_field). To sum,
+    # aggregate on the base model where the field is stored (e.g. test.poly.behavior.b.field_b).
 
     def test_or_domain_inherited_and_own(self):
-        """Dominio OR mezclando un campo heredado (a1) y uno propio (a4)."""
+        """OR domain mixing an inherited field (a1) and an own one (a4)."""
         self.env['test.test4'].create({'a1': 'OX', 'a4': 'n', 'a2': self.MARK})
         self.env['test.test4'].create({'a1': 'n', 'a4': 'OW', 'a2': self.MARK})
         self.env['test.test4'].create({'a1': 'n', 'a4': 'n', 'a2': self.MARK})
@@ -489,7 +489,7 @@ class TestPolyBatchAndAggregate(TransactionCase):
         self.assertEqual(sorted(found.mapped('a1')), ['OX', 'n'])
 
     def test_mapped_over_own_m2o(self):
-        """mapped() sobre un m2o propio (partner_id) en un recordset."""
+        """mapped() over an own m2o (partner_id) in a recordset."""
         p1 = self.env['res.partner'].create({'name': 'M1 ZZ'})
         p2 = self.env['res.partner'].create({'name': 'M2 ZZ'})
         recs = self.env['test.test4'].create([
@@ -498,7 +498,7 @@ class TestPolyBatchAndAggregate(TransactionCase):
         self.assertEqual(set(recs.mapped('partner_id').ids), {p1.id, p2.id})
 
     def test_batch_read_multi_records(self):
-        """read() sobre un recordset de varios devuelve una fila por registro con sus campos."""
+        """read() over a multi-record recordset returns one row per record with its fields."""
         recs = self.env['test.test4'].create([
             {'a1': 'r1', 'a4': 's1', 'a2': self.MARK}, {'a1': 'r2', 'a4': 's2', 'a2': self.MARK}])
         data = recs.read(['a1', 'a4'])
@@ -508,13 +508,13 @@ class TestPolyBatchAndAggregate(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestPolyM2MAndComputed(TransactionCase):
-    """Many2many y campo computed-stored sobre un modelo poly (test.test4): patrones de producción."""
+    """Many2many and a computed-stored field on a poly model (test.test4): production patterns."""
 
     def _tag(self, name):
         return self.env['res.partner.category'].create({'name': name})
 
     def test_m2m_set_read_and_update(self):
-        """Asignar tags (m2m), leerlos, y reemplazar el set con Command."""
+        """Assign tags (m2m), read them, and replace the set with Command."""
         from odoo import Command
         t1, t2, t3 = self._tag('T1 ZZ'), self._tag('T2 ZZ'), self._tag('T3 ZZ')
         t4 = self.env['test.test4'].create({'a1': 'a', 'tag_ids': [Command.set([t1.id, t2.id])]})
@@ -524,7 +524,7 @@ class TestPolyM2MAndComputed(TransactionCase):
         self.assertEqual(t4.tag_ids.ids, [t3.id])
 
     def test_m2m_search(self):
-        """Buscar por el m2m (tag_ids in [...])."""
+        """Search by the m2m (tag_ids in [...])."""
         from odoo import Command
         tag = self._tag('FindTag ZZ')
         t4 = self.env['test.test4'].create({'a1': 'a', 'a2': '__M2M__', 'tag_ids': [Command.link(tag.id)]})
@@ -533,16 +533,16 @@ class TestPolyM2MAndComputed(TransactionCase):
         self.assertEqual(found, t4)
 
     def test_computed_stored_from_inherited_field(self):
-        """Computed STORED (a1_upper) que depende de un campo heredado (a1): se computa al crear
-        y se RECOMPUTA cuando cambia a1 (que vive en la base test.test1)."""
+        """Computed STORED (a1_upper) depending on an inherited field (a1): it is computed on
+        create and RECOMPUTED when a1 changes (a1 lives in the base test.test1)."""
         t4 = self.env['test.test4'].create({'a1': 'abc'})
-        self.assertEqual(t4.a1_upper, 'ABC', "Debe computarse al crear.")
+        self.assertEqual(t4.a1_upper, 'ABC', "It must be computed on create.")
         t4.a1 = 'xyz'
         t4.invalidate_recordset()
-        self.assertEqual(t4.a1_upper, 'XYZ', "Debe recomputarse al cambiar el campo heredado.")
+        self.assertEqual(t4.a1_upper, 'XYZ', "It must be recomputed when the inherited field changes.")
 
     def test_computed_stored_is_searchable(self):
-        """El computed STORED queda como columna -> es buscable."""
+        """The computed STORED ends up as a column -> it is searchable."""
         self.env['test.test4'].create({'a1': 'hello', 'a2': '__CMP__'})
         found = self.env['test.test4'].search([('a2', '=', '__CMP__'), ('a1_upper', '=', 'HELLO')])
         self.assertEqual(len(found), 1)
@@ -550,10 +550,10 @@ class TestPolyM2MAndComputed(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestPolyO2MAndConstraints(TransactionCase):
-    """one2many sobre poly, m2o desde un modelo regular hacia un poly, y @api.constrains."""
+    """one2many over poly, m2o from a regular model to a poly one, and @api.constrains."""
 
     def test_o2m_create_with_lines(self):
-        """create con line_ids (Command.create) crea las líneas ligadas al registro poly."""
+        """create with line_ids (Command.create) creates the lines bound to the poly record."""
         from odoo import Command
         t4 = self.env['test.test4'].create({
             'a1': 'a',
@@ -563,7 +563,7 @@ class TestPolyO2MAndConstraints(TransactionCase):
         self.assertEqual(t4.line_ids.mapped('parent_id'), t4)
 
     def test_o2m_add_and_remove_lines(self):
-        """write con Command.create / Command.unlink sobre el o2m."""
+        """write with Command.create / Command.unlink over the o2m."""
         from odoo import Command
         t4 = self.env['test.test4'].create({'a1': 'a', 'line_ids': [Command.create({'name': 'L1'})]})
         line1 = t4.line_ids
@@ -575,16 +575,16 @@ class TestPolyO2MAndConstraints(TransactionCase):
         self.assertEqual(t4.line_ids.mapped('name'), ['L2'])
 
     def test_m2o_from_regular_to_poly(self):
-        """Un m2o de un modelo regular apuntando a un registro poly resuelve y permite dotted."""
+        """An m2o from a regular model pointing at a poly record resolves and allows dotted paths."""
         t4 = self.env['test.test4'].create({'a1': 'parent_a1'})
         line = self.env['test.test4.line'].create({'name': 'L', 'parent_id': t4.id})
         self.assertEqual(line.parent_id, t4)
-        # dotted a través del m2o hacia un campo heredado del poly
+        # dotted through the m2o to an inherited field of the poly record
         found = self.env['test.test4.line'].search([('parent_id.a1', '=', 'parent_a1')])
         self.assertIn(line, found)
 
     def test_unlink_poly_cascades_o2m_lines(self):
-        """unlink del registro poly borra las líneas (ondelete='cascade' del m2o)."""
+        """unlink of the poly record deletes the lines (the m2o's ondelete='cascade')."""
         from odoo import Command
         t4 = self.env['test.test4'].create({'a1': 'a', 'line_ids': [Command.create({'name': 'L1'})]})
         line_id = t4.line_ids.id
@@ -592,13 +592,13 @@ class TestPolyO2MAndConstraints(TransactionCase):
         self.assertFalse(self.env['test.test4.line'].browse(line_id).exists())
 
     def test_constraint_blocks_invalid_on_create(self):
-        """@api.constrains sobre el modelo poly bloquea un create inválido."""
+        """@api.constrains on the poly model blocks an invalid create."""
         from odoo.exceptions import ValidationError
         with self.assertRaises(ValidationError):
             self.env['test.test4'].create({'a1': 'BAD'})
 
     def test_constraint_blocks_invalid_on_write(self):
-        """@api.constrains se evalúa también en write."""
+        """@api.constrains is evaluated on write too."""
         from odoo.exceptions import ValidationError
         t4 = self.env['test.test4'].create({'a1': 'ok'})
         with self.assertRaises(ValidationError):
@@ -607,13 +607,13 @@ class TestPolyO2MAndConstraints(TransactionCase):
 
 @tagged('post_install', '-at_install')
 class TestPolyActiveArchive(TransactionCase):
-    """Campo active / archivado sobre un modelo poly (test.test4): exclusión del search por
-    defecto, active_test=False, toggle, y lectura de heredados estando archivado."""
+    """active field / archiving on a poly model (test.test4): exclusion from the default
+    search, active_test=False, toggle, and reading inherited fields while archived."""
 
     MARK = '__ACT__'
 
     def test_archived_excluded_from_default_search(self):
-        """Un registro archivado (active=False) no aparece en el search por defecto."""
+        """An archived record (active=False) does not show up in the default search."""
         keep = self.env['test.test4'].create({'a1': 'keep', 'a2': self.MARK})
         gone = self.env['test.test4'].create({'a1': 'gone', 'a2': self.MARK})
         gone.active = False
@@ -622,7 +622,7 @@ class TestPolyActiveArchive(TransactionCase):
         self.assertNotIn(gone, found)
 
     def test_active_test_false_includes_archived(self):
-        """Con context(active_test=False) el search incluye los archivados."""
+        """With context(active_test=False) the search includes the archived ones."""
         a = self.env['test.test4'].create({'a1': 'a', 'a2': self.MARK})
         b = self.env['test.test4'].create({'a1': 'b', 'a2': self.MARK})
         b.active = False
@@ -630,7 +630,7 @@ class TestPolyActiveArchive(TransactionCase):
         self.assertEqual({a.id, b.id}, set(found.ids))
 
     def test_search_inactive_domain(self):
-        """Buscar explícitamente los archivados con [('active','=',False)]."""
+        """Searching explicitly for the archived ones with [('active','=',False)]."""
         a = self.env['test.test4'].create({'a1': 'a', 'a2': self.MARK})
         b = self.env['test.test4'].create({'a1': 'b', 'a2': self.MARK})
         b.active = False
@@ -638,7 +638,7 @@ class TestPolyActiveArchive(TransactionCase):
         self.assertEqual(found, b)
 
     def test_toggle_active_roundtrip(self):
-        """Archivar y desarchivar: vuelve a aparecer en el search por defecto."""
+        """Archive and unarchive: it shows up again in the default search."""
         t4 = self.env['test.test4'].create({'a1': 'a', 'a2': self.MARK})
         t4.active = False
         self.assertNotIn(t4, self.env['test.test4'].search([('a2', '=', self.MARK)]))
@@ -646,21 +646,21 @@ class TestPolyActiveArchive(TransactionCase):
         self.assertIn(t4, self.env['test.test4'].search([('a2', '=', self.MARK)]))
 
     def test_archived_record_reads_inherited_fields(self):
-        """Un registro archivado sigue leyendo sus campos heredados (a1, de la base)."""
+        """An archived record still reads its inherited fields (a1, from the base)."""
         t4 = self.env['test.test4'].create({'a1': 'inherited_val', 'a2': self.MARK})
         t4.active = False
         t4.invalidate_recordset()
         self.assertEqual(t4.a1, 'inherited_val')
-        # y vía la base sigue accesible
+        # and through the base it is still reachable
         self.assertEqual(self.env['test.test1'].browse(t4.id).a1, 'inherited_val')
 
 
 @tagged('post_install', '-at_install')
 class TestPolySqlConstraints(TransactionCase):
-    """_sql_constraints (UNIQUE a nivel DB) sobre la tabla hoja de un modelo poly (test.test4.code)."""
+    """_sql_constraints (DB-level UNIQUE) on the leaf table of a poly model (test.test4.code)."""
 
     def test_sql_unique_blocks_duplicate(self):
-        """Dos registros con el mismo code violan el UNIQUE de la tabla hoja en el flush."""
+        """Two records with the same code violate the leaf table's UNIQUE on flush."""
         self.env['test.test4'].create({'a1': 'a', 'code': 'DUP'})
         with self.assertRaises(IntegrityError), mute_logger('odoo.sql_db'):
             with self.env.cr.savepoint():
@@ -668,24 +668,24 @@ class TestPolySqlConstraints(TransactionCase):
                 self.env.flush_all()
 
     def test_sql_unique_allows_distinct_codes(self):
-        """Codes distintos no violan el constraint."""
+        """Distinct codes do not violate the constraint."""
         a = self.env['test.test4'].create({'a1': 'a', 'code': 'C1'})
         b = self.env['test.test4'].create({'a1': 'b', 'code': 'C2'})
         self.env.flush_all()
         self.assertTrue(a.exists() and b.exists())
 
     def test_sql_unique_allows_multiple_null(self):
-        """Varios registros sin code (NULL) conviven (UNIQUE permite múltiples NULL en Postgres)."""
+        """Several records without code (NULL) coexist (UNIQUE allows multiple NULLs in Postgres)."""
         recs = self.env['test.test4'].create([{'a1': 'a'}, {'a1': 'b'}, {'a1': 'c'}])
         self.env.flush_all()
         self.assertEqual(len(recs), 3)
 
     def test_sql_unique_constraint_exists_on_leaf_table(self):
-        """El constraint UNIQUE quedó efectivamente creado sobre la tabla hoja test_test4."""
+        """The UNIQUE constraint really did get created on the leaf table test_test4."""
         self.env.cr.execute("""
             SELECT conname FROM pg_constraint
             WHERE conrelid = 'test_test4'::regclass AND contype = 'u'
               AND conname LIKE %s
         """, ('%code_uniq%',))
         self.assertTrue(self.env.cr.fetchone(),
-                        "El _sql_constraints debe materializarse como UNIQUE en test_test4.")
+                        "The _sql_constraints must materialize as a UNIQUE on test_test4.")

@@ -104,10 +104,11 @@
                     <field name="bot_id"/>
                     <field name="has_fsm"/>
                 </field>
-                <!-- [hr][20.0] El ancla era ``my_team``, un filtro que hr no
-                     tiene. Antes era ``my_employees``, que tampoco existía: la
-                     vista venía rota de dos versiones atrás. ``message_needaction``
-                     está en hr desde hace años y es el primer filtro de la vista. -->
+                <!-- [hr][20.0] The anchor used to be ``my_team``, a filter hr does
+                     not have. Before that it was ``my_employees``, which did not
+                     exist either: the view had been broken for two versions.
+                     ``message_needaction`` has been in hr for years and is the
+                     first filter of the view. -->
                 <filter name="message_needaction" position="after">
                     <separator/>
                     <filter string="With Active FSM" name="has_fsm" domain="[('has_fsm', '=', True)]"/>

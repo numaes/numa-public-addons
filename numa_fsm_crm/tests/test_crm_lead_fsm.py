@@ -1,22 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-El lead y su instancia FSM: el vínculo explícito, la búsqueda por ``has_fsm`` y las
-vistas que muestran el estado.
+The lead and its FSM instance: the explicit link, the ``has_fsm`` search, and the
+views that show the state.
 
-Hasta 18.0 el lead heredaba ``fsm.instance`` y *era* la instancia. En 20.0 tiene
-una: ``fsm_instance_id``. Estos tests fijan lo que el cambio no debía romper —los
-mismos nombres de campo en las vistas, el mismo filtro— y lo que ahora sí se puede
-afirmar: que el lead existe sin workflow y que la instancia se crea una sola vez.
+Up to 18.0 the lead inherited ``fsm.instance`` and *was* the instance. In 20.0 it
+has one: ``fsm_instance_id``. These tests pin down what the change must not break
+-the same field names in the views, the same filter- and what can now be stated:
+that a lead exists without a workflow, and that the instance is created once.
 
-``has_fsm`` era computado sin ``search`` y el filtro "With Active FSM" lo usaba: eso
-invalidaba la vista de búsqueda de crm.lead y las estándar que la heredan.
+``has_fsm`` was computed without a ``search`` method while the "With Active FSM"
+filter used it, which invalidated the crm.lead search view and every standard
+view that inherits from it.
 """
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase, tagged
 
 
 def _esquema_minimo():
-    """Un diagrama de dos nodos: arranca y se queda esperando en un estado."""
+    """A two-node diagram: it starts and then waits in a state."""
     return {
         'nodes': [
             {'id': 'n_start', 'type': 'start', 'label': 'Start', 'code': ''},
@@ -34,12 +35,12 @@ class TestCrmLeadFsm(TransactionCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.definicion = cls.env['fsm.definition'].create({'name': 'Bot de leads'})
+        cls.definicion = cls.env['fsm.definition'].create({'name': 'Lead bot'})
         Lead = cls.env['crm.lead']
-        cls.activo = Lead.create({'name': 'fsm activo', 'definition_id': cls.definicion.id})
-        cls.pausado = Lead.create({'name': 'fsm pausado', 'definition_id': cls.definicion.id})
-        cls.terminado = Lead.create({'name': 'fsm terminado', 'definition_id': cls.definicion.id})
-        cls.sin_fsm = Lead.create({'name': 'sin fsm'})
+        cls.activo = Lead.create({'name': 'fsm running', 'definition_id': cls.definicion.id})
+        cls.pausado = Lead.create({'name': 'fsm paused', 'definition_id': cls.definicion.id})
+        cls.terminado = Lead.create({'name': 'fsm ended', 'definition_id': cls.definicion.id})
+        cls.sin_fsm = Lead.create({'name': 'no fsm'})
         for lead, estado in ((cls.activo, 'running'), (cls.pausado, 'paused'),
                              (cls.terminado, 'ended')):
             lead._ensure_fsm_instance().fsm_state = estado
@@ -63,10 +64,10 @@ class TestCrmLeadFsm(TransactionCase):
         self.assertEqual(self._buscar([('has_fsm', '!=', True)]), sin)
 
     def test_03_search_covers_a_lead_without_instance(self):
-        """Con definición pero sin instancia todavía: no tiene FSM activo, y la
-        búsqueda negativa tiene que encontrarlo igual."""
+        """With a definition but no instance yet: no active FSM, and the negative
+        search still has to find it."""
         pendiente = self.env['crm.lead'].create(
-            {'name': 'con definición, sin instancia', 'definition_id': self.definicion.id})
+            {'name': 'definition, no instance yet', 'definition_id': self.definicion.id})
         self.todos |= pendiente
         self.assertFalse(pendiente.fsm_instance_id)
         self.assertFalse(pendiente.has_fsm)
@@ -81,8 +82,8 @@ class TestCrmLeadFsm(TransactionCase):
             self.assertTrue(self.env['crm.lead'].get_view(vista.id, tipo)['arch'])
 
     def test_05_lead_and_instance_are_two_records(self):
-        """El lead ya no es la instancia. Son dos registros con id propio, y el
-        lead sigue existiendo si la instancia se borra."""
+        """The lead is no longer the instance. They are two records with ids of
+        their own, and the lead survives if the instance is deleted."""
         instancia = self.activo.fsm_instance_id
         self.assertTrue(instancia)
         self.assertEqual(instancia._name, 'fsm.instance')
@@ -93,7 +94,7 @@ class TestCrmLeadFsm(TransactionCase):
 
     def test_06_ensure_creates_the_instance_once(self):
         lead = self.env['crm.lead'].create(
-            {'name': 'una sola vez', 'definition_id': self.definicion.id})
+            {'name': 'only once', 'definition_id': self.definicion.id})
         primera = lead._ensure_fsm_instance()
         self.assertEqual(lead._ensure_fsm_instance(), primera)
 
@@ -102,23 +103,23 @@ class TestCrmLeadFsm(TransactionCase):
             self.sin_fsm._ensure_fsm_instance()
 
     def test_08_related_fields_read_through_the_link(self):
-        """Las vistas siguen pidiendo los mismos nombres al lead."""
+        """The views still ask the lead for the same names."""
         instancia = self.pausado.fsm_instance_id
         instancia.write({'current_state_id': 'n_espera', 'next_node_id': 'n_otro'})
         self.assertEqual(self.pausado.fsm_state, 'paused')
         self.assertEqual(self.pausado.current_state_id, 'n_espera')
         self.assertEqual(self.pausado.next_node_id, 'n_otro')
-        # ``debug_mode`` es el único que se escribe desde el lead.
+        # ``debug_mode`` is the only one written from the lead.
         self.pausado.debug_mode = 'step_by_step'
         self.assertEqual(instancia.debug_mode, 'step_by_step')
 
     def test_09_assigning_a_production_bot_starts_the_workflow(self):
-        bot = self.env['crm.bot'].create({'name': 'Bot productivo'})
-        # El bot es una fsm.definition por numa_poly; el diagrama se escribe en
-        # la base, que es donde el compilador se dispara.
+        bot = self.env['crm.bot'].create({'name': 'Production bot'})
+        # The bot is an fsm.definition through numa_poly; the diagram is written
+        # on the base, which is where the compiler fires.
         definicion = bot.fsm_definition_id
         definicion.write({'json_ui_schema': _esquema_minimo(), 'state': 'production'})
-        lead = self.env['crm.lead'].create({'name': 'con bot'})
+        lead = self.env['crm.lead'].create({'name': 'with a bot'})
         self.assertFalse(lead.fsm_instance_id)
 
         lead.bot_id = bot
@@ -131,20 +132,20 @@ class TestCrmLeadFsm(TransactionCase):
 
     def test_10_start_action_refuses_twice(self):
         definicion = self.env['fsm.definition'].create({
-            'name': 'Bot manual', 'json_ui_schema': _esquema_minimo()})
+            'name': 'Manual bot', 'json_ui_schema': _esquema_minimo()})
         lead = self.env['crm.lead'].create(
-            {'name': 'arranque manual', 'definition_id': definicion.id})
+            {'name': 'manual start', 'definition_id': definicion.id})
         lead.action_start_fsm()
         self.assertEqual(lead.fsm_state, 'running')
         with self.assertRaises(UserError):
             lead.action_start_fsm()
 
     def test_11_the_bot_menu_action_opens(self):
-        """``view_mode`` decía ``tree``, que dejó de ser un tipo de vista en 17.0.
+        """``view_mode`` said ``tree``, which stopped being a view type in 17.0.
 
-        Nada lo valida al instalar —``ir.actions.act_window`` no controla el
-        contenido de ``view_mode``—, así que la acción se instalaba entera y
-        fallaba recién al abrir el menú."""
+        Nothing validates it on install -``ir.actions.act_window`` does not check
+        the contents of ``view_mode``- so the action installed whole and failed
+        only when somebody opened the menu."""
         accion = self.env.ref('numa_fsm_crm.action_crm_bot')
         modos = accion.view_mode.split(',')
         self.assertNotIn('tree', modos)

@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Suite de regresión del motor FSM contra la API VIVA de numa_fsm 18.0.
+Regression suite of the FSM engine against the LIVE API of numa_fsm 18.0.
 
-Los tests viejos (test_fsm_instance/templates/timer/form_input) apuntaban a una API muerta
+The old tests (test_fsm_instance/templates/timer/form_input) targeted a dead API
 (``text_definition`` / ``onchange_text_definition`` / ``json_logic_schema`` / ``consume_event``)
-y daban 22 errores. La API viva es: ``fsm.definition.json_ui_schema`` → compila a
+and gave 22 errors. The live API is: ``fsm.definition.json_ui_schema`` → compiles to
 ``json_compiled_definition`` (nodes start|state|transition|end + connections) → ``fsm.instance``
-con ``start()`` / ``_process_event_sync(event)`` / ``current_state_id`` / ``instance_variables``.
+with ``start()`` / ``_process_event_sync(event)`` / ``current_state_id`` / ``instance_variables``.
 
-Acá se ejercita el motor de punta a punta con un workflow self-contained (el código de las
-transiciones usa sólo ``set_outcome`` + ``variables``, sin métodos de modelo externos).
+Here the engine is exercised end to end with a self-contained workflow (the code of the
+transitions uses only ``set_outcome`` + ``variables``, without external model methods).
 """
 
 import json
@@ -19,7 +19,7 @@ from odoo.exceptions import UserError
 
 
 def _schema():
-    """Workflow de aprobación con loop: start → waiting →(approve|reject|increment)."""
+    """Approval workflow with a loop: start → waiting →(approve|reject|increment)."""
     return {
         'nodes': [
             {'id': 'start', 'type': 'start', 'label': 'Start',
@@ -66,23 +66,23 @@ class TestFsmLive(TransactionCase):
         return self.env['fsm.instance'].create({'definition_id': self.definition.id})
 
     # ---------------------------------------------------------------- #
-    # Compilación.                                                      #
+    # Compilation.                                                     #
     # ---------------------------------------------------------------- #
     def test_compile_produces_compiled_definition(self):
-        """json_ui_schema se compila a json_compiled_definition con start/nodes/outcomes/eventos."""
+        """json_ui_schema compiles to json_compiled_definition with start/nodes/outcomes/events."""
         comp = json.loads(self.definition.json_compiled_definition or '{}')
         self.assertEqual(comp.get('start_node_id'), 'start')
         nodes = comp.get('nodes', {})
         self.assertEqual(len(nodes), 8)
-        # outcome del start apunta al state waiting
+        # the outcome of the start points to the waiting state
         self.assertEqual(nodes['start']['outcomes']['__default__'], 'waiting')
-        # los eventos del state resuelven a su transición destino
+        # the events of the state resolve to their target transition
         evs = {e['name']: e['target_transition_id'] for e in nodes['waiting']['events']}
         self.assertEqual(evs['approve'], 'do_approve')
         self.assertEqual(evs['increment'], 'do_increment')
 
     # ---------------------------------------------------------------- #
-    # Ciclo de vida de la instancia.                                   #
+    # Instance life cycle.                                             #
     # ---------------------------------------------------------------- #
     def test_start_reaches_first_state(self):
         inst = self._new_instance()
@@ -99,7 +99,8 @@ class TestFsmLive(TransactionCase):
             inst.start()
 
     def test_event_loop_then_approve(self):
-        """increment (loop al mismo state) acumula en variables; approve termina y pasa event data."""
+        """increment (loop to the same state) accumulates in variables; approve ends and passes
+        event data."""
         inst = self._new_instance()
         inst.start()
         inst._process_event_sync({'name': 'increment'})
@@ -121,7 +122,8 @@ class TestFsmLive(TransactionCase):
         self.assertEqual(inst.current_state_id, 'rejected')
 
     def test_unknown_event_ignored(self):
-        """Un evento sin handler en el state no cambia el estado (se loguea y se ignora)."""
+        """An event with no handler in the state does not change the state (it is logged and
+        ignored)."""
         inst = self._new_instance()
         inst.start()
         inst._process_event_sync({'name': 'inexistente'})
@@ -129,13 +131,13 @@ class TestFsmLive(TransactionCase):
         self.assertEqual(inst.current_state_id, 'waiting')
 
     def test_event_ignored_when_not_running(self):
-        inst = self._new_instance()  # state='init', sin current_state
+        inst = self._new_instance()  # state='init', no current_state
         inst._process_event_sync({'name': 'approve'})
         self.assertEqual(inst.fsm_state, 'init')
 
     def test_bad_outcome_sets_error_state(self):
-        """Una transición cuyo outcome no tiene connection deja la instancia en 'error'."""
-        # Reapuntamos el evento 'approve' a la transición do_bad vía una definición dedicada.
+        """A transition whose outcome has no connection leaves the instance in 'error'."""
+        # We re-point the 'approve' event to the do_bad transition via a dedicated definition.
         bad_schema = _schema()
         for c in bad_schema['connections']:
             if c['fromNodeId'] == 'waiting' and c['fromPortName'] == 'approve':
@@ -148,7 +150,7 @@ class TestFsmLive(TransactionCase):
         self.assertEqual(inst.fsm_state, 'error')
 
     # ---------------------------------------------------------------- #
-    # Timers (referencia polimórfica — fsm.instance real).             #
+    # Timers (polymorphic reference — real fsm.instance).              #
     # ---------------------------------------------------------------- #
     def test_start_and_stop_timer(self):
         inst = self._new_instance()
@@ -158,17 +160,17 @@ class TestFsmLive(TransactionCase):
             ('fsm_instance_model', '=', 'fsm.instance'),
             ('fsm_instance_res_id', '=', inst.id), ('name', '=', 'timeout')])
         self.assertEqual(len(timer), 1)
-        self.assertEqual(timer.fsm_instance_id, inst)  # backward-compat para fsm.instance real
+        self.assertEqual(timer.fsm_instance_id, inst)  # backward-compat for a real fsm.instance
         inst.stop_timer('timeout')
         self.assertFalse(self.env['fsm.timer'].search([
             ('fsm_instance_model', '=', 'fsm.instance'),
             ('fsm_instance_res_id', '=', inst.id), ('name', '=', 'timeout')]))
 
     def test_timer_target_instance_resolves(self):
-        """El timer resuelve su instancia destino por (modelo, res_id) — la pieza polimórfica
-        que permite que un modelo que hereda fsm.instance por prototipo (ej. persona.documento.
-        pedido) reciba timers sin romper la FK a fsm_instance. (send_event es async, no se
-        ejercita su entrega acá.)"""
+        """The timer resolves its target instance by (model, res_id) — the polymorphic piece
+        that lets a model which inherits fsm.instance by prototype (e.g. persona.documento.
+        pedido) receive timers without breaking the FK to fsm_instance. (send_event is async,
+        its delivery is not exercised here.)"""
         inst = self._new_instance()
         inst.start()
         inst.start_timer({'name': 'increment'}, delay=0)

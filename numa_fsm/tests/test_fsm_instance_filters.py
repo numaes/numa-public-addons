@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Los filtros de la búsqueda de instancias apuntan al campo vivo ``fsm_state``.
+The filters of the instance search target the live ``fsm_state`` field.
 
-c15d075 renombró ``fsm.instance.state`` a ``fsm_state`` y la vista de búsqueda siguió filtrando y
-agrupando por ``state``. La vista quedó inválida, y como la validación diferida de numa_poly no la
-validaba, nadie se enteró. Se verifican los filtros ejecutando sus dominios, no leyendo el XML.
+c15d075 renamed ``fsm.instance.state`` to ``fsm_state`` and the search view kept filtering and
+grouping by ``state``. The view became invalid, and since the deferred validation of numa_poly did
+not validate it, nobody noticed. The filters are checked by running their domains, not by reading
+the XML.
 """
 import ast
 

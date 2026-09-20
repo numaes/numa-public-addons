@@ -55,8 +55,8 @@ class FSMDefinition(models.Model):
     pages = fields.Many2many(
         'fsm.wf.page_template', 
         'wf_page_templates_rel', 
-        column1='fsm_def_id',   # En lugar de fsm_definition_id
-        column2='page_temp_id', # En lugar de wf_page_template_id
+        column1='fsm_def_id',   # Instead of fsm_definition_id
+        column2='page_temp_id', # Instead of wf_page_template_id
         string='Pages'
     )
     mail_templates = fields.Many2many(
@@ -168,7 +168,7 @@ class FSMDefinition(models.Model):
         for record in self:
             ui_data = record.json_ui_schema
             if not ui_data:
-                raise exceptions.UserError(_("No hay un diagrama para validar."))
+                raise exceptions.UserError(_("There is no diagram to validate."))
             
             if isinstance(ui_data, str):
                 ui_data = json.loads(ui_data)
@@ -180,42 +180,42 @@ class FSMDefinition(models.Model):
             # Basic logic verification
             has_start = any(n.get('type') == 'start' for n in nodes)
             if not has_start:
-                errors.append(_("El diagrama debe tener un nodo de Inicio."))
+                errors.append(_("The diagram must have a Start node."))
 
             for node in nodes:
                 node_id = node.get('id')
                 node_label = node.get('label', node_id)
                 if node.get('type') == 'start':
                     if not any(c.get('fromNodeId') == node_id for c in conns):
-                        errors.append(_("El nodo de Inicio debe estar conectado."))
+                        errors.append(_("The Start node must be connected."))
                 elif node.get('type') == 'state':
                     if not any(c.get('toNodeId') == node_id for c in conns):
-                        errors.append(_("El estado '%s' no tiene entradas.") % node_label)
+                        errors.append(_("State '%s' has no inputs.") % node_label)
                     events = node.get('events', [])
                     for evt in events:
                         if not any(c.get('fromNodeId') == node_id and c.get('fromPortName') == evt.get('name') for c in conns):
-                            errors.append(_("El evento '%s' del estado '%s' no está conectado.") % (evt.get('name'), node_label))
+                            errors.append(_("Event '%s' of state '%s' is not connected.") % (evt.get('name'), node_label))
                 elif node.get('type') == 'transition':
                     if not any(c.get('toNodeId') == node_id for c in conns):
-                        errors.append(_("La transición '%s' no tiene entradas.") % node_label)
+                        errors.append(_("Transition '%s' has no inputs.") % node_label)
                     outcomes = node.get('outcomes', {})
                     for out in outcomes:
                         if not any(c.get('fromNodeId') == node_id and c.get('fromPortName') == out for c in conns):
-                            errors.append(_("El resultado '%s' de la transición '%s' no está conectado.") % (out, node_label))
+                            errors.append(_("Outcome '%s' of transition '%s' is not connected.") % (out, node_label))
 
             if errors:
                 raise exceptions.ValidationError("\n".join(errors))
             
             record.is_verified = True
-            record.message_post(body=_("Diagrama verificado exitosamente."))
+            record.message_post(body=_("Diagram verified successfully."))
 
     def action_set_production(self):
         for record in self:
             if not record.is_verified:
                 # We log a warning as requested, or we could raise a confirm dialog in a real UI context.
                 # For now, following instructions: force production but warn.
-                _logger.warning("Pasando a producción un FSM no verificado: %s", record.name)
-                record.message_post(body=_("Advertencia: El diagrama se pasó a producción sin verificación previa."), 
+                _logger.warning("Moving an unverified FSM to production: %s", record.name)
+                record.message_post(body=_("Warning: The diagram was moved to production without prior verification."), 
                                   message_type='notification')
             record.state = 'production'
 
@@ -351,16 +351,16 @@ class FSMTimer(models.Model):
     json_event = fields.Text('JSON Event')
 
     fsm_instance_id = fields.Many2one('fsm.instance', 'Target FSM instance')
-    # Referencia POLIMÓRFICA a la instancia: un modelo que hereda fsm.instance por prototipo
-    # (ej. persona.documento.pedido, crm.lead) NO vive en la tabla fsm_instance, así que el M2one
-    # de arriba (FK a fsm.instance) no puede apuntarlo. Estos campos lo resuelven por (modelo, id).
+    # POLYMORPHIC reference to the instance: a model that inherits fsm.instance by prototype
+    # (e.g. persona.documento.pedido, crm.lead) does NOT live in the fsm_instance table, so the
+    # M2one above (FK to fsm.instance) cannot point to it. These fields resolve it by (model, id).
     fsm_instance_model = fields.Char('Target model', index=True)
     fsm_instance_res_id = fields.Integer('Target res id', index=True)
     trigger_at = fields.Datetime('Trigger at')
     database_name = fields.Char('Database name')
 
     def _target_instance(self):
-        """Resuelve la instancia destino del timer (soporta prototipos de fsm.instance)."""
+        """Resolves the target instance of the timer (supports fsm.instance prototypes)."""
         self.ensure_one()
         model = self.fsm_instance_model or 'fsm.instance'
         res_id = self.fsm_instance_res_id or self.fsm_instance_id.id
@@ -608,8 +608,8 @@ class FSMInstance(models.Model):
             'log': log_message,
             'env': self.env,
             'model': self,
-            # [fsm][20.0] Antes salian de odoo.fields, que reexportaba los del
-            # stdlib; Odoo 20 ya no lo hace. Son los mismos, importados arriba.
+            # [fsm][20.0] They used to come from odoo.fields, which re-exported the
+            # stdlib ones; Odoo 20 no longer does. They are the same, imported above.
             'datetime': datetime,
             'date': date,
             'timedelta': timedelta,
@@ -739,14 +739,14 @@ class FSMInstance(models.Model):
             vals = dict(name=event['name'], json_event=json.dumps(event), trigger_at=at,
                         database_name=self.env.cr.dbname,
                         fsm_instance_model=fsm_instance._name, fsm_instance_res_id=fsm_instance.id)
-            # Sólo setear el M2one (FK a fsm.instance) si la instancia ES una fsm.instance real;
-            # para los prototipos heredados rompería la FK (su id no vive en fsm_instance).
+            # Only set the M2one (FK to fsm.instance) if the instance IS a real fsm.instance;
+            # for inherited prototypes it would break the FK (its id does not live in fsm_instance).
             if fsm_instance._name == 'fsm.instance':
                 vals['fsm_instance_id'] = fsm_instance.id
             timer_model.create(vals)
 
     def _own_timers_domain(self, event_name=None):
-        """Dominio de los timers de esta instancia (por referencia polimórfica)."""
+        """Domain of the timers of this instance (by polymorphic reference)."""
         self.ensure_one()
         dom = [('fsm_instance_model', '=', self._name), ('fsm_instance_res_id', '=', self.id)]
         if event_name is not None:
@@ -778,10 +778,10 @@ class FSMInstance(models.Model):
         return template
 
     def render_dynamic_text(self, template, **params):
-        """Resuelve solo las expresiones ``{{ }}``: para texto plano, como el asunto de un mail.
+        """Resolves only the ``{{ }}`` expressions: for plain text, such as the subject of a mail.
 
-        ``render_dynamic_html`` pasa además por miniqweb, que interpreta el resultado como markup y
-        devuelve HTML: un asunto con '<' o '&' saldría escapado."""
+        ``render_dynamic_html`` also goes through miniqweb, which reads the result as markup and
+        returns HTML: a subject with '<' or '&' would come out escaped."""
         fsm_instance = self._get_execution_globals(params)['model']
         return self._render_expressions(template or '', fsm_instance, params)
 
@@ -803,7 +803,7 @@ class FSMInstance(models.Model):
         if not mail_template:
             raise exceptions.UserError(_('Mail template %s not found for definition %s') % (mail_template_name, self.definition_id.name))
         
-        # El asunto es texto: solo se le resuelven las expresiones, no se interpreta como markup.
+        # The subject is text: only its expressions are resolved, it is not read as markup.
         concrete_body = self.render_dynamic_html(mail_template.body_html or '')
         concrete_subject = self.render_dynamic_text(subject or mail_template.subject or _('Workflow message'))
         

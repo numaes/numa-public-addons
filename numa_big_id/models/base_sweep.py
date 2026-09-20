@@ -1,26 +1,26 @@
 # -*- coding: utf-8 -*-
-"""Una última pasada cuando ya está todo cargado.
+"""One last sweep once everything is loaded.
 
-Los dos mecanismos de este módulo tienen cada uno su ventana ciega:
+Each of this module's two mechanisms has its own blind window:
 
-- ``pre_init_hook`` ensancha lo que existe, y es el único momento en que el
-  esquema es el que construyeron los demás módulos. Pero en la misma corrida se
-  instalan después los ``auto_install`` -``web``, ``auth_totp`` y lo que
-  arrastren-, y sus tablas todavía no existen cuando corre.
-- El parche de ``create_model_table`` atiende las tablas nuevas, y se verificó
-  que lo hace. Pero un modelo con ``_auto = False`` no pasa por ahí: escribe su
-  propia DDL, y en el core esa DDL dice ``id serial`` (``res_users.py:1554``),
-  que es ``int4``.
+- ``pre_init_hook`` widens what already exists, and it is the only moment when
+  the schema is the one the other modules built. But the ``auto_install``
+  modules -``web``, ``auth_totp`` and whatever they drag in- are installed later
+  in the same run, and their tables do not exist yet when it runs.
+- The ``create_model_table`` patch takes care of new tables, and it was verified
+  to do so. But a model with ``_auto = False`` never goes through it: it writes
+  its own DDL, and in core that DDL says ``id serial``
+  (``res_users.py:1554``), which is ``int4``.
 
-El cruce de las dos es real y se veía en una instalación limpia:
-``auth_totp_device`` -que es ``_auto = False`` y se instala después- quedaba con
-su ``id`` en 32 bits, y la compuerta reportaba el módulo ``installed`` igual. Un
-módulo que dice ``installed`` sobre una base a medio ensanchar es exactamente lo
-que este módulo existe para impedir.
+Where the two windows cross is not hypothetical, and it showed on a clean
+install: ``auth_totp_device`` -which is ``_auto = False`` and installs late- was
+left with a 32-bit ``id``, and the gate reported the module ``installed`` all
+the same. A module that says ``installed`` over a half-widened database is
+exactly what this module exists to prevent.
 
-``_register_hook`` es el anclaje que faltaba: Odoo lo llama con todos los
-módulos cargados (``registry.py:577``), que es después de los ``auto_install`` y
-después de cualquier ``init()`` a mano.
+``_register_hook`` is the anchor that was missing: Odoo calls it with every
+module loaded (``registry.py:577``), which is after the ``auto_install`` ones
+and after any hand-written ``init()``.
 """
 
 import logging
@@ -29,7 +29,7 @@ from odoo import api, models
 
 _logger = logging.getLogger(__name__)
 
-# Marca en el registry: la barrida es una por generación, no una por modelo.
+# A mark on the registry: the sweep runs once per generation, not once per model.
 _SWEPT = '_big_id_swept__'
 
 
@@ -51,14 +51,14 @@ class Base(models.AbstractModel):
         if not pendientes:
             return resultado
 
-        _logger.info("[big_id] %s tabla(s) quedaron en 32 bits tras cargar los módulos; "
-                     "se ensanchan: %s", len(pendientes), ', '.join(sorted(pendientes)))
+        _logger.info("[big_id] %s table(s) were left at 32 bits after the modules loaded; "
+                     "widening them: %s", len(pendientes), ', '.join(sorted(pendientes)))
         migrate_to_bigint(cr)
         resultado_verificacion = log_verification(cr)
         if not resultado_verificacion['clean']:
-            # No se aborta la carga: llegado este punto los módulos ya están
-            # instalados y abortar deja la base peor. Se reporta con todo el
-            # detalle, que es lo que log_verification acaba de escribir.
-            _logger.error("[big_id] la base sigue teniendo columnas de 32 bits después de "
-                          "la barrida final; el log de arriba las nombra")
+            # The load is not aborted: by this point the modules are installed
+            # and aborting leaves the database in a worse state. It is reported
+            # in full detail instead, which is what log_verification just wrote.
+            _logger.error("[big_id] the database still has 32-bit columns after the final "
+                          "sweep; the log above names them")
         return resultado

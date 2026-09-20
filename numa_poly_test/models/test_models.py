@@ -97,22 +97,22 @@ class Test4(models.Model):
 
     a3 = fields.Char('A3 test 4')
     partner_id = fields.Many2one('res.partner', 'Test 1 related')
-    # active: hace al concreto archivable (patrón de producción; ej. res.partner como base poly).
+    # active: makes the concrete archivable (production pattern; e.g. res.partner as a poly base).
     active = fields.Boolean(default=True)
-    # code: campo propio con un _sql_constraints UNIQUE (constraint a nivel DB sobre la tabla
-    # hoja). Dedicado a los tests de SQL constraints (queda NULL en el resto -> sin colisiones).
+    # code: own field with a UNIQUE _sql_constraints (DB-level constraint on the leaf
+    # table). Dedicated to the SQL constraint tests (NULL everywhere else -> no collisions).
     code = fields.Char('Code')
 
     _test4_code_uniq = models.Constraint(
         'unique(code)',
-        "El code de test.test4 debe ser único.",
+        "The code of test.test4 must be unique.",
     )
-    # Campos para cubrir m2m y computed-stored sobre un modelo poly (patrones de producción).
+    # Fields covering m2m and computed-stored on a poly model (production patterns).
     tag_ids = fields.Many2many('res.partner.category', string='Tags')
-    # one2many a un modelo regular cuyo m2o apunta a este modelo poly.
+    # one2many to a regular model whose m2o points at this poly model.
     line_ids = fields.One2many('test.test4.line', 'parent_id', string='Lines')
-    # Computed STORED que depende de un campo HEREDADO (a1, vive en test.test1): ejercita el
-    # disparo del recompute cuando cambia un campo de una base compartida.
+    # Computed STORED that depends on an INHERITED field (a1, lives in test.test1): exercises
+    # the recompute trigger when a field of a shared base changes.
     a1_upper = fields.Char(compute='_compute_a1_upper', store=True)
 
     @api.depends('a1')
@@ -124,7 +124,7 @@ class Test4(models.Model):
     def _check_a1_not_bad(self):
         for rec in self:
             if rec.a1 == 'BAD':
-                raise ValidationError("a1 no puede ser 'BAD'")
+                raise ValidationError("a1 cannot be 'BAD'")
 
     def set_a1(self):
         """Override the set_a1 method from Test1."""
@@ -132,8 +132,8 @@ class Test4(models.Model):
 
 
 class Test4Line(models.Model):
-    """Modelo regular (no poly) con un m2o a un modelo poly (test.test4).
-    Cubre one2many sobre poly y FK desde un modelo regular hacia un registro poly."""
+    """Regular (non-poly) model with an m2o to a poly model (test.test4).
+    Covers one2many over poly and an FK from a regular model to a poly record."""
     _name = 'test.test4.line'
     _description = 'Test4 Line'
 

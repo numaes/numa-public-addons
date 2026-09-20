@@ -8,20 +8,20 @@ class TestPolyOrmBehavior(TransactionCase):
     """
 
     def test_01_single_behavior_create(self):
-        """Valida que al crear un registro de test.poly.project, el registro en behavior.a se crea correctamente."""
+        """Validate that creating a test.poly.project record correctly creates the behavior.a record."""
         project = self.env['test.poly.project'].create({
             'name': 'Project Alpha',
             'field_a': 'Behavior A Value'
         })
-        self.assertTrue(project.behavior_a_id, "El Many2one de comportamiento A debería haberse poblado.")
-        self.assertEqual(project.behavior_a_id.id, project.id, "Los registros deben compartir el mismo ID.")
+        self.assertTrue(project.behavior_a_id, "The behavior A Many2one should have been populated.")
+        self.assertEqual(project.behavior_a_id.id, project.id, "The records must share the same ID.")
         
         behavior_a = self.env['test.poly.behavior.a'].browse(project.id)
-        self.assertTrue(behavior_a.exists(), "El registro físico en behavior.a debe existir.")
-        self.assertEqual(behavior_a.field_a, 'Behavior A Value', "El valor del campo inyectado no es correcto.")
+        self.assertTrue(behavior_a.exists(), "The physical record in behavior.a must exist.")
+        self.assertEqual(behavior_a.field_a, 'Behavior A Value', "The injected field's value is not correct.")
 
     def test_02_multi_behavior_create(self):
-        """Valida la creación múltiple de comportamientos con el mismo ID."""
+        """Validate the creation of multiple behaviors sharing the same ID."""
         project = self.env['test.poly.project'].create({
             'name': 'Project Beta',
             'field_a': 'Injected A',
@@ -37,18 +37,18 @@ class TestPolyOrmBehavior(TransactionCase):
         self.assertEqual(behavior_b.field_b, 42)
 
     def test_03_search_on_injected_field(self):
-        """Prueba crítica: Búsqueda en campos inyectados."""
+        """Critical test: search on injected fields."""
         Project = self.env['test.poly.project']
         Project.create({'name': 'P1', 'field_a': 'FindMe'})
         Project.create({'name': 'P2', 'field_a': 'Other'})
         Project.create({'name': 'P3', 'field_a': 'FindMe'})
 
         found = Project.search([('field_a', '=', 'FindMe')])
-        self.assertEqual(len(found), 2, "La búsqueda en campo inyectado debería retornar 2 registros.")
+        self.assertEqual(len(found), 2, "The search on an injected field should return 2 records.")
         self.assertCountEqual(found.mapped('name'), ['P1', 'P3'])
 
     def test_04_write_on_injected_field(self):
-        """Verifica que write() propaga los cambios a los modelos base."""
+        """Verify that write() propagates the changes to the base models."""
         project = self.env['test.poly.project'].create({'name': 'UpdateTest', 'field_a': 'OldValue'})
         project.write({'field_a': 'NewValue', 'field_b': 100})
         
@@ -59,17 +59,17 @@ class TestPolyOrmBehavior(TransactionCase):
         self.assertEqual(behavior_b.field_b, 100)
 
     def test_05_unlink_cascades_correctly(self):
-        """Verifica que la eliminación se propaga a todas las bases."""
+        """Verify that deletion propagates to every base."""
         project = self.env['test.poly.project'].create({'name': 'DeleteTest', 'field_a': 'A', 'field_b': 1})
         p_id = project.id
         
-        # Verificar existencia
+        # Verify existence
         self.assertTrue(self.env['test.poly.behavior.a'].browse(p_id).exists())
         self.assertTrue(self.env['test.poly.behavior.b'].browse(p_id).exists())
         
         project.unlink()
         
-        # Verificar eliminación
+        # Verify deletion
         self.assertFalse(self.env['test.poly.project'].browse(p_id).exists())
         self.assertFalse(self.env['test.poly.behavior.a'].browse(p_id).exists())
         self.assertFalse(self.env['test.poly.behavior.b'].browse(p_id).exists())

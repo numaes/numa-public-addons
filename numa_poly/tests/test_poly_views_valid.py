@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Guardia: toda vista activa de la instalación valida.
+Guard: every active view in the installation validates.
 
-poly difiere la validación de vistas mientras se cargan módulos, y durante mucho tiempo la
-difirió de más: las vistas que no eran ``noupdate`` no se validaban nunca. Este test valida todas
-las vistas activas con el registry completo, igual que lo haría Odoo al cargarlas, y lista cada
-falla con su causa. Recorre también las de módulos que no usan poly, porque la omisión los
-alcanzaba a todos.
+poly defers view validation while modules are being loaded, and for a long time it deferred too
+much: the views that were not ``noupdate`` were never validated. This test validates every active
+view with the full registry, the same way Odoo would when loading them, and lists each failure
+with its cause. It also walks those of modules that do not use poly, because the omission
+reached all of them.
 
-Si falla en una instalación, lo que está roto es la vista que nombra, no poly.
+If it fails in an installation, what is broken is the view it names, not poly.
 """
 from collections import defaultdict
 
@@ -24,14 +24,14 @@ class TestPolyAllViewsValidate(TransactionCase):
             try:
                 with self.env.cr.savepoint():
                     vista._check_xml()
-            except Exception as e:  # noqa: BLE001 — se listan todas, no solo la primera
+            except Exception as e:  # noqa: BLE001 - all of them are listed, not just the first
                 texto = str(e).strip()
                 causa = texto.splitlines()[-1] if texto else repr(e)
                 xmlid = vista.get_external_id().get(vista.id) or 'id %s' % vista.id
                 fallas[(vista.model, causa)].append(xmlid)
         self.assertFalse(
             fallas,
-            "%d vista(s) activa(s) no validan:\n%s" % (
+            "%d active view(s) do not validate:\n%s" % (
                 sum(len(v) for v in fallas.values()),
                 '\n'.join('  [%s] %s\n      %s' % (modelo, causa, ', '.join(xs))
                           for (modelo, causa), xs in sorted(fallas.items()))))

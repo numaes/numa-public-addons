@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-miniqweb: el subconjunto de QWeb de las páginas de portal y los mails de numa_fsm.
+miniqweb: the subset of QWeb of the portal pages and the mails of numa_fsm.
 
-Hasta 2026-09 tenía nueve tests de casos felices y rompía la mayoría de los idiomas QWeb comunes:
-texto plano (excepción), varias raíces (truncaba en silencio), ``<t t-esc>`` (no emitía nada y
-perdía el texto siguiente), el texto después de un ``t-if`` falso, ``t-foreach`` con otra directiva
-en el mismo elemento, ``<br>`` y ``&nbsp;`` de un campo Html. Además ``t-raw`` evaluaba las
-directivas del contenido que insertaba y la salida era XML (un ``<div/>`` vacío, en HTML, abre un
-div que se traga lo que sigue). Cada test de acá cubre uno de esos casos.
+Until 2026-09 it had nine happy-path tests and broke most of the common QWeb idioms:
+plain text (exception), several roots (truncated silently), ``<t t-esc>`` (emitted nothing and
+lost the following text), the text after a false ``t-if``, ``t-foreach`` with another directive
+on the same element, ``<br>`` and ``&nbsp;`` of an Html field. Besides, ``t-raw`` evaluated the
+directives of the content it inserted and the output was XML (an empty ``<div/>``, in HTML, opens a
+div that swallows what follows). Each test here covers one of those cases.
 """
 import re
 
@@ -18,7 +18,7 @@ from ..models import miniqweb
 
 
 def _compacto(html):
-    """Sin los espacios entre etiquetas, para comparar estructura y no indentación."""
+    """Without the whitespace between tags, to compare structure and not indentation."""
     return re.sub(r'>\s+<', '><', html.strip())
 
 
@@ -28,7 +28,7 @@ class TestMiniQweb(TransactionCase):
         return miniqweb.render(template, **params)
 
     # ------------------------------------------------------------------------------------------ #
-    # Casos de siempre (la indentación de la salida cambió: el texto dentro de <t> ya no se pierde)
+    # Long-standing cases (the output indentation changed: the text inside <t> is no longer lost)
     # ------------------------------------------------------------------------------------------ #
     def test_non_dynamic_content(self):
         result = self._render('''
@@ -107,14 +107,14 @@ class TestMiniQweb(TransactionCase):
                          '<div><span>esta <span>es una prueba</span> de raw</span></div>')
 
     # ------------------------------------------------------------------------------------------ #
-    # Fragmentos
+    # Fragments
     # ------------------------------------------------------------------------------------------ #
     def test_plain_text_is_a_valid_template(self):
-        """Fallaba con AttributeError: el asunto de un mail es texto plano."""
+        """It failed with AttributeError: the subject of a mail is plain text."""
         self.assertEqual(self._render('Pedido de documentación'), 'Pedido de documentación')
 
     def test_several_root_elements_are_all_rendered(self):
-        """Se quedaba con el primero, sin avisar."""
+        """It kept the first one only, without warning."""
         self.assertEqual(self._render('<p>uno</p><p>dos</p>'), '<p>uno</p><p>dos</p>')
         self.assertEqual(self._render('texto <b>y</b> más'), 'texto <b>y</b> más')
 
@@ -125,10 +125,10 @@ class TestMiniQweb(TransactionCase):
         self.assertEqual(self._render(''), '')
 
     # ------------------------------------------------------------------------------------------ #
-    # <t> y el texto alrededor de lo que no se emite
+    # <t> and the text around what is not emitted
     # ------------------------------------------------------------------------------------------ #
     def test_t_esc_on_t_emits_the_value_and_keeps_the_following_text(self):
-        """No emitía nada y perdía el texto que seguía."""
+        """It emitted nothing and lost the text that followed."""
         self.assertEqual(self._render('<t t-esc="x"/>', x='valor'), 'valor')
         self.assertEqual(self._render('<p>Hola <t t-esc="x"/>, bienvenido</p>', x='Ana'),
                          '<p>Hola Ana, bienvenido</p>')
@@ -144,7 +144,7 @@ class TestMiniQweb(TransactionCase):
         self.assertEqual(self._render('<p>a<!-- nota -->b</p>'), '<p>ab</p>')
 
     # ------------------------------------------------------------------------------------------ #
-    # Condicionales
+    # Conditionals
     # ------------------------------------------------------------------------------------------ #
     def test_if_elif_else(self):
         template = '<t t-if="a == 1">uno</t>\n<t t-elif="a == 2">dos</t>\n<t t-else="">otro</t>'
@@ -159,10 +159,10 @@ class TestMiniQweb(TransactionCase):
             self._render('<p>a</p><t t-elif="1">x</t>')
 
     # ------------------------------------------------------------------------------------------ #
-    # Bucles
+    # Loops
     # ------------------------------------------------------------------------------------------ #
     def test_foreach_on_an_element_repeats_the_element(self):
-        """Con t-esc en el mismo elemento fallaba con NameError: se evaluaba antes que el bucle."""
+        """With t-esc on the same element it failed with NameError: evaluated before the loop."""
         self.assertEqual(self._render('<ul><li t-foreach="[1,2]" t-as="i" t-esc="i"/></ul>'),
                          '<ul><li>1</li><li>2</li></ul>')
 
@@ -176,7 +176,7 @@ class TestMiniQweb(TransactionCase):
         self.assertEqual(self._render('<p><t t-foreach="[1,2]" t-as="i"><t t-esc="i"/>;</t></p>'), '<p>1;2;</p>')
 
     def test_foreach_loop_variables(self):
-        """Eran '$as_index' y compañía: con '$' no se podían usar en una expresión."""
+        """They were '$as_index' and company: with '$' they could not be used in an expression."""
         template = '<t t-foreach="\'abc\'" t-as="c"><t t-esc="c_index"/><t t-esc="c"/><t t-if="not c_last">,</t></t>'
         self.assertEqual(self._render(template), '0a,1b,2c')
         self.assertEqual(self._render('<t t-foreach="d" t-as="k"><t t-esc="k"/>=<t t-esc="k_value"/>;</t>',
@@ -204,7 +204,7 @@ class TestMiniQweb(TransactionCase):
             self._render('<t t-while="True">x</t>')
 
     # ------------------------------------------------------------------------------------------ #
-    # Valores: t-set, t-esc, t-raw
+    # Values: t-set, t-esc, t-raw
     # ------------------------------------------------------------------------------------------ #
     def test_set_with_value_or_body(self):
         self.assertEqual(self._render('<div><t t-set="a" t-value="3"/><span t-esc="a"/></div>'),
@@ -222,7 +222,8 @@ class TestMiniQweb(TransactionCase):
         self.assertEqual(self._render('<span t-esc="v">viejo <b>x</b></span>', v='nuevo'), '<span>nuevo</span>')
 
     def test_raw_inserts_markup_without_evaluating_it(self):
-        """Evaluaba las directivas del contenido: si venía del portal, ejecutaba sus expresiones."""
+        """It evaluated the directives of the content: if it came from the portal, it ran its
+        expressions."""
         self.assertEqual(self._render('<div t-raw="h"/>', h='<span t-esc="secreto">x</span>', secreto='no'),
                          '<div><span t-esc="secreto">x</span></div>')
         self.assertEqual(self._render('<div t-raw="h"/>', h='solo texto'), '<div>solo texto</div>')
@@ -230,7 +231,7 @@ class TestMiniQweb(TransactionCase):
         self.assertEqual(self._render('<div t-raw="h"/>', h=None), '<div></div>')
 
     # ------------------------------------------------------------------------------------------ #
-    # Atributos
+    # Attributes
     # ------------------------------------------------------------------------------------------ #
     def test_att_escapes_and_omits_none_or_false(self):
         self.assertEqual(self._render('<a t-att-href="u">link</a>', u='/x?a=1&b=2'),
@@ -240,13 +241,13 @@ class TestMiniQweb(TransactionCase):
         self.assertEqual(self._render('<a t-att="{\'href\': \'/y\', \'rel\': None}">x</a>'), '<a href="/y">x</a>')
 
     def test_attf_expressions_variables_and_literal_braces(self):
-        """Con str.format, una llave literal (CSS, por ejemplo) rompía con KeyError."""
+        """With str.format, a literal brace (CSS, for example) broke with KeyError."""
         self.assertEqual(
             self._render('<a t-attf-href="/p/#{n + 1}/{nombre}" t-attf-style="a{b}">x</a>', n=1, nombre='z'),
             '<a href="/p/2/z" style="a{b}">x</a>')
 
     def test_unsupported_directive_is_an_error(self):
-        """Se copiaba como un atributo más y la plantilla salía rota sin aviso."""
+        """It was copied as one more attribute and the template came out broken without warning."""
         with self.assertRaisesRegex(UserError, 't-call'):
             self._render('<t t-call="x"/>')
 
@@ -254,14 +255,14 @@ class TestMiniQweb(TransactionCase):
     # HTML
     # ------------------------------------------------------------------------------------------ #
     def test_html_from_an_html_field(self):
-        """<br> quedaba como <br>dos</br> y &nbsp; se borraba."""
+        """<br> ended up as <br>dos</br> and &nbsp; was deleted."""
         self.assertEqual(self._render('<p>uno<br>dos</p>'), '<p>uno<br>dos</p>')
         self.assertEqual(self._render('<p>a&nbsp;b</p>'), '<p>a\xa0b</p>')
         self.assertEqual(self._render('<p><img src="a.png"> texto</p>'), '<p><img src="a.png"> texto</p>')
 
     def test_html_attributes_without_value_or_quotes(self):
-        """Un atributo sin valor no es XML: el parser lo descartaba, y el input de archivos del portal
-        perdía ``multiple`` (se podía subir uno solo)."""
+        """An attribute without a value is not XML: the parser dropped it, and the portal file input
+        lost ``multiple`` (only one file could be uploaded)."""
         self.assertEqual(self._render('<input type="file" name="archivos" multiple>'),
                          '<input type="file" name="archivos" multiple>')
         self.assertEqual(self._render('<td colspan=2>x</td>'), '<td colspan="2">x</td>')
@@ -271,18 +272,18 @@ class TestMiniQweb(TransactionCase):
         self.assertEqual(self._render('<p t-att-title="\'<br>\'">x</p>'), '<p title="&lt;br&gt;">x</p>')
 
     def test_bare_ampersands(self):
-        """Un '&' suelto no es XML: una URL con varios parámetros se perdía."""
+        """A bare '&' is not XML: a URL with several parameters was lost."""
         self.assertEqual(self._render('<p>a & b <a href="/x?a=1&b=2">l</a> &amp; &#233;</p>'),
                          '<p>a &amp; b <a href="/x?a=1&amp;b=2">l</a> &amp; \xe9</p>')
         self.assertEqual(self._render('<t t-esc="a & b"/>', a=6, b=3), '2')
 
     def test_portal_form_keeps_its_structure(self):
-        """El motor viejo metía el form dentro del input y cerraba con </br>."""
+        """The old engine put the form inside the input and closed it with </br>."""
         result = self._render('<form t-att-action="\'/d/\' + n"><input type="file" multiple>\n<br><br>\n'
                               '<button>Enviar</button></form><p>fin</p>', n='u1')
         self.assertEqual(result, '<form action="/d/u1"><input type="file" multiple>\n<br><br>\n'
                                  '<button>Enviar</button></form><p>fin</p>')
 
     def test_empty_elements_are_closed_as_html(self):
-        """Serializado como XML, un <div/> vacío en HTML abre un div que contiene lo que sigue."""
+        """Serialized as XML, an empty <div/> in HTML opens a div that contains what follows."""
         self.assertEqual(self._render('<div class="x"/><p>sigue</p>'), '<div class="x"></div><p>sigue</p>')

@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-En create, lo que poly hace antes de insertar en un modelo no polimórfico no tapa errores de la base.
+In create, what poly does before inserting into a non-polymorphic model does not hide database errors.
 
-Sincronizar la secuencia de la tabla estaba en ``except Exception: pass``. Con la transacción ya
-abortada —un conflicto de concurrencia que otro código había tragado— el error pasaba de largo y el
-create fallaba en la consulta siguiente con InFailedSqlTransaction, lejos de la causa: así apareció
-en prtest el 2026-09-10, en el bus.bus de /discuss/channel/mark_as_read. Reservar el id compartido
-tenía el mismo defecto, con un log de por medio.
+Syncing the table sequence sat inside ``except Exception: pass``. With the transaction already
+aborted -a concurrency conflict that some other code had swallowed- the error slipped past and the
+create failed on the next query with InFailedSqlTransaction, far from the cause: that is how it
+showed up in prtest on 2026-09-10, in the bus.bus of /discuss/channel/mark_as_read. Reserving the
+shared id had the same defect, with a log in between.
 """
 from unittest.mock import patch
 
@@ -26,7 +26,7 @@ class TestPolyCreateDatabaseErrors(TransactionCase):
         super().setUp()
         self.Model = self.env['res.partner.category']
         self.Clase = type(self.Model)
-        self.assertFalse(P._poly_is_polymorphic(self.Model), 'la prueba necesita un modelo no polimórfico')
+        self.assertFalse(P._poly_is_polymorphic(self.Model), 'the test needs a non-polymorphic model')
 
     def test_01_a_database_error_syncing_the_sequence_propagates(self):
         abortada = psycopg2.errors.InFailedSqlTransaction('current transaction is aborted')
@@ -35,7 +35,7 @@ class TestPolyCreateDatabaseErrors(TransactionCase):
                 self.Model.create({'name': 'poly db error 1'})
 
     def test_02_any_other_error_syncing_the_sequence_is_still_tolerated(self):
-        with patch.object(self.Clase, '_sync_table_id_sequence_once', side_effect=RuntimeError('sin secuencia')):
+        with patch.object(self.Clase, '_sync_table_id_sequence_once', side_effect=RuntimeError('no sequence')):
             self.assertTrue(self.Model.create({'name': 'poly db error 2'}))
 
     def test_03_a_database_error_reserving_the_id_propagates(self):
@@ -45,7 +45,7 @@ class TestPolyCreateDatabaseErrors(TransactionCase):
                 self.Model.create({'name': 'poly db error 3'})
 
     def test_04_any_other_error_reserving_the_id_is_logged_and_tolerated(self):
-        with patch.object(self.Clase, '_poly_reserve_base_ids', side_effect=RuntimeError('jerarquía rara')), \
+        with patch.object(self.Clase, '_poly_reserve_base_ids', side_effect=RuntimeError('odd hierarchy')), \
                 self.assertLogs(LOGGER, level='ERROR') as logs:
             self.assertTrue(self.Model.create({'name': 'poly db error 4'}))
         self.assertTrue(any('could not reserve a shared id' in linea for linea in logs.output), logs.output)

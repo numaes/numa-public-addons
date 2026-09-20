@@ -12,18 +12,19 @@ class HrEmployee(models.Model):
     Each employee can be converted into a Finite State Machine instance,
     allowing automated workflows and bot-driven employee processing.
     
-    El empleado NO es la instancia: la tiene. Hasta Odoo 18 heredaba ``fsm.instance``
-    con ``_inherit``, y el empleado pasaba a ser la instancia sin campo aparte. Eso
-    dejó de linealizar en Odoo 20: ``fsm.instance`` hereda ``mail.thread`` y
-    ``mail.activity.mixin``, que ``hr.employee`` ya hereda por su cuenta, y C3 pide
-    que lo más derivado vaya primero mientras la construcción de bases las deja
-    antes. En 18.0 no se notaba porque numa_poly rearmaba ``__bases__`` a mano y
-    de paso deshacía el conflicto; desde que las bases se declaran, el orden lo
-    calcula Odoo y el choque sale a la luz.
+    The employee is NOT the instance: they have one. Up to Odoo 18 the model
+    inherited ``fsm.instance`` through ``_inherit`` and became the instance, with
+    no field of its own. That stopped linearising in Odoo 20: ``fsm.instance``
+    inherits ``mail.thread`` and ``mail.activity.mixin``, which ``hr.employee``
+    already inherits on its own, and C3 requires the most derived class first
+    while the base list leaves it last. It went unnoticed in 18.0 because
+    numa_poly rebuilt ``__bases__`` by hand and undid the conflict on the way;
+    now that bases are declared, Odoo computes the order and the clash surfaces.
 
-    El vínculo explícito dice lo mismo sin pelearse con el MRO, y además separa
-    dos ciclos de vida que nunca fueron uno: un empleado puede existir sin workflow,
-    y su instancia puede reiniciarse sin tocar el empleado.
+    The explicit link says the same thing without fighting the MRO, and it also
+    separates two lifetimes that were never really one: an employee can exist
+    without a workflow, and their instance can be restarted without touching the
+    employee record.
     """
     _name = 'hr.employee'
     _inherit = ['hr.employee']
@@ -37,8 +38,8 @@ class HrEmployee(models.Model):
              "is assigned.",
     )
 
-    # Lo que el formulario y los filtros leían del empleado cuando era la instancia.
-    # Siguen llamándose igual, así que las vistas no cambian.
+    # What the form and the filters used to read off the employee when it was the
+    # instance. The names are unchanged, so the views did not have to move.
     fsm_state = fields.Selection(
         related='fsm_instance_id.fsm_state', string='Execution State', readonly=True)
     current_state_id = fields.Char(
@@ -49,8 +50,8 @@ class HrEmployee(models.Model):
         related='fsm_instance_id.debug_mode', string='Debug Mode', readonly=False)
     next_node_id = fields.Char(
         related='fsm_instance_id.next_node_id', string='Next Node to Execute', readonly=True)
-    # El diagrama se puede dibujar aunque todavía no haya instancia, así que
-    # sale de la definición y no del vínculo.
+    # The diagram can be drawn before there is an instance, so it comes from the
+    # definition and not from the link.
     json_ui_schema = fields.Json(
         related='definition_id.json_ui_schema', string='UI Schema (JSON)', readonly=True)
 
@@ -143,9 +144,10 @@ class HrEmployee(models.Model):
         """
         if operator not in ('=', '!='):
             raise UserError(_('Unsupported operator for has_fsm: %s') % operator)
-        # El dominio negativo es la negación literal del positivo, no su espejo
-        # escrito a mano: un empleado con definición pero todavía sin instancia tiene
-        # ``fsm_state`` vacío, y un ``not in`` sobre la travesía no lo alcanzaría.
+        # The negative domain is the literal negation of the positive one, not a
+        # hand-written mirror of it: an employee with a definition but no instance
+        # yet has an empty ``fsm_state``, and a ``not in`` over the traversal would
+        # never reach it.
         activo = ['&', ('definition_id', '!=', False),
                   ('fsm_instance_id.fsm_state', 'in', ['running', 'paused'])]
         if (operator == '=') == bool(value):
@@ -153,11 +155,11 @@ class HrEmployee(models.Model):
         return ['!'] + activo
 
     def _ensure_fsm_instance(self):
-        """Devolver la instancia de este empleado, creándola si todavía no tiene.
+        """Return this employee's instance, creating it if there is not one yet.
 
-        Cuando el empleado ERA la instancia esto no hacía falta. Ahora es el único
-        lugar donde se crea, para que el resto del módulo no tenga que saber si
-        ya existía.
+        When the employee WAS the instance this was not needed. It is now the only
+        place where one is created, so that the rest of the module never has to
+        know whether it already existed.
         """
         self.ensure_one()
         if not self.fsm_instance_id:

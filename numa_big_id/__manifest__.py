@@ -51,8 +51,8 @@ Install it on a database that has not been migrated yet, verify with
     'website': 'https://www.numaes.com',
     'license': 'LGPL-3',
     'category': 'Extra Tools',
-    # Sin 'base': un manifest sin depends lo recibe igual, y listarlo hace que
-    # actualizar base actualice también este módulo.
+    # No 'base': a manifest without depends gets it anyway, and listing it would
+    # make every update of base update this module too.
     'depends': [],
     'data': [],
     'installable': True,
