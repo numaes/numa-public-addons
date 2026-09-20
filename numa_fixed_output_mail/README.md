@@ -28,13 +28,31 @@ Some providers require the `From` domain to match the credentials used to authen
 through a departmental account, alignment breaks and replies and bounces go to the wrong
 place.
 
-### 2.1 Its relationship with `from_filter`
+### 2.1 What Odoo already does, and where this differs
 
-Odoo has its own mechanism for this: a mail server can declare a `from_filter`, and
-`ir_mail_server._prepare_email_message__` will encapsulate the sender when the address does
-not match it. That mechanism protects the *envelope*; this module rewrites the *headers*,
-keeps the display name, and points `Reply-To` at the shared mailbox. They can be used
-together.
+Odoo has a mechanism of its own, and it is worth knowing before installing this module.
+A mail server declares a `from_filter` — the addresses or domains it may send for — and
+`ir_mail_server._prepare_email_message__` **encapsulates** the sender when the computed
+envelope address is the alias domain's notification address and the message's `From` is
+something else. `tools.mail.encapsulate_email` keeps the display name, so the result is
+`"Juan Perez" <notifications@company.com>`, and `_alter_message__` writes it into the
+`From` header.
+
+Two differences decide whether this module adds anything:
+
+| | Odoo's encapsulation | This module |
+|---|---|---|
+| Address forced into `From` | the **alias domain's** `default_from` — one per company | the **server's** `smtp_user` — one per outgoing server |
+| When | only when the envelope resolves to that notification address | whenever the switch is on and the server has an `smtp_user` |
+| `Reply-To` / `Return-Path` | untouched | pinned to `smtp_user` |
+
+So if every outgoing mail should come from one company-wide notification address, Odoo
+covers it and this module is not needed. If different departments send through different
+SMTP accounts and each should own its own `From` and receive its own replies and bounces,
+this module is what does that.
+
+None of this is new in Odoo 20: the alias-domain machinery predates it. The overlap was
+already there in 18.0.
 
 Forcing `Return-Path` is worth knowing about: Odoo takes the bounce address from that
 header when it is set, so bounces reach the SMTP user instead of the alias domain's bounce
