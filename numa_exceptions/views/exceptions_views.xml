@@ -1,112 +1,105 @@
-<?xml version="1.0"?>
-
+<?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data>
-        <record id="exceptions_form_view" model="ir.ui.view">
-            <field name="name">Exceptions form</field>
-            <field name="model">base.general_exception</field>
-            <field name="arch" type="xml">
-                <form string="Exception">
-                    <header>
+    <record id="exceptions_form_view" model="ir.ui.view">
+        <field name="name">base.general_exception.form</field>
+        <field name="model">base.general_exception</field>
+        <field name="arch" type="xml">
+            <form string="Exception">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button class="oe_stat_button" name="action_frames" type="object" icon="fa-list">
+                            <field name="frames_count" string="Frames" widget="statinfo"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name"/>
+                        </h1>
+                    </div>
+                    <group string="General">
+                        <field name="service"/>
+                        <field name="exception"/>
+                        <field name="method"/>
+                        <field name="params"/>
+                        <field name="timestamp"/>
+                        <field name="do_not_purge"/>
+                        <field name="user"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
 
-                    </header>
-                    <sheet>
-                        <div class="oe_button_box" name="button_box">
-                            <button class="oe_stat_button" name="action_frames" type="object" icon="fa-list">
-                                <field string=" Frames" name="frames_count" widget="statinfo"/>
-                            </button>
-                        </div>
+    <record id="exceptions_list_view" model="ir.ui.view">
+        <field name="name">base.general_exception.list</field>
+        <field name="model">base.general_exception</field>
+        <field name="arch" type="xml">
+            <list string="Exception" create="0" edit="0">
+                <field name="user"/>
+                <field name="name"/>
+                <field name="timestamp"/>
+                <field name="service"/>
+                <field name="method"/>
+            </list>
+        </field>
+    </record>
 
-                        <div class="oe_title">
-                            <label for="name" class="oe_edit_only"/>
-                            <h1>
-                                <field name="name" />
-                            </h1>
-                        </div>
-                        <group string="General">
-                            <field name="service"/>
-                            <field name="exception"/>
-                            <field name="method"/>
-                            <field name="params"/>
-                            <field name="timestamp"/>
-                            <field name="do_not_purge"/>
-                            <field name="user"/>
-                        </group>
-                    </sheet>
-                    <chatter />
-                </form>
-            </field>
-        </record>
+    <record id="exceptions_search_view" model="ir.ui.view">
+        <field name="name">base.general_exception.search</field>
+        <field name="model">base.general_exception</field>
+        <field name="arch" type="xml">
+            <search string="Exceptions">
+                <field name="name"/>
+                <field name="user"/>
+                <field name="timestamp"/>
+                <field name="service"/>
+                <filter string="Do not purge" name="do_not_purge" domain="[('do_not_purge', '=', True)]"/>
+                <group name="group_by">
+                    <filter string="Service" name="group_by_service" context="{'group_by': 'service'}"/>
+                    <filter string="User" name="group_by_user" context="{'group_by': 'user'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
 
-        <record id="exceptions_list_view" model="ir.ui.view">
-            <field name="name">Exceptions list</field>
-            <field name="model">base.general_exception</field>
-            <field name="arch" type="xml">
-                <list string="Exception" create="0" edit="0">
-                    <field name="user" select="True"/>
-                    <field name="name" select="True" />
-                    <field name="timestamp" select="True" />
-                    <field name="service" select="True" />
-                    <field name="method" select="True" />
-                </list>
-            </field>
-        </record>
+    <record id="exc_frame_form_view" model="ir.ui.view">
+        <field name="name">base.frame.form</field>
+        <field name="model">base.frame</field>
+        <field name="arch" type="xml">
+            <form string="Frame">
+                <sheet>
+                    <div class="oe_title">
+                        <h2>
+                            <field name="file_name"/>
+                        </h2>
+                    </div>
+                    <group string="General">
+                        <field name="gexception" invisible="1"/>
+                        <field name="line_number"/>
+                        <field name="src_code"/>
+                        <field name="locals" readonly="1">
+                            <list string="Locals">
+                                <field name="sequence" column_invisible="1"/>
+                                <field name="name"/>
+                                <field name="value"/>
+                            </list>
+                        </field>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
 
-        <record id="exceptions_search_view" model="ir.ui.view">
-            <field name="name">Exceptions search</field>
-            <field name="model">base.general_exception</field>
-            <field name="arch" type="xml">
-                <search string="Exceptions" >
-                    <filter string="Do not purge" name="do_not_purge" domain="[('do_not_purge','=',True)]"/>
-                    <separator orientation="vertical"/>
-                    <field name="name"/>
-                    <field name="user" />
-                    <field name="timestamp" />
-                    <field name="service" />
-                </search>
-            </field>
-        </record>
-
-        <record id="exc_frame_form_view" model="ir.ui.view">
-            <field name="name">Exception frames form</field>
-            <field name="model">base.frame</field>
-            <field name="arch" type="xml">
-                <form string="Frame" >
-                    <header/>
-                    <sheet>
-                        <div class="oe_title">
-                            <label for="file_name" class="oe_edit_only"/>
-                            <h2>
-                                <field name="file_name" width="500"/>
-                            </h2>
-                        </div>
-                        <group string="General">
-                            <field name="gexception" invisible="True" />
-                            <field name="line_number"/>
-                            <field name="src_code"/>
-                            <field name="locals" readonly="True">
-                                <list string="Locals">
-                                    <field name="sequence" invisible="True"/>
-                                    <field name="name"/>
-                                    <field name="value"/>
-                                </list>
-                            </field>
-                        </group>
-                    </sheet>
-                </form>
-            </field>
-        </record>
-
-        <record id="exc_frame_list_view" model="ir.ui.view">
-            <field name="name">Exceptions frames list</field>
-            <field name="model">base.frame</field>
-            <field name="arch" type="xml">
-                <list string="Frames" create="0"  edit="0">
-                    <field name="gexception" select="True"/>
-                    <field name="file_name" select="True" />
-                    <field name="line_number" select="True" />
-                </list>
-            </field>
-        </record>
-    </data>
+    <record id="exc_frame_list_view" model="ir.ui.view">
+        <field name="name">base.frame.list</field>
+        <field name="model">base.frame</field>
+        <field name="arch" type="xml">
+            <list string="Frames" create="0" edit="0">
+                <field name="gexception"/>
+                <field name="file_name"/>
+                <field name="line_number"/>
+            </list>
+        </field>
+    </record>
 </odoo>

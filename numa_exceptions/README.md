@@ -1,5 +1,9 @@
 # NUMA Exceptions
 
+**Status: migrated to Odoo 20.0** (module version `20.0.1.0.0`). See
+[Migration to Odoo 20.0](#migration-to-odoo-200) for what changed and what it
+means for code that depends on this module.
+
 This module provides a robust infrastructure for capturing, persisting, and analyzing system exceptions directly within the Odoo database. It is designed to facilitate debugging and system administration by providing detailed error reports without requiring direct access to server logs.
 
 ## Features
@@ -11,10 +15,15 @@ This module provides a robust infrastructure for capturing, persisting, and anal
     - Values of local variables for each frame.
     - Method parameters and the service involved.
 - **Automatic Capture:**
-    - **HTTP Dispatcher:** Automatically intercepts unhandled exceptions in web requests.
-    - **Cron Manager:** Automatically logs failures in scheduled actions (Crons).
+    - **Requests:** `ir.http._handle_error` is extended, which covers every dispatcher
+      (HTTP, JSON-RPC and JSON2) in a single place.
+    - **Cron Manager:** `ir.cron._callback` is extended, so failures in scheduled
+      actions are logged.
 - **User Assistance:** When a non-standard error occurs, the user is presented with a friendly message containing a unique **Exception Reference ID** (e.g., `EXC/2026/0001`). This ID can be sent to support for quick identification of the problem.
-- **Retention Policy:** To prevent excessive database growth, a scheduled action automatically purges records older than 30 days, unless they are explicitly marked as "Do not purge".
+- **Retention Policy:** To prevent excessive database growth, a daily scheduled action
+  purges records older than the retention period, unless they are explicitly marked as
+  "Do not purge". The period defaults to 30 days and is set with the
+  `numa_exceptions.retention_days` system parameter; `0` disables the purge.
 - **Automatic Decorator:** Easy integration via the `@exception_managed` decorator to automatically log exceptions in any model method.
 
 ## Technical Overview
@@ -71,8 +80,71 @@ except Exception as e:
 
 ## Data Retention
 
-Exception logs can be found under the **Settings > Technical > Exceptions > Exception Logs** menu.
-The scheduled action **"Exceptions: Purge old logs"** runs periodically to clean up the database. You can adjust the frequency or disable it as needed.
+Exception logs are found under **Settings > Technical > Database Structure > Exceptions**,
+and are visible to the system administrator (`base.group_system`) only: a stack frame
+carries the local variables of every method it crossed.
+
+The scheduled action **"Exceptions cleaning"** runs daily. Two ways to change what it
+keeps:
+
+- `numa_exceptions.retention_days` system parameter: number of days to keep, `0` to
+  disable the purge. It defaults to 30 when the parameter is absent.
+- The `Do not purge` flag on an individual log, which the purge always respects.
+
+## Migration to Odoo 20.0
+
+Odoo 20.0 removed or moved most of the APIs this module was built on. What changed:
+
+| Odoo 18.0 | Odoo 20.0 |
+| --- | --- |
+| `from odoo.osv import expression` | the `odoo.osv` package is gone; domains are combined with `odoo.fields.Domain` |
+| `_name_search()` | replaced by `_search_display_name(operator, value)` |
+| `security/ir.model.access.csv` | the `ir.model.access` model is gone; ACLs and record rules are unified in `security/ir.access.csv` |
+| `odoo.http.HttpDispatcher`, `JsonRPCDispatcher`, `Dispatcher`, `SessionExpiredException` | `odoo.http` no longer re-exports them; they live in `odoo.http.dispatcher` and `odoo.http.session` |
+| `ir.cron._handle_callback_exception()` | removed; the extension point is `ir.cron._callback()` |
+| `from odoo import registry` | `from odoo.modules.registry import Registry` |
+| `_("...")` | `self.env._("...")` |
+
+Changes of behaviour that came with the migration:
+
+- **Request exceptions are logged once.** Odoo 18.0 patched the three dispatcher
+  classes *and* overrode `ir.http._dispatch`, which registered the same exception
+  twice. Odoo 20.0 funnels every dispatcher through `ir.http._handle_error`, so a
+  single override replaces all four hooks and also covers the new `Json2Dispatcher`.
+- **Access is restricted to `base.group_system`.** The logs used to be readable and
+  deletable by any employee, while they contain the local variables of arbitrary
+  methods.
+- **Captured source code is HTML-escaped** before being stored, so a source line
+  containing `<` renders as written.
+- **The retention period is configurable**, as the documentation already claimed.
+- **Parameters are always truncated** to 10.000 characters; the 18.0 code only
+  truncated them for values that were neither `dict` nor `list`.
+- **An exception without a traceback is still logged**, with an empty stack, instead
+  of being silently dropped.
+- **A stack deeper than 100 frames keeps its innermost frames.** The 18.0 code
+  stopped the walk after 100 frames from the top, so a deep recursion lost exactly
+  the frames that said where it broke.
+- **`new_exception` returns the reference** it registered, instead of `None`.
+
+Structure: `models/exceptions.py` keeps the public helpers (`register_exception`,
+`exception_managed`, and the pure capture functions), so the import paths documented
+above are unchanged. The models themselves moved to one file per model
+(`base_general_exception.py`, `base_frame.py`, `base_variable_value.py`, `ir_http.py`,
+`ir_cron.py`), which is the Odoo house rule.
+
+## Tests
+
+```bash
+odoo-bin -d <database> -i numa_exceptions --without-demo=all \
+         --test-enable --stop-after-init
+```
+
+`tests/test_capture.py` covers the capture helpers, which need no cursor: filtering of
+sensitive locals, truncation, HTML escaping, frame ordering and bounding, the
+`__cause__` chain, parameter serialization, and the guards that make
+`register_exception` unable to raise. `tests/test_exception_log.py` covers the models:
+reference sequence, `frames_count`, cascade deletion, the purge and its parameter, the
+frame search, and the access rights.
 
 ---
 **Developed by:** NUMA Extreme Systems  

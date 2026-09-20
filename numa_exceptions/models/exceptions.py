@@ -2,7 +2,7 @@
 ##############################################################################
 #
 #    NUMA Extreme Systems.
-#  
+#
 #    Copyright (C) 2013 NUMA Extreme Systems (<http:www.numaes.com>).
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -19,10 +19,19 @@
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 ##############################################################################
+"""Capture of an exception and its call stack, independent of the ORM.
+
+The module is split in two halves on purpose:
+
+* ``build_exception_vals`` and the helpers it uses are pure functions. They
+  turn a traceback into the values of a ``base.general_exception`` record and
+  can be exercised without a database.
+* ``register_exception`` is the only part that touches the database. It opens
+  its own cursor so that the log survives the rollback of the transaction that
+  failed.
+"""
 
 # Standard library
-import collections.abc
-import datetime
 import functools
 import inspect
 import json
@@ -31,162 +40,251 @@ import sys
 import threading
 
 # Third-party
-import werkzeug.exceptions
-import werkzeug.routing
-import werkzeug.utils
+from markupsafe import Markup, escape
 
 # Odoo
-import odoo
-from odoo import api, exceptions, fields, models, registry, SUPERUSER_ID, _
-from odoo.exceptions import RedirectWarning, UserError, ValidationError, AccessDenied, AccessError
-from odoo.http import Response, ROUTING_KEYS, SessionExpiredException, Stream, request, HttpDispatcher, JsonRPCDispatcher, Dispatcher
+from odoo import Command, SUPERUSER_ID, api
 from odoo.loglevels import exception_to_unicode
-from odoo.osv import expression
+from odoo.modules.registry import Registry
+
 _logger = logging.getLogger(__name__)
 
-DT_FORMAT = "%Y-%m-%d %H:%M:%S"
-
-# Maximum number of frames to process in stack trace (prevents memory issues)
+# Maximum number of frames to process in a stack trace (prevents memory issues)
 MAX_STACK_FRAMES = 100
 
+# Maximum length of the string representation of a single local variable
+MAX_VALUE_LENGTH = 1000
+
+# Maximum length of the serialized parameters of the failing call
+MAX_PARAMS_LENGTH = 10000
+
+# Number of source lines shown before and after the failing line
+SOURCE_CONTEXT_LINES = 10
+
 # Keywords to filter from local variables (security: prevent logging sensitive data)
-SENSITIVE_KEYWORDS = ['password', 'passwd', 'pwd', 'token', 'secret', 'key', 'api_key', 
-                      'access_token', 'auth', 'credential', 'private', 'sensitive']
+SENSITIVE_KEYWORDS = (
+    'password', 'passwd', 'pwd', 'token', 'secret', 'key', 'api_key',
+    'access_token', 'auth', 'credential', 'private', 'sensitive',
+)
+
+FILTERED_PLACEHOLDER = '<FILTERED - sensitive information>'
+UNSERIALIZABLE_PLACEHOLDER = '<Cannot serialize>'
+TRUNCATION_SUFFIX = '... (truncated)'
+
+EXCEPTION_MODEL = 'base.general_exception'
 
 
-class VariableValue(models.Model):
+def is_sensitive(name):
+    """Tell whether a variable name looks like it holds a secret.
+
+    :param name: variable name as found in a frame
+    :return: True when the name must not be logged
     """
-    Stores the name and string representation of a local variable within a call frame.
+    lowered = str(name).lower()
+    return any(keyword in lowered for keyword in SENSITIVE_KEYWORDS)
+
+
+def format_value(value):
+    """Render a local variable as a bounded, filtered string."""
+    try:
+        text = str(value)
+    except Exception:  # noqa: BLE001 - any __str__ may raise, and must not break logging
+        return UNSERIALIZABLE_PLACEHOLDER
+    if len(text) > MAX_VALUE_LENGTH:
+        text = text[:MAX_VALUE_LENGTH] + TRUNCATION_SUFFIX
+    return text
+
+
+def capture_locals(frame):
+    """Build the ``base.variable_value`` commands for the locals of a frame.
+
+    Names matching a sensitive keyword are replaced by a placeholder, and
+    every value is truncated to ``MAX_VALUE_LENGTH``.
+
+    :param frame: a Python frame object
+    :return: a list of ``Command.create`` commands, sorted by variable name
     """
-    _name = "base.variable_value"
-    _description = "Exceptions: Variable Value"
+    try:
+        frame_locals = dict(frame.f_locals)
+    except Exception:  # noqa: BLE001 - reading a live frame must not break logging
+        return []
 
-    frame = fields.Many2one(comodel_name='base.frame', string='Frame', ondelete="cascade", help="Related stack frame")
-    sequence = fields.Integer(string='Sequence', help="Order of appearance in the frame")
-    name = fields.Char(string='Name', readonly=True, help="Variable name")
-    value = fields.Text(string='Value', readonly=True, help="Variable value (string representation)")
+    values = []
+    for name, value in frame_locals.items():
+        name = str(name)
+        values.append((name, FILTERED_PLACEHOLDER if is_sensitive(name) else format_value(value)))
+    values.sort(key=lambda item: item[0])
+    return [
+        Command.create({'sequence': sequence, 'name': name, 'value': value})
+        for sequence, (name, value) in enumerate(values, start=1)
+    ]
 
 
-class Frame(models.Model):
+def capture_source(frame):
+    """Render the source lines around the failing line of a frame as HTML.
+
+    :param frame: a Python frame object
+    :return: an HTML ``<pre>`` block, escaped, with the failing line in bold
     """
-    Represents a single entry in the execution stack trace.
-    Captures the file, line number, source code snippet, and local variables.
-    """
-    _name = "base.frame"
-    _description = "Exceptions: Call Frame"
-
-    gexception = fields.Many2one(comodel_name='base.general_exception', string='Exception', ondelete="cascade", help="Related exception log")
-    src_code = fields.Html(string='Source code', readonly=True, help="HTML formatted source code snippet")
-    line_number = fields.Integer(string='Line number', readonly=True, help="Line number where the exception occurred")
-    file_name = fields.Char(string='File name', readonly=True, help="Absolute path to the source file")
-    locals = fields.One2many(comodel_name='base.variable_value',
-                             inverse_name='frame',
-                             string='Local variables',
-                             readonly=True,
-                             help="List of local variables captured at this frame")
-
-    @api.depends('file_name', 'line_number')
-    def _compute_display_name(self):
-        for record in self:
-            record.display_name = "%s %d" % (record.file_name, record.line_number)
-
-    @api.model
-    def _name_search(self, name, domain=None, operator='ilike', limit=80, order=None):
-        """
-        Allows searching frames by file name or line number.
-        """
-        domain = domain or []
-        if operator != 'ilike' or (name or '').strip():
-            name_domain = ['|', ('file_name', operator, name), ('line_number', operator, name)]
-            domain = expression.AND([name_domain, domain])
-        return self._search(domain, limit=limit, order=order)
-
-class GeneralException (models.Model):
-    """
-    Main model for storing exception logs.
-    Aggregates error messages, stack frames, and execution metadata.
-    """
-    _name = "base.general_exception"
-    _inherit = ['mail.thread', 'mail.activity.mixin']
-    _description = "Exceptions: Exception Log"
-    _order = "timestamp desc"
-
-    name = fields.Char(string='Identification', readonly=True, help="Unique reference ID for the exception")
-    service = fields.Char(string='Service', readonly=True, help="Name of the service or component where the error occurred")
-    exception = fields.Text(string='Exception', readonly=True, help="Full exception message and cause chain")
-    method = fields.Char(string='Method', readonly=True, help="Method name being executed")
-    params = fields.Text(string='Params', readonly=True, help="Parameters passed to the method (string representation)")
-    timestamp = fields.Datetime(string='Timestamp', readonly=True, help="When the exception occurred")
-    do_not_purge = fields.Boolean(string='Do not purge?', readonly=True, help="If checked, this log will be excluded from the automatic purge")
-    user = fields.Many2one(comodel_name='res.users', string='User', readonly=True, ondelete='set null', help="User who triggered the exception")
-    frames = fields.One2many(comodel_name='base.frame', inverse_name='gexception', string='Frames', readonly=True, help="Ordered stack frames")
-    frames_count = fields.Integer(string='Frames Count', compute='_compute_frames_count', readonly=True, help="Number of frames in the stack trace")
-
-    @api.model_create_multi
-    def create(self, vals_list):
-        for vals in vals_list:
-            vals = vals or {}
-            # Generate a unique reference using a sequence
-            vals['name'] = self.env['ir.sequence'].next_by_code('base.general_exception') or '/'
-            vals['timestamp'] = fields.Datetime.now()
-        return super(GeneralException, self).create(vals_list)
-
-    def _compute_frames_count(self):
-        for record in self:
-            record.frames_count = len(record.frames) if record.frames else 0
-
-    def action_frames(self):
-        """
-        Returns an action to view the frames associated with this exception.
-        """
-        self.ensure_one()
-
-        ge = self
-        return {
-            'name': _("Frames"),
-            'view_mode': 'list,form',
-            'view_type': 'form',
-            'res_model': 'base.frame',
-            'type': 'ir.actions.act_window',
-            'domain': [('gexception', '=', ge.id)],
-            'nodestroy': True,
-        }
-        
-    def action_clean(self):
-        """
-        Scheduled action to purge exception logs older than 30 days.
-        Records marked with 'do_not_purge' are ignored.
-        """
-        # Use fields.Datetime.now() instead of deprecated datetime.utcnow()
-        # fields.Datetime handles timezone correctly
-        now = fields.Datetime.now()
-        one_month_before_dt = now - datetime.timedelta(days=30)
-        one_month_before = one_month_before_dt.strftime(DT_FORMAT)
-        to_delete = super(GeneralException, self).search(
-            [('do_not_purge', '!=', True),
-             ('timestamp', '<', one_month_before)
-             ]
+    try:
+        lines, first_line_number = inspect.getsourcelines(frame)
+    except Exception as error:  # noqa: BLE001 - source may be unavailable (C code, exec, ...)
+        return Markup("<pre>\n%s</pre>\n") % (
+            "SOURCE NOT AVAILABLE: %s" % exception_to_unicode(error)
         )
-        _logger.info("Cleaning old exceptions. %d eligible exceptions found" % len(to_delete))
-        if to_delete:
-            to_delete.unlink()
-        
-        return True
 
-    @api.model
-    def new_exception(self, e, service_name='unknown', method='unknown', params=None):
-        """
-        Entry point to manually register an exception from within a model.
-        """
-        register_exception(service_name, method, params, self.env.cr.dbname, self.env.user.id, e)
+    rendered = []
+    for offset, line in enumerate(lines):
+        line_number = first_line_number + offset
+        if not (frame.f_lineno - SOURCE_CONTEXT_LINES) < line_number < (frame.f_lineno + SOURCE_CONTEXT_LINES):
+            continue
+        text = escape("%5d: %s" % (line_number, line))
+        rendered.append(Markup("<b>%s</b>") % text if line_number == frame.f_lineno else text)
+
+    return Markup("<pre>\n%s</pre>\n") % Markup("").join(rendered)
+
+
+def capture_frames(tb):
+    """Build the ``base.frame`` commands for a traceback.
+
+    Frames are stored innermost first, which is where the reader starts. A
+    stack deeper than ``MAX_STACK_FRAMES`` keeps its innermost frames, the
+    ones that say where it broke, and drops the callers above them.
+
+    :param tb: a traceback object, or None
+    :return: a list of ``Command.create`` commands
+    """
+    frames = []
+    while tb:
+        frames.append(tb.tb_frame)
+        tb = tb.tb_next
+    frames.reverse()
+    return [
+        Command.create({
+            'file_name': frame.f_code.co_filename,
+            'line_number': frame.f_lineno,
+            'src_code': capture_source(frame),
+            'locals': capture_locals(frame),
+        })
+        for frame in frames[:MAX_STACK_FRAMES]
+    ]
+
+
+def format_exception_chain(e):
+    """Render an exception and the chain of exceptions that caused it."""
+    messages = []
+    seen = set()
+    current = e
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        messages.append(exception_to_unicode(current))
+        current = current.__cause__
+    return "\n\nCaused by:\n".join(messages)
+
+
+def serialize_params(params):
+    """Render the parameters of the failing call as a bounded string."""
+    if params is None:
+        return '{}'
+    try:
+        if isinstance(params, (dict, list)):
+            text = json.dumps(params, default=str, ensure_ascii=False)
+        else:
+            text = str(params)
+    except Exception as error:  # noqa: BLE001 - serialization must never break logging
+        _logger.warning("Error serializing params in register_exception: %s", error)
+        return '<Error serializing params: %s>' % exception_to_unicode(error)
+    if len(text) > MAX_PARAMS_LENGTH:
+        text = text[:MAX_PARAMS_LENGTH] + TRUNCATION_SUFFIX
+    return text
+
+
+def build_exception_vals(service_name, method, params, uid, e, tb=None):
+    """Turn an exception into the values of a ``base.general_exception`` record.
+
+    This function touches no cursor and no registry, so it can be called and
+    tested outside of any transaction.
+
+    :param service_name: string identifying the origin (e.g. 'sale.order')
+    :param method: method name where the error occurred
+    :param params: arguments passed to the method (dict, list, or any object)
+    :param uid: id of the user who triggered the exception, or False
+    :param e: the exception instance
+    :param tb: traceback to walk; defaults to the one carried by ``e``, then
+        to the one currently being handled. Pass a falsy value to skip the stack.
+    :return: a dict of values ready for ``create``
+    """
+    if tb is None:
+        tb = e.__traceback__ or sys.exc_info()[2]
+    return {
+        'service': service_name or 'unknown',
+        'exception': format_exception_chain(e),
+        'method': method or 'unknown',
+        'params': serialize_params(params),
+        'do_not_purge': False,
+        'user': uid or False,
+        'frames': capture_frames(tb),
+    }
+
+
+def register_exception(service_name, method, params, db, uid, e):
+    """Log an exception into the database.
+
+    A new cursor is opened so that the log is persisted even when the main
+    transaction fails and is rolled back.
+
+    :param service_name: string identifying the origin (e.g. 'sale.order')
+    :param method: method name where the error occurred
+    :param params: arguments passed to the method (dict, list, or any object)
+    :param db: database name; falls back to the one of the current thread
+    :param uid: id of the user who triggered the exception
+    :param e: the exception instance
+    :return: the unique exception reference, or None when nothing was logged.
+        This function is designed never to raise, even if logging fails.
+    """
+    if not service_name:
+        _logger.warning("register_exception called with empty service_name, using 'unknown'")
+        service_name = 'unknown'
+
+    if not db:
+        db = getattr(threading.current_thread(), 'dbname', False)
+        if not db:
+            _logger.debug("register_exception called with empty db, skipping logging")
+            return None
+
+    try:
+        db_registry = Registry(db)
+    except Exception as registry_error:  # noqa: BLE001 - a broken registry must not mask the original error
+        _logger.error("Error accessing registry for database '%s' in register_exception: %s",
+                      db, registry_error)
+        return None
+
+    if EXCEPTION_MODEL not in db_registry:
+        _logger.debug("Model '%s' not found in registry for database '%s'", EXCEPTION_MODEL, db)
+        return None
+
+    try:
+        vals = build_exception_vals(service_name, method, params, uid, e)
+        _logger.info("About to log exception [%s], on service [%s, %s]",
+                     vals['exception'], service_name, method)
+        with db_registry.cursor() as new_cr:
+            env = api.Environment(new_cr, SUPERUSER_ID, {})
+            record = env[EXCEPTION_MODEL].create(vals)
+            reference = record.name
+            # Own cursor, own transaction: committing here is what makes the
+            # log survive the rollback of the transaction that failed.
+            new_cr.commit()
+            return reference
+    except Exception as logging_error:  # noqa: BLE001 - logging must never mask the original error
+        _logger.error("Error logging an exception in database '%s': %s. Service: %s, Method: %s",
+                      db, logging_error, service_name, method, exc_info=True)
+        return None
 
 
 def exception_managed(service_name=None):
-    """
-    Decorator to automatically log exceptions in a method to the numa_exceptions system.
-    It captures the execution context and calls register_exception before re-raising.
+    """Decorate a model method so that its failures are logged and re-raised.
 
-    :param service_name: Optional name for the service. Defaults to the model name.
+    :param service_name: optional name for the service; defaults to the model name
     """
     def decorator(func):
         @functools.wraps(func)
@@ -194,363 +292,15 @@ def exception_managed(service_name=None):
             try:
                 return func(self, *args, **kwargs)
             except Exception as e:
-                # Use provided service_name or fallback to model name
-                s_name = service_name or getattr(self, '_name', 'UnknownService')
-
-                # Extract Odoo environment details from 'self'
-                # Works for both instance methods and @api.model methods
-                db = self.env.cr.dbname
-                uid = self.env.uid
-
-                # Register the exception using the independent cursor logic
                 register_exception(
-                    service_name=s_name,
+                    service_name=service_name or getattr(self, '_name', 'UnknownService'),
                     method=func.__name__,
                     params={'args': args, 'kwargs': kwargs},
-                    db=db,
-                    uid=uid,
-                    e=e
+                    db=self.env.cr.dbname,
+                    uid=self.env.uid,
+                    e=e,
                 )
-                # Re-raise to ensure the standard Odoo error handling is not bypassed
-                raise e
+                # Re-raise so that the standard Odoo error handling is not bypassed
+                raise
         return wrapper
     return decorator
-
-
-def register_exception(service_name, method, params, db, uid, e):
-    """
-    Global utility function to log an exception into the database.
-    It opens a new database cursor to ensure the log is persisted even if the 
-    main transaction fails and is rolled back.
-    
-    :param service_name: String identifying the origin (e.g., 'sale.order')
-    :param method: Method name where the error occurred
-    :param params: Arguments passed to the method (dict, list, or any serializable object)
-    :param db: Database name
-    :param uid: User ID
-    :param e: Exception instance
-    :return: Unique exception reference string (name) or None
-    
-    Raises:
-        None: This function is designed to never raise exceptions, even if logging fails.
-    """
-    # Validate parameters
-    if not service_name:
-        _logger.warning("register_exception called with empty service_name, using 'unknown'")
-        service_name = 'unknown'
-    
-    if not db:
-        # Try to get db from thread as fallback
-        db = getattr(threading.current_thread(), 'dbname', False)
-        if not db:
-            _logger.debug("register_exception called with empty db, skipping logging")
-            return None
-
-    try:
-        db_registry = odoo.modules.registry.Registry(db)
-    except Exception as registry_error:
-        _logger.error("Error accessing registry for database '%s' in register_exception: %s", 
-                     db, registry_error)
-        return None
-
-    if not db_registry:
-        _logger.debug("Registry not available for database '%s' in register_exception", db)
-        return None
-
-    if "base.general_exception" in db_registry:
-        try:
-            with db_registry.cursor() as new_cr:
-                env = api.Environment(new_cr, SUPERUSER_ID, {})
-                ge_obj = env["base.general_exception"]
-
-                tb = sys.exc_info()[2]
-                if tb:
-                    frames = []
-                    count = 0
-                    while tb and count < MAX_STACK_FRAMES:
-                        frame = tb.tb_frame
-                        local_vars = []
-                        output = '<pre>\n'
-                        try:
-                            if count >= 0:
-                                # Filter sensitive variables to prevent logging passwords, tokens, etc.
-                                filtered_locals = {}
-                                for k, v in frame.f_locals.items():
-                                    # Skip variables with sensitive keywords in their name
-                                    if any(keyword in k.lower() for keyword in SENSITIVE_KEYWORDS):
-                                        filtered_locals[k] = '<FILTERED - sensitive information>'
-                                    else:
-                                        try:
-                                            # Truncate very long values to prevent excessive storage
-                                            str_value = str(v)
-                                            if len(str_value) > 1000:
-                                                str_value = str_value[:1000] + '... (truncated)'
-                                            filtered_locals[k] = str_value
-                                        except Exception:
-                                            filtered_locals[k] = '<Cannot serialize>'
-                                
-                                local_vars = [(0, 0, {'name': str(k), 'value': v})
-                                              for k, v in filtered_locals.items()]
-                                local_vars.sort(key=lambda x: x[2]['name'])
-                                seq = 1
-                                for lv in local_vars:
-                                    lv[2]['sequence'] = seq
-                                    seq += 1
-                                lines, lineno = inspect.getsourcelines(frame)
-                                for line in lines:
-                                    if (frame.f_lineno - 10) < lineno < (frame.f_lineno + 10):
-                                        if frame.f_lineno == lineno:
-                                            fmt = '<b>%5d: %s</b>'
-                                        else:
-                                            fmt = '%5d: %s'
-                                        output += fmt % (lineno, line)
-                                    lineno += 1
-                        except Exception as process_exception:
-                            output += "\nEXCEPTION DURING PROCESSING: %s" % exception_to_unicode(process_exception)
-
-                        output += '</pre>\n'
-                        frames.append(
-                            (0, 0, {'file_name': frame.f_code.co_filename,
-                                    'line_number': frame.f_lineno,
-                                    'src_code': output,
-                                    'locals': local_vars}))
-                        count += 1
-                        tb = tb.tb_next
-                    frames.reverse()
-
-                    def get_exception_chain(exc):
-                        if exc.__cause__:
-                            return "%s\n\nCaused by:\n%s" % (str(exc), get_exception_chain(exc.__cause__))
-                        return str(exc)
-
-                    exc_description = get_exception_chain(e)
-
-                    # Serialize params safely to prevent issues with non-serializable objects
-                    params_str = None
-                    try:
-                        if params is None:
-                            params_str = None
-                        elif isinstance(params, (str, int, float, bool)):
-                            params_str = str(params)
-                        elif isinstance(params, (dict, list)):
-                            # Try JSON serialization first for structured data
-                            params_str = json.dumps(params, default=str, ensure_ascii=False)
-                        else:
-                            # Fallback to string representation
-                            params_str = str(params)
-                            # Truncate if too long
-                            if len(params_str) > 10000:
-                                params_str = params_str[:10000] + '... (truncated)'
-                    except Exception as serialize_error:
-                        _logger.warning("Error serializing params in register_exception: %s", serialize_error)
-                        params_str = '<Error serializing params: %s>' % str(serialize_error)
-
-                    vals = {
-                        'service': service_name,
-                        'exception': exc_description,
-                        'method': method or 'unknown',
-                        'params': params_str if params_str else '{}',
-                        'do_not_purge': False,
-                        'user': uid if uid else False,
-                        'frames': frames,
-                    }
-                    _logger.error("About to log exception [%s], on service [%s, %s, %s]" %
-                                  (exc_description, service_name, method, params))
-                    try:
-                        ge = ge_obj.sudo().create(vals)
-                        ename = ge.name
-                        new_cr.commit()
-                        return ename
-                    except Exception as create_exception:
-                        new_cr.rollback()
-                        _logger.error("Error creating exception record in database: %s. "
-                                     "Service: %s, Method: %s", 
-                                     create_exception, service_name, method, exc_info=True)
-                        return None
-        except Exception as cursor_error:
-            _logger.error("Error opening database cursor in register_exception: %s. "
-                         "Database: %s", cursor_error, db, exc_info=True)
-            return None
-    else:
-        _logger.debug("Model 'base.general_exception' not found in registry for database '%s'", db)
-
-    return None
-
-
-class IrHttp(models.AbstractModel):
-    """
-    Extends Odoo's HTTP dispatcher to automatically capture and log 
-    unhandled exceptions during web requests.
-    """
-    _inherit = 'ir.http'
-
-    @classmethod
-    def _dispatch(cls, endpoint):
-        try:
-            return super(IrHttp, cls)._dispatch(endpoint)
-        except Exception as e:
-            # Do not log or wrap flow-control exceptions (redirects, etc.)
-            if isinstance(e, (
-                    odoo.exceptions.RedirectWarning,
-                    SessionExpiredException,
-                    UserError,
-                    ValidationError,
-                    AccessDenied,
-                    AccessError,
-                    werkzeug.exceptions.HTTPException)):
-                raise e
-
-            _logger.exception(e)
-            # Log the exception and get a unique reference ID
-            # Validate request is available before accessing its attributes
-            ename = None
-            db = getattr(request, 'db', False) if request else False
-            if not db:
-                db = getattr(threading.current_thread(), 'dbname', False)
-
-            if request:
-                ename = register_exception(
-                    'Endpoint %s' % (request.httprequest if hasattr(request, 'httprequest') else 'Unknown'),
-                    'IrHttp.dispatch',
-                    request.params if hasattr(request, 'params') else {},
-                    db,
-                    request.env.uid if hasattr(request, 'env') else SUPERUSER_ID,
-                    e)
-            else:
-                # Fallback for non-HTTP contexts (e.g., tests, cron)
-                ename = register_exception(
-                    'IrHttp.dispatch (no request context)',
-                    'IrHttp.dispatch',
-                    {},
-                    db,
-                    SUPERUSER_ID,
-                    e)
-
-            # For critical system errors, wrap the exception in a UserError 
-            # with the reference ID to help the user report it.
-            if ename:
-                e = UserError(_('System error %s. Get in touch with your System Admin') % ename)
-
-            raise e
-
-
-def _handle_dispatcher_exception(dispatcher, exc):
-    """
-    Common logic to log exceptions from dispatchers.
-    """
-    if isinstance(exc, (
-            odoo.exceptions.RedirectWarning,
-            SessionExpiredException,
-            UserError,
-            ValidationError,
-            AccessDenied,
-            AccessError,
-            werkzeug.exceptions.HTTPException)):
-        return
-
-    req = getattr(dispatcher, 'request', None)
-    if not req and request:
-        req = request
-
-    db = getattr(req, 'db', False) if req else False
-    if not db:
-        db = getattr(threading.current_thread(), 'dbname', False)
-
-    params = {}
-    if req:
-        try:
-            params = getattr(req, 'params', {})
-        except Exception:
-            pass
-
-    path = 'unknown'
-    if req:
-        try:
-            path = req.httprequest.path
-        except Exception:
-            pass
-
-    uid = SUPERUSER_ID
-    if req:
-        try:
-            uid = req.env.uid
-        except Exception:
-            pass
-
-    register_exception(
-        'Dispatcher %s (%s)' % (dispatcher.__class__.__name__, path),
-        'Dispatcher.handle_error',
-        params,
-        db,
-        uid,
-        exc)
-
-
-original_http_handle_error = HttpDispatcher.handle_error
-
-
-def numa_http_handle_error(self, exc):
-    try:
-        _handle_dispatcher_exception(self, exc)
-    except Exception:
-        _logger.error("Error in numa_http_handle_error interception", exc_info=True)
-    return original_http_handle_error(self, exc)
-
-
-HttpDispatcher.handle_error = numa_http_handle_error
-
-original_json_handle_error = JsonRPCDispatcher.handle_error
-
-
-def numa_json_handle_error(self, exc):
-    try:
-        _handle_dispatcher_exception(self, exc)
-    except Exception:
-        _logger.error("Error in numa_json_handle_error interception", exc_info=True)
-    return original_json_handle_error(self, exc)
-
-
-JsonRPCDispatcher.handle_error = numa_json_handle_error
-
-original_dispatcher_handle_error = Dispatcher.handle_error
-
-
-def numa_dispatcher_handle_error(self, exc):
-    # Only process if not already handled by subclasses (though it shouldn't hurt)
-    if self.__class__ is Dispatcher:
-        try:
-            _handle_dispatcher_exception(self, exc)
-        except Exception:
-            _logger.error("Error in numa_dispatcher_handle_error interception", exc_info=True)
-    return original_dispatcher_handle_error(self, exc)
-
-
-Dispatcher.handle_error = numa_dispatcher_handle_error
-
-
-class IrCron(models.Model):
-    """
-    Extends Odoo's Cron manager to automatically log exceptions 
-    occurring during scheduled actions.
-    """
-    _inherit = 'ir.cron'
-
-    @api.model
-    def _handle_callback_exception(self, cron_name, server_action_id, job_id, job_exception):
-        model = 'CRON %s' % (cron_name or '<unknown>')
-        method = None
-        params = [server_action_id, job_id]
-        db = self.env.cr.dbname or getattr(threading.current_thread(), 'dbname', False)
-        uid = self.env.user.id
-
-        # Automatically log cron failures
-        register_exception(
-            model,
-            method,
-            params,
-            db,
-            uid,
-            job_exception)
-
-        return super()._handle_callback_exception(cron_name, server_action_id, job_id, job_exception)
-

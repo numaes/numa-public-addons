@@ -4,16 +4,94 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Odoo Server saas~13.4\n"
+"Project-Id-Version: Odoo Server 20.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2020-08-22 16:43+0000\n"
-"PO-Revision-Date: 2020-08-22 16:43+0000\n"
+"POT-Creation-Date: 2026-09-20 14:34+0000\n"
+"PO-Revision-Date: 2026-09-20 14:34+0000\n"
 "Last-Translator: \n"
 "Language-Team: \n"
+"Language: es\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: \n"
 "Plural-Forms: \n"
+
+#. module: numa_exceptions
+#: model:ir.module.module,description:base.module_numa_exceptions
+msgid ""
+"\n"
+"NUMA Exceptions\n"
+"===============\n"
+"This module provides a robust infrastructure for capturing, persisting, and analyzing \n"
+"system exceptions directly within the Odoo database.\n"
+"\n"
+"Key Features:\n"
+"-------------\n"
+"* **Persistent Logging:** Exception information is stored in the database, allowing \n"
+"  historical analysis even after server restarts.\n"
+"* **Detailed Traceability:** Records the complete stack trace, including source code \n"
+"  snippets, local variable values, and method parameters for each frame.\n"
+"* **Automatic Capture:** Hooks ``ir.http._handle_error`` and ``ir.cron._callback``,\n"
+"  so unhandled exceptions of every dispatcher (HTTP, JSON-RPC and JSON2) and of every\n"
+"  scheduled action are logged.\n"
+"* **User Support:** When an error occurs, the user is provided with a unique exception \n"
+"  reference ID to facilitate communication with system administrators.\n"
+"* **Online Inspection:** Administrators can view detailed error reports directly \n"
+"  through the Odoo interface without needing direct server or log file access.\n"
+"* **Automatic Decorator:** Easy-to-use `@exception_managed` decorator for models \n"
+"  to automate traceability with minimal code changes.\n"
+"* **Retention Policy:** A daily cron purges old exception records. The retention\n"
+"  period defaults to 30 days and is set with the ``numa_exceptions.retention_days``\n"
+"  system parameter; 0 disables the purge.\n"
+"\n"
+"Technical Information:\n"
+"----------------------\n"
+"The module uses a separate database cursor for logging, ensuring that exception\n"
+"details are persisted even if the main transaction is rolled back.\n"
+"\n"
+"Migrated to Odoo 20.0. See README.md for the list of API changes.\n"
+msgstr ""
+"\n"
+"NUMA Excepciones\n"
+"================\n"
+"Este módulo aporta una infraestructura robusta para capturar, persistir y analizar\n"
+"las excepciones del sistema directamente en la base de datos de Odoo.\n"
+"\n"
+"Características principales:\n"
+"----------------------------\n"
+"* **Registro persistente:** la información de la excepción se guarda en la base de\n"
+"  datos, de modo que el análisis histórico sigue siendo posible tras reiniciar el\n"
+"  servidor.\n"
+"* **Trazabilidad detallada:** se registra la traza de la pila completa, incluyendo\n"
+"  fragmentos del código fuente, los valores de las variables locales y los\n"
+"  parámetros del método para cada frame.\n"
+"* **Captura automática:** engancha ``ir.http._handle_error`` e ``ir.cron._callback``,\n"
+"  de manera que se registran las excepciones no tratadas de todos los dispatchers\n"
+"  (HTTP, JSON-RPC y JSON2) y de todas las acciones planificadas.\n"
+"* **Ayuda al usuario:** cuando ocurre un error, se le entrega al usuario un\n"
+"  identificador único de la excepción para facilitar la comunicación con los\n"
+"  administradores del sistema.\n"
+"* **Inspección en línea:** los administradores consultan los informes de error\n"
+"  detallados desde la propia interfaz de Odoo, sin necesidad de acceder al servidor\n"
+"  ni a los archivos de log.\n"
+"* **Decorador automático:** el decorador ``@exception_managed`` automatiza la\n"
+"  trazabilidad de un modelo con cambios mínimos en el código.\n"
+"* **Política de retención:** una acción planificada diaria purga los registros\n"
+"  antiguos. El período de retención es de 30 días por omisión y se configura con el\n"
+"  parámetro de sistema ``numa_exceptions.retention_days``; 0 desactiva la purga.\n"
+"\n"
+"Información técnica:\n"
+"--------------------\n"
+"El módulo usa un cursor de base de datos separado para el registro, lo que asegura\n"
+"que los detalles de la excepción se persistan incluso si la transacción principal\n"
+"se deshace.\n"
+"\n"
+"Migrado a Odoo 20.0. Ver README.md para la lista de cambios de API.\n"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_frame__file_name
+msgid "Absolute path to the source file"
+msgstr "Ruta absoluta al archivo fuente"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_needaction
@@ -31,6 +109,11 @@ msgid "Activity Exception Decoration"
 msgstr "Decorador de actividad"
 
 #. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_plans_ids
+msgid "Activity Plans"
+msgstr "Planes de actividad"
+
+#. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_state
 msgid "Activity State"
 msgstr "Estado de la actividad"
@@ -39,6 +122,11 @@ msgstr "Estado de la actividad"
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_type_icon
 msgid "Activity Type Icon"
 msgstr "Tipo de actividad"
+
+#. module: numa_exceptions
+#: model:ir.module.module,summary:base.module_numa_exceptions
+msgid "Advanced Exception Logging and Traceability"
+msgstr "Registro y trazabilidad avanzados de excepciones"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_attachment_count
@@ -63,6 +151,8 @@ msgstr "Creado el"
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__display_name
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__display_name
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__display_name
+#: model:ir.model.fields,field_description:numa_exceptions.field_ir_cron__display_name
+#: model:ir.model.fields,field_description:numa_exceptions.field_ir_http__display_name
 msgid "Display Name"
 msgstr "Nombre mostrado"
 
@@ -93,30 +183,23 @@ msgstr "Excepciones"
 
 #. module: numa_exceptions
 #: model:ir.actions.server,name:numa_exceptions.ir_cron_scheduler_alarm_ir_actions_server
-#: model:ir.cron,cron_name:numa_exceptions.ir_cron_scheduler_alarm
-#: model:ir.cron,name:numa_exceptions.ir_cron_scheduler_alarm
 msgid "Exceptions cleaning"
 msgstr "Limpiar excepciones"
 
 #. module: numa_exceptions
-#: model_terms:ir.actions.act_window,help:numa_exceptions.exceptions_action
-msgid "Exceptions recorded."
-msgstr "Excepciones registradas"
-
-#. module: numa_exceptions
 #: model:ir.model,name:numa_exceptions.model_base_frame
-msgid "Exceptions: call frame"
-msgstr "Excepciones: call frame"
+msgid "Exceptions: Call Frame"
+msgstr "Excepciones: frame de llamada"
 
 #. module: numa_exceptions
 #: model:ir.model,name:numa_exceptions.model_base_general_exception
-msgid "Exceptions: exception log"
-msgstr "Excepciones: log"
+msgid "Exceptions: Exception Log"
+msgstr "Excepciones: registro de excepción"
 
 #. module: numa_exceptions
 #: model:ir.model,name:numa_exceptions.model_base_variable_value
-msgid "Exceptions: variable value"
-msgstr "Excepciones: variable"
+msgid "Exceptions: Variable Value"
+msgstr "Excepciones: valor de variable"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__file_name
@@ -129,47 +212,64 @@ msgid "Followers"
 msgstr "Seguidores"
 
 #. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_channel_ids
-msgid "Followers (Channels)"
-msgstr "Seguidores (Canales)"
-
-#. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_partner_ids
 msgid "Followers (Partners)"
 msgstr "Seguidores (Contactos)"
 
 #. module: numa_exceptions
-#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__activity_type_icon
-msgid "Font awesome icon e.g. fa-tasks"
-msgstr ""
-
-#. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__frame
 #: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_form_view
 msgid "Frame"
-msgstr ""
+msgstr "Frame"
 
 #. module: numa_exceptions
-#: code:addons/numa_exceptions/models/exceptions.py:0
+#. odoo-python
+#: code:addons/numa_exceptions/models/base_general_exception.py:0
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__frames
 #: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_list_view
 #: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_form_view
-#, python-format
 msgid "Frames"
 msgstr "Frames"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__frames_count
+msgid "Frames Count"
+msgstr "Cantidad de frames"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__exception
+msgid "Full exception message and cause chain"
+msgstr "Mensaje completo de la excepción y cadena de causas"
 
 #. module: numa_exceptions
 #: model_terms:ir.ui.view,arch_db:numa_exceptions.exc_frame_form_view
 #: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_form_view
 msgid "General"
-msgstr ""
+msgstr "General"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_frame__src_code
+msgid "HTML formatted source code snippet"
+msgstr "Fragmento de código fuente en formato HTML"
+
+#. module: numa_exceptions
+#: model:ir.model,name:numa_exceptions.model_ir_http
+msgid "HTTP Routing"
+msgstr "Enrutamiento HTTP"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__has_message
+msgid "Has Message"
+msgstr "Tiene mensaje"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__id
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__id
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__id
+#: model:ir.model.fields,field_description:numa_exceptions.field_ir_cron__id
+#: model:ir.model.fields,field_description:numa_exceptions.field_ir_http__id
 msgid "ID"
-msgstr ""
+msgstr "ID"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_exception_icon
@@ -188,7 +288,6 @@ msgstr "Identificación"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_needaction
-#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_unread
 msgid "If checked, new messages require your attention."
 msgstr "Si está marcada, los mensajes nuevos requieren su atención."
 
@@ -198,16 +297,15 @@ msgid "If checked, some messages have a delivery error."
 msgstr "Si está marcada, algunos mensajes tendrán un error de entrega."
 
 #. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_is_follower
-msgid "Is Follower"
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__do_not_purge
+msgid "If checked, this log is excluded from the automatic purge"
 msgstr ""
+"Si está marcada, este registro queda excluido de la limpieza automática"
 
 #. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_frame____last_update
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception____last_update
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value____last_update
-msgid "Last Modified on"
-msgstr "Última modificación en"
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_is_follower
+msgid "Is Follower"
+msgstr "Es seguidor"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__write_uid
@@ -229,6 +327,16 @@ msgid "Line number"
 msgstr "Nro. de línea"
 
 #. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_frame__line_number
+msgid "Line number where the exception occurred"
+msgstr "Número de línea donde ocurrió la excepción"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_frame__locals
+msgid "List of local variables captured at this frame"
+msgstr "Lista de variables locales capturadas en este frame"
+
+#. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_frame__locals
 msgid "Local variables"
 msgstr "Variables locales"
@@ -239,9 +347,9 @@ msgid "Locals"
 msgstr "Locales"
 
 #. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_main_attachment_id
-msgid "Main Attachment"
-msgstr "Attachment Principal"
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__activity_type_icon
+msgid "Material Symbols icon e.g. checklist"
+msgstr "Icono de Material Symbols, por ejemplo checklist"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_has_error
@@ -259,49 +367,89 @@ msgid "Method"
 msgstr "Método"
 
 #. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__method
+msgid "Method name being executed"
+msgstr "Nombre del método en ejecución"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__my_activity_date_deadline
+msgid "My Activity Deadline"
+msgstr "Fecha límite de mi actividad"
+
+#. module: numa_exceptions
+#: model:ir.module.module,shortdesc:base.module_numa_exceptions
+msgid "NUMA Exceptions"
+msgstr "NUMA Excepciones"
+
+#. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__name
 msgid "Name"
 msgstr "Nombre"
 
 #. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__service
+msgid "Name of the service or component where the error occurred"
+msgstr "Nombre del servicio o componente donde ocurrió el error"
+
+#. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_date_deadline
 msgid "Next Activity Deadline"
-msgstr ""
+msgstr "Fecha límite de la siguiente actividad"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_summary
 msgid "Next Activity Summary"
-msgstr ""
+msgstr "Resumen de la siguiente actividad"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_type_id
 msgid "Next Activity Type"
-msgstr ""
+msgstr "Tipo de la siguiente actividad"
+
+#. module: numa_exceptions
+#: model_terms:ir.actions.act_window,help:numa_exceptions.exceptions_action
+msgid "No exception has been recorded yet."
+msgstr "Todavía no se registró ninguna excepción."
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_needaction_counter
 msgid "Number of Actions"
-msgstr ""
+msgstr "Cantidad de acciones"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_has_error_counter
 msgid "Number of errors"
-msgstr ""
+msgstr "Cantidad de errores"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__frames_count
+msgid "Number of frames in the stack trace"
+msgstr "Cantidad de frames en la traza de la pila"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_needaction_counter
-msgid "Number of messages which requires an action"
-msgstr ""
+msgid "Number of messages requiring action"
+msgstr "Cantidad de mensajes que requieren una acción"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_has_error_counter
 msgid "Number of messages with delivery error"
-msgstr ""
+msgstr "Cantidad de mensajes con error de entrega"
 
 #. module: numa_exceptions
-#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__message_unread_counter
-msgid "Number of unread messages"
-msgstr ""
+#: model:ir.model.fields,help:numa_exceptions.field_base_variable_value__sequence
+msgid "Order of appearance in the frame"
+msgstr "Orden de aparición en el frame"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__frames
+msgid "Ordered stack frames"
+msgstr "Frames de la pila, ordenados"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__params
+msgid "Parameters passed to the method (string representation)"
+msgstr "Parámetros pasados al método (representación como texto)"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__params
@@ -309,9 +457,24 @@ msgid "Params"
 msgstr "Parámetros"
 
 #. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_frame__gexception
+msgid "Related exception log"
+msgstr "Registro de excepción relacionado"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_variable_value__frame
+msgid "Related stack frame"
+msgstr "Frame de la pila relacionado"
+
+#. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__activity_user_id
 msgid "Responsible User"
-msgstr ""
+msgstr "Usuario responsable"
+
+#. module: numa_exceptions
+#: model:ir.model,name:numa_exceptions.model_ir_cron
+msgid "Scheduled Action"
+msgstr "Acción planificada"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__sequence
@@ -320,6 +483,7 @@ msgstr "Secuencia"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__service
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_search_view
 msgid "Service"
 msgstr "Servicio"
 
@@ -336,41 +500,65 @@ msgid ""
 "Today: Activity date is today\n"
 "Planned: Future activities."
 msgstr ""
+"Estado basado en las actividades\n"
+"Vencida: la fecha límite ya pasó\n"
+"Hoy: la actividad vence hoy\n"
+"Planificada: actividades futuras."
 
 #. module: numa_exceptions
-#: code:addons/numa_exceptions/models/exceptions.py:0
-#: code:addons/numa_exceptions/models/exceptions.py:0
-#, python-format
-msgid "System error %s. Get in touch with your System Admin"
-msgstr ""
-"Error de sistema %s. Póngase en contacto con su Administrador de sistema"
+#. odoo-python
+#: code:addons/numa_exceptions/models/ir_http.py:0
+msgid "System error %s. Get in touch with your System Admin."
+msgstr "Error de sistema %s. Comuníquese con el administrador del sistema."
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__timestamp
 msgid "Timestamp"
-msgstr ""
+msgstr "Marca de tiempo"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__activity_exception_decoration
 msgid "Type of the exception activity on record."
-msgstr ""
+msgstr "Tipo de la actividad de excepción en el registro."
 
 #. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_unread
-msgid "Unread Messages"
-msgstr ""
-
-#. module: numa_exceptions
-#: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__message_unread_counter
-msgid "Unread Messages Counter"
-msgstr ""
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__name
+msgid "Unique reference ID for the exception"
+msgstr "Identificador único de referencia de la excepción"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_general_exception__user
+#: model_terms:ir.ui.view,arch_db:numa_exceptions.exceptions_search_view
 msgid "User"
 msgstr "Usuario"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__user
+msgid "User who triggered the exception"
+msgstr "Usuario que provocó la excepción"
 
 #. module: numa_exceptions
 #: model:ir.model.fields,field_description:numa_exceptions.field_base_variable_value__value
 msgid "Value"
 msgstr "Valor"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_variable_value__name
+msgid "Variable name"
+msgstr "Nombre de la variable"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_variable_value__value
+msgid "Variable value (string representation)"
+msgstr "Valor de la variable (representación como texto)"
+
+#. module: numa_exceptions
+#: model:ir.model.fields,help:numa_exceptions.field_base_general_exception__timestamp
+msgid "When the exception occurred"
+msgstr "Cuándo ocurrió la excepción"
+
+#. module: numa_exceptions
+#. odoo-python
+#: code:addons/numa_exceptions/models/base_general_exception.py:0
+msgid "gexception"
+msgstr "gexception"
