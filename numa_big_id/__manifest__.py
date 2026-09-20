@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Numa Big ID',
-    'version': '18.0.1.0.0',
+    'version': '20.0.1.0.0',
     'summary': 'Convert all integer IDs and foreign keys to BIGINT (int8) for infinite scalability',
     'description': """
 Numa Big ID
@@ -51,9 +51,9 @@ Install it on a database that has not been migrated yet, verify with
     'website': 'https://www.numaes.com',
     'license': 'LGPL-3',
     'category': 'Extra Tools',
-    'depends': [
-        'base',
-    ],
+    # Sin 'base': un manifest sin depends lo recibe igual, y listarlo hace que
+    # actualizar base actualice también este módulo.
+    'depends': [],
     'data': [],
     'installable': True,
     'auto_install': False,

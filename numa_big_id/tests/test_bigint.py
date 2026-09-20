@@ -107,3 +107,40 @@ class TestBigIntSchema(TransactionCase):
         self.assertFalse(
             verify_bigint(self.env.cr)['int4_ids'],
             "and nothing identity-shaped left to convert")
+
+
+@tagged('post_install', '-at_install')
+class TestBigIntAutoFalseModels(TransactionCase):
+    """Un modelo ``_auto = False`` escribe su propia DDL, y en el core dice ``id serial``.
+
+    Es la ventana que ni el ``pre_init_hook`` ni el parche de ``create_model_table``
+    cubren: el hook corre antes de que se instalen los ``auto_install``, y esas tablas
+    no pasan por ``create_model_table``. La barrida de ``_register_hook`` existe por
+    esto, y en una instalación limpia ``auth_totp_device`` salía en 32 bits sin que
+    nada se quejara.
+    """
+
+    def _tipo_de_id(self, tabla):
+        self.env.cr.execute("""SELECT data_type FROM information_schema.columns
+                                WHERE table_schema = 'public'
+                                  AND table_name = %s AND column_name = 'id'""", (tabla,))
+        fila = self.env.cr.fetchone()
+        return fila and fila[0]
+
+    def test_01_a_hand_written_table_is_wide_too(self):
+        tipo = self._tipo_de_id('auth_totp_device')
+        if tipo is None:
+            self.skipTest("auth_totp no está instalado en esta base")
+        self.assertEqual(tipo, 'bigint',
+                         "auth_totp_device es _auto = False: su init() escribe 'id serial', "
+                         "y la barrida final tiene que haberlo ensanchado")
+
+    def test_02_no_id_column_is_left_narrow(self):
+        """La invariante entera, dicha sin rodeos."""
+        self.env.cr.execute("""SELECT table_name FROM information_schema.columns
+                                WHERE table_schema = 'public'
+                                  AND column_name = 'id' AND data_type = 'integer'
+                             ORDER BY table_name""")
+        angostas = [fila[0] for fila in self.env.cr.fetchall()]
+        self.assertFalse(angostas,
+                         "estas tablas todavía reparten ids de 32 bits: %s" % ', '.join(angostas))

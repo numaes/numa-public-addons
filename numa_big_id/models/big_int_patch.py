@@ -52,7 +52,7 @@ def _many2many_update_db_bigint(self, model, columns):
     time — the alternative is creating it as INTEGER and altering it afterwards, which
     rewrites a table that may already be large and leaves a window where it is wrong.
     """
-    cr = model._cr
+    cr = model.env.cr
     if not odoo.tools.sql.table_exists(cr, self.relation):
         comodel = model.env[self.comodel_name]
         cr.execute(SQL(
