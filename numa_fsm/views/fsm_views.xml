@@ -80,7 +80,7 @@
                 <search string="FSM Definition search">
                     <field name="name" />
                     <field name="type" />
-                    <group expand="0" name="group_by" string="Group By">
+                    <group name="group_by">
                         <filter string="type" name="group_type" context="{'group_by': 'type'}"/>
                     </group>
                 </search>
@@ -171,11 +171,11 @@
                     <field name="definition_id" />
                     <field name="fsm_state" />
                     <field name="current_state_id" />
-                    <group expand="0" name="filtered_by" string="Filtered By">
+                    <group name="filtered_by">
                         <filter string="Running" name="running" domain="[('fsm_state', '=', 'running')]"/>
                         <filter string="Paused" name="paused" domain="[('fsm_state', '=', 'paused')]"/>
                     </group>
-                    <group expand="0" name="group_by" string="Group By">
+                    <group name="group_by">
                         <filter string="Definition" name="group_definition" context="{'group_by': 'definition_id'}"/>
                         <filter string="Instance State" name="group_state" context="{'group_by': 'fsm_state'}"/>
                     </group>

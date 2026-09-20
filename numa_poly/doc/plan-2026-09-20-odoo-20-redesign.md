@@ -331,3 +331,54 @@ pass.
 
 Each phase ends with the suite run and the result recorded. A phase that needs
 a test changed is a phase that needs a conversation first.
+
+
+## Problema abierto: `website` y `numa_poly` en la misma corrida
+
+Detectado el 2026-09-20 al migrar `numa_fsm`, que depende de `website`.
+
+```bash
+odoo-bin -d nueva -i website,numa_poly --without-demo    # CRITICAL
+odoo-bin -d nueva -i website                            # ok
+odoo-bin -d nueva -i numa_poly                          # ok, después del anterior
+```
+
+El fallo es:
+
+```
+File "odoo/orm/fields_textual.py", line 279, in _insert_cache
+    field_cache[id_] = StoredTranslations(val)
+ValueError: dictionary update sequence element #0 has length 1; 2 is required
+```
+
+Llega por `theme_models.write` → `ir.ui.view.copy` → `copy_data` →
+`_get_stored_translations('arch_db')` → `fetch` → `_fetch_query`.
+
+Lo que está medido:
+
+- `website` solo instala bien; `website` + `numa_poly` en la misma corrida, no.
+- Instalados en corridas separadas, en cualquier orden, funciona. Copiar una
+  `ir.ui.view` en esa base funciona.
+- El dato en la base está sano: `jsonb_typeof(arch_db)` es `object` en todas las
+  filas, igual que sin poly. La columna es `jsonb` en ambos casos.
+- `numa_poly` delega correctamente en `poly_BaseModel_fetch_query` para
+  `ir.ui.view`: la traza muestra la línea del `return` al original.
+
+La forma del error dice que el SQL se generó **sin** `prefetch_langs` y la caché
+se leyó **con** él: `Char.to_sql` (`fields_textual.py:421-423`) mira
+`table._model.env.context`, mientras `_insert_cache` (`:273`) mira el contexto
+del recordset que devuelve `_fetch_query`. Si los dos entornos no son el mismo,
+el `->>lang` devuelve un string donde la caché espera un diccionario.
+
+Lo descartado, cada uno probado por separado y en conjunto: restringir
+`poly_BaseModel_fetch_query` y `_determine_fields_to_fetch` a modelos
+polimórficos, y apagar los parches de `Field.__get__` / `__set__`. Ninguno
+cambia el resultado. `numa_poly` no override `_search`, `_as_query` ni
+`_where_calc`.
+
+Queda por hacer: bisecar el resto de los parches, empezando por la inyección de
+`PolyBase` en `Model.__bases__`, para ubicar cuál de ellos hace que el `Query`
+llegue con otro entorno.
+
+**Mientras tanto**, un despliegue nuevo que necesite las dos cosas tiene que
+instalar `website` en una corrida y `numa_poly` en otra.

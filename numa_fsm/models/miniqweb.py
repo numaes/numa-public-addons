@@ -118,7 +118,10 @@ def _parse(template):
 
 
 def _evaluate(expression, params):
-    return safe_eval(expression, locals_dict=params)
+    # [fsm][20.0] safe_eval(expr, /, context=None, *, mode, filename): el espacio
+    # de nombres pasa posicional, y el keyword locals_dict ya no existe
+    # (tools/safe_eval/evaluation.py:388).
+    return safe_eval(expression, params)
 
 
 def _text(value):

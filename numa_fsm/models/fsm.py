@@ -608,8 +608,10 @@ class FSMInstance(models.Model):
             'log': log_message,
             'env': self.env,
             'model': self,
-            'datetime': odoo.fields.datetime,
-            'date': odoo.fields.date,
+            # [fsm][20.0] Antes salian de odoo.fields, que reexportaba los del
+            # stdlib; Odoo 20 ya no lo hace. Son los mismos, importados arriba.
+            'datetime': datetime,
+            'date': date,
             'timedelta': timedelta,
             'user': self.env.user,
             'company': self.env.company,

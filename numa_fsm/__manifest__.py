@@ -1,6 +1,6 @@
 {
     'name': 'Numa FSM',
-    'version': '18.0.1.1.0',
+    'version': '20.0.1.0.0',
     'summary': 'Finite State Machine engine for process automation.',
     'description': """
         Visual, graph-first FSM engine for Odoo. Design workflows with states, transitions, and outcomes;
@@ -12,7 +12,6 @@
     'license': 'LGPL-3',
     'category': 'Extra Tools',
     'depends': [
-        'base',
         'mail',
         'numa_poly',
         'numa_asynch_exec',
@@ -20,7 +19,7 @@
     ],
     'data': [
         'security/security.xml',
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'views/fsm_views.xml',
         'views/menu_views.xml',
     ],
