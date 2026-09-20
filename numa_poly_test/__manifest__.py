@@ -1,18 +1,16 @@
 {
-    'name': 'Numa Poly',
-    'version': '18.0.1.0.0',
+    'name': 'Numa Poly - Test',
+    'version': '20.0.1.0.0',
     'summary': 'Polymorphic model inheritance for Odoo.',
     'author': 'NUMA Extreme Systems',
     'website': 'https://www.numaes.com',
     'license': 'LGPL-3',
     'category': 'Extra Tools',
     'depends': [
-        'base',
         'numa_poly',
     ],
     'data': [
-        'security/security.xml',
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
     ],
     'installable': True,
 }

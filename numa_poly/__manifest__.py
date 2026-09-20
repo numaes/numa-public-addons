@@ -12,9 +12,8 @@
         'web',
     ],
     'data': [
+        'security/ir.access.csv',
         'data/poly_backfill_cron.xml',
-        'security/security.xml',
-        'security/ir.model.access.csv',
     ],
     'installable': True,
     'assets': {

@@ -652,33 +652,23 @@ def _poly_ensure_poly_ref(cls, target_model_name: str, dep_map: OrderedDict) -> 
 
 
 def _poly_inject_field(cls, fname: str, field) -> None:
-    """
-    Inject *field* as *fname* into *cls*.
+    """Registrar *field* como *fname* en la clase de modelo *cls*.
 
-    Sets the field as a class attribute, registers it in cls._fields, and
-    propagates it to the Odoo 18 pool proxy class when the proxy differs from cls.
-    """
-    setattr(cls, fname, field)
-    cls._fields[fname] = field
-    field.model_name = cls._name
-    field.name = fname
-    # Run attribute setup so that comodel_name and other _args__ parameters are
-    # resolved as instance attributes.  Without this, dynamically injected
-    # fields (especially PolyReferences) keep comodel_name = None (class default).
-    try:
-        field._setup_attrs(cls, fname)
-    except Exception:
-        pass
+    Pasa por ``add_field`` en lugar de escribir ``cls._fields``, que en Odoo 20
+    es un ``MappingProxyType`` de solo lectura sobre ``_fields__``
+    (``model_classes.py:204``). ``add_field`` tambien corre ``__set_name__``, que
+    es lo que resuelve ``comodel_name`` y el resto de ``_args__``; antes eso lo
+    hacia una llamada suelta a ``_setup_attrs`` envuelta en un ``except`` que se
+    comia el fallo.
 
-    # Odoo 18 keeps a separate proxy class in pool.models; keep it in sync.
-    try:
-        pool = cls.pool  # type: ignore[attr-defined]
-        proxy = pool.models.get(cls._name)
-        if proxy is not None and proxy is not cls:
-            setattr(proxy, fname, field)
-            proxy._fields[fname] = field
-    except Exception:
-        pass
+    Se registra con ``shareable=False``: el campo es de este registry y de nadie
+    mas, asi que no entra en ``SHARED_FIELD_CACHE`` y mutarlo no toca las otras
+    bases que atiende el mismo worker (``model_classes.py:34``).
+    """
+    # El add_field de odoo.orm.model_classes esta interceptado por este mismo
+    # modulo mas abajo; esta es una inyeccion propia de poly y no tiene que
+    # volver a entrar en esa logica, asi que va directo al original.
+    _original_BaseModel_add_field(cls, fname, field, shareable=False)
 
 
 # [poly] Track processed models for incremental Deep Fix
@@ -2323,41 +2313,6 @@ class PolyBase(_original_BaseModel):
         return [c.__name__ for c in cls.mro()]
 
     @classmethod
-    def _poly_force_mro_update(cls):
-        """ Forces Python to recalculate the MRO internal cache for a class. """
-        import ctypes as _ctypes
-        if hasattr(_ctypes.pythonapi, 'PyType_Modified'):
-            try:
-                _ctypes.pythonapi.PyType_Modified(_ctypes.py_object(cls))
-            except Exception:
-                pass
-
-    @classmethod
-    def _poly_sync_proxy_class(cls, pool, name, model_class, final_bases):
-        """ Synchronizes the Odoo 18 proxy class with the actual registry class. """
-        if not hasattr(pool, 'models') or name not in pool.models:
-            return None
-        proxy = pool.models[name]
-        if proxy is model_class:
-            return proxy
-        try:
-            proxy.__base_classes = final_bases
-            proxy.__bases__ = final_bases
-            cls._poly_force_mro_update(proxy)
-            for base_class in final_bases:
-                if base_class.__name__ in ('BaseModel', 'Model', 'TransientModel', 'Base', 'object'): continue
-                for p_base in base_class.mro():
-                    if p_base.__name__ in ('BaseModel', 'object', 'Base'): continue
-                    for attr_name, attr_val in p_base.__dict__.items():
-                        if callable(attr_val) and not attr_name.startswith('__') and attr_name not in proxy.__dict__:
-                            try:
-                                setattr(proxy, attr_name, attr_val)
-                            except Exception: pass
-        except Exception:
-            pass
-        return proxy
-
-    @classmethod
     def _poly_invalidate_odoo_caches(cls, pool, model_name):
         """ Clears Odoo's internal caches to force re-evaluation of model structure. """
         if hasattr(pool, 'model_methods'):
@@ -2932,7 +2887,7 @@ class PolyBase(_original_BaseModel):
         # inserts per tick, so a very large table is migrated over several runs instead
         # of holding a deployment open.
         Param = self.env['ir.config_parameter'].sudo()
-        deferred = [n for n in (Param.get_param(POLY_BACKFILL_DEFERRED_PARAM) or '').split(',') if n]
+        deferred = [n for n in (Param.get_str(POLY_BACKFILL_DEFERRED_PARAM)).split(',') if n]
         for model_name in deferred:
             if model_name not in self.env:
                 continue
@@ -3023,27 +2978,29 @@ class PolyBase(_original_BaseModel):
     def _poly_backfill_defer(self):
         """Note that this model still owes a backfill, so the cron can pick it up."""
         Param = self.env['ir.config_parameter'].sudo()
-        deferred = {n for n in (Param.get_param(POLY_BACKFILL_DEFERRED_PARAM) or '').split(',') if n}
+        deferred = {n for n in (Param.get_str(POLY_BACKFILL_DEFERRED_PARAM)).split(',') if n}
         if self._name not in deferred:
             deferred.add(self._name)
-            Param.set_param(POLY_BACKFILL_DEFERRED_PARAM, ','.join(sorted(deferred)))
+            Param.set_str(POLY_BACKFILL_DEFERRED_PARAM, ','.join(sorted(deferred)))
 
     @api.model
     def _poly_backfill_undefer(self):
         """Drop this model from the deferred list once it has nothing left to fill."""
         Param = self.env['ir.config_parameter'].sudo()
-        deferred = {n for n in (Param.get_param(POLY_BACKFILL_DEFERRED_PARAM) or '').split(',') if n}
+        deferred = {n for n in (Param.get_str(POLY_BACKFILL_DEFERRED_PARAM)).split(',') if n}
         if self._name in deferred:
             deferred.discard(self._name)
-            Param.set_param(POLY_BACKFILL_DEFERRED_PARAM, ','.join(sorted(deferred)))
+            Param.set_str(POLY_BACKFILL_DEFERRED_PARAM, ','.join(sorted(deferred)))
 
     @api.model
     def _poly_backfill_inline_limit(self):
         """How many missing rows this model will backfill during an upgrade."""
-        param = self.env['ir.config_parameter'].sudo().get_param(
-            POLY_BACKFILL_LIMIT_PARAM)
+        # get_int devuelve el default cuando el parametro no esta o no es un
+        # entero, asi que ya no hace falta el try/except que habia aca.
+        param = self.env['ir.config_parameter'].sudo().get_int(
+            POLY_BACKFILL_LIMIT_PARAM, POLY_BACKFILL_INLINE_LIMIT)
         try:
-            return int(param) if param else POLY_BACKFILL_INLINE_LIMIT
+            return param or POLY_BACKFILL_INLINE_LIMIT
         except (TypeError, ValueError):
             return POLY_BACKFILL_INLINE_LIMIT
 
@@ -3161,11 +3118,11 @@ class PolyBase(_original_BaseModel):
         ``0`` to have the backfill report the collisions and stop instead — worth doing
         on a first pass, together with ``_poly_collision_census()``.
         """
-        param = self.env['ir.config_parameter'].sudo().get_param(
+        param = self.env['ir.config_parameter'].sudo().get_str(
             POLY_RENUMBER_COLLISIONS_PARAM)
-        if param is None or param is False or param == '':
+        if not param:
             return True
-        return str(param).strip().lower() not in ('0', 'false', 'no')
+        return param.strip().lower() not in ('0', 'false', 'no')
 
     @api.model
     def _poly_table_fk_dependents(self, table):
@@ -3542,7 +3499,7 @@ class PolyBase(_original_BaseModel):
                     _changed = True
                 
                 # Proactive label recovery to avoid NotNullViolation in ir_model_fields
-                if not getattr(_fobj, 'string', None) or isinstance(_fobj.string, fields.Sentinel):
+                if not getattr(_fobj, 'string', None) or isinstance(_fobj.string, Sentinel):
                     _fobj.string = _fname.replace('_', ' ').capitalize()
                     _changed = True
 
@@ -5457,11 +5414,16 @@ class PolyBase(_original_BaseModel):
         # merge would add on top is, by construction, something the model does not have.
         return result
 
-    def _determine_fields_to_fetch(self, field_names, ignore_when_in_cache=False):
+    def _determine_fields_to_fetch(self, field_names=None, ignore_when_in_cache=False):
         """
         Override to avoid ValueError on polymorphic models when a field is not
         found on the current model but might exist in the polymorphic hierarchy.
         """
+        # [poly][20.0] field_names=None significa "todos los campos prefetchables"
+        # (models.py:3180-3182), y no hay lista que filtrar. Es como llega desde
+        # search_fetch (models.py:1485), que en 18.0 no ejercitaba este camino.
+        if field_names is None:
+            return super()._determine_fields_to_fetch(None, ignore_when_in_cache)
         # [poly] Odoo 18: Aggressive safety for core models (res.users, ir.module.module, etc.)
         # These models might be accessed before they are fully initialized in the registry.
         # If it's not a polymorphic model, we MUST be careful not to hide real errors
@@ -5709,7 +5671,7 @@ class PolyBase(_original_BaseModel):
 
             if not field.store and not self.pool.ready:
                 # [poly] RECOVERY: Si un campo no almacenado se usa en order/search durante el boot
-                if not self.pool._init:
+                if self.pool.loaded:
                     _logger.warning("[poly] Skipping non-stored field %s.%s in _field_to_sql during boot", self._name, fname)
                 from odoo.tools import SQL
                 from odoo import fields
@@ -5838,8 +5800,9 @@ class IrModelFields(models.Model):
         if missing_models:
             # If some models are not reflected yet, force their reflection
             IrModel._reflect_models(missing_models)
-            # Invalidate cache for _get_id as it is ormcache'd
-            IrModel.clear_caches()
+            # _get_id esta bajo @api.ormcache(cache='stable') (ir_model.py:338), asi que
+            # hay que invalidar ESE subconjunto y no el 'default'
+            IrModel.env.transaction.invalidate_ormcache('stable')
         
         # Deduplicate model_names: if the same model appears twice, Odoo's upsert
         # generates duplicate (model, name) rows → CardinalityViolation on the
@@ -5855,7 +5818,7 @@ class IrModelFields(models.Model):
             if model is not None:
                 # Patch ALL fields of ANY model if necessary during reflection of a poly-related model
                 for field in model._fields.values():
-                    if not field.string or isinstance(field.string, fields.Sentinel):
+                    if not field.string or isinstance(field.string, Sentinel):
                         field.string = field.name.replace('_', ' ').capitalize()
                     
                     # Ensure _modules is NOT None to avoid TypeError in ir_model._reflect_fields
@@ -6598,7 +6561,7 @@ def poly_Field_setup_related(self, model):
                     # [poly] RECOVERY: During module load, if setup_related fails on a polymorphic
                     # model, we allow it to pass. The field will be correctly initialized 
                     # during the final _poly_registry_setup_models pass.
-                    if model.pool._init:
+                    if not model.pool.loaded:
                         if _poly_is_polymorphic(model):
                             _logger.debug("[poly] Deferring setup_related error for %s.%s: %s", model._name, self.name, str(e))
                             return
@@ -6625,7 +6588,7 @@ def poly_Field_get_depends(self, model):
     
     # [poly] Proteccion para campos related con cadena rota (related_field is None).
     # Aplica siempre: durante boot, reset_changes o cualquier reconstrucción del registry.
-    _in_setup = model.pool._init or not getattr(model.pool, 'ready', True)
+    _in_setup = not model.pool.loaded or not getattr(model.pool, 'ready', True)
     if self.related and (not hasattr(self, 'related_field') or self.related_field is None):
         return [self.related], set()
 
@@ -6648,7 +6611,7 @@ def poly_one2many_setup_nonrelated(self, model):
     try:
         return _original_One2many_setup_nonrelated(self, model)
     except KeyError as e:
-        if model.pool._init:
+        if not model.pool.loaded:
             comodel = model.env[self.comodel_name]
             is_poly = hasattr(comodel, '_depend_models') or 'ir.poly_base' in [c._name for c in comodel.mro() if hasattr(c, '_name')]
             if is_poly:
@@ -6676,7 +6639,7 @@ def poly_validate_view(self, node, model_name, view_type=None, editable=True, no
     # DEFERRED VALIDATION: During module loading (_init), we skip all validations
     # to avoid 'Unknown field' errors while the polymorphic MRO is incomplete.
     # UNLESS we are in the final validation phase (poly_final_validation context flag).
-    if self.pool._init and not self._context.get('poly_final_validation'):
+    if not self.pool.loaded and not self._context.get('poly_final_validation'):
         # Se ANOTA para la validación final. Antes solo quedaban anotadas las `noupdate` (vía
         # _validate_module_views); las demás se salteaban sin anotarse y no se validaban nunca.
         if self.ids:
@@ -6692,7 +6655,7 @@ def poly_validate_module_views(self, module):
     [poly] Intercepts module view validation to defer it.
     Instead of validating now, we accumulate the view IDs for later processing.
     """
-    assert self.pool._init
+    assert not self.pool.loaded
     
     # Identify views of this module
     prefix = module + '.'
@@ -6753,9 +6716,93 @@ odoo.fields.Many2many.setup_nonrelated = poly_many2many_setup_nonrelated
 
     # [poly] DEPRECATED: Deep fix is no longer needed with the new flattening strategy.
 
+# [poly][20.0] Modelos a los que ya se les contribuyo la definicion, por registry.
+# Contribuir dos veces reordenaria _base_classes__, porque LastOrderedSet se queda
+# con la ultima aparicion.
+_POLY_CONTRIBUTED: "dict[int, set]" = {}
+
+
+def _poly_contribute_definitions(registry, model_names):
+    """[poly][20.0] Declarar las bases polimorficas como definiciones de modelo.
+
+    Por cada modelo polimorfico arma una definicion sintetica cuyo ``_inherit``
+    nombra al propio modelo y a sus bases (las de ``_depend_models``, mas
+    ``ir.poly_base``), y la contribuye con ``add_to_registry``. Es el mismo
+    mecanismo que usa el suite de Odoo para agregar definiciones en caliente
+    (``odoo/addons/test_base/tests/test_orm/test_fields.py:4694``).
+
+    A partir de ahi Odoo calcula ``_base_classes__`` solo: mete las clases de
+    registry de las bases, que es exactamente lo que la inyeccion de MRO hacia a
+    mano, y deja la definicion propia del modelo adelante, que es el orden que la
+    inyeccion queria para que los overrides del concreto ganaran.
+
+    :param registry: el registry en construccion
+    :param model_names: nombres de los modelos polimorficos detectados
+    :return: los nombres a los que se les contribuyo una definicion en esta pasada
+    """
+    from odoo.orm.model_classes import add_to_registry
+
+    done = _POLY_CONTRIBUTED.setdefault(id(registry), set())
+    contributed = []
+    for model_name in sorted(model_names):
+        if model_name in done or model_name == 'ir.poly_base' or model_name not in registry:
+            continue
+        model_class = registry[model_name]
+        if not isinstance(model_class, type):
+            continue
+
+        dep_map = _poly_collect_depend_models(model_class)
+        parents = [name for name in dep_map if name in registry]
+        if 'ir.poly_base' in registry and 'ir.poly_base' not in parents:
+            parents.append('ir.poly_base')
+        if not parents:
+            continue
+
+        # Los campos de enlace se DECLARAN junto con las bases, por la misma razon:
+        # un campo agregado a la clase de registry despues del setup no sobrevive al
+        # siguiente, porque _setup() reconstruye _fields__ desde las definiciones
+        # (model_classes.py:373). Declarado aca es un atributo de una clase Python
+        # real, asi que se rearma solo en cada pasada.
+        #
+        # PolyReference no es compartible por construccion -es no almacenado y
+        # propio de este registry-, asi que se declara con _shareable=False para
+        # que no entre en SHARED_FIELD_CACHE (fields.py:422).
+        atributos = {
+            '__module__': __name__,
+            '_module': None,
+            '_name': model_name,
+            '_inherit': [model_name] + parents,
+        }
+        for base_name, link_name in dep_map.items():
+            if base_name not in registry or not link_name:
+                continue
+            if link_name in model_class._fields:
+                continue
+            atributos[link_name] = PolyReference(base_name, _shareable=False)
+
+        definition = odoo.models.MetaModel(
+            'PolyContribution_%s' % model_name.replace('.', '_'),
+            (odoo.models.Model,),
+            atributos,
+        )
+        try:
+            add_to_registry(registry, definition)
+        except Exception:
+            _logger.error("[poly] no se pudo declarar la base polimorfica de %s (bases: %s)",
+                          model_name, parents, exc_info=True)
+            continue
+        done.add(model_name)
+        contributed.append(model_name)
+        _logger.debug("[poly] %s declara sus bases: %s", model_name, parents)
+
+    if contributed:
+        _logger.info("[poly] %d modelo(s) polimorfico(s) declararon sus bases", len(contributed))
+    return contributed
+
+
 _original_Registry_setup_models = odoo.modules.registry.Registry._setup_models__
 
-def _poly_registry_setup_models(self, cr):
+def _poly_registry_setup_models(self, cr, model_names=None):
     """
     Centralized polymorphic MRO injection.
     
@@ -6875,243 +6922,26 @@ def _poly_registry_setup_models(self, cr):
     # DISABLED: This cleanup is causing side effects in standard Odoo models (res.users)
     pass
 
-    # [poly] Phase 1: MRO injection BEFORE Odoo's setup_models.
-    # Responsible ONLY for modifying __bases__ so that Odoo's _setup_base sees the
-    # correct inheritance hierarchy.  Field injection happens inside _setup_base via
-    # _build_poly_fields, which runs after the standard Odoo field population.
-    _logger.debug('[poly] Phase 1: MRO injection for %d models', len(poly_models_names_to_process))
-
-    # Process parents before children by sorting on MRO depth.
-    sorted_poly_names = sorted(
-        poly_models_names_to_process,
-        key=lambda n: len(_poly_get_safe_mro(self[n])) if n in self else 0,
-    )
-
-    # Registry classes that must be excluded from poly models' __bases__ to prevent
-    # cascade MRO errors when _prepare_setup changes their __bases__.  The 'base'
-    # abstract registry class is included in every model's _BaseModel__base_classes by
-    # _build_model, but poly models already inherit from BaseModel via their definition
-    # classes (PolyModel → PolyBase → BaseModel).  Having both 'base_reg' (which may
-    # include PolyBase-extending definition classes from addon modules) AND definition
-    # classes that extend PolyModel in the same __bases__ creates an MRO deadlock when
-    # _prepare_setup for 'base' triggers a cascade to poly model subclasses.
-    _excluded_from_poly_bases = set()
-    if 'base' in self:
-        _excluded_from_poly_bases.add(self['base'])
-
-    # Fix: extend ir_poly_base_reg.__bases__ with base_reg now, before the loop.
-    # issubclass(ir_poly_base_reg, base_reg) becomes True, so deduplication removes
-    # base_reg from every poly model's final_bases.  No poly model gets base_reg directly
-    # in __bases__, and the cascade from _prepare_setup is harmless.
-
-    for model_name in sorted_poly_names:
-        if model_name not in self:
-            continue
-        model_class = self[model_name]
-        if not isinstance(model_class, type):
-            continue
-
-        try:
-            dep_map = _poly_collect_depend_models(model_class)
-            parents_cls = [self[p] for p in dep_map if p in self]
-            if 'ir.poly_base' in self and self['ir.poly_base'] not in parents_cls:
-                parents_cls.append(self['ir.poly_base'])
-
-            if not parents_cls:
-                continue
-
-            _bm_bases = getattr(model_class, '_BaseModel__base_classes', None)
-            original_bases = list(
-                _bm_bases if _bm_bases
-                else [b for b in model_class.__bases__ if getattr(b, 'pool', None) is None]
-            )
-            # [poly] Orden CONCRETO-primero: la clase de definicion del modelo (original_bases)
-            # va ANTES que los padres inyectados. Asi los overrides del concreto (metodos,
-            # _order, campos sobrecargados) GANAN sobre el padre -en MRO de Python gana el
-            # primero-, manteniendo la herencia (los padres siguen accesibles, despues).
-            # (Antes era parents_cls + original -> el padre pisaba los overrides del concreto:
-            # ej. test.test4.set_a1 corria el de Test1. De ahi venia el hack de _attrs_to_restore.)
-            new_bases = [
-                b for b in original_bases
-                if b not in parents_cls and b not in _excluded_from_poly_bases
-            ] + parents_cls
-
-            deduplicated = []
-            for b in new_bases:
-                if b is model_class:
-                    continue
-                if any(b is not c and issubclass(c, b) for c in new_bases if c is not model_class):
-                    continue
-                if b not in deduplicated:
-                    deduplicated.append(b)
-            final_bases = tuple(deduplicated)
-
-            if final_bases and final_bases != tuple(model_class.__bases__):
-                _logger.debug(
-                    '[poly] Phase 1: injecting MRO for %s: %s',
-                    model_name,
-                    [getattr(b, '_name', b.__name__) for b in final_bases],
-                )
-                # Snapshot class-level attributes that must come from the child model,
-                # not from injected base models.  Injecting a base (e.g. digital.event)
-                # before the definition class puts the base's _order / _rec_name ahead
-                # in MRO and silently overrides the child's declared values.
-                _attrs_to_restore = {}
-                for _attr in ('_order', '_rec_name', '_description'):
-                    # Read from the registry class's current MRO (original order).
-                    _val = getattr(model_class, _attr, None)
-                    if _val is not None:
-                        _attrs_to_restore[_attr] = _val
-                model_class.__bases__ = final_bases
-                if hasattr(model_class, '_BaseModel__base_classes'):
-                    model_class._BaseModel__base_classes = final_bases
-                # A write to _BaseModel__depends_base_classes used to sit here, guarded by
-                # a hasattr on itself -- so it could only fire if something else had
-                # already created the attribute, and nothing ever did. Every reader of
-                # that attribute now asks _poly_is_polymorphic or _poly_get_depend_models
-                # instead, so there is nothing left to write it for.
-                # (_BaseModel__base_classes above is different: Odoo itself sets and
-                # reads it, and the injected MRO has to be reflected there.)
-                if hasattr(ctypes.pythonapi, 'PyType_Modified'):
-                    ctypes.pythonapi.PyType_Modified(ctypes.py_object(model_class))
-                # Restore child-model attributes that may have been shadowed by the
-                # newly injected bases (only if not already explicit in __dict__).
-                for _attr, _val in _attrs_to_restore.items():
-                    if _attr not in model_class.__dict__:
-                        setattr(model_class, _attr, _val)
-
-        except Exception as e:
-            _logger.error('[poly] Phase 1: MRO injection failed for %s: %s', model_name, e)
-
-    # [poly] Pre-setup sync: ensure __base_classes == __bases__ for all processed models.
-    # _prepare_setup does `cls.__bases__ = cls.__base_classes` only when they differ.
-    # After Phase 1 set both to final_bases, Odoo's _add_manual_models (called at the
-    # start of setup_models) may invoke _build_model again, resetting __base_classes to
-    # the original Odoo value.  Re-sync here guarantees no spurious MRO error.
-    for _sync_name in sorted_poly_names:
-        if _sync_name not in self:
-            continue
-        _sync_cls = self[_sync_name]
-        if not isinstance(_sync_cls, type):
-            continue
-        _cur_bases = _sync_cls.__bases__
-        try:
-            _cur_bcc = _sync_cls._BaseModel__base_classes
-        except AttributeError:
-            continue
-        if _cur_bases and tuple(_cur_bases) != tuple(_cur_bcc):
-            _logger.debug(
-                '[poly] Pre-setup sync: %s __base_classes %s -> %s',
-                _sync_name,
-                [getattr(b, '__name__', repr(b)) for b in _cur_bcc],
-                [getattr(b, '__name__', repr(b)) for b in _cur_bases],
-            )
-            try:
-                _sync_cls._BaseModel__base_classes = tuple(_cur_bases)
-            except Exception as _sync_err:
-                _logger.warning('[poly] Pre-setup sync failed for %s: %s', _sync_name, _sync_err)
-
-    # [poly] Pre-setup base dedup: drop redundant ANCESTOR bases that precede their own subclass
-    # in a model's __base_classes.  This happens when a model inherits a polymorphic base that
-    # ALSO provides a mixin the model already lists directly.  Example:
-    #   crm.lead  _inherit = ['crm.lead', 'fsm.instance']
-    # crm.lead brings mail.activity.mixin (and mail.thread); fsm.instance IS a mail.activity.mixin
-    # (numa_fsm: _inherit=['mail.thread','mail.activity.mixin']).  Odoo builds crm.lead's bases as
-    #   [..., mail.activity.mixin, ..., fsm.instance, base]
-    # i.e. the mixin BEFORE its own subclass fsm.instance.  While fsm.instance's own __bases__ is
-    # still just its definition class the C3 MRO is consistent, so crm.lead builds fine.  But when
-    # _prepare_setup later promotes fsm.instance.__bases__ to include mail.activity.mixin,
-    # fsm.instance retroactively becomes a subclass that PRECEDES its ancestor in crm.lead's base
-    # list, and Python can no longer linearize crm.lead -> "Cannot create a consistent MRO"
-    # cascade error (raised while assigning fsm.instance.__bases__).
+    # [poly][20.0] Fase 1: declarar las bases, no inyectarlas.
     #
-    # Removing the redundant ancestor (still reachable through the subclass, so behavior is
-    # unchanged) makes the MRO consistent.  We only drop a base B when a LATER base C in the SAME
-    # list will inherit B, so well-ordered models are left untouched.
+    # Hasta 18.0 esto asignaba model_class.__bases__ a mano para meter las clases
+    # de registry de las bases polimorficas, y arrastraba consigo todo lo que esa
+    # ilegalidad costaba: re-sincronizar __base_classes porque _add_manual_models
+    # lo pisaba, excluir 'base' para evitar deadlocks de MRO en cascada, forzar
+    # PyType_Modified, restaurar _order/_rec_name que las bases inyectadas
+    # tapaban, y un interceptor de _prepare_setup para diagnosticar la asignacion
+    # que fallara.
     #
-    # CRUCIAL: at this point fsm.instance's __bases__ is still just its definition class -- it is
-    # NOT YET a subclass of mail.activity.mixin (that only happens when _prepare_setup promotes its
-    # __bases__ to __base_classes).  So we cannot use issubclass() on the *current* classes; we must
-    # look at where each class WILL land, i.e. the transitive closure of its __base_classes.
-    _future_anc_cache = {}
-
-    def _poly_future_ancestors(_c):
-        _cached = _future_anc_cache.get(_c)
-        if _cached is not None:
-            return _cached
-        _acc = set()
-        _future_anc_cache[_c] = _acc  # guard against cycles
-        _cbases = getattr(_c, '_BaseModel__base_classes', None) or getattr(_c, '__bases__', ())
-        for _pb in _cbases:
-            if not isinstance(_pb, type) or _pb is _c:
-                continue
-            _acc.add(_pb)
-            _acc |= _poly_future_ancestors(_pb)
-        return _acc
-
-    for _norm_name, _norm_cls in list(self.items()):
-        if not isinstance(_norm_cls, type):
-            continue
-        _bcc = getattr(_norm_cls, '_BaseModel__base_classes', None)
-        if not _bcc or len(_bcc) < 2:
-            continue
-        _bcc_list = list(_bcc)
-        _drop = set()
-        for _i, _b in enumerate(_bcc_list):
-            if not isinstance(_b, type):
-                continue
-            for _j in range(_i + 1, len(_bcc_list)):
-                _c = _bcc_list[_j]
-                if _c is _b or not isinstance(_c, type):
-                    continue
-                if _b in _poly_future_ancestors(_c):  # C will inherit B -> B is a redundant ancestor
-                    _drop.add(_i)
-                    break
-        if not _drop:
-            continue
-        _new_bcc = tuple(_b for _i, _b in enumerate(_bcc_list) if _i not in _drop)
-        if not _new_bcc or _new_bcc == tuple(_bcc_list):
-            continue
-        _logger.debug(
-            '[poly] Pre-setup base dedup: %s drops %s',
-            _norm_name,
-            [getattr(_bcc_list[_i], '_name', getattr(_bcc_list[_i], '__name__', '?')) for _i in _drop],
-        )
-        try:
-            _norm_cls._BaseModel__base_classes = _new_bcc
-            if tuple(_norm_cls.__bases__) == tuple(_bcc_list):
-                _norm_cls.__bases__ = _new_bcc
-        except Exception as _norm_err:  # noqa: BLE001
-            _logger.warning('[poly] Pre-setup base dedup failed for %s: %s', _norm_name, _norm_err)
-
-    # [poly] Diagnostic: intercept _prepare_setup to catch the exact __bases__ assignment that fails.
-    _original_prepare_setup = _original_BaseModel._prepare_setup
-
-    def _diag_prepare_setup(self_model):
-        cls = type(self_model)
-        cur_bases = getattr(cls, '__bases__', None)
-        bcc = getattr(cls, '_BaseModel__base_classes', None)
-        if bcc and cur_bases and tuple(cur_bases) != tuple(bcc):
-            try:
-                cls.__bases__ = bcc
-            except TypeError as _te:
-                _logger.error(
-                    '[poly] DIAGNOSTIC: _prepare_setup __bases__ assignment failed for %s (_name=%s): %s\n'
-                    '  current __bases__: %s\n  new __base_classes:',
-                    cls.__name__, getattr(cls, '_name', '?'), _te,
-                    [getattr(b, '__name__', repr(b)) for b in cur_bases],
-                )
-                for _i, _b in enumerate(bcc):
-                    _logger.error(
-                        '[poly] DIAGNOSTIC   [%d] %r  __name__=%s  _name=%s  module=%s  bases=%s',
-                        _i, _b, _b.__name__, getattr(_b, '_name', '?'),
-                        getattr(_b, '__module__', '?'),
-                        [getattr(x, '__name__', repr(x)) for x in _b.__bases__],
-                    )
-                raise
-        return _original_prepare_setup(self_model)
-
-    _original_BaseModel._prepare_setup = _diag_prepare_setup
+    # Odoo 20 calcula __bases__ desde las definiciones de modelo y afirma que
+    # nadie lo toco despues (model_classes.py:353-360). Asi que ahora se le pide
+    # en lugar de pelearle: una definicion sintetica por modelo polimorfico cuyo
+    # _inherit nombra sus bases. Odoo pone las clases de registry de esas bases en
+    # _base_classes__ por su cuenta, en el mismo orden que la inyeccion queria
+    # (la definicion propia primero, las bases despues), de modo que los overrides
+    # del concreto siguen ganando y no hay nada que restaurar.
+    #
+    # Ver doc/plan-2026-09-20-odoo-20-redesign.md, seccion 2.1.
+    _poly_contribute_definitions(self, poly_models_names_to_process)
 
     # [poly] Phase 2: Clear the per-class _poly_fields_built flag before every
     # setup_models call (including test-reset invocations).  Without this,
@@ -7124,15 +6954,7 @@ def _poly_registry_setup_models(self, cr):
             except AttributeError:
                 pass
 
-    try:
-        res = _original_Registry_setup_models(self, cr)
-    except TypeError as _mro_err:
-        if 'MRO' not in str(_mro_err) and 'resolution' not in str(_mro_err).lower():
-            raise
-        _logger.error('[poly] MRO TypeError in setup_models.')
-        raise
-    finally:
-        _original_BaseModel._prepare_setup = _original_prepare_setup
+    res = _original_Registry_setup_models(self, cr, model_names)
 
     # [poly] Phase 3: Post-setup cache invalidation.
     # Field injection is now handled by _setup_base via _build_poly_fields.
@@ -7364,7 +7186,6 @@ def _poly_registry_load(self, cr, module):
     # because model B's _setup_base hasn't picked up the new field yet.
     return res
 
-odoo.modules.registry.Registry.load = _poly_registry_load
 odoo.modules.registry.Registry._setup_models__ = _poly_registry_setup_models
 
 # [poly][20.0] Registry.signal_changes no existe. Lo mas parecido,
@@ -7415,7 +7236,7 @@ def _poly_signal_changes(self):
     """[poly] ``Registry.new`` llama a ``signal_changes`` al final: con la carga terminada, todavía
     bajo el lock del registry, y también en el primer arranque de cada proceso. Ahí se estabiliza,
     una sola vez por registry."""
-    if not self.__dict__.get('_poly_stabilized') and not self._init:
+    if not self.__dict__.get('_poly_stabilized') and not self.loaded:
         self.__dict__['_poly_stabilized'] = True
         _poly_stabilize_registry(self)
     return _original_registry_signal_changes(self)
@@ -7427,28 +7248,18 @@ def _poly_signal_changes(self):
 # PATCH: load_module_graph to intercept the end of module loading
 _original_load_module_graph = odoo.modules.loading.load_module_graph
 
-def poly_load_module_graph(env, graph, status=None, perform_checks=True,
-                           skip_modules=None, report=None, models_to_check=None):
+def poly_load_module_graph(env, graph, update_module=False, report=None, install_demo=True):
+    """[poly] Validar al final de la carga las vistas que se dejaron pendientes.
+
+    La firma es la de Odoo 20 (``modules/loading.py:114-120``); en 18.0 era
+    ``(env, graph, status, perform_checks, skip_modules, report, models_to_check)``.
     """
-    [poly] Intercepts the end of load_module_graph to trigger final validations.
-    """
-    # 1. Run the original loading process
-    res = _original_load_module_graph(env, graph, status=status, perform_checks=perform_checks,
-                                      skip_modules=skip_modules, report=report, models_to_check=models_to_check)
-    
-    # 2. Trigger Final Cleanup and View Validation
-    # load_module_graph returns (loaded_modules, processed_modules)
-    # If we processed some modules, it's a good time to finalize.
-    # Even if no modules were processed, if we are in _init mode (first load), we should finalize.
+    res = _original_load_module_graph(env, graph, update_module=update_module,
+                                      report=report, install_demo=install_demo)
     registry = env.registry
-    if registry._init and not registry._pending_poly_views:
-        # In some cases _init is True but we don't have pending views yet (e.g. registry just created)
-        pass
-        
     if registry._pending_poly_views:
-        _logger.debug("[poly] load_module_graph finished, triggering final view validation.")
+        _logger.debug("[poly] terminada la carga de modulos: se validan las vistas pendientes")
         registry._poly_finalize_view_validation(env.cr)
-        
     return res
 
 odoo.modules.loading.load_module_graph = poly_load_module_graph

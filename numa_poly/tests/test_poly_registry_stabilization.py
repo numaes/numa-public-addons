@@ -2,88 +2,62 @@
 """
 Lo que numa_poly hace cuando el registry termina de cargar.
 
-Dos mecanismos colgaban de puntos que, en un arranque normal, no llegan a ejecutarse o pierden
-lo que juntaron:
+En 18.0 dos mecanismos colgaban de puntos que, en un arranque normal, no llegaban a ejecutarse
+o perdían lo que juntaban. Odoo 20.0 se llevó puestos los dos puntos de enganche, así que este
+archivo quedó partido en dos mitades de distinto estado:
 
-- El conjunto de vistas pendientes de validar era un ``lazy_property`` del registry.
-  ``Registry.setup_models`` llama a ``lazy_property.reset_all()``, y durante un ``-u`` hay un
-  ``setup_models`` por módulo actualizado: lo anotado al cargar un módulo se perdía al empezar
-  el siguiente. En una actualización de 36 módulos llegaba al final 1 vista de cientos.
+- **Las vistas pendientes de validar.** El conjunto era un ``lazy_property`` del registry, y
+  ``setup_models`` llamaba a ``lazy_property.reset_all()`` una vez por módulo actualizado: lo
+  anotado al cargar un módulo se perdía al empezar el siguiente. En 20.0 ``lazy_property`` no
+  existe, el conjunto es un ``functools.cached_property``, y ``_setup_models__`` no resetea
+  nada equivalente. El riesgo desapareció por construcción, y lo que sigue abajo lo verifica.
 
-- La estabilización posterior a la carga la hacía un wrapper de ``Registry.new``. numa_poly se
-  importa dentro de ``Registry.new``, así que en el primer arranque de cada proceso el wrapper no
-  aplicaba y la estabilización no corría nunca. Cuando corría, en recargas, lo hacía fuera del
-  lock y dejaba ``registry_invalidated`` en True, lo que hacía recargar a los demás workers.
-  Ahora cuelga de ``Registry.signal_changes``, que ``Registry.new`` llama al final, bajo el lock.
+- **La estabilización posterior a la carga.** Colgaba de ``Registry.signal_changes``, que en
+  20.0 no existe: ``_signal_changes(cr, names)`` es otro contrato (por transacción, desde
+  ``environments.py:976``), ``Registry.new`` termina en ``registry.ready = True`` sin enganche,
+  y ``registry._init`` / ``registry.registry_invalidated`` tampoco están. Elegir el anclaje
+  nuevo es la fase 6 del rediseño. Hasta entonces no hay mecanismo que probar, y sus tests se
+  saltean diciéndolo en voz alta en lugar de pasar por vacío.
 """
-from unittest.mock import MagicMock, patch
+import unittest
 
 from odoo.tests import tagged, TransactionCase
-from odoo.tools import lazy_property
 
-from ..models import poly as P
+FASE_6 = ("pendiente de la fase 6 del rediseño: Registry.signal_changes no existe en Odoo 20.0 "
+          "y todavía no se eligió el anclaje que lo reemplaza "
+          "(ver doc/plan-2026-09-20-odoo-20-redesign.md, sección 2.4)")
 
 
 @tagged('post_install', '-at_install')
 class TestPolyPendingViewsSurviveSetup(TransactionCase):
+    """Lo anotado durante la carga tiene que seguir ahí cuando la carga termina."""
 
-    def test_01_the_pending_set_is_not_a_lazy_property(self):
-        """``reset_all`` borra solo los lazy_property: el conjunto no puede serlo."""
-        self.assertNotIsInstance(type(self.registry).__dict__.get('_pending_poly_views'), lazy_property)
-
-    def test_02_recorded_views_survive_a_registry_setup_reset(self):
+    def test_01_the_pending_set_survives_a_models_setup(self):
         pendientes = self.registry._pending_poly_views
         centinela = -424242
         pendientes.add(centinela)
         try:
-            lazy_property.reset_all(self.registry)   # lo que hace setup_models en cada módulo
+            self.registry._setup_models__(self.env.cr, [])   # setup incremental, como en un -u
             self.assertIn(centinela, self.registry._pending_poly_views,
-                          "lo anotado se perdió con el reset de setup_models")
+                          "lo anotado se perdió al rearmar los modelos")
         finally:
             self.registry._pending_poly_views.discard(centinela)
 
+    def test_02_the_pending_set_is_the_same_object_across_reads(self):
+        """Si cada lectura devolviera un conjunto nuevo, anotar no serviría de nada."""
+        self.assertIs(self.registry._pending_poly_views, self.registry._pending_poly_views)
+
 
 @tagged('post_install', '-at_install')
+@unittest.skip(FASE_6)
 class TestPolyRegistryStabilization(TransactionCase):
-
-    def _registro(self, init):
-        registro = type('Registro', (), {})()
-        registro._init = init
-        return registro
+    """La estabilización posterior a la carga, cuando vuelva a tener dónde colgarse."""
 
     def test_01_runs_once_per_registry_when_loading_is_over(self):
-        registro = self._registro(init=False)
-        with patch.object(P, '_poly_stabilize_registry') as estabilizar, \
-                patch.object(P, '_original_registry_signal_changes') as original:
-            P._poly_signal_changes(registro)
-            P._poly_signal_changes(registro)
-        estabilizar.assert_called_once_with(registro)
-        self.assertEqual(original.call_count, 2, "la señal original tiene que salir siempre")
+        self.fail(FASE_6)
 
     def test_02_does_not_run_while_the_registry_is_loading(self):
-        registro = self._registro(init=True)
-        with patch.object(P, '_poly_stabilize_registry') as estabilizar, \
-                patch.object(P, '_original_registry_signal_changes'):
-            P._poly_signal_changes(registro)
-        estabilizar.assert_not_called()
+        self.fail(FASE_6)
 
     def test_03_stabilizing_does_not_tell_other_workers_to_reload(self):
-        """Re-armar los modelos pone registry_invalidated en True; no cambió nada que los otros
-        procesos deban recargar, así que se restaura el valor que había."""
-        registro = MagicMock()
-        registro.registry_invalidated = False
-
-        def setup(cr):
-            registro.registry_invalidated = True
-        registro.setup_models.side_effect = setup
-        with patch.object(P, '_logger'):
-            P._poly_stabilize_registry(registro)
-        registro.setup_models.assert_called_once()
-        registro._poly_finalize_view_validation.assert_called_once()
-        self.assertFalse(registro.registry_invalidated)
-        self.assertTrue(registro.ready)
-
-    def test_04_the_registry_new_wrapper_is_gone(self):
-        import odoo.modules.registry as registry_module
-        self.assertFalse(hasattr(P, '_poly_registry_new'))
-        self.assertIs(registry_module.Registry.signal_changes, P._poly_signal_changes)
+        self.fail(FASE_6)
