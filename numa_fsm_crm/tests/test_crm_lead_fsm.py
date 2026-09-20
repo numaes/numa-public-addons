@@ -138,3 +138,14 @@ class TestCrmLeadFsm(TransactionCase):
         self.assertEqual(lead.fsm_state, 'running')
         with self.assertRaises(UserError):
             lead.action_start_fsm()
+
+    def test_11_the_bot_menu_action_opens(self):
+        """``view_mode`` decía ``tree``, que dejó de ser un tipo de vista en 17.0.
+
+        Nada lo valida al instalar —``ir.actions.act_window`` no controla el
+        contenido de ``view_mode``—, así que la acción se instalaba entera y
+        fallaba recién al abrir el menú."""
+        accion = self.env.ref('numa_fsm_crm.action_crm_bot')
+        modos = accion.view_mode.split(',')
+        self.assertNotIn('tree', modos)
+        self.env['crm.bot'].get_views([(False, modo) for modo in modos])
