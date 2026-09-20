@@ -101,6 +101,63 @@ class TestPolyDeferredViewValidation(TransactionCase):
             self.env['ir.poly_base']._register_hook()
         self.assertIn('x_campo_que_no_existe', str(ctx.exception))
 
+    def test_09_a_search_view_with_searchpanel_can_be_extended_during_loading(self):
+        """Diferir un paso que otro usa como precondición no es diferir, es saltear.
+
+        ``_check_xml`` corre el RelaxNG sobre el árbol que ``_validate_view`` ya
+        normalizó: ``_validate_tag_search`` saca el ``<searchpanel>`` de adentro del
+        ``<search>`` porque el RNG no sabe validar sus campos. Cuando poly difería
+        ``_validate_view`` pero dejaba correr el RNG, el panel seguía ahí y el RNG
+        rechazaba una vista válida. Con numa_poly instalado ningún módulo podía
+        extender una vista de búsqueda con searchpanel: ``hr.view_employee_filter``
+        tiene una, y por eso numa_fsm_hr no instalaba.
+        """
+        from odoo.tools.view_validation import relaxng
+        Vista = self.env['ir.ui.view']
+        base = Vista.create({
+            'name': 'poly base con searchpanel', 'model': 'res.partner',
+            'type': 'search', 'mode': 'primary',
+            'arch': """<search>
+                <field name="name"/>
+                <searchpanel>
+                    <field name="company_id" icon="business" icon_class="oi-filled" enable_counters="1"/>
+                </searchpanel>
+            </search>""",
+        })
+        # El porqué, medido y no supuesto: sin normalizar, el RNG la rechaza.
+        self.assertFalse(relaxng('search').validate(base._get_combined_arch()),
+                         "si el RNG acepta el searchpanel, este test ya no prueba nada")
+
+        with patch.object(self.registry, 'loaded', False):
+            extension = Vista.create({
+                'name': 'poly extensión de búsqueda', 'model': 'res.partner',
+                'inherit_id': base.id,
+                'arch': '''<data><field name="name" position="after">
+                             <field name="email"/>
+                           </field></data>'''})
+        self.assertIn(extension.id, self.registry._pending_poly_views)
+        self._finalizar(True)
+
+    def test_10_a_broken_anchor_still_fails_during_loading(self):
+        """Lo que NO se difiere: que la herencia resuelva.
+
+        No depende del MRO, y su error nombra el elemento que no se encontró y el
+        archivo donde está escrito. Diferirlo lo dejaría sin contexto.
+        """
+        base = self.env['ir.ui.view'].create({
+            'name': 'poly base simple', 'model': 'res.partner',
+            'type': 'search', 'mode': 'primary',
+            'arch': '<search><field name="name"/></search>'})
+        with patch.object(self.registry, 'loaded', False), \
+                self.assertRaises(ValidationError) as ctx:
+            self.env['ir.ui.view'].create({
+                'name': 'poly ancla inexistente', 'model': 'res.partner',
+                'inherit_id': base.id,
+                'arch': '''<data><filter name="no_existe" position="after">
+                             <field name="email"/>
+                           </filter></data>'''})
+        self.assertIn('no_existe', str(ctx.exception))
+
     def test_07_strictness_follows_the_option_then_the_test_mode(self):
         with patch.dict(config.options, {'poly_strict_view_validation': None, 'test_enable': True}):
             self.assertTrue(P._poly_strict_view_validation())

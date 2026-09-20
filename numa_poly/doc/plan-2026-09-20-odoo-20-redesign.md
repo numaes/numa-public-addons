@@ -382,3 +382,39 @@ llegue con otro entorno.
 
 **Mientras tanto**, un despliegue nuevo que necesite las dos cosas tiene que
 instalar `website` en una corrida y `numa_poly` en otra.
+
+---
+
+## Corregido después: la validación de vistas se difería por la mitad
+
+`poly_validate_view` difiere `IrUiView._validate_view` mientras se cargan
+módulos —el MRO polimórfico todavía puede estar incompleto y la validación
+fallaría por campos que aún no existen—, anota la vista y la valida al final,
+con el registry completo.
+
+El problema es que `_check_xml` no termina ahí. Después de `_validate_view`
+corre el RelaxNG **sobre el mismo árbol**, y cuenta con que `_validate_view`
+ya lo haya normalizado: `_validate_tag_search`
+(`base/models/ir_ui_view.py:1951-1957`) **saca** el `<searchpanel>` de adentro
+del `<search>` antes de que el RNG lo vea, justamente porque el RNG no sabe
+validar sus campos —`icon`, `icon_class` y `enable_counters` no están
+declarados para `field` en `common.rng`—.
+
+Con la mitad diferida el panel seguía ahí cuando corría el RNG, y el RNG
+rechazaba una vista que Odoo considera perfectamente válida. El efecto: **con
+numa_poly instalado, ningún módulo podía extender una vista de búsqueda que
+tuviera searchpanel.** `hr.view_employee_filter` tiene uno, así que
+`numa_fsm_hr` no instalaba; `crm.view_crm_case_leads_filter` no tiene, así que
+`numa_fsm_crm` no lo notó. El error no nombraba ni al searchpanel ni a poly:
+decía `Invalid view <la vista del módulo> definition`, apuntando al módulo que
+extendía.
+
+La corrección difiere `_check_xml` entero, que es la unidad real: o se valida
+todo con el registry armado, o nada. Lo único que se sigue haciendo durante la
+carga es resolver la herencia (`_valid_inheritance` y `_get_combined_arch`),
+porque no depende del MRO y su error —"tal elemento no se encuentra en la vista
+padre"— señala el archivo y la línea, que es donde sirve.
+
+Vale como regla general: **diferir un paso que otro paso usa como precondición
+no es diferir, es saltear.** Si `_validate_view` normaliza el árbol para el
+RNG, los dos se difieren juntos.

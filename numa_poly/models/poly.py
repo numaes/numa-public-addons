@@ -6726,6 +6726,47 @@ def poly_validate_module_views(self, module):
         _logger.debug("[poly] Deferring validation for %s views in module %s", len(view_ids), module)
         self.pool._pending_poly_views.update(view_ids)
 
+_original_check_xml = None
+
+def poly_check_xml(self):
+    """[poly] Diferir la validacion entera, no la mitad.
+
+    ``poly_validate_view`` difiere ``_validate_view`` mientras se cargan modulos,
+    pero ``_check_xml`` corre despues el RelaxNG sobre EL MISMO arbol y cuenta con
+    que ``_validate_view`` ya lo haya normalizado: ``_validate_tag_search`` saca el
+    ``<searchpanel>`` de adentro del ``<search>`` justamente porque el RNG no sabe
+    validar sus campos (``icon``, ``icon_class`` y ``enable_counters`` no estan en
+    common.rng). Con la mitad diferida el panel seguia ahi y el RNG rechazaba una
+    vista que Odoo considera valida: ningun modulo podia extender una vista de
+    busqueda con searchpanel —``hr.view_employee_filter``, por ejemplo— mientras
+    numa_poly estuviera instalado.
+
+    Lo que si se hace ahora es resolver la herencia. No depende del MRO, y su error
+    ("tal elemento no se encuentra en la vista padre") senala el archivo y la linea,
+    que es donde sirve; diferirlo lo dejaria sin contexto.
+    """
+    if self.pool.loaded or self.env.context.get('poly_final_validation'):
+        return _original_check_xml(self)
+
+    if self.ids:
+        self.pool._pending_poly_views.update(self.ids)
+
+    from lxml import etree as _etree
+    for view in self:
+        if not view.arch:
+            continue
+        try:
+            if view.inherit_id:
+                view._valid_inheritance(_etree.fromstring(view.arch))
+            view._get_combined_arch()
+        except (_etree.ParseError, ValueError, TypeError) as e:
+            err = ValidationError(
+                _("Error while parsing or validating view:\n\n%(error)s", error=e)
+            ).with_traceback(e.__traceback__)
+            err.context = getattr(e, 'context', None)
+            raise err from None
+    return True
+
 def _patch_ir_ui_view():
     global _original_validate_view, _original_NameManager_must_have_fields, _original_validate_module_views
     if _original_validate_view is not None:
@@ -6746,6 +6787,10 @@ def _patch_ir_ui_view():
 
     _original_validate_view = View._validate_view
     View._validate_view = poly_validate_view
+
+    global _original_check_xml
+    _original_check_xml = View._check_xml
+    View._check_xml = poly_check_xml
 
     _original_validate_module_views = View._validate_module_views
     View._validate_module_views = poly_validate_module_views
