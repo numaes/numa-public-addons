@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!--
+        A relative date filter survives being saved as a favourite: the domain is made of
+        expressions, not of concrete dates, so the favourite is re-evaluated on every use.
+        What the editor does not say is what the range is counted FROM, or that a saved
+        filter will be recalculated.
+
+        This adds that information where the user is looking. No logic: it is a label.
+
+        [20.0] The anchor moved. Up to 18.0 the free-form relative editor was the `within`
+        operator and its template was `web.TreeEditor.Within`. Odoo 20 replaced it with the
+        `is in range` operator plus a value type, and the free-form editor is now
+        `web.TreeEditor.relativeRange` (tree_editor_components.js:60). The old template does
+        not exist any more, and template inheritance fails SILENTLY when the parent is
+        missing, so the anchor is covered by a test.
+
+        The xpath anchor is the flex container of that template. OWL template inheritance is
+        applied client side (core/templates.js -> applyInheritance), and `hasclass()` is
+        supported there just as it is in views.
+
+        `data-tooltip` and not `title`: OWL translates template text with translateFn, and of
+        the attributes only those in `translatableAttributes`, which in Odoo is exactly
+        ["data-tooltip"] (web/static/src/env.js). A `title` would go untranslated.
+    -->
+    <t t-name="numa_web_relative_dates.RelativeRangeHint"
+       t-inherit="web.TreeEditor.relativeRange"
+       t-inherit-mode="extension">
+        <xpath expr="//div[hasclass('d-flex')]" position="inside">
+            <!-- The text sits FLUSH against its tags, with no line breaks: the bundle marks
+                 every template with xml:space="preserve", so any indentation would enter the
+                 text node and the msgid would stop matching the one in the .po. -->
+            <small class="text-muted text-nowrap o_numa_within_hint"
+                   data-tooltip="This filter is relative: the range is counted from today, and it is recalculated every time the filter runs. Saving it as a favourite keeps it relative — it will not freeze on today's date.">from today</small>
+        </xpath>
+    </t>
+
+</templates>

@@ -1,38 +1,37 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Numa Web Relative Dates',
-    'version': '18.0.1.0.0',
-    'summary': 'Makes the native relative date filter discoverable in custom search filters',
+    'version': '20.0.1.0.0',
+    'summary': 'Says out loud that a relative date filter is counted from today',
     'description': """
 Numa Web Relative Dates
 =======================
 
-Odoo 18 can already build **relative** date filters that survive being saved as a favourite:
-the ``within`` operator ("is within") in *Add Custom Filter* produces a domain made of
-expressions, not of concrete dates::
+Odoo can build **relative** date filters that survive being saved as a favourite: the
+domain is made of expressions, not of concrete dates::
 
-    ["date", ">=", 'context_today().strftime("%Y-%m-%d")']
-    ["date", "<=", '(context_today() + relativedelta(months=-1)).strftime("%Y-%m-%d")']
+    ["date", ">=", "today -1m"]
+    ["date", "<=", "today"]
 
 Favourites store ``ir.filters.domain`` as text and re-evaluate it on every use, so such a
-filter keeps moving with the current date. The problem is not the feature, it is that nobody
-finds it: the operator is called "is within" and nothing on screen says that the range is
-anchored on today, or that a saved filter will be recalculated.
+filter keeps moving with the current date. What the editor does not say is what the range
+is counted FROM, or that a saved filter will be recalculated.
 
 This module adds that missing information where the user is actually looking: a short
 ``from today`` marker next to the amount/unit selectors, plus a tooltip explaining that the
 filter is recalculated on each run. It changes no behaviour and no stored data.
 
-What it deliberately does NOT do
---------------------------------
-It does not extend the available units. ``Within.options`` only offers days, weeks, months
-and years, and that cannot be widened by simply appending to the list:
+Migrated to Odoo 20.0
+---------------------
 
-* ``relativedelta`` has no ``quarters`` keyword.
-* For ``datetime`` fields the generated AST combines the shifted date with
-  ``datetime.time(0, 0, 0)``, so an hour- or minute-sized delta would be silently discarded.
+The anchor moved. Up to 18.0 the free-form relative editor was the ``within`` operator,
+whose template was ``web.TreeEditor.Within``; Odoo 20 replaced it with the ``is in range``
+operator plus a value type, and the editor is now ``web.TreeEditor.relativeRange``.
 
-Both would require forking core conversion logic. See ``docs/filtros_fecha_relativa.md``.
+Odoo 20 also ships named relative presets -- *Last month*, *Year to date*, *Last 365
+days* -- which are generated as smart dates and are therefore relative too, and the
+free-form *Relative range* value type is ``debugOnly``. So this hint now reaches fewer
+users than it did in 18.0: see the README.
     """,
     'author': 'NUMA Extreme Systems',
     'website': 'https://www.numaes.com',
@@ -44,7 +43,7 @@ Both would require forking core conversion logic. See ``docs/filtros_fecha_relat
     'data': [],
     'assets': {
         'web.assets_backend': [
-            'numa_web_relative_dates/static/src/within_hint.xml',
+            'numa_web_relative_dates/static/src/relative_range_hint.xml',
         ],
     },
     'installable': True,
