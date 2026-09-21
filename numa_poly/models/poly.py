@@ -7040,6 +7040,18 @@ def _poly_registry_setup_models(self, cr, model_names=None):
                 if base.__dict__.get('_depend_models'):
                     has_depend_models = True
                     break
+        if not has_depend_models:
+            # [20.0] Neither of the two above sees a model whose `_depend_models` is
+            # declared by a definition class that is not in the registry class's MRO
+            # yet -- which is every such model on the first pass of a clean install.
+            # The definition classes are the authority and Odoo keeps them all, so ask
+            # them before concluding that a model is not polymorphic.
+            has_depend_models = any(
+                _def_cls.__dict__.get('_name') == name
+                and _def_cls.__dict__.get('_depend_models')
+                for _defs in odoo.models.MetaModel._module_to_models__.values()
+                for _def_cls in _defs
+            )
         
         if has_depend_models:
             poly_models_names_to_process.add(name)
@@ -7047,23 +7059,36 @@ def _poly_registry_setup_models(self, cr, model_names=None):
             
             # Technical access to the base model's dependencies
             dep_map = OrderedDict()
-            # [poly] ROBUST: Search Python definition-class hierarchy (PolyModel subclasses)
-            # for classes that declare _name == name in their own __dict__.
-            # This is MRO-independent: it works even before Phase 1 injects definition
-            # classes into the Odoo registered class's __bases__.  Without this, the MRO
-            # walk below finds nothing (ConversationMessageFacebook is not yet in
-            # model_class.mro()), dep_map stays empty, and model_class._depend_models is
-            # never set — causing _poly_is_polymorphic to return False at create() time.
-            _def_stack = list(cls_PolyModel.__subclasses__())
-            while _def_stack:
-                _def_cls = _def_stack.pop()
-                if _def_cls.__dict__.get('_name') == name:
+            # [poly] Search the DEFINITION classes for ones that declare this model
+            # with a `_depend_models` of their own. This is MRO-independent: it works
+            # before the registry class has the definitions in its `__bases__`, which
+            # is where the MRO walk below finds nothing.
+            #
+            # [20.0] It used to walk `PolyModel.__subclasses__()`, which only reaches
+            # declarations written as `class X(PolyModel)`. Most of them are not:
+            # `_depend_models` works on a plain `models.Model` and the majority of the
+            # declarations in numa-addons use one. A model declared that way was
+            # invisible here whenever the MRO was not built yet -- which is the case on
+            # the first pass of a CLEAN install, and only then.
+            #
+            # `res.partner` was the one that showed it. `numa_planning_purchase`
+            # declares `class PlanningPartner(models.Model)` with
+            # `_depend_models = {'numa.planning.resource': 'planning_resource_id'}`, and
+            # on a clean database res.partner was never contributed, so it never got
+            # `planning_resource_id` -- and creating any partner at all died with
+            # "Invalid field 'planning_resource_id' in 'res.partner'".
+            #
+            # `MetaModel._module_to_models__` holds every definition class Odoo has
+            # imported, whatever its Python base, which is the set actually meant here.
+            for _defs in odoo.models.MetaModel._module_to_models__.values():
+                for _def_cls in _defs:
+                    if _def_cls.__dict__.get('_name') != name:
+                        continue
                     _d = _def_cls.__dict__.get('_depend_models')
                     if _d and isinstance(_d, (dict, OrderedDict)):
                         for _dm, _df in _d.items():
                             if _dm not in dep_map:
                                 dep_map[_dm] = _df
-                _def_stack.extend(_def_cls.__subclasses__())
 
             # Fallback: also walk the registered class's MRO (works after injection).
             for base in _poly_get_safe_mro(model_class):
