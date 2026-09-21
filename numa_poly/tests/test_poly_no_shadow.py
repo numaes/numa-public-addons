@@ -64,3 +64,45 @@ class TestPolyNoShadowFollowsTheDeclaration(TransactionCase):
         self.assertIn('name', type(self.Task)._poly_native_field_names())
         self.assertTrue(self.Task._fields['name'].store,
                         "project.task declares `name`; poly must not shadow it.")
+
+
+@tagged('post_install', '-at_install')
+class TestUnPuenteConserva_SuPropioCompute(TransactionCase):
+    """A field a bridge declares itself keeps its own compute, not a related one.
+
+    The no-shadow rule is decided when the contribution class is generated, and the set
+    of "native" names was read from `model_class.mro()` — which only answers for the
+    classes already linked into it. A bridge loaded after that pass was not there yet,
+    so its declaration was invisible: the contribution generated a related version of
+    the field and, sitting lower in the MRO, won.
+
+    `numa_planning_purchase` declares `purchase.order.line.pln_constraint_date` with its
+    own compute and inverse, mapping it to `date_planned`. It came out
+    `related='planning_node_id.pln_constraint_date'`: the bridge's compute never ran and
+    the field read False, so the whole date mapping was dead.
+    """
+
+    def setUp(self):
+        super().setUp()
+        if 'purchase.order.line' not in self.env:
+            self.skipTest('purchase is not installed')
+        self.Line = self.env['purchase.order.line']
+        if 'pln_constraint_date' not in self.Line._fields:
+            self.skipTest('numa_planning_purchase is not installed')
+
+    def test_01_el_campo_conserva_el_compute_del_puente(self):
+        campo = self.Line._fields['pln_constraint_date']
+        self.assertFalse(
+            campo.related,
+            "the bridge declares this field; poly must not replace it with a related one")
+        self.assertEqual(campo.compute, '_compute_pln_constraint_date')
+        self.assertEqual(campo.inverse, '_inverse_pln_constraint_date')
+
+    def test_02_un_campo_que_el_puente_no_declara_si_es_related(self):
+        """The rule is about what the model declares, not about the prefix."""
+        campo = self.Line._fields.get('pln_calc_start')
+        if campo is None:
+            self.skipTest('pln_calc_start is not on this model')
+        self.assertTrue(
+            campo.related,
+            "a field that only the base declares must reach the record through the base")

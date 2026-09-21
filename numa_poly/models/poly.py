@@ -6874,7 +6874,8 @@ def _poly_base_field_names(registry, base_name, _vistos=None):
     return declarados
 
 
-def _poly_contribute_definitions(registry, model_names, declared_inherits=None):
+def _poly_contribute_definitions(registry, model_names, declared_inherits=None,
+                                 declared_fields=None):
     """[poly][20.0] Declare the polymorphic bases as model definitions.
 
     For each polymorphic model it builds a synthetic definition whose ``_inherit``
@@ -7016,7 +7017,10 @@ def _poly_contribute_definitions(registry, model_names, declared_inherits=None):
         }
         # What the model declares on its own is its own and is not replaced by a
         # version related to the base: that is the no-shadow rule.
+        # The MRO answers for the classes already linked into it; the index answers for
+        # every definition Odoo has imported. The union is what the model declares.
         nativos = set(_poly_declared_fields(model_class))
+        nativos.update((declared_fields or {}).get(model_name, ()))
 
         for base_name, link_name in dep_map.items():
             if base_name not in registry or not link_name:
@@ -7144,11 +7148,28 @@ def _poly_registry_setup_models(self, cr, model_names=None):
     # halt. One pass over the definitions, keyed by model name, costs nothing.
     _poly_declared_depends = {}
     _poly_declared_inherits = {}
+    _poly_declared_campos = {}
     for _defs in odoo.models.MetaModel._module_to_models__.values():
         for _def_cls in _defs:
             _nombre = _def_cls.__dict__.get('_name')
             if not _nombre:
                 continue
+            # Which fields each model DECLARES, from the same source and for the same
+            # reason as the two above: asking `model_class.mro()` only sees the classes
+            # already linked into it, and a bridge loaded after the contribution ran is
+            # not there yet. `numa_planning_purchase` declares
+            # `purchase.order.line.pln_constraint_date` with its own compute and
+            # inverse; the contribution did not see that, generated a related version,
+            # and -- being lower in the MRO -- won. The bridge's compute never ran and
+            # the field read False.
+            #
+            # Poly's own contribution classes are skipped: they declare the related
+            # fields this set exists to prevent.
+            if not _def_cls.__name__.startswith('PolyContribution_'):
+                _campos = _def_cls.__dict__.get('_field_definitions')
+                if _campos:
+                    _poly_declared_campos.setdefault(_nombre, set()).update(
+                        _c.name for _c in _campos if getattr(_c, 'name', None))
             _d = _def_cls.__dict__.get('_depend_models')
             if _d and isinstance(_d, (dict, OrderedDict)):
                 _acumulado = _poly_declared_depends.setdefault(_nombre, OrderedDict())
@@ -7252,7 +7273,7 @@ def _poly_registry_setup_models(self, cr, model_names=None):
     #
     # See doc/plan-2026-09-20-odoo-20-redesign.md, section 2.1.
     _poly_contribute_definitions(self, poly_models_names_to_process,
-                                 _poly_declared_inherits)
+                                 _poly_declared_inherits, _poly_declared_campos)
 
     # [poly] Phase 2: Clear the per-class _poly_fields_built flag before every
     # setup_models call (including test-reset invocations).  Without this,
