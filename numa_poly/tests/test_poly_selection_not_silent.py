@@ -64,3 +64,47 @@ class TestSelectionInvalidaNoSeDescarta(TransactionCase):
         class CampoFalso:
             selection = staticmethod(lambda model: [('a', 'A')])
         self.assertTrue(poly_selection_value_is_valid(CampoFalso(), 'lo-que-sea'))
+
+
+@tagged('post_install', '-at_install')
+class TestCampoDesconocidoNoSeDescarta(TransactionCase):
+    """A key that is not a field of anything is an error, not something to drop.
+
+    The polymorphic create distributes the values between this model, its bases and the
+    link fields, and each branch is written as ``if k in <some>._fields``. A key matching
+    none of them fell through all of them: the record was created without it and nothing
+    was logged. Odoo raises ValueError for an unknown field, but that check lives in
+    ``BaseModel.create``, which the polymorphic branch never calls.
+
+    Found on the Odoo 20 migration: ``res.partner.mobile`` was removed, and
+    ``create({'mobile': ...})`` returned a partner with the number thrown away, while
+    ``search([('mobile', '=', ...)])`` raised as it should.
+    """
+
+    def test_01_un_create_con_campo_inexistente_falla(self):
+        with self.assertRaises(ValueError):
+            self.env['res.partner'].create({
+                'name': 'Prueba campo desconocido',
+                'no_existe_este_campo': 'x',
+            })
+
+    def test_02_el_caso_real_de_la_migracion(self):
+        """`mobile` was merged into `phone` in Odoo 20."""
+        self.assertNotIn('mobile', self.env['res.partner']._fields)
+        with self.assertRaises(ValueError):
+            self.env['res.partner'].create({
+                'name': 'Prueba mobile',
+                'mobile': '+54 9 11 6123 4567',
+            })
+
+    def test_03_un_campo_heredado_de_una_base_sigue_siendo_valido(self):
+        """The guard must accept what the bases define, or it breaks every poly create."""
+        partner = self.env['res.partner'].create({'name': 'Prueba base valida'})
+        self.assertTrue(partner.exists())
+
+    def test_04_lo_propagado_por_poly_se_sigue_filtrando(self):
+        partner = self.env['res.partner'].with_context(**{POLY_PROPAGATED: True}).create({
+            'name': 'Propagado desconocido',
+            'no_existe_este_campo': 'x',
+        })
+        self.assertTrue(partner.exists())

@@ -443,6 +443,10 @@ def _poly_get_safe_mro(cls):
 _poly_is_polymorphic_cache: dict = {}
 
 
+# Keys the polymorphic create handles itself, which are not fields of the model.
+_POLY_CREATE_TECHNICAL_KEYS = frozenset({'id', 'concrete_model_id', 'poly_payload'})
+
+
 def _poly_is_polymorphic(model):
     """
     Determine whether a model is polymorphic by analysing its MRO chain and the presence of _depend_models.
@@ -4099,6 +4103,34 @@ class PolyBase(_original_BaseModel):
             base_model = self.env[base_name]
             base_model.check_access('create')
 
+        # A key nobody recognises is an ERROR, not something to drop.
+        #
+        # The polymorphic create below distributes the values between this model, its
+        # bases and the link fields, and every one of those branches is written as
+        # `if k in <some>._fields`. A key that matches none of them falls through all of
+        # them and is silently lost: the record is created without it and nothing is
+        # logged. Odoo itself raises ValueError for an unknown field, but that check
+        # lives in `BaseModel.create`, which this branch never calls.
+        #
+        # Measured on Odoo 20: `res.partner.create({'mobile': '+54 9 11 6123 4567'})`
+        # returned a partner and threw the number away. `mobile` was removed in Odoo 20,
+        # so every caller still writing it lost the phone with no error --
+        # while `search([('mobile', '=', ...)])` raised, as it should.
+        #
+        # Skipped for values propagated by poly itself: those are filtered on purpose a
+        # few lines above, where a parent's value may legitimately not exist on a child.
+        if not poly_vals_propagados(self.env):
+            conocidos = set(self._fields)
+            for base_name in depend_models:
+                if base_name == '_is_poly_enabled' or base_name not in self.pool:
+                    continue
+                conocidos.update(self.env[base_name]._fields)
+            conocidos.update(_POLY_CREATE_TECHNICAL_KEYS)
+            for vals in data_list:
+                for k in vals:
+                    if k not in conocidos:
+                        raise ValueError(f"Invalid field {k!r} in {self._name!r}")
+
         # If this is a polymorphic create of a subclass handle it recursively
 
         # Accumulator of the created records. It MUST start empty: create() can be invoked
@@ -6808,7 +6840,7 @@ def _poly_base_field_names(registry, base_name, _vistos=None):
     return declarados
 
 
-def _poly_contribute_definitions(registry, model_names):
+def _poly_contribute_definitions(registry, model_names, declared_inherits=None):
     """[poly][20.0] Declare the polymorphic bases as model definitions.
 
     For each polymorphic model it builds a synthetic definition whose ``_inherit``
@@ -6896,17 +6928,51 @@ def _poly_contribute_definitions(registry, model_names):
         # Naming those mixins again after the parents is enough, because the `bases`
         # accumulator in `add_to_registry` (model_classes.py:207) is a
         # `LastOrderedSet`: re-adding a class moves it behind what came before.
-        ya_heredados = {
-            getattr(b, '_name', None) for b in getattr(model_class, '_base_classes__', ())
-        }
+        #
+        # [20.0] BOTH sides of this are read from the DECLARATIONS, not from a class's
+        # `__mro__`. Reading the MRO worked on a clean install and not on an update: on
+        # a `-u` pass the parent's registry class is not set up yet either, so
+        # `fsm.instance.__mro__` did not mention `mail.thread`, `compartidos` came out
+        # empty, and the MRO conflict came straight back -- `conversation.session`
+        # could not be built at all. What a model declares does not depend on when the
+        # pass runs.
+        declared_inherits = declared_inherits or {}
+
+        def _ancestros_declarados(nombre, vistos=None):
+            if vistos is None:
+                vistos = set()
+            for padre in declared_inherits.get(nombre, ()):
+                if padre in vistos:
+                    continue
+                vistos.add(padre)
+                _ancestros_declarados(padre, vistos)
+            return vistos
+
+        # Only what the model inherits DIRECTLY, and IN ITS ORIGINAL ORDER.
+        #
+        # Direct, because C3 constrains the order of the direct bases; re-listing a
+        # transitive ancestor adds an order nobody asked for, and doing that produced a
+        # conflict of its own.
+        #
+        # In order, because re-listing moves these to the end and whatever order they
+        # are given becomes their new relative order. Taking them from a set reversed
+        # `mail.thread` and `mail.activity.mixin`, which is an order the model never
+        # declared, and C3 refused that too.
+        directos = []
+        for b in getattr(model_class, '_base_classes__', ()):
+            nombre = getattr(b, '_name', None)
+            if nombre and nombre not in directos:
+                directos.append(nombre)
+        for nombre in declared_inherits.get(model_name, ()):
+            if nombre not in directos:
+                directos.append(nombre)
+
         compartidos = []
-        for parent_name in parents:
-            parent_cls = registry[parent_name]
-            for ancestro in parent_cls.__mro__:
-                nombre = getattr(ancestro, '_name', None)
-                if (nombre and nombre not in (parent_name, model_name, 'base')
-                        and nombre in ya_heredados and nombre not in compartidos):
-                    compartidos.append(nombre)
+        for nombre in directos:
+            if nombre in (model_name, 'base') or nombre in parents:
+                continue
+            if any(nombre in _ancestros_declarados(p) for p in parents):
+                compartidos.append(nombre)
 
         atributos = {
             '__module__': __name__,
@@ -7014,6 +7080,41 @@ def _poly_registry_setup_models(self, cr, model_names=None):
     cls_PolyModel = PolyModel
     cls_PolyTransientModel = PolyTransientModel
 
+    # [poly][20.0] The declarations are indexed ONCE, here, not searched per model.
+    #
+    # `_depend_models` is authoritative on the DEFINITION classes, and on the first
+    # pass of a clean install they are not in the registry class's MRO yet -- so the
+    # two checks below cannot see them. `MetaModel._module_to_models__` holds every
+    # definition class Odoo has imported, whatever its Python base, which is the set
+    # actually meant.
+    #
+    # It is indexed once because the obvious way is quadratic: asking that question
+    # per model is O(models x definitions), and `_setup_models__` runs once per module
+    # loaded, so it becomes O(modules x models x definitions) and the load crawls to a
+    # halt. One pass over the definitions, keyed by model name, costs nothing.
+    _poly_declared_depends = {}
+    _poly_declared_inherits = {}
+    for _defs in odoo.models.MetaModel._module_to_models__.values():
+        for _def_cls in _defs:
+            _nombre = _def_cls.__dict__.get('_name')
+            if not _nombre:
+                continue
+            _d = _def_cls.__dict__.get('_depend_models')
+            if _d and isinstance(_d, (dict, OrderedDict)):
+                _acumulado = _poly_declared_depends.setdefault(_nombre, OrderedDict())
+                for _dm, _df in _d.items():
+                    _acumulado.setdefault(_dm, _df)
+            # `MetaModel` moves `_inherit` to `_inherit__` as the class is created
+            # (models.py:276); read both so it does not matter which we see.
+            _her = _def_cls.__dict__.get('_inherit__')
+            if _her is None:
+                _her = _def_cls.__dict__.get('_inherit')
+            if isinstance(_her, str):
+                _her = [_her]
+            if _her:
+                _poly_declared_inherits.setdefault(_nombre, set()).update(
+                    h for h in _her if h != _nombre)
+
     # [poly] Phase 0: Collect all models that have _depend_models
     # and also collect their declared base models (targets) so that root bases get infrastructure fields too
     poly_models_names_to_process = set()
@@ -7040,18 +7141,10 @@ def _poly_registry_setup_models(self, cr, model_names=None):
                 if base.__dict__.get('_depend_models'):
                     has_depend_models = True
                     break
-        if not has_depend_models:
-            # [20.0] Neither of the two above sees a model whose `_depend_models` is
-            # declared by a definition class that is not in the registry class's MRO
-            # yet -- which is every such model on the first pass of a clean install.
-            # The definition classes are the authority and Odoo keeps them all, so ask
-            # them before concluding that a model is not polymorphic.
-            has_depend_models = any(
-                _def_cls.__dict__.get('_name') == name
-                and _def_cls.__dict__.get('_depend_models')
-                for _defs in odoo.models.MetaModel._module_to_models__.values()
-                for _def_cls in _defs
-            )
+        if not has_depend_models and name in _poly_declared_depends:
+            # The definition classes are the authority, and on a clean install they are
+            # the only place the answer exists yet.
+            has_depend_models = True
         
         if has_depend_models:
             poly_models_names_to_process.add(name)
@@ -7059,36 +7152,11 @@ def _poly_registry_setup_models(self, cr, model_names=None):
             
             # Technical access to the base model's dependencies
             dep_map = OrderedDict()
-            # [poly] Search the DEFINITION classes for ones that declare this model
-            # with a `_depend_models` of their own. This is MRO-independent: it works
-            # before the registry class has the definitions in its `__bases__`, which
-            # is where the MRO walk below finds nothing.
-            #
-            # [20.0] It used to walk `PolyModel.__subclasses__()`, which only reaches
-            # declarations written as `class X(PolyModel)`. Most of them are not:
-            # `_depend_models` works on a plain `models.Model` and the majority of the
-            # declarations in numa-addons use one. A model declared that way was
-            # invisible here whenever the MRO was not built yet -- which is the case on
-            # the first pass of a CLEAN install, and only then.
-            #
-            # `res.partner` was the one that showed it. `numa_planning_purchase`
-            # declares `class PlanningPartner(models.Model)` with
-            # `_depend_models = {'numa.planning.resource': 'planning_resource_id'}`, and
-            # on a clean database res.partner was never contributed, so it never got
-            # `planning_resource_id` -- and creating any partner at all died with
-            # "Invalid field 'planning_resource_id' in 'res.partner'".
-            #
-            # `MetaModel._module_to_models__` holds every definition class Odoo has
-            # imported, whatever its Python base, which is the set actually meant here.
-            for _defs in odoo.models.MetaModel._module_to_models__.values():
-                for _def_cls in _defs:
-                    if _def_cls.__dict__.get('_name') != name:
-                        continue
-                    _d = _def_cls.__dict__.get('_depend_models')
-                    if _d and isinstance(_d, (dict, OrderedDict)):
-                        for _dm, _df in _d.items():
-                            if _dm not in dep_map:
-                                dep_map[_dm] = _df
+            # The definition classes first: they are authoritative and, on a clean
+            # install, the only place the answer exists before the MRO is built.
+            for _dm, _df in _poly_declared_depends.get(name, {}).items():
+                if _dm not in dep_map:
+                    dep_map[_dm] = _df
 
             # Fallback: also walk the registered class's MRO (works after injection).
             for base in _poly_get_safe_mro(model_class):
@@ -7133,7 +7201,8 @@ def _poly_registry_setup_models(self, cr, model_names=None):
     # nothing to restore.
     #
     # See doc/plan-2026-09-20-odoo-20-redesign.md, section 2.1.
-    _poly_contribute_definitions(self, poly_models_names_to_process)
+    _poly_contribute_definitions(self, poly_models_names_to_process,
+                                 _poly_declared_inherits)
 
     # [poly] Phase 2: Clear the per-class _poly_fields_built flag before every
     # setup_models call (including test-reset invocations).  Without this,
