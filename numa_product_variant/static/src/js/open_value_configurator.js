@@ -158,16 +158,10 @@ patch(ProductTemplateAttributeLine.prototype, {
     },
 });
 
-// The props shape is validated against a closed list, so the new metadata sent
-// by _get_product_information has to be declared. They stay optional: an
-// attribute created before this feature sends none of them.
-Object.assign(ProductTemplateAttributeLine.props.attribute.shape, {
-    value_type: { type: String, optional: true },
-    allow_additional_values: { type: Boolean, optional: true },
-    reference_model: { type: [Boolean, String], optional: true },
-    reference_domain: { type: [Boolean, String], optional: true },
-    number_min: { type: Number, optional: true },
-    number_max: { type: Number, optional: true },
-    number_rounding: { type: Number, optional: true },
-    number_uom: { type: [Boolean, String], optional: true },
-});
+// [20.0] The props shape used to be extended here, because OWL validated props against
+// a closed list and the extra metadata that `_get_product_information` sends -- the
+// value type, the reference model, the numeric bounds -- would have been rejected.
+// Odoo 20 declares props with `useProps(t.object({...}))`, and `t.object` is loose:
+// unknown keys pass. There is no static `props.attribute.shape` to extend any more
+// either, so the old code raised while the module was loading and took the whole
+// open-value feature down with it -- silently, as a console error in the browser.

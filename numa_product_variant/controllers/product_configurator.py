@@ -19,16 +19,23 @@ class PurchaseProductConfiguratorController(SaleProductConfiguratorController):
     @route(route='/purchase/product_configurator/get_values',
            type='json', auth='user', methods=['POST'])
     def purchase_product_configurator_get_values(
-        self, product_template_id, quantity, currency_id, so_date,
+        self, product_template_id, quantity, so_date, currency_id=None,
         product_uom_id=None, company_id=None, pricelist_id=None,
         ptav_ids=None, only_main_product=False, **kwargs,
     ):
-        """Return configurator values for a purchase line (no sale pricing)."""
+        """Return configurator values for a purchase line (no sale pricing).
+
+        [20.0] The parameter order changed upstream: `so_date` moved ahead of
+        `currency_id`, which became optional. The wrapper kept the old order and passed
+        everything positionally, so core received the currency id where it expected a
+        date and answered `fromisoformat: argument must be str`. Everything is passed by
+        keyword now, which is what makes the next reordering harmless.
+        """
         request.update_context(purchase_configurator=True)
         result = self.sale_product_configurator_get_values(
-            product_template_id, quantity, currency_id, so_date,
-            product_uom_id=product_uom_id, company_id=company_id,
-            pricelist_id=None, ptav_ids=ptav_ids,
+            product_template_id=product_template_id, quantity=quantity, so_date=so_date,
+            currency_id=currency_id, product_uom_id=product_uom_id,
+            company_id=company_id, pricelist_id=None, ptav_ids=ptav_ids,
             only_main_product=True, **kwargs,
         )
         result['optional_products'] = []
@@ -37,15 +44,18 @@ class PurchaseProductConfiguratorController(SaleProductConfiguratorController):
     @route(route='/purchase/product_configurator/update_combination',
            type='json', auth='user', methods=['POST'])
     def purchase_product_configurator_update_combination(
-        self, product_template_id, ptav_ids, currency_id, so_date, quantity,
+        self, product_template_id, ptav_ids, so_date, quantity, currency_id=None,
         product_uom_id=None, company_id=None, pricelist_id=None, **kwargs,
     ):
-        """Return the updated combination info for a purchase line (no sale pricing)."""
+        """Return the updated combination info for a purchase line (no sale pricing).
+
+        [20.0] Same reordering as above, and passed by keyword for the same reason.
+        """
         request.update_context(purchase_configurator=True)
         return self.sale_product_configurator_update_combination(
-            product_template_id, ptav_ids, currency_id, so_date, quantity,
-            product_uom_id=product_uom_id, company_id=company_id,
-            pricelist_id=None, **kwargs,
+            product_template_id=product_template_id, ptav_ids=ptav_ids, so_date=so_date,
+            quantity=quantity, currency_id=currency_id, product_uom_id=product_uom_id,
+            company_id=company_id, pricelist_id=None, **kwargs,
         )
 
     @route(route='/purchase/product_configurator/create_product',

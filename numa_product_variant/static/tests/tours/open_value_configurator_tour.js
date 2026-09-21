@@ -1,8 +1,12 @@
 /** @odoo-module **/
 
 import { registry } from "@web/core/registry";
-import { stepUtils } from "@web_tour/tour_service/tour_utils";
-import tourUtils from "@sale/js/tours/tour_utils";
+// [20.0] `@web_tour/tour_service/tour_utils` moved to `@web_tour/tour_utils`, and
+// `@sale/js/tours/tour_utils` exports named functions rather than a default object.
+// Both imports failed, so the tour was never registered and the test timed out waiting
+// for a tour that did not exist.
+import { stepUtils } from "@web_tour/tour_utils";
+import { addProduct, createNewSalesOrder, selectCustomer } from "@sale/js/tours/tour_utils";
 
 /**
  * Drives the open-value controls in the real product configurator.
@@ -18,9 +22,9 @@ registry.category("web_tour.tours").add("numa_open_value_configurator_tour", {
     url: "/odoo",
     steps: () => [
         ...stepUtils.goToAppSteps("sale.sale_menu_root", "Go to the Sales App"),
-        ...tourUtils.createNewSalesOrder(),
-        ...tourUtils.selectCustomer("NUMA Tour Customer"),
-        ...tourUtils.addProduct("NUMA Cut piece"),
+        ...createNewSalesOrder(),
+        ...selectCustomer("NUMA Tour Customer"),
+        ...addProduct("NUMA Cut piece"),
         {
             content: "The open attribute must be labelled, not a bare input",
             trigger: `.modal ${ptalWithLabel("NUMA Segment length")} .o_ptal_open_value input[type="number"]`,

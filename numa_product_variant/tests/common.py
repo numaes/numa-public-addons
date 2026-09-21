@@ -103,7 +103,7 @@ class NumaVariantCommon(TransactionCase):
             'name': name, 'type': 'consu', 'purchase_ok': True,
             'weight_kind': 'normal', 'price_base': 'normal',
             'base_code': base_code,
-            'categ_id': cls.env.ref('product.product_category_all').id,
+            'categ_id': cls.env.ref('product.product_category_goods').id,
         })
         cls.env['product.template.attribute.line'].create([
             {'product_tmpl_id': template.id, 'attribute_id': cls.attr_color.id,
@@ -122,7 +122,7 @@ class NumaVariantCommon(TransactionCase):
             'name': 'Aluminium cut piece', 'type': 'consu',
             'purchase_ok': True, 'weight_kind': 'normal',
             'price_base': 'normal', 'base_code': 'CUT',
-            'categ_id': self.env.ref('product.product_category_all').id,
+            'categ_id': self.env.ref('product.product_category_goods').id,
         })
         self.env['product.template.attribute.line'].create([
             {'product_tmpl_id': template.id, 'attribute_id': self.attr_profile.id,

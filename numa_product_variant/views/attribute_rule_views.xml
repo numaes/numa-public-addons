@@ -53,9 +53,11 @@
             <field name="view_mode">list,form</field>
         </record>
 
-        <menuitem id="product_attribute_rule_menu"
+        <!-- [20.0] `sale.prod_config_main` is gone; the configuration menus were
+         folded into `sale.product_menu_catalog`. -->
+    <menuitem id="product_attribute_rule_menu"
                   name="Configuration Rules"
-                  parent="sale.prod_config_main"
+                  parent="sale.product_menu_catalog"
                   action="product_attribute_rule_action"
                   sequence="20"/>
 

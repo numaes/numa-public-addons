@@ -5,6 +5,12 @@
         Add the open-value control beside the predefined list, not instead of
         it: a curated list of suggestions and free entry must coexist.
     -->
+    <!--
+        [20.0] Every expression carries `this.` now. The OWL render context stopped
+        exposing component members bare, so `isSelectedPTAVCustom()` raised
+        "ctx.isSelectedPTAVCustom is not a function" while rendering and the whole
+        attribute line came out empty, in the browser, with nothing in the server log.
+    -->
     <t t-name="numa_product_variant.ProductTemplateAttributeLine"
        t-inherit="sale.ProductTemplateAttributeLine"
        t-inherit-mode="extension">
@@ -15,31 +21,31 @@
             nothing saying which attribute it belongs to.
         -->
         <xpath expr="//label" position="attributes">
-            <attribute name="t-if">showValuesChoice || isSelectedPTAVCustom() || acceptsOpenValue</attribute>
+            <attribute name="t-if">this.showValuesChoice || this.isSelectedPTAVCustom() || this.acceptsOpenValue</attribute>
         </xpath>
         <xpath expr="//div[@name='ptal']/div[1]" position="after">
             <div class="o_ptal_open_value w-100 w-lg-75 mb-3 ms-lg-auto"
-                 t-if="acceptsOpenValue">
-                <div t-if="openValueType === 'number'" class="input-group w-100">
+                 t-if="this.acceptsOpenValue">
+                <div t-if="this.openValueType === 'number'" class="input-group w-100">
                     <input class="o_input"
                            type="number"
-                           t-att-min="props.attribute.number_min or undefined"
-                           t-att-max="props.attribute.number_max or undefined"
-                           t-att-step="props.attribute.number_rounding or undefined"
-                           t-on-change="onOpenNumberConfirmed"
+                           t-att-min="this.props.attribute.number_min or undefined"
+                           t-att-max="this.props.attribute.number_max or undefined"
+                           t-att-step="this.props.attribute.number_rounding or undefined"
+                           t-on-change="this.onOpenNumberConfirmed"
                            placeholder="Enter a value"/>
-                    <span t-if="props.attribute.number_uom"
+                    <span t-if="this.props.attribute.number_uom"
                           class="input-group-text"
-                          t-esc="props.attribute.number_uom"/>
+                          t-out="this.props.attribute.number_uom"/>
                 </div>
-                <input t-elif="openValueType === 'date'"
+                <input t-elif="this.openValueType === 'date'"
                        class="o_input w-100"
                        type="date"
-                       t-on-change="onOpenDateConfirmed"/>
-                <Many2XAutocomplete t-elif="openValueType === 'reference'"
-                       resModel="props.attribute.reference_model"
-                       fieldString="props.attribute.name"
-                       activeActions="openReferenceActions"
+                       t-on-change="this.onOpenDateConfirmed"/>
+                <Many2XAutocomplete t-elif="this.openValueType === 'reference'"
+                       resModel="this.props.attribute.reference_model"
+                       fieldString="this.props.attribute.name"
+                       activeActions="this.openReferenceActions"
                        getDomain="() => this.openReferenceDomain"
                        update="(records) => this.onOpenReferenceSelected(records)"
                        quickCreate="null"
@@ -47,7 +53,7 @@
                 <input t-else=""
                        class="o_input w-100"
                        type="text"
-                       t-on-change="onOpenTextConfirmed"
+                       t-on-change="this.onOpenTextConfirmed"
                        placeholder="Enter a value"/>
             </div>
         </xpath>

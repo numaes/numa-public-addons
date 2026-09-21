@@ -1,54 +1,76 @@
-/** @odoo-module **/
-
-import { useEffect } from "@odoo/owl";
-import { serializeDateTime } from "@web/core/l10n/dates";
-import { registry } from "@web/core/registry";
-import { useService } from "@web/core/utils/hooks";
+import { t, useEffect, useProps } from "@odoo/owl";
 import {
-    ProductLabelSectionAndNoteField,
-    productLabelSectionAndNoteField,
-} from "@account/components/product_label_section_and_note_field/product_label_section_and_note_field";
+    accountProductField,
+    AccountProductField,
+} from "@account/components/account_product_field/account_product_field";
+import { registry } from "@web/core/registry";
+import { serializeDateTime } from "@web/core/l10n/dates";
+import { useService } from "@web/core/utils/hooks";
+import { many2OneFieldProps } from "@web/views/fields/many2one/many2one_field";
 import { PurchaseProductConfiguratorDialog } from "./purchase_product_configurator_dialog";
 
 /**
- * Purchase order line product field. Mirrors Sales' sol_product_many2one but
- * scoped to variant selection/creation: when the user picks a product template
- * it either auto-assigns the single variant (non-configurable) or opens the
- * purchase configurator dialog, then writes product_id + product_qty on the line.
+ * Purchase order line product field. Mirrors Sales' sol_product_many2one but scoped to
+ * variant selection and creation: when the user picks a product template it either
+ * assigns the single variant, or opens the purchase configurator, and then writes
+ * product_id and the quantity on the line.
+ *
+ * [20.0] Rebuilt on `AccountProductField`. It used to extend
+ * `ProductLabelSectionAndNoteField` from `@account/components/...`, which no longer
+ * exists -- the module could not even be loaded, and it took
+ * `@numa_product_variant/js/purchase_product_field` down with it as a browser console
+ * error that nothing in the server log mentioned.
+ *
+ * Three smaller things moved with it: props are declared with `useProps` rather than a
+ * static shape; a many2one value is an object with `id` and `display_name` rather than a
+ * pair; and a user-driven change is caught by wrapping `m2oProps.update` rather than
+ * `updateRecord`, which is how core tells its own writes apart from the user's.
  */
-export class PurchaseOrderLineProductField extends ProductLabelSectionAndNoteField {
+export class PurchaseOrderLineProductField extends AccountProductField {
+    static template = "account.AccountProductField";
+    props = useProps({
+        ...many2OneFieldProps,
+        readonlyField: t.boolean().optional(),
+    });
+
     setup() {
         super.setup();
         this.dialog = useService("dialog");
         this.orm = useService("orm");
-
+        this.isInternalUpdate = false;
         let isMounted = false;
-        let isInternalUpdate = false;
-        const { updateRecord } = this;
-        this.updateRecord = (value) => {
-            isInternalUpdate = true;
-            return updateRecord.call(this, value);
-        };
-        // React only to user-driven template changes (not onchange/dialog writes),
-        // mirroring the trigger mechanism in sale_product_field.js.
-        useEffect(
-            (value) => {
-                if (!isMounted) {
-                    isMounted = true;
-                } else if (value && isInternalUpdate) {
-                    if (this.relation === "product.template") {
-                        this._onProductTemplateUpdate();
-                    }
-                }
-                isInternalUpdate = false;
+
+        useEffect(() => {
+            const value = this.value && this.value.id;
+            if (!isMounted) {
+                isMounted = true;
+            } else if (value && this.isInternalUpdate && this.relation === "product.template") {
+                this._onProductTemplateUpdate();
+            }
+            this.isInternalUpdate = false;
+        });
+    }
+
+    get relation() {
+        return this.props.record.fields[this.props.name].relation;
+    }
+
+    get m2oProps() {
+        const props = super.m2oProps;
+        return {
+            ...props,
+            update: (value) => {
+                // Only a change the user made opens the configurator. An onchange, or the
+                // dialog writing back its own result, must not reopen it.
+                this.isInternalUpdate = true;
+                return props.update(value);
             },
-            () => [Array.isArray(this.value) && this.value[0]]
-        );
+        };
     }
 
     async _onProductTemplateUpdate() {
         const record = this.props.record;
-        const templateId = record.data.product_template_id?.[0];
+        const templateId = record.data.product_template_id?.id;
         if (!templateId) {
             return;
         }
@@ -58,9 +80,9 @@ export class PurchaseOrderLineProductField extends ProductLabelSectionAndNoteFie
             [templateId]
         );
         if (result && result.product_id) {
-            if (record.data.product_id?.[0] !== result.product_id) {
+            if (record.data.product_id?.id !== result.product_id) {
                 await record.update({
-                    product_id: [result.product_id, result.product_name],
+                    product_id: { id: result.product_id, display_name: result.product_name },
                 });
             }
         } else {
@@ -72,18 +94,19 @@ export class PurchaseOrderLineProductField extends ProductLabelSectionAndNoteFie
         const record = this.props.record;
         const orderRecord = record.model.root;
         this.dialog.add(PurchaseProductConfiguratorDialog, {
-            productTemplateId: record.data.product_template_id[0],
+            productTemplateId: record.data.product_template_id.id,
             ptavIds: [],
             customPtavs: [],
             quantity: record.data.product_qty || 1,
-            productUOMId: record.data.product_uom?.[0],
-            companyId: orderRecord.data.company_id?.[0],
-            currencyId: orderRecord.data.currency_id?.[0],
+            // [20.0] `purchase.order.line.product_uom` became `uom_id`.
+            productUOMId: record.data.uom_id?.id,
+            companyId: orderRecord.data.company_id?.id,
+            currencyId: orderRecord.data.currency_id?.id,
             soDate: serializeDateTime(orderRecord.data.date_order),
             options: { showPrice: false, showQuantity: true },
             save: async (mainProduct) => {
                 await record.update({
-                    product_id: [mainProduct.id, mainProduct.display_name],
+                    product_id: { id: mainProduct.id, display_name: mainProduct.display_name },
                     product_qty: mainProduct.quantity,
                 });
             },
@@ -99,7 +122,7 @@ export class PurchaseOrderLineProductField extends ProductLabelSectionAndNoteFie
 }
 
 export const purchaseOrderLineProductField = {
-    ...productLabelSectionAndNoteField,
+    ...accountProductField,
     component: PurchaseOrderLineProductField,
 };
 

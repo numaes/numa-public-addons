@@ -1,6 +1,6 @@
 {
     'name': 'NUMA Product Variant',
-    'version': '18.0.0.10',
+    'version': '20.0.1.0.0',
     'category': 'Product',
     'description': """
 This module extends the handling of variants on products.
@@ -13,9 +13,9 @@ It adds:
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'product', 'numa_physical_product', 'sale', 'purchase'],
+    'depends': ['product', 'numa_physical_product', 'sale', 'purchase'],
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'data/ir_cron.xml',
         'views/product_views.xml',
         'views/purchase_views.xml',
@@ -32,9 +32,6 @@ It adds:
             'numa_product_variant/static/src/xml/open_value_configurator.xml',
         ],
     },
-    'demo_xml': [],
-    'test': [],
     'installable': True,
     'license': 'LGPL-3',
-    'active': False,
 }

@@ -2,6 +2,7 @@ import logging
 from typing import List
 
 from odoo import models, fields, api, _
+from odoo.fields import Domain
 from odoo.exceptions import ValidationError, UserError
 
 _logger = logging.getLogger(__name__)
@@ -13,12 +14,18 @@ class ProductCategory(models.Model):
     product_attribute_ids = fields.Many2many('product.attribute', string='Default attributes')
 
     def get_default_attribute_lines(self):
-        self.ensure_one()
+        """The attributes a product of this category starts with, parents included.
 
-        attributes = self.product_attribute_ids
-        if self.parent_id:
-            attributes |= self.parent_id.get_default_attribute_lines()
-
+        [20.0] It required a singleton, and a template with no category -- which Odoo 20
+        allows, `categ_id` no longer being defaulted -- called it on an empty recordset
+        and raised "Expected singleton" on every create. It answers for whatever it is
+        given now, including nothing.
+        """
+        attributes = self.env['product.attribute']
+        for category in self:
+            attributes |= category.product_attribute_ids
+            if category.parent_id:
+                attributes |= category.parent_id.get_default_attribute_lines()
         return attributes
 
 
@@ -27,27 +34,30 @@ class ProductTemplate(models.Model):
 
     base_code = fields.Char('Base code')
 
-    def name_get(self):
-        res = []
-        for product in self:
-            if product.base_code:
-                res.append((product.id, '[%s] %s' % (product.base_code, product.name)))
-            else:
-                res.append((product.id, '%s' % product.name))
+    # [20.0] `name_get` was removed from the ORM in 17.0; a model says its name through
+    # `display_name`, computed by `_compute_display_name`. The old method stayed here and
+    # was simply never called, so a template's base code stopped showing in every
+    # many2one that displays it -- silently, because nothing fails when a method nobody
+    # calls is wrong.
+    @api.depends('base_code')
+    def _compute_display_name(self):
+        super()._compute_display_name()
+        for template in self:
+            if template.base_code and template.name:
+                template.display_name = '[%s] %s' % (template.base_code, template.name)
 
-        return res
-
+    # [20.0] `name_search` changed signature -- `args` became `domain` -- and searching
+    # by name is expressed through `_search_display_name`, which composes with whatever
+    # core does rather than replacing it. The old override returned `name_get()`, which
+    # no longer exists, so a search by base code raised as soon as it ran.
     @api.model
-    def name_search(self, name='', args=None, operator='ilike', limit=100):
-        name_args = [
-            '|',
-            ('base_code', operator, name),
-            ('name', operator, name),
-        ]
-        return self.search(
-            name_args + (args or []),
-            limit=limit
-        ).name_get()
+    def _search_display_name(self, operator, value):
+        domain = super()._search_display_name(operator, value)
+        if not value:
+            return domain
+        if operator in Domain.NEGATIVE_OPERATORS:
+            return Domain.AND([domain, [('base_code', operator, value)]])
+        return Domain.OR([domain, [('base_code', operator, value)]])
 
     @api.model_create_multi
     def create(self, vals_list: list):
@@ -124,17 +134,19 @@ class ProductTemplate(models.Model):
         'product.attribute.rule', 'product_tmpl_id',
         string='Configuration Rules')
 
-    def _is_combination_possible(self, combination, parent_combination=None,
-                                 ignore_no_variant=False):
+    def _is_combination_possible(self, combination, ignore_no_variant=False):
         """Reject combinations violating this template's configuration rules.
 
         Hooked here rather than in the configurator so the rules hold wherever
-        a combination is validated — the dialog, the variant matrix, and direct
+        a combination is validated -- the dialog, the variant matrix, and direct
         variant creation alike.
+
+        [20.0] `parent_combination` left the signature. It was there for optional
+        products in the ecommerce configurator, and Odoo dropped it; passing it through
+        raised TypeError on every call.
         """
         possible = super()._is_combination_possible(
-            combination, parent_combination=parent_combination,
-            ignore_no_variant=ignore_no_variant)
+            combination, ignore_no_variant=ignore_no_variant)
         if not possible:
             return False
         return not self._violated_attribute_rules(combination)
