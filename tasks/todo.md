@@ -36,7 +36,13 @@ Deleted: `numa_periodic_services` (unused, at the user's instruction).
 
 ## Known open items, reported and not yet fixed
 
-- **`website` + `numa_poly` cannot be installed in the same run.** Documented with a
-  workaround (install them in two passes). Root cause not yet chased.
+- [x] **`website` + `numa_poly` in the same run.** Fixed. `numa_poly` carried a full
+  copy of core's `_write_multi`, and the copy was a version behind on the SQL that
+  merges a translated jsonb column: Odoo 20 passes it the pair
+  `(is_partial, translations)`, the copy treated it as the bare dict, and Postgres
+  answered the object-concatenated-with-array with an array. Every translated field
+  written through a polymorphic model was stored as `[{...}, false, {...}]`, and the
+  next read died in `StoredTranslations`. The override is `super()` plus its two own
+  lines now, and `numa_poly_test` has five tests on it (two go red against the fork).
 - **`numa_product_variant`'s browser tour stops at step 19 of 21.** The three JS
   breakages ahead of it are fixed; the last one is not.

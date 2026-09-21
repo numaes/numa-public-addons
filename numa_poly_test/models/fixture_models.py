@@ -66,6 +66,10 @@ class TestPolyChildA(PolyModel):
     }
 
     child_a_field = fields.Char(string='Child A Field')
+    # A translated field, because writing one through a polymorphic model is what
+    # broke: numa_poly's copy of `_write_multi` was a version behind on the SQL that
+    # merges a translated jsonb column, and stored a JSON array in its place.
+    translated_field = fields.Char(string='Translated Field', translate=True)
     # `fields.Reference` subclasses `fields.Selection`, which is why the guard
     # against cross-model Selection pollution used to drop every reference
     # written on a polymorphic model, with nothing but a log line to say so.

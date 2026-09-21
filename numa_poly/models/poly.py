@@ -5239,119 +5239,33 @@ class PolyBase(_original_BaseModel):
                 "pass has to move this record before it can have one of its own.",
                 self._name, record_id,
                 "held by %s" % holder if holder else "claimed by no model")
-
     def _write_multi(self, vals_list):
+        """Write, and stamp the shared audit trail of a polymorphic record.
+
+        [20.0] This used to be a full copy of core's `_write_multi`, and the copy had
+        fallen a version behind on the one piece of SQL that is not obvious: the
+        expression that merges a translated column. Odoo 20 passes such a column the
+        pair `(is_partial, translations)` and reads `expr -> 0` and `expr -> 1` out of
+        it; the copy still treated `expr` as the bare translation dict, so what went
+        into the column was
+
+            COALESCE(col, jsonb_build_object('en_US', <the pair's first element>))
+            || '[false, {"en_US": "..."}]'
+
+        -- an object concatenated with an array, which Postgres answers with an array.
+        Every translated field written through a polymorphic model was stored as
+        `[{...}, false, {...}]` instead of `{"en_US": "..."}`, and the next read of it
+        died in `StoredTranslations(val)` with "dictionary update sequence element #0
+        has length 1; 2 is required". Installing `website` alongside `numa_poly` hit
+        this in `website`'s own post-init hook, which is why the two could not be
+        installed in the same run.
+
+        The copy had also quietly dropped `transaction._wrote__` and the `_log_access`
+        magic fields, and swapped core's assertion on non-column fields for a silent
+        `continue`. None of that was the point of the override: the point is the two
+        lines at the end.
         """
-        Low-level implementation of write() for multiple records.
-
-        This method extends the standard Odoo write implementation to handle
-        polymorphic models. For polymorphic models, it ensures that audit fields
-        (write_uid, write_date) are properly updated in the ir.poly_base record.
-
-        Args:
-            vals_list: List of dictionaries containing values to write.
-                Must have the same length as the recordset.
-
-        Returns:
-            None: This method performs the write operation in place.
-
-        Note:
-            For polymorphic models, this method also updates the write_uid and
-            write_date fields in the ir.poly_base record to maintain consistency
-            across the polymorphic hierarchy.
-        """
-        assert len(self) == len(vals_list)
-
-        if not self:
-            return
-
-        # determine records that require updating parent_path
-        parent_records = self._parent_store_update_prepare(vals_list)
-
-        # determine SQL updates, grouped by set of updated fields:
-        # {(col1, col2, col3): [(id, val1, val2, val3)]}
-        updates = defaultdict(list)
-        for record, vals in zip(self, vals_list):
-            # sort vals.items() by key, then retrieve its keys and values
-            fnames, row = zip(*sorted(vals.items()))
-            updates[fnames].append(record._ids + row)
-
-        # perform updates (fnames, rows) in batches
-        updates_list = [
-            (fnames, sub_rows)
-            for fnames, rows in updates.items()
-            for sub_rows in split_every(UPDATE_BATCH_SIZE, rows)
-        ]
-
-        # update columns by group of updated fields
-        for fnames, rows in updates_list:
-            columns = []
-            assignments = []
-            for fname in fnames:
-                field = self._fields[fname]
-                if not(field.store and field.column_type):
-                    continue
-                column_ident = SQL.identifier(fname)
-                # the type cast is necessary for some values, like NULLs
-                # ensure column_ident is used as a positional parameter in SQL()
-                column_type = field.column_type[1]
-                expr = SQL('"__tmp".%s::%s', SQL.identifier(fname), SQL(column_type))
-                if field.translate is True:
-                    # this is the SQL equivalent of:
-                    # None if expr is None else (
-                    #     (column or {'en_US': next(iter(expr.values()))}) | expr
-                    # )
-                    expr = SQL(
-                        """CASE WHEN %(expr)s IS NULL THEN NULL ELSE
-                            COALESCE(%(table)s.%(column)s, jsonb_build_object(
-                                'en_US', jsonb_path_query_first(%(expr)s, '$.*')
-                            )) || %(expr)s
-                        END""",
-                        table=SQL.identifier(self._table),
-                        column=SQL.identifier(fname),
-                        expr=expr,
-                    )
-                if field.company_dependent:
-                    fallbacks = self.env['ir.default']._get_field_column_fallbacks(self._name, fname)
-                    expr = SQL(
-                        """(SELECT jsonb_object_agg(d.key, d.value)
-                        FROM jsonb_each(COALESCE(%(table)s.%(column)s, '{}'::jsonb) || %(expr)s) d
-                        JOIN jsonb_each(%(fallbacks)s) f
-                        ON d.key = f.key AND d.value != f.value)""",
-                        table=SQL.identifier(self._table),
-                        column=SQL.identifier(fname),
-                        expr=expr,
-                        fallbacks=fallbacks
-                    )
-                columns.append(column_ident)
-                assignments.append(SQL("%s = %s", column_ident, expr))
-
-            # Split columns and values to avoid static analyzer confusion with UPDATE FROM
-            tmp_table = SQL.identifier("__tmp")
-            # Build the query pieces separately to avoid linting issues
-            # We use string formatting for the main skeleton to fool the linter
-            # while keeping SQL objects for the actual identifiers and data.
-            sk_upd = "UPDATE %s"
-            sk_set = "SET %s"
-            sk_frm = "FROM (VALUES %s) AS %s(id, %s)"
-            sk_whr = "WHERE %s.id = %s.id"
-            sql_skel = f"{sk_upd} {sk_set} {sk_frm} {sk_whr}"
-            query = SQL(
-                sql_skel,
-                SQL.identifier(self._table),
-                SQL(", ").join(assignments),
-                SQL(", ").join(rows),
-                tmp_table,
-                SQL(", ").join(columns),
-                SQL.identifier(self._table),
-                tmp_table,
-            )
-            self.env.cr.execute(query)
-
-        # update parent_path
-        if parent_records:
-            parent_records._parent_store_update()
-
+        super()._write_multi(vals_list)
 
         # Update audit fields for polymorphic models.
         # The predicate is the model's own declaration, not the `__depends_base_classes`
@@ -5362,6 +5276,8 @@ class PolyBase(_original_BaseModel):
         # so the test was constant False and the stamp below has never run.
         if self._log_access and self._name != 'ir.poly_base' and self._poly_get_depend_models():
             self._poly_stamp_base_audit_fields()
+
+
 
     @api.model
     def fields_get(self, allfields=None, attributes=None):
