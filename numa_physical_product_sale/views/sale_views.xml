@@ -45,12 +45,17 @@
                     <field name="total_weight" optional="hide"/>
                     <field name="total_volume" optional="hide"/>
                 </xpath>
+                <!--
+                    `price_qty` no longer needs `readonly="True" force_save="True"`:
+                    it is a computed stored field now, so the server fills it and the
+                    client has nothing to send back.
+                -->
                 <xpath expr="//field[@name='order_line']/form//field[@name='price_unit']" position="after">
-                    <field name="price_qty" readonly="True" force_save="True"/>
+                    <field name="price_qty"/>
                     <field name="unit_price_uom_id"/>
                 </xpath>
                 <xpath expr="//field[@name='order_line']/list//column[@name='price_unit']" position="after">
-                    <field name="price_qty" readonly="True" force_save="True" optional="show"/>
+                    <field name="price_qty" optional="show"/>
                     <field name="unit_price_uom_id" optional="show"/>
                 </xpath>
                 <xpath expr="//group[@name='sales_person']" position="before">

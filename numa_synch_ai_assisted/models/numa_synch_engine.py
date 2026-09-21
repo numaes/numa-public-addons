@@ -67,12 +67,6 @@ class NumaSynchEngineAiAssisted(models.AbstractModel):
             # Extract remote token from context or metadata
             remote_token = self.env.context.get('slave_token') or incoming_meta.get('remote_token', 'unknown')
 
-            if not active_models:
-                # Nothing to analyse means nothing was repaired. Falling off the end of
-                # the loop below used to return `None`, which reads to the caller as
-                # "validated" -- a refusal turned into an acceptance.
-                raise
-
             # Check cache for each model
             for model_name in active_models:
                 cached_map = self._get_cached_mapping(remote_token, model_name)
@@ -104,20 +98,7 @@ class NumaSynchEngineAiAssisted(models.AbstractModel):
                             'AI Mapping created for node %s, model %s (confidence: %.2f)',
                             remote_token, model_name, ai_result.get('confidence_score', 0)
                         )
-                    else:
-                        # Low confidence or critical issues - log gap analysis
-                        self._log_gap_analysis(
-                            remote_token,
-                            model_name,
-                            ai_result,
-                            incoming_meta
-                        )
-                        raise UserError(_(
-                            'Synchronization Blocked: Schema incompatibility detected for model %s.\n'
-                            'See "Synchronization Issues" log for the AI Gap Analysis report.\n'
-                            'Confidence Score: %.2f'
-                        ) % (model_name, ai_result.get('confidence_score', 0)))
-                        
+                        continue
                 except Exception as ai_error:
                     _logger.error(
                         'AI analysis failed for model %s: %s',
@@ -127,7 +108,24 @@ class NumaSynchEngineAiAssisted(models.AbstractModel):
                     raise UserError(_(
                         'Synchronization Blocked: Unable to resolve schema mismatch for model %s.\n'
                         'AI analysis failed: %s'
-                    ) % (model_name, str(ai_error)))
+                    ) % (model_name, str(ai_error))) from ai_error
+
+                # Low confidence or critical issues: this is an answer, not a failure,
+                # and it has a report attached. Raising it inside the `try` above -- as
+                # this used to -- meant the generic handler caught it and reworded it as
+                # "AI analysis failed", so the one message that told the operator where
+                # to look was replaced by one that said the opposite of what happened.
+                self._log_gap_analysis(
+                    remote_token,
+                    model_name,
+                    ai_result,
+                    incoming_meta
+                )
+                raise UserError(_(
+                    'Synchronization Blocked: Schema incompatibility detected for model %s.\n'
+                    'See "Synchronization Issues" log for the AI Gap Analysis report.\n'
+                    'Confidence Score: %.2f'
+                ) % (model_name, ai_result.get('confidence_score', 0)))
 
     def _get_cached_mapping(self, remote_token, model_name):
         """

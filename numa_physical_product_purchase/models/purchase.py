@@ -12,13 +12,13 @@ UNIT_PER_TYPE = {
     'weight': 'kg',
 }
 
-FIELD_NAME_PER_TYPE = {
-    'length': 'product_length',
-    'width': 'product_width',
-    'height': 'product_height',
-    'surface': 'surface',
-    'volume': 'volume',
-    'weight': 'weight',
+# The three price bases that also have a total on the line, which a user may type over
+# when the physical piece is not what the product record says. For those, the line's
+# own figure is what the price is applied to.
+OVERRIDABLE_TOTAL_PER_BASE = {
+    'surface': 'total_surface',
+    'weight': 'total_weight',
+    'volume': 'total_volume',
 }
 
 
@@ -28,7 +28,9 @@ class PurchaseOrder(models.Model):
     po_weight = fields.Float('Weight', compute='_compute_weight_volume')
     po_volume = fields.Float('Volume', compute='_compute_weight_volume')
 
-    @api.depends('order_line')
+    # It depended on `order_line` alone, so the figures went stale the moment a line's
+    # quantity moved -- the list of lines had not changed, only what was on them.
+    @api.depends('order_line.total_weight', 'order_line.total_volume')
     def _compute_weight_volume(self):
         for po in self:
             po.po_weight = 0.0
@@ -48,27 +50,38 @@ class PurchaseOrderLine(models.Model):
     unit_weight = fields.Float(string='Unit Weight', related='product_id.weight', readonly=True)
     unit_volume = fields.Float(string='Unit Volume', related='product_id.volume', readonly=True)
 
-    total_surface = fields.Float(string='Total Surface')
-    total_weight = fields.Float(string='Total Weight')
-    total_volume = fields.Float(string='Total Volume')
+    # [20.0] These four were plain stored fields, filled only by `@api.onchange`
+    # handlers -- so they were filled only when a human typed into the form, and on
+    # this model not even then: the handler was keyed on `product_uom_qty`, which in
+    # 20.0 is a computed field, while the quantity a buyer types is `product_qty`. A
+    # purchase line priced by weight therefore carried a `price_qty` of zero, and
+    # `price_qty` is what `_prepare_base_line_for_taxes_computation` puts on the tax
+    # base, so the order was costed by the unit.
+    total_surface = fields.Float(
+        string='Total Surface', compute='_compute_physical_totals',
+        store=True, readonly=False)
+    total_weight = fields.Float(
+        string='Total Weight', compute='_compute_physical_totals',
+        store=True, readonly=False)
+    total_volume = fields.Float(
+        string='Total Volume', compute='_compute_physical_totals',
+        store=True, readonly=False)
 
-    price_qty = fields.Float(string='Price Qty')
-    unit_price_uom_id = fields.Many2one('uom.uom', 'Price UoM')
+    price_qty = fields.Float(
+        string='Price Qty', compute='_compute_price_qty', store=True,
+        help="The quantity the price is applied to: the physical magnitude named by "
+             "the product's price base, or the ordered quantity when it prices "
+             "normally.")
+    unit_price_uom_id = fields.Many2one(
+        'uom.uom', 'Price UoM', compute='_compute_unit_price_uom', store=True)
 
-    @api.onchange('product_id')
-    def onchange_product_id(self):
-        for pol in self:
-            super(PurchaseOrderLine, pol).onchange_product_id()
-            pol._compute_unit_price_uom()
-            pol.compute_totals()
+    # [20.0] Two onchange handlers were removed from here. `onchange_product_id` only
+    # existed to call these computations by hand, and `_onchange_quantity` overrode a
+    # core method of that name that no longer exists -- with its `super()` call
+    # commented out, which in an earlier version would have suppressed the vendor
+    # price refresh entirely.
 
-    @api.onchange('uom_id', 'product_uom_qty')
-    def _onchange_quantity(self):
-        for pol in self:
-            #super(PurchaseOrderLine, pol)._onchange_quantity()
-            pol._compute_unit_price_uom()
-            pol.compute_totals()
-
+    @api.depends('product_id', 'product_id.price_base', 'product_id.uom_id')
     def _compute_unit_price_uom(self):
         uom_model = self.env['uom.uom']
 
@@ -84,40 +97,42 @@ class PurchaseOrderLine(models.Model):
             else:
                 pol.unit_price_uom_id = False
 
-    @api.onchange('product_uom_qty', 'uom_id')
-    @api.depends('product_uom_qty', 'uom_id')
-    def compute_totals(self):
+    def _normalized_qty(self):
+        """The ordered quantity in the product's own unit of measure.
+
+        Which is what `product_uom_qty` already is on this model -- core computes it
+        as `uom_id._compute_quantity(product_qty, product.uom_id)`. This module
+        converted it a second time, so a line bought in dozens reported twelve times
+        the weight it carried.
+        """
+        self.ensure_one()
+        return self.product_uom_qty
+
+    @api.depends('product_uom_qty', 'product_id',
+                 'unit_surface', 'unit_weight', 'unit_volume')
+    def _compute_physical_totals(self):
         for pol in self:
-            normalized_qty = pol.uom_id._compute_quantity(pol.product_uom_qty, pol.product_id.uom_id) \
-                if pol.uom_id else pol.product_uom_qty
+            normalized_qty = pol._normalized_qty()
             pol.total_surface = normalized_qty * pol.unit_surface
             pol.total_weight = normalized_qty * pol.unit_weight
             pol.total_volume = normalized_qty * pol.unit_volume
 
-            pol.compute_price()
-
-    @api.onchange('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'uom_id')
-    @api.depends('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'uom_id')
-    def compute_price(self):
+    @api.depends('total_surface', 'total_weight', 'total_volume', 'product_uom_qty',
+                 'product_id', 'product_id.price_base',
+                 'unit_length', 'unit_width', 'unit_height')
+    def _compute_price_qty(self):
+        # The six-way branch that used to be here is `product._get_price_qty`, which
+        # `numa_physical_product` centralises for exactly these bridges. The only thing
+        # that is not the product's answer is a total the user typed over.
         for pol in self:
-            normalized_qty = pol.uom_id._compute_quantity(pol.product_uom_qty, pol.product_id.uom_id) \
-                             if pol.uom_id else pol.product_uom_qty
-            price_type = pol.product_id.price_base
-            if price_type == 'length':
-                price_qty = pol.unit_length * normalized_qty
-            elif price_type == 'width':
-                price_qty = pol.unit_width * normalized_qty
-            elif price_type == 'height':
-                price_qty = pol.unit_height * normalized_qty
-            elif price_type == 'surface':
-                price_qty = pol.total_surface
-            elif price_type == 'weight':
-                price_qty = pol.total_weight
-            elif price_type == 'volume':
-                price_qty = pol.total_volume
+            if not pol.product_id:
+                pol.price_qty = pol.product_uom_qty
+                continue
+            total_field = OVERRIDABLE_TOTAL_PER_BASE.get(pol.product_id.price_base)
+            if total_field:
+                pol.price_qty = pol[total_field]
             else:
-                price_qty = normalized_qty
-            pol.price_qty = price_qty
+                pol.price_qty = pol.product_id._get_price_qty(pol._normalized_qty())
 
     def _prepare_base_line_for_taxes_computation(self, **kwargs):
         """Tax the physical quantity, not the number of units.

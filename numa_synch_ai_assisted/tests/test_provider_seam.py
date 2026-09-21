@@ -73,3 +73,91 @@ class TestProviderSeam(TransactionCase):
         })
         encontrado = self.env['numa.synch.engine']._get_cached_mapping('node-a', 'res.partner')
         self.assertEqual(encontrado, mapa)
+
+
+@tagged('post_install', '-at_install')
+class TestWhatIsIntercepted(TransactionCase):
+    """Which refusals this module takes over, and which it must let through.
+
+    It used to catch `UserError`, which is every refusal the base engine makes. An
+    Odoo version that does not match and metadata that is missing altogether were
+    handed to the AI as well -- and neither is something a field map can repair, so
+    the operator got "AI analysis failed" where the real answer was "these two
+    databases are on different versions of Odoo".
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.engine = cls.env['numa.synch.engine']
+        cls.rule = cls.env['numa.synch.rule'].create({
+            'name': 'Partners',
+            'model_id': cls.env['ir.model']._get_id('res.partner'),
+        })
+
+    def _meta(self, **system_overrides):
+        system = dict(self.engine._get_system_metadata(), **system_overrides)
+        return {'system': system, 'models': {}}
+
+    def test_06_a_version_mismatch_travels_out_untouched(self):
+        with self.assertRaises(UserError) as caught:
+            self.engine._validate_metadata(self._meta(odoo_version='18.0'),
+                                           ['res.partner'])
+
+        self.assertIn('Version Mismatch', str(caught.exception),
+                      "the operator has to read why, and an AI cannot fix a version")
+
+    def test_07_absent_metadata_travels_out_untouched(self):
+        with self.assertRaises(UserError) as caught:
+            self.engine._validate_metadata({}, ['res.partner'])
+
+        self.assertIn('Metadata is required', str(caught.exception))
+
+    def test_08_a_low_confidence_answer_keeps_its_own_report(self):
+        """An AI that says "I am not sure" is an answer, not a failure.
+
+        The refusal it produces points at the gap-analysis report, which is the one
+        thing that tells the operator where the two schemas diverge. It used to be
+        raised inside the `try` that wraps the AI call, so the generic handler caught
+        it and reworded it as "AI analysis failed" -- the message said the opposite of
+        what had happened, and the report went unmentioned.
+        """
+        self.patch(type(self.engine), '_analyze_schema_with_ai',
+                   lambda self, model_name, meta, token: {
+                       'confidence_score': 0.4,
+                       'mapping': {},
+                       'critical_issues': ['two fields could be `name`'],
+                   })
+        meta = {'system': self.engine._get_system_metadata(),
+                'models': {'res.partner': '0' * 64}}
+
+        with self.assertRaises(UserError) as caught:
+            self.engine._validate_metadata(meta, ['res.partner'])
+
+        message = str(caught.exception)
+        self.assertIn('Gap Analysis', message)
+        self.assertNotIn('AI analysis failed', message)
+
+    def test_10_a_provider_that_breaks_is_reported_as_a_failure(self):
+        """And the other side of the same split: a provider that raises is a failure,
+        and must not be dressed up as a considered opinion about the schema."""
+        def explode(self, model_name, meta, token):
+            raise RuntimeError('the provider is down')
+
+        self.patch(type(self.engine), '_analyze_schema_with_ai', explode)
+        meta = {'system': self.engine._get_system_metadata(),
+                'models': {'res.partner': '0' * 64}}
+
+        with self.assertRaises(UserError) as caught:
+            self.engine._validate_metadata(meta, ['res.partner'])
+
+        self.assertIn('AI analysis failed', str(caught.exception))
+
+    def test_09_matching_metadata_still_passes(self):
+        meta = {
+            'system': self.engine._get_system_metadata(),
+            'models': {'res.partner': self.engine._compute_model_hash(
+                'res.partner', self.rule)},
+        }
+
+        self.engine._validate_metadata(meta, ['res.partner'])
