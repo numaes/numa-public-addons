@@ -1,9 +1,9 @@
 <div align="center">
   <!-- You can replace the placeholder below with your actual company logo URL -->
-  <h1>Odoo 18.0 Advanced Architecture & Business Addons</h1>
+  <h1>Odoo 20.0 Advanced Architecture & Business Addons</h1>
 
   <p>
-    <em>A collection of enterprise-grade, highly scalable architectural modules and business extensions for Odoo 18.0, proudly developed by <strong>NUMA EXTREME SYSTEMS</strong>.</em>
+    <em>A collection of enterprise-grade, highly scalable architectural modules and business extensions for Odoo 20.0, proudly developed by <strong>NUMA EXTREME SYSTEMS</strong>.</em>
   </p>
 
   <p>
@@ -12,7 +12,7 @@
   </p>
 
   <p>
-    <img alt="Odoo Version" src="https://img.shields.io/badge/Odoo-18.0-blueviolet?style=for-the-badge&logo=odoo" />
+    <img alt="Odoo Version" src="https://img.shields.io/badge/Odoo-20.0-blueviolet?style=for-the-badge&logo=odoo" />
     <img alt="License" src="https://img.shields.io/badge/License-LGPL_v3-blue?style=for-the-badge" />
     <img alt="Maintained" src="https://img.shields.io/badge/Maintained%3F-Yes-green.svg?style=for-the-badge" />
   </p>
@@ -24,9 +24,43 @@
 
 Welcome to the public repository of **NUMA EXTREME SYSTEMS**. We are a team of senior software engineers and architects specializing in extreme performance, infinite scalability, and complex integrations within the Odoo ecosystem.
 
-This repository houses our public, open-source modules designed to solve hard engineering problems in Odoo 18.0. Whether you need offline-first synchronization, event-driven architectures, real-time observability, or to break Odoo's integer limits with BIGINTs, you will find foundational tools here to take your Odoo instances to the next level.
+This repository houses our public, open-source modules designed to solve hard engineering problems in Odoo 20.0. Whether you need offline-first synchronization, event-driven architectures, real-time observability, or to break Odoo's integer limits with BIGINTs, you will find foundational tools here to take your Odoo instances to the next level.
 
 ---
+
+## 📊 Port to Odoo 20.0 — status
+
+This branch is the 20.0 port. Where a suite has been run on a 20.0 database, the number
+is what the runner reported; where it has not, this says so rather than implying health.
+
+| Module | Suite | Notes |
+|---|---|---|
+| `numa_poly` | **0 failed of 139** | Includes the guards added during the port |
+| `numa_fsm` | 0 failed, 6 errors of 62 | Six tests that had never been imported and so had never run |
+| `numa_asynch_exec` | not run on 20.0 | Shutdown behaviour fixed during the port |
+| everything else here | not run on 20.0 | Installs, but no suite has been executed against it |
+
+**What "not run" means.** Installing cleanly says a module loads. It does not say the
+code works: the port found renamed fields, removed models and changed behaviour that no
+install ever touches, and the only thing that surfaced them was running the suites.
+
+**Found and fixed in `numa_poly` during the port**, each with a regression test verified
+failing before it was trusted:
+
+- **`create` dropped a key that is not a field of anything**, silently. The record was
+  created without it and nothing was logged; Odoo would have raised. On any polymorphic
+  model, writing to a field that does not exist was a no-op.
+- **An injected related field carried the base field's `default`.** Odoo merges the
+  attributes of same-named fields along the MRO, so the attribute the generated
+  contribution stayed silent about came from the base. Creating a child against an
+  existing base row then wrote that default THROUGH to the base, replacing a value it
+  already held.
+- **"Native" meant "any field at all"**, because the scan counted the registry's own
+  aggregate class. Fields that belong to a base resolved against leftover columns on the
+  concrete table, and those columns kept being recreated.
+- **The MRO of a model whose base arrives late** could not be linearised: the shared
+  mixins were read from an MRO that is not built yet on a `-u` pass, and then in
+  arbitrary order from a `set`.
 
 ## 💼 Enterprise Support & Consulting
 
@@ -54,32 +88,32 @@ for each module, with no gated or commercial-only variants.
 
 | Module | Domain | Version | License | Status |
 |---|---|---|---|---|
-| [`numa_poly`](#numa_poly) | Core Architecture | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_big_id`](#numa_big_id) | Core Architecture | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_exceptions`](#numa_exceptions) | Core Architecture | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
-| [`numa_asynch_exec`](#numa_asynch_exec) | Core Architecture | 1.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_background_job`](#numa_background_job) | Core Architecture | 18.0.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_real_time_observability`](#numa_real_time_observability) | Core Architecture | 18.0.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_fsm`](#numa_fsm) | Process Automation | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_fsm_pubsub`](#numa_fsm_pubsub) | Process Automation | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_fsm_crm`](#numa_fsm_crm) | Process Automation | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_fsm_hr`](#numa_fsm_hr) | Process Automation | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_synch`](#numa_synch) | Distributed Sync | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_synch_master`](#numa_synch_master) | Distributed Sync | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_synch_slave`](#numa_synch_slave) | Distributed Sync | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_synch_ai_assisted`](#numa_synch_ai_assisted) | Distributed Sync | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_roles`](#numa_roles) | Security | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_physical_product`](#numa_physical_product) | Product & Business | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
-| [`numa_physical_product_sale`](#numa_physical_product-bridges) | Product & Business | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
-| [`numa_physical_product_purchase`](#numa_physical_product-bridges) | Product & Business | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
-| [`numa_physical_product_stock`](#numa_physical_product-bridges) | Product & Business | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
-| [`numa_physical_product_invoice`](#numa_physical_product-bridges) | Product & Business | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
-| [`numa_product_variant`](#numa_product_variant) | Product & Business | 18.0.0.4 | LGPL-3 | ✅ Available for everyone |
-| [`numa_periodic_services`](#numa_periodic_services) | Product & Business | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
-| [`numa_imap`](#numa_imap) | Mail & Communications | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
-| [`numa_fixed_output_mail`](#numa_fixed_output_mail) | Mail & Communications | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_poly_test`](#test--demonstration-modules) | Tests & Demos | 18.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
-| [`numa_background_job_test`](#test--demonstration-modules) | Tests & Demos | 18.0.0.1 | LGPL-3 | ✅ Available for everyone |
+| [`numa_poly`](#numa_poly) | Core Architecture | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_big_id`](#numa_big_id) | Core Architecture | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_exceptions`](#numa_exceptions) | Core Architecture | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_asynch_exec`](#numa_asynch_exec) | Core Architecture | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_background_job`](#numa_background_job) | Core Architecture | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_real_time_observability`](#numa_real_time_observability) | Core Architecture | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_fsm`](#numa_fsm) | Process Automation | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_fsm_pubsub`](#numa_fsm_pubsub) | Process Automation | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_fsm_crm`](#numa_fsm_crm) | Process Automation | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_fsm_hr`](#numa_fsm_hr) | Process Automation | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_synch`](#numa_synch) | Distributed Sync | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_synch_master`](#numa_synch_master) | Distributed Sync | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_synch_slave`](#numa_synch_slave) | Distributed Sync | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_synch_ai_assisted`](#numa_synch_ai_assisted) | Distributed Sync | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_roles`](#numa_roles) | Security | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_physical_product`](#numa_physical_product) | Product & Business | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_physical_product_sale`](#numa_physical_product-bridges) | Product & Business | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_physical_product_purchase`](#numa_physical_product-bridges) | Product & Business | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_physical_product_stock`](#numa_physical_product-bridges) | Product & Business | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_physical_product_invoice`](#numa_physical_product-bridges) | Product & Business | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_product_variant`](#numa_product_variant) | Product & Business | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_periodic_services`](#numa_periodic_services) | Product & Business | — | LGPL-3 | ⏳ Not migrated to 20.0 yet (see the 18.0 branch) |
+| [`numa_imap`](#numa_imap) | Mail & Communications | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_fixed_output_mail`](#numa_fixed_output_mail) | Mail & Communications | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_poly_test`](#test--demonstration-modules) | Tests & Demos | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
+| [`numa_background_job_test`](#test--demonstration-modules) | Tests & Demos | 20.0.1.0.0 | LGPL-3 | ✅ Available for everyone |
 
 ---
 
@@ -89,7 +123,7 @@ Modules that extend or bypass standard Odoo limitations and introduce enterprise
 software patterns at the framework level.
 
 #### `numa_poly`
-**True Polymorphic model inheritance for Odoo 18.0.**
+**True Polymorphic model inheritance for Odoo 20.0.**
 Lets a single business record exist simultaneously in several models sharing one
 identity (ID) and one unified ID space, replacing the JOIN-heavy `_inherits`
 delegation pattern and the linear-only `_inherit` extension pattern.
@@ -335,7 +369,8 @@ Gives operators an explicit lifecycle instead of raw cron jobs.
 - **Execution logging** on the standard log for every run.
 - **Transactional safety**: on exception, the transaction is rolled back at the next available step.
 - **Configurable failure policy**: move the service to maintenance automatically on error, or retry indefinitely until a clean run.
-- Status: **✅ Available for everyone** · License: LGPL-3 · Depends on: `base`, `mail`, `numa_exceptions`
+- Status: **⏳ Not migrated to 20.0 yet** — the module lives on the `18.0` branch and has
+  not been ported. · License: LGPL-3 · Depends on: `base`, `mail`, `numa_exceptions`
 
 ---
 
@@ -373,9 +408,9 @@ or to read working examples.
 
 ## 🛠️ Installation
 
-1. Clone this repository into your Odoo 18.0 addons path:
+1. Clone this repository into your Odoo 20.0 addons path:
    ```bash
-   git clone -b 18.0 https://github.com/numaes/numa-public-addons.git /path/to/your/addons/numa-public-addons
+   git clone -b 20.0 https://github.com/numaes/numa-public-addons.git /path/to/your/addons/numa-public-addons
    ```
 2. Update your `odoo.conf` to include the new path in `addons_path`.
 3. Restart your Odoo server.
