@@ -6828,13 +6828,37 @@ def _poly_contribute_definitions(registry, model_names):
     """
     from odoo.orm.model_classes import add_to_registry
 
+    # [20.0] What has been contributed is remembered WITH ITS BASES, not by name
+    # alone. A later module can add a base to a model that was already contributed --
+    # `numa_conversation_fsm` adds `fsm.instance` to `conversation.message`, which
+    # `numa_conversation_engine` had already declared over `digital.event` -- and a
+    # name-only mark meant that model was never contributed again, so it never got the
+    # fields of the base it had just gained.
+    #
+    # Its children did, though: they are contributed later, they walk `_depend_models`
+    # transitively, and they redirect what they find through their own link. So
+    # `conversation.message.email` asked for `name` (which `fsm.instance` declares) as
+    # `related='poly_id.name'`, and `conversation.message` -- never re-contributed --
+    # had no `name` for it to point at:
+    #
+    #     KeyError: Field name referenced in related field definition
+    #               conversation.message.email.name does not exist.
+    #
+    # It only showed on a CLEAN database. Installing the same modules one at a time on
+    # an accumulating one worked, because each run rebuilt the registry from scratch
+    # with every `_depend_models` already in place -- which is exactly the kind of
+    # false green this module's own docstrings warn about.
     done = registry.__dict__.get(_POLY_CONTRIBUTED_ATTR)
     if done is None:
-        done = set()
+        done = {}
+        setattr(registry, _POLY_CONTRIBUTED_ATTR, done)
+    elif isinstance(done, set):
+        # A registry carried over from before this was a mapping.
+        done = {name: None for name in done}
         setattr(registry, _POLY_CONTRIBUTED_ATTR, done)
     contributed = []
     for model_name in sorted(model_names):
-        if model_name in done or model_name == 'ir.poly_base' or model_name not in registry:
+        if model_name == 'ir.poly_base' or model_name not in registry:
             continue
         model_class = registry[model_name]
         if not isinstance(model_class, type):
@@ -6842,6 +6866,11 @@ def _poly_contribute_definitions(registry, model_names):
 
         dep_map = _poly_collect_depend_models(model_class)
         parents = [name for name in dep_map if name in registry]
+        # The signature is taken BEFORE `ir.poly_base` is appended below, so that it
+        # describes what the model declares rather than what the mechanism adds.
+        firma = tuple(parents)
+        if done.get(model_name) == firma:
+            continue
         if 'ir.poly_base' in registry and 'ir.poly_base' not in parents:
             parents.append('ir.poly_base')
         if not parents:
@@ -6930,7 +6959,7 @@ def _poly_contribute_definitions(registry, model_names):
             _logger.error("[poly] could not declare the polymorphic base of %s (bases: %s)",
                           model_name, parents, exc_info=True)
             continue
-        done.add(model_name)
+        done[model_name] = firma
         contributed.append(model_name)
         _logger.debug("[poly] %s declares its bases: %s", model_name, parents)
 
