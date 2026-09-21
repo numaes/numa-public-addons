@@ -1,302 +1,194 @@
 # -*- coding: utf-8 -*-
-from odoo import models, fields, api
-from odoo.exceptions import UserError
-import logging
+"""The actor side: an FSM instance publishes to topics and receives from them."""
 import json
+import logging
+
+from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
 
+
 class FsmInstance(models.Model):
-    """
-    Extension of fsm.instance to add Actor Model capabilities.
-    
-    Each FSM instance can now:
-    - Publish events to topics (publish)
-    - Receive notifications from topics (notify)
-    - Handle topic-specific messages via dynamic dispatcher
-    """
     _inherit = 'fsm.instance'
 
-    # Computed field to show subscription count
+    subscription_ids = fields.One2many(
+        'numa.fsm.subscription', 'subscriber_fsm_id', string='Subscription Lines')
     subscription_count = fields.Integer(
-        string='Active Subscriptions',
-        compute='_compute_subscription_count',
-        help="Number of active topic subscriptions for this FSM instance"
-    )
+        string='Active Subscriptions', compute='_compute_subscription_count',
+        help="How many topics this instance is listening to.")
 
+    @api.depends('subscription_ids.is_active')
     def _compute_subscription_count(self):
-        """Compute the number of active subscriptions for this FSM instance."""
+        """[20.0] One query for the recordset, and a depends that names what it reads.
+
+        It used to run a `search_count` per record with no `@api.depends` at all, so the
+        number was computed once and never refreshed.
+        """
+        counted = {
+            instance.id: count
+            for instance, count in self.env['numa.fsm.subscription']._read_group(
+                [('subscriber_fsm_id', 'in', self.ids), ('is_active', '=', True)],
+                groupby=['subscriber_fsm_id'], aggregates=['__count'])
+        }
         for instance in self:
-            instance.subscription_count = self.env['numa.fsm.subscription'].search_count([
-                ('subscriber_fsm_id', '=', instance.id),
-                ('is_active', '=', True)
-            ])
+            instance.subscription_count = counted.get(instance.id, 0)
+
+    # ------------------------------------------------------------------
+    # Publisher
+    # ------------------------------------------------------------------
 
     def publish(self, topic_name, payload=None):
-        """
-        Publish an event to a topic.
-        
-        This method implements the "Publisher" side of the Pub/Sub pattern.
-        It finds all active subscribers to the topic and asynchronously delivers
-        the message to each one.
-        
-        :param topic_name: Name of the topic to publish to (will be normalized)
-        :param payload: Dictionary or JSON-serializable data to send (optional)
-        :return: Number of subscribers notified
-        
-        Example:
-            self.publish('sale_order_confirmed', {'order_id': 123, 'amount': 1000.0})
+        """Publish an event to a topic, and hand it to every active subscriber.
+
+        Delivery is asynchronous: each subscriber gets a background job, so a slow or
+        failing subscriber does not hold up the publisher or the transaction that
+        triggered it.
+
+        A topic that is not declared is not an error. The transport does not validate --
+        that is the whole point of schema-on-read -- but with nothing declared there is
+        nobody subscribed either, so the call is logged and returns 0.
+
+        :return: how many subscribers were handed the message
         """
         self.ensure_one()
-        
-        if payload is None:
-            payload = {}
-        
-        # Normalize topic name
-        topic_model = self.env['numa.fsm.topic']
-        normalized_name = topic_model.normalize_topic_name(topic_name)
-        
-        # Find the topic
-        topic = topic_model.search([('name', '=', normalized_name)], limit=1)
+
+        Topic = self.env['numa.fsm.topic']
+        normalized_name = Topic.normalize_topic_name(topic_name)
+        topic = Topic.search([('name', '=', normalized_name)], limit=1)
         if not topic:
             _logger.warning(
-                f"Topic '{normalized_name}' not found. Publishing anyway (Schema-on-Read philosophy). "
-                f"FSM Instance: {self.id}"
-            )
-            # In Schema-on-Read, we don't fail if topic doesn't exist
-            # We just log and continue (the topic might be created later)
+                "Topic %r is not declared, so nobody is subscribed to it; "
+                "published from FSM instance %s and delivered to nobody.",
+                normalized_name, self.id)
             return 0
-        
         if not topic.active:
-            _logger.warning(
-                f"Topic '{normalized_name}' is inactive. Skipping publication. "
-                f"FSM Instance: {self.id}"
-            )
+            _logger.warning("Topic %r is inactive; publication from FSM instance %s "
+                            "delivered to nobody.", normalized_name, self.id)
             return 0
-        
-        # Find all active subscriptions for this topic
-        subscriptions = self.env['numa.fsm.subscription'].search([
-            ('topic_id', '=', topic.id),
-            ('is_active', '=', True)
-        ])
-        
+
+        subscriptions = topic.subscription_ids.filtered('is_active')
         if not subscriptions:
-            _logger.debug(
-                f"No active subscriptions found for topic '{normalized_name}'. "
-                f"FSM Instance: {self.id}"
-            )
+            _logger.debug("Topic %r has no active subscriptions; published from FSM "
+                          "instance %s.", normalized_name, self.id)
             return 0
-        
-        # Serialize payload to JSON string for async delivery
-        try:
-            if isinstance(payload, str):
-                # If it's already a string, try to parse it to validate JSON
-                json.loads(payload)
-                payload_str = payload
-            else:
-                payload_str = json.dumps(payload)
-        except (TypeError, ValueError) as e:
-            _logger.warning(
-                f"Payload serialization failed for topic '{normalized_name}': {e}. "
-                f"Using empty payload. FSM Instance: {self.id}"
-            )
-            payload_str = '{}'
-        
-        # Asynchronously notify each subscriber
-        # Using numa_asynch_exec to ensure non-blocking delivery
-        notified_count = 0
+
+        payload_str = self._numa_serialize_payload(payload, normalized_name)
+
+        notified = 0
         for subscription in subscriptions:
             subscriber = subscription.subscriber_fsm_id
             if not subscriber.exists():
-                _logger.warning(
-                    f"Subscriber FSM instance {subscription.subscriber_fsm_id.id} "
-                    f"does not exist. Skipping."
-                )
+                _logger.warning("Subscriber %s of topic %r no longer exists.",
+                                subscription.subscriber_fsm_id.id, normalized_name)
                 continue
-            
             try:
-                # Enqueue async notification
                 subscriber.asynch_exec().notify(normalized_name, payload_str)
-                notified_count += 1
-                _logger.debug(
-                    f"Enqueued notification to FSM instance {subscriber.id} "
-                    f"for topic '{normalized_name}'"
-                )
-            except Exception as e:
-                _logger.error(
-                    f"Failed to enqueue notification to FSM instance {subscriber.id} "
-                    f"for topic '{normalized_name}': {e}",
-                    exc_info=True
-                )
-        
-        _logger.info(
-            f"Published to topic '{normalized_name}' from FSM instance {self.id}. "
-            f"Notified {notified_count} subscribers."
-        )
-        
-        return notified_count
+                notified += 1
+            except Exception:
+                _logger.exception(
+                    "Could not enqueue the notification to FSM instance %s for topic %r.",
+                    subscriber.id, normalized_name)
+
+        _logger.info("Published %r from FSM instance %s to %s subscriber(s).",
+                     normalized_name, self.id, notified)
+        return notified
+
+    def _numa_serialize_payload(self, payload, topic_name):
+        """The payload travels as a JSON string, because a job's arguments do."""
+        if payload is None:
+            return '{}'
+        try:
+            if isinstance(payload, str):
+                json.loads(payload)   # a string must already be JSON
+                return payload
+            return json.dumps(payload)
+        except (TypeError, ValueError) as error:
+            _logger.warning(
+                "The payload published to %r from FSM instance %s is not serializable "
+                "(%s); an empty one is sent instead.", topic_name, self.id, error)
+            return '{}'
+
+    # ------------------------------------------------------------------
+    # Subscriber: the inbox
+    # ------------------------------------------------------------------
 
     def notify(self, topic_name, payload_str):
-        """
-        Receive a notification (the Actor's inbox/router).
-        
-        This is the "Single Entry Point" for the Actor. It implements a dynamic
-        dispatcher pattern:
-        
-        1. Logs the arrival of the message
-        2. Tries to find a topic-specific handler method: `_handle_topic_{topic_name}`
-        3. If handler exists, executes it with the payload
-        4. Falls back to triggering an FSM event/transition with the topic name
-        5. Robust error handling to prevent breaking the main thread
-        
-        :param topic_name: Name of the topic (normalized)
-        :param payload_str: JSON string containing the payload
-        
-        Example:
-            instance.notify('sale_order_confirmed', '{"order_id": 123}')
+        """Receive a notification. This is the actor's single entry point.
+
+        It dispatches in two steps:
+
+        1. a method named ``_handle_topic_<topic>``, if the instance has one;
+        2. failing that, an FSM event named after the topic, which is what unifies
+           messages arriving from the network with events raised inside the machine.
+
+        Neither step raises: a subscriber that breaks must not take down the publisher's
+        job or the other subscribers. What went wrong is logged.
         """
         self.ensure_one()
-        
-        _logger.debug(
-            f"FSM Instance {self.id} received notification for topic '{topic_name}'"
-        )
-        
-        # Update subscription statistics if this instance is subscribed
+        topic_name = self.env['numa.fsm.topic'].normalize_topic_name(topic_name)
+
         subscription = self.env['numa.fsm.subscription'].search([
             ('subscriber_fsm_id', '=', self.id),
             ('topic_id.name', '=', topic_name),
-            ('is_active', '=', True)
+            ('is_active', '=', True),
         ], limit=1)
         if subscription:
             subscription.mark_notification_received()
-        
-        # Parse payload
-        try:
-            if isinstance(payload_str, str):
-                payload = json.loads(payload_str) if payload_str else {}
-            else:
-                payload = payload_str or {}
-        except (json.JSONDecodeError, TypeError) as e:
-            _logger.warning(
-                f"Failed to parse payload for topic '{topic_name}' in FSM instance {self.id}: {e}. "
-                f"Using empty payload."
-            )
-            payload = {}
-        
-        # Dynamic Dispatcher: Try to find topic-specific handler
-        handler_method_name = f'_handle_topic_{topic_name}'
-        handler_method = getattr(self, handler_method_name, None)
-        
-        if handler_method and callable(handler_method):
+
+        payload = self._numa_parse_payload(payload_str, topic_name)
+
+        # [20.0] The handler is looked up under the NORMALIZED name. It was looked up
+        # under the raw one, so the shipped `system.ping` topic asked for a method called
+        # `_handle_topic_system.ping`, which no Python name can be.
+        handler = getattr(self, '_handle_topic_%s' % topic_name, None)
+        if callable(handler):
             try:
-                _logger.debug(
-                    f"FSM Instance {self.id}: Found handler '{handler_method_name}'. Executing."
-                )
-                result = handler_method(payload)
-                _logger.debug(
-                    f"FSM Instance {self.id}: Handler '{handler_method_name}' executed successfully."
-                )
-                return result
-            except Exception as e:
-                _logger.error(
-                    f"FSM Instance {self.id}: Handler '{handler_method_name}' failed: {e}",
-                    exc_info=True
-                )
-                # Don't re-raise: continue to fallback
-        else:
-            _logger.debug(
-                f"FSM Instance {self.id}: No handler '{handler_method_name}' found. "
-                f"Trying FSM event fallback."
-            )
-        
-        # Fallback: Try to trigger an FSM event/transition with the topic name
-        # This unifies network events with state events
+                return handler(payload)
+            except Exception:
+                _logger.exception("FSM instance %s: handler for topic %r failed.",
+                                  self.id, topic_name)
+                return False
+
+        if self.fsm_state not in ('running', 'paused'):
+            _logger.debug("FSM instance %s is %s; topic %r was delivered and not acted on.",
+                          self.id, self.fsm_state, topic_name)
+            return True
+
         try:
-            if self.fsm_state in ['running', 'paused']:
-                _logger.debug(
-                    f"FSM Instance {self.id}: Attempting to send event '{topic_name}' to FSM."
-                )
-                # Try to send the event to the FSM
-                # send_event expects a dict with 'name' key
-                if hasattr(self, 'send_event'):
-                    self.send_event({'name': topic_name, 'payload': payload})
-                else:
-                    _logger.debug(
-                        f"FSM Instance {self.id}: No 'send_event' method available. "
-                        f"Event '{topic_name}' not processed."
-                    )
-            else:
-                _logger.debug(
-                    f"FSM Instance {self.id}: FSM is in state '{self.fsm_state}'. "
-                    f"Event '{topic_name}' not processed."
-                )
-        except Exception as e:
-            _logger.error(
-                f"FSM Instance {self.id}: Failed to process event '{topic_name}' via FSM: {e}",
-                exc_info=True
-            )
-            # Don't re-raise: error handling should be robust
-        
-        # If we reach here, the message was received but not processed
-        # This is acceptable in Schema-on-Read: the message was delivered
-        _logger.info(
-            f"FSM Instance {self.id}: Notification for topic '{topic_name}' received and logged. "
-            f"No specific handler found."
-        )
+            self.send_event({'name': topic_name, 'payload': payload})
+        except Exception:
+            _logger.exception("FSM instance %s: event %r could not be processed.",
+                              self.id, topic_name)
         return True
 
-    def _handle_topic_test_ping(self, payload):
-        """
-        Example handler for 'test_ping' topic.
-        
-        This demonstrates how to implement topic-specific handlers.
-        Simply writes a message to the FSM's chatter.
-        
-        :param payload: Dictionary containing the message payload
-        :return: True on success
-        """
-        self.ensure_one()
-        
-        message = f"Pong recibido desde topic 'test_ping'"
-        if payload:
-            message += f" con payload: {json.dumps(payload, indent=2)}"
-        
-        self.message_post(body=f"<p>{message}</p>")
-        _logger.info(f"FSM Instance {self.id}: {message}")
-        
-        return True
+    def _numa_parse_payload(self, payload_str, topic_name):
+        if not isinstance(payload_str, str):
+            return payload_str or {}
+        try:
+            return json.loads(payload_str) if payload_str else {}
+        except (json.JSONDecodeError, TypeError) as error:
+            _logger.warning(
+                "FSM instance %s: the payload of topic %r is not JSON (%s); "
+                "an empty one is used.", self.id, topic_name, error)
+            return {}
+
+    # ------------------------------------------------------------------
+    # Handlers shipped with the module
+    # ------------------------------------------------------------------
 
     def _handle_topic_system_ping(self, payload):
-        """
-        Handler for 'system.ping' topic.
-        
-        Diagnostic handler to verify connectivity between FSM instances.
-        Writes a PONG message to the FSM's chatter with sender information.
-        
-        :param payload: Dictionary containing the message payload
-        :return: True on success
+        """Answer a diagnostic ping in the chatter.
+
+        This is what tells an operator that the circuit works end to end: a publish, a
+        background job, a delivery and a visible effect on another record.
         """
         self.ensure_one()
-        
-        # Extract sender information from payload
-        sender = payload.get('sender', 'Unknown')
-        timestamp = payload.get('timestamp', 'N/A')
-        
-        # Build the message
-        message_body = f"🏓 <strong>PONG recibido desde {sender}!</strong><br/>"
-        message_body += f"<small>Timestamp: {timestamp}</small><br/>"
-        
+        sender = payload.get('sender', 'unknown')
+        timestamp = payload.get('timestamp', 'n/a')
+        body = ("<p><strong>PONG from %s</strong><br/><small>%s</small></p>"
+                % (sender, timestamp))
         if payload:
-            # Include full payload for debugging
-            payload_str = json.dumps(payload, indent=2, ensure_ascii=False)
-            message_body += f"<pre>{payload_str}</pre>"
-        
-        # Post to chatter
-        self.message_post(body=message_body)
-        
-        _logger.info(
-            f"FSM Instance {self.id}: PONG recibido desde {sender} "
-            f"(Topic: system.ping)"
-        )
-        
+            body += "<pre>%s</pre>" % json.dumps(payload, indent=2, ensure_ascii=False)
+        self.message_post(body=body)
+        _logger.info("FSM instance %s answered a ping from %s.", self.id, sender)
         return True

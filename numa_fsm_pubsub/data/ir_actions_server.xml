@@ -3,26 +3,29 @@
     <data noupdate="0">
         <!-- Server Action: TEST: Enviar Ping a Suscriptores -->
         <record id="action_server_test_ping" model="ir.actions.server">
-            <field name="name">TEST: Enviar Ping a Suscriptores</field>
+            <field name="name">Send a diagnostic ping to subscribers</field>
             <field name="model_id" ref="numa_fsm.model_fsm_instance"/>
             <field name="binding_model_id" ref="numa_fsm.model_fsm_instance"/>
             <field name="binding_view_types">form</field>
             <field name="state">code</field>
             <field name="code">
-# Simular payload
-import datetime
+# Build the payload.
+# [20.0] `import datetime` used to be here, and a server action is evaluated with
+# safe_eval, where IMPORT_NAME is a forbidden opcode: the action could not even be
+# loaded, so the module failed to install. `datetime` is already in the evaluation
+# context (ir_actions.py, `_get_eval_context`).
 payload = {
     'sender': record.display_name or f"FSM-{record.id}",
     'timestamp': str(datetime.datetime.now()),
     'fsm_id': record.id,
     'fsm_name': record.name,
 }
-# Publicar (esto debería disparar la cola asincrónica)
-notified_count = record.publish('system.ping', payload)
+# Publish: this hands one background job to each active subscriber
+notified_count = record.publish('system_ping', payload)
 if notified_count > 0:
-    log(f"✅ Ping enviado a {notified_count} suscriptor(es)")
+    log(f"Ping handed to {notified_count} subscriber(s)")
 else:
-    log(f"⚠️ No hay suscriptores activos para el tópico 'system.ping'")
+    log("No active subscribers for topic 'system_ping'")
             </field>
         </record>
     </data>

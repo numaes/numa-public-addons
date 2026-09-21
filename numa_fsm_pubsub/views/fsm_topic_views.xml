@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <record id="view_fsm_topic_tree" model="ir.ui.view">
-        <field name="name">numa.fsm.topic.tree</field>
+    <record id="view_fsm_topic_list" model="ir.ui.view">
+        <field name="name">numa.fsm.topic.list</field>
         <field name="model">numa.fsm.topic</field>
         <field name="arch" type="xml">
-            <tree string="FSM Topics">
+            <list string="FSM Topics">
                 <field name="name"/>
                 <field name="active"/>
                 <field name="subscription_count"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -39,17 +39,17 @@
         </field>
     </record>
 
-    <record id="view_fsm_subscription_tree" model="ir.ui.view">
-        <field name="name">numa.fsm.subscription.tree</field>
+    <record id="view_fsm_subscription_list" model="ir.ui.view">
+        <field name="name">numa.fsm.subscription.list</field>
         <field name="model">numa.fsm.subscription</field>
         <field name="arch" type="xml">
-            <tree string="FSM Subscriptions">
+            <list string="FSM Subscriptions">
                 <field name="topic_id"/>
                 <field name="subscriber_fsm_id"/>
                 <field name="is_active"/>
                 <field name="last_notification_date"/>
                 <field name="notification_count"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -80,13 +80,13 @@
     <record id="action_fsm_topic" model="ir.actions.act_window">
         <field name="name">FSM Topics</field>
         <field name="res_model">numa.fsm.topic</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
     <record id="action_fsm_subscription" model="ir.actions.act_window">
         <field name="name">FSM Subscriptions</field>
         <field name="res_model">numa.fsm.subscription</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
     <!-- Add subscription count to FSM instance form -->

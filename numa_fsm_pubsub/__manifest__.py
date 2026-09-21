@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Numa FSM Pub/Sub',
-    'version': '18.0.1.0.0',
+    'version': '20.0.1.0.0',
     'summary': 'Event-Driven Architecture for FSM Instances using Pub/Sub pattern',
     'description': """
 Numa FSM Pub/Sub
@@ -24,13 +24,12 @@ Key Features:
     'license': 'LGPL-3',
     'category': 'Extra Tools',
     'depends': [
-        'base',
         'mail',
         'numa_fsm',
         'numa_asynch_exec',
     ],
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'data/fsm_topic_data.xml',
         'data/ir_actions_server.xml',
         'views/fsm_topic_views.xml',
