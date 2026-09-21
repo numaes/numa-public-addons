@@ -2,7 +2,7 @@
 
 {
     'name': 'NUMA Physical Product',
-    'version': '18.0.0.4',
+    'version': '20.0.1.0.0',
     'category': 'Product',
     'description': """
 This module extends the handling of physical dimensions on products.
@@ -13,14 +13,11 @@ for products where the weight can be calculated on a factor multiplied by length
 """,
     'author': 'NUMA Extreme Systems',
     'website': 'http://www.numaes.com',
-    'depends': ['base', 'product', 'stock', 'stock_account', 'purchase_stock'],
+    'depends': ['product', 'stock', 'stock_account', 'purchase_stock'],
     'data': ['views/product_template_views.xml',
              'views/product_product_views.xml',
              'data/product_data.xml'],
-    'demo_xml': [],
-    'test': [],
     'installable': True,
     'license': 'LGPL-3',
-    'active': False,
 }
 # vim:expandtab:smartindent:tabstop=4:softtabstop=4:shiftwidth=4:

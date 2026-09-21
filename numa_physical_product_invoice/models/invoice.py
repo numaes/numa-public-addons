@@ -157,25 +157,10 @@ class InvoiceLine(models.Model):
     def _compute_totals(self):
         super()._compute_totals()
 
-    def _get_fields_onchange_balance(self, quantity=None, discount=None, amount_currency=None, move_type=None, currency=None, taxes=None, price_subtotal=None, force_computation=False):
-        self.ensure_one()
-        return self._get_fields_onchange_balance_model(
-            quantity=(quantity or self.quantity) if self.product_id.price_base == 'normal' else self.price_qty,
-            discount=discount or self.discount,
-            amount_currency=amount_currency or self.amount_currency,
-            move_type=move_type or self.move_id.move_type,
-            currency=currency or self.currency_id or self.move_id.currency_id,
-            taxes=taxes or self.tax_ids,
-            price_subtotal=price_subtotal or self.price_subtotal,
-            force_computation=force_computation,
-        )
-
-    @api.model
-    def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes,
-                                           price_subtotal, force_computation=False):
-        if not self or not self.product_id:
-            return {}
-        else:
-            return super()._get_fields_onchange_balance_model(
-                quantity, discount, amount_currency, move_type, currency, taxes,
-                price_subtotal, force_computation=force_computation)
+    # [20.0] `_get_fields_onchange_balance` and `_get_fields_onchange_balance_model`
+    # were overridden here, and neither exists in Odoo any more -- they went with the
+    # accounting rework several versions ago. The overrides called a `super()` that was
+    # not there, so they were dead code that would have raised the day something called
+    # them. The physical quantity reaches the tax computation through
+    # `_prepare_product_base_line_for_taxes_computation` above, which is the hook the
+    # current engine calls.

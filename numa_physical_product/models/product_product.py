@@ -21,14 +21,29 @@ class ProductProduct(models.Model):
                                  inverse="set_weight_factor",
                                  digits='Stock Weight',
                                  help="The weight factor")
+    # [20.0] `weight` and `volume` are STORED. They were not, and that stopped being
+    # possible: three core reports read them straight from SQL --
+    # `sale.report._select_dict` (`SUM(product_id.weight * ...)`),
+    # `purchase.report`, and `pos_sale` -- and a report is a SQL view, so a field with no
+    # column cannot appear in one. Installing this module before `sale` made `sale`'s
+    # install fail outright, with "Cannot convert product.product.weight to SQL because
+    # it is not stored"; installing it after left a database whose sales report would
+    # break the next time it was rebuilt.
+    #
+    # Storing them costs nothing here: the compute keeps deciding the value -- the
+    # variant's own when it states one, the template's otherwise -- and Odoo writes the
+    # result to the column. The other magnitudes stay unstored because nothing in core
+    # reads them in SQL.
     weight = fields.Float(string='Weight [kg]',
                           compute="get_weight",
                           inverse="set_weight",
+                          store=True,
                           digits='Stock Weight',
                           help="The weight of the contents in Kg, not including any packaging, etc.")
     volume = fields.Float(string='Volume [m3]',
                           compute="get_volume",
                           inverse="set_volume",
+                          store=True,
                           digits='Stock Volume')
     surface = fields.Float(string='Surface [m2]',
                            compute="get_surface",

@@ -77,7 +77,7 @@ class SaleOrderLine(models.Model):
         for sol in self:
             sol.compute_totals()
 
-    @api.onchange('product_uom', 'product_uom_qty')
+    @api.onchange('product_uom_id', 'product_uom_qty')
     def product_uom_change(self):
         for sol in self:
             sol.compute_totals()
@@ -97,24 +97,24 @@ class SaleOrderLine(models.Model):
             else:
                 sol.unit_price_uom_id = False
 
-    @api.onchange('product_uom_qty', 'product_uom')
-    @api.depends('product_uom_qty', 'product_uom')
+    @api.onchange('product_uom_qty', 'product_uom_id')
+    @api.depends('product_uom_qty', 'product_uom_id')
     def compute_totals(self):
         for sol in self:
-            normalized_qty = sol.product_uom._compute_quantity(sol.product_uom_qty, sol.product_id.uom_id) \
-                if sol.product_uom else sol.product_uom_qty
+            normalized_qty = sol.product_uom_id._compute_quantity(sol.product_uom_qty, sol.product_id.uom_id) \
+                if sol.product_uom_id else sol.product_uom_qty
             sol.total_surface = normalized_qty * sol.unit_surface
             sol.total_weight = normalized_qty * sol.unit_weight
             sol.total_volume = normalized_qty * sol.unit_volume
 
             sol.compute_price()
 
-    @api.onchange('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'product_uom')
-    @api.depends('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'product_uom')
+    @api.onchange('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'product_uom_id')
+    @api.depends('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'product_uom_id')
     def compute_price(self):
         for sol in self:
-            normalized_qty = sol.product_uom._compute_quantity(sol.product_uom_qty, sol.product_id.uom_id) \
-                             if sol.product_uom else sol.product_uom_qty
+            normalized_qty = sol.product_uom_id._compute_quantity(sol.product_uom_qty, sol.product_id.uom_id) \
+                             if sol.product_uom_id else sol.product_uom_qty
             price_type = sol.product_id.price_base
             if price_type == 'length':
                 price_qty = sol.unit_length * normalized_qty
@@ -132,19 +132,35 @@ class SaleOrderLine(models.Model):
                 price_qty = normalized_qty
             sol.price_qty = price_qty
 
-            sol._compute_amount()
 
-    @api.depends('price_qty', 'discount', 'price_unit', 'tax_id')
+    def _prepare_base_line_for_taxes_computation(self, **kwargs):
+        """Tax the physical quantity, not the number of units.
+
+        [20.0] This used to be a fork of `_compute_amount`: it called
+        `tax_id.compute_all` itself and wrote `price_subtotal`, `price_total` and
+        `price_tax` by hand. Two reasons that had to go. `tax_id` became `tax_ids`, so
+        the `@api.depends` named a field that does not exist and the module could not
+        install. And Odoo 20 rebuilt the tax engine -- rounding per document, tax
+        details, global discounts, down payments -- so a fork written against the old
+        one would have computed different numbers from the rest of the invoice.
+
+        The hook hands core a base line and lets it compute. What this module changes is
+        one number in that line.
+        """
+        values = super()._prepare_base_line_for_taxes_computation(**kwargs)
+        if self.product_id.price_base != 'normal' and self.price_qty:
+            values['quantity'] = self.price_qty
+        return values
+
+    @api.depends('price_qty')
     def _compute_amount(self):
-        for sol in self:
-            price = sol.price_unit * (1 - (sol.discount or 0.0) / 100.0)
-            taxes = sol.tax_id.compute_all(price, sol.order_id.currency_id, sol.price_qty,
-                                           product=sol.product_id, partner=sol.order_id.partner_id)
-            sol.update({
-                'price_tax': sum(t.get('amount', 0.0) for t in taxes.get('taxes', [])),
-                'price_total': taxes['total_included'],
-                'price_subtotal': taxes['total_excluded'],
-            })
+        """Recompute the amounts when the physical quantity moves.
+
+        Core's `_compute_amount` depends on `product_uom_qty`; ours is driven by
+        `price_qty`, which core has never heard of. Declaring the extra dependency here
+        and delegating is what keeps the totals in step without forking the computation.
+        """
+        return super()._compute_amount()
 
     def _prepare_invoice_line(self, **optional_values):
         """
@@ -209,7 +225,7 @@ class SaleOrderLine(models.Model):
             qty_offset = self.qty_invoiced
             move_list = []
             for move in time_line_moves:
-                qty = move.product_uom._compute_quantity(move.product_uom_qty, self.product_id.uom_id,
+                qty = move.uom_id._compute_quantity(move.product_uom_qty, self.product_id.uom_id,
                                                          rounding_method='HALF-UP')
                 if move.location_dest_id.usage == "customer":
                     if not move.origin_returned_move_id or (move.origin_returned_move_id and move.to_refund):
@@ -224,7 +240,7 @@ class SaleOrderLine(models.Model):
             qty_to_add = self.qty_to_invoice
 
             for qty, move in move_list:
-                full_move_qty = move.product_uom._compute_quantity(
+                full_move_qty = move.uom_id._compute_quantity(
                     move.product_uom_qty, self.product_id.uom_id,
                     rounding_method='HALF-UP'
                 )

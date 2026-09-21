@@ -29,8 +29,15 @@ class StockPicking(models.Model):
     picking_weight = fields.Float('Weight', compute='onchange_move_line_ids')
     picking_volume = fields.Float('Volume', compute='onchange_move_line_ids')
 
-    @api.onchange('move_line_ids', 'move_line_ids_without_package')
-    @api.depends('move_line_ids', 'move_line_ids_without_package')
+    # [20.0] `move_line_ids_without_package` is gone from `stock.picking`: it was a
+    # helper the detailed-operations widget used, and Odoo 20 dropped it. A `@depends`
+    # naming a field that does not exist raises while the trigger tree is built, so the
+    # module could not install. `move_line_ids` is the same set and is what the compute
+    # actually reads.
+    @api.onchange('move_line_ids', 'move_line_ids.total_weight',
+                  'move_line_ids.total_volume')
+    @api.depends('move_line_ids', 'move_line_ids.total_weight',
+                 'move_line_ids.total_volume')
     def onchange_move_line_ids(self):
         for move in self:
             picking_weight = 0.0

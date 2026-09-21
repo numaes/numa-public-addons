@@ -62,7 +62,7 @@ class PurchaseOrderLine(models.Model):
             pol._compute_unit_price_uom()
             pol.compute_totals()
 
-    @api.onchange('product_uom', 'product_uom_qty')
+    @api.onchange('uom_id', 'product_uom_qty')
     def _onchange_quantity(self):
         for pol in self:
             #super(PurchaseOrderLine, pol)._onchange_quantity()
@@ -84,24 +84,24 @@ class PurchaseOrderLine(models.Model):
             else:
                 pol.unit_price_uom_id = False
 
-    @api.onchange('product_uom_qty', 'product_uom')
-    @api.depends('product_uom_qty', 'product_uom')
+    @api.onchange('product_uom_qty', 'uom_id')
+    @api.depends('product_uom_qty', 'uom_id')
     def compute_totals(self):
         for pol in self:
-            normalized_qty = pol.product_uom._compute_quantity(pol.product_uom_qty, pol.product_id.uom_id) \
-                if pol.product_uom else pol.product_uom_qty
+            normalized_qty = pol.uom_id._compute_quantity(pol.product_uom_qty, pol.product_id.uom_id) \
+                if pol.uom_id else pol.product_uom_qty
             pol.total_surface = normalized_qty * pol.unit_surface
             pol.total_weight = normalized_qty * pol.unit_weight
             pol.total_volume = normalized_qty * pol.unit_volume
 
             pol.compute_price()
 
-    @api.onchange('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'product_uom')
-    @api.depends('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'product_uom')
+    @api.onchange('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'uom_id')
+    @api.depends('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'uom_id')
     def compute_price(self):
         for pol in self:
-            normalized_qty = pol.product_uom._compute_quantity(pol.product_uom_qty, pol.product_id.uom_id) \
-                             if pol.product_uom else pol.product_uom_qty
+            normalized_qty = pol.uom_id._compute_quantity(pol.product_uom_qty, pol.product_id.uom_id) \
+                             if pol.uom_id else pol.product_uom_qty
             price_type = pol.product_id.price_base
             if price_type == 'length':
                 price_qty = pol.unit_length * normalized_qty
@@ -119,26 +119,16 @@ class PurchaseOrderLine(models.Model):
                 price_qty = normalized_qty
             pol.price_qty = price_qty
 
-            #pol._compute_amount()
+    def _prepare_base_line_for_taxes_computation(self, **kwargs):
+        """Tax the physical quantity, not the number of units.
 
-    #@api.depends('price_qty', 'price_unit', 'taxes_id')
-    #def _compute_amount(self):
-        #for pol in self:
-            #vals = pol._prepare_compute_all_values()
-            #taxes = pol.taxes_id.compute_all(
-                #pol.price_unit,
-                #vals['currency_id'],
-                #pol.price_qty,
-                #vals['product'],
-                #vals['partner'])
-            #pol.update({
-                #'price_tax': sum(t.get('amount', 0.0) for t in taxes.get('taxes', [])),
-                #'price_total': taxes['total_included'],
-                #'price_subtotal': taxes['total_excluded'],
-            #})
-
-    def _convert_to_tax_base_line_dict(self):
-        res = super(PurchaseOrderLine, self)._convert_to_tax_base_line_dict()
-        res['quantity'] = self.price_qty
-
-        return res
+        [20.0] Was `_convert_to_tax_base_line_dict`, which Odoo removed along with the
+        old tax engine. The hook is the same idea in the new one
+        (`account_tax.py`): hand the tax computation a base line, and let core do the
+        rounding, the tax details and the document-level logic. What this module changes
+        is one number in that line.
+        """
+        values = super()._prepare_base_line_for_taxes_computation(**kwargs)
+        if self.product_id.price_base != 'normal' and self.price_qty:
+            values['quantity'] = self.price_qty
+        return values

@@ -7,7 +7,15 @@
             <field name="mode">extension</field>
             <field name="inherit_id" ref="sale.view_order_form" />
             <field name="arch" type="xml">
-                <xpath expr="//field[@name='order_line']/form/field[@name='name']" position="after">
+                <!--
+                    [20.0] The order lines list groups its fields in `<column>` wrappers
+                    now (product_and_description, sol_qty, sol_uom, price_unit), so
+                    `list/field[@name='name']` and `list/field[@name='price_unit']`
+                    are no longer direct children and could not be located. The inner
+                    `<form>` still exists, but `name` is nested inside it rather than a
+                    direct child.
+                -->
+                <xpath expr="//field[@name='order_line']/form//field[@name='name']" position="after">
                     <group invisible="not display_type">
                         <group>
                             <field name="unit_width"/>
@@ -26,7 +34,7 @@
                         </group>
                     </group>
                 </xpath>
-                <xpath expr="//field[@name='order_line']/list/field[@name='name']" position="after">
+                <xpath expr="//field[@name='order_line']/list//column[@name='product_and_description']" position="after">
                     <field name="unit_width" optional="hide"/>
                     <field name="unit_length" optional="hide"/>
                     <field name="unit_height" optional="hide"/>
@@ -41,9 +49,9 @@
                     <field name="price_qty" readonly="True" force_save="True"/>
                     <field name="unit_price_uom_id"/>
                 </xpath>
-                <xpath expr="//field[@name='order_line']/list/field[@name='price_unit']" position="after">
-                    <field name="price_qty" readonly="True" force_save="True"/>
-                    <field name="unit_price_uom_id"/>
+                <xpath expr="//field[@name='order_line']/list//column[@name='price_unit']" position="after">
+                    <field name="price_qty" readonly="True" force_save="True" optional="show"/>
+                    <field name="unit_price_uom_id" optional="show"/>
                 </xpath>
                 <xpath expr="//group[@name='sales_person']" position="before">
                     <group string="Package Information" name="package_information">

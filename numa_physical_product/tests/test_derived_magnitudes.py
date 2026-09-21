@@ -151,3 +151,56 @@ class TestVariantOverrides(TransactionCase):
                             'variant_length_set': True})
         self.tmpl.write({'product_length': 8.0})
         self.assertEqual(self.variant.product_length, 0.0)
+
+
+@tagged('post_install', '-at_install', 'numa_physical_product')
+class TestStoredMagnitudes(TransactionCase):
+    """Weight and volume must remain columns.
+
+    They were unstored computes until 20.0, and that stopped being possible: three core
+    reports read them straight from SQL -- `sale.report._select_dict` sums
+    `product_id.weight`, and so do `purchase.report` and `pos_sale`. A report is a SQL
+    view, and a field with no column cannot appear in one.
+
+    What it looked like: installing this module before `sale` made `sale`'s own install
+    fail with "Cannot convert product.product.weight to SQL because it is not stored".
+    Installing it after `sale` looked fine and left a database whose sales report would
+    break the next time the view was rebuilt.
+    """
+
+    def test_weight_and_volume_are_stored(self):
+        fields_ = self.env['product.product']._fields
+        self.assertTrue(fields_['weight'].store,
+                        "product.product.weight must be a column: sale.report sums it in SQL")
+        self.assertTrue(fields_['volume'].store,
+                        "product.product.volume must be a column: sale.report sums it in SQL")
+
+    def test_the_columns_are_really_there(self):
+        self.env.cr.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'product_product' AND column_name IN ('weight', 'volume')
+        """)
+        self.assertEqual(sorted(r[0] for r in self.env.cr.fetchall()), ['volume', 'weight'])
+
+    def test_the_stored_value_follows_the_variant_override(self):
+        """Storing must not cost the override: the column holds the effective value."""
+        tmpl = self.env['product.template'].create({
+            'name': 'Stored', 'type': 'consu', 'weight': 10.0})
+        variant = tmpl.product_variant_ids[0]
+        self.assertEqual(variant.weight, 10.0)
+
+        variant.write({'variant_weight': 4.0, 'variant_weight_set': True})
+        self.assertEqual(variant.weight, 4.0)
+        # A stored compute reaches the column on flush, and the SQL below reads the
+        # column rather than the cache -- which is the whole point of this test.
+        self.env.flush_all()
+        self.env.cr.execute("SELECT weight FROM product_product WHERE id = %s", (variant.id,))
+        self.assertAlmostEqual(self.env.cr.fetchone()[0], 4.0, places=3,
+                               msg="the column did not follow the override")
+
+    def test_a_sales_report_can_be_built(self):
+        """The failure was not hypothetical: `sale.report` is a SQL view over these
+        columns, so if they are not there the view cannot be created."""
+        if 'sale.report' not in self.env:
+            self.skipTest("sale is not installed on this database")
+        self.env['sale.report'].search([], limit=1)
