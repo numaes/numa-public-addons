@@ -305,6 +305,41 @@ there.
 To undo: `DROP FUNCTION public.round(numeric, bigint)`,
 `DROP FUNCTION public.bool(bigint)`.
 
+### Measured afterwards: the overloads are necessary and not sufficient
+
+Core's entire `account` suite was run twice, on the same Odoo and the same machine:
+
+| Database | Result |
+| --- | --- |
+| `account` alone | **1 failed** of 1139 (`TestSequenceMixin.test_journal_sequence_format`) |
+| `account` + `numa_big_id` | **52 failed** of 1164, 0 errors |
+
+So the two overloads removed every *error* -- no query fails to resolve a function
+any more -- and left about fifty *failures* that are this module's doing. Twenty-two
+of them are one assertion, and core wrote it on purpose:
+
+```python
+# addons/account/models/account_bank_statement_line.py:276
+assert self._fields['sequence'].column_type[1] == 'int4'
+```
+
+`_compute_internal_index` packs `sequence` into a fixed-width string and depends on
+its width. There is no overload that fixes that: core requires a plain `Integer` to
+be 32 bits.
+
+**This module is therefore still not safe to install alongside `account`.** The
+recommendation changes with the evidence: `fields.Integer._column_type = BIGINT` has
+to go, `Many2oneReference` (a subclass of `Integer`, which is what carries `res_id`
+on `mail.message`, `ir.attachment` and `ir.model.data`) has to be widened
+explicitly, and `migrate_to_bigint` has to stop widening every int4 column in the
+schema. The seventeen plain-`Integer` id fields in core addons then become a known,
+documented, auditable risk -- which is a far smaller one than "accounting does not
+work".
+
+That is a change to what this module does, in a module that rewrites customer
+databases, so it is written down here rather than made in passing. The remaining
+~30 failures have not been characterised yet.
+
 ### If another one turns up
 
 The symptom is always the same shape: `function <name>(... bigint ...) does not exist`

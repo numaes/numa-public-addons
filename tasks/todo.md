@@ -52,8 +52,17 @@ Deleted: `numa_periodic_services` (unused, at the user's instruction).
   controller's `type='json'` routes and `request.context` reads were also brought
   up to 20.0, so the suite runs without a deprecation warning.
 
-- [x] **`numa_big_id` + `account` broke invoice creation, tax sync and
-  reconciliation.** Found on the whole-repo run; pre-existing, not caused by the
+- [ ] **`numa_big_id` + `account` is still broken, and the fix so far is partial.**
+  The two overloads removed every missing-function *error*, but core's own `account`
+  suite goes from 1 failure out of 1139 without this module to **52 out of 1164**
+  with it. Twenty-two are one assertion core wrote deliberately --
+  `assert self._fields['sequence'].column_type[1] == 'int4'` in
+  `_compute_internal_index` -- which no overload can satisfy. The scope of the
+  widening has to be narrowed instead; the evidence and the recommendation are in
+  `numa_big_id/README.md`. Not done: it changes what a module that rewrites customer
+  databases does.
+
+- [x] What was found and fixed so far: Found on the whole-repo run; pre-existing, not caused by the
   migration. Widening every integer column -- which is this module's stated design --
   moves columns core writes SQL against out of the set of types those functions
   accept: `ROUND(SUM(...), curr.decimal_places)` and
