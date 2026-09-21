@@ -169,7 +169,7 @@ class TestFSMFormInput(TestFSMCommon):
         target_record = target_model.create({
             'name': 'Target Record',
             'type': 'binary',
-            'datas': base64.b64encode(b'Initial content'),
+            'raw': b'Initial content',
         })
         
         # Create a mock file
