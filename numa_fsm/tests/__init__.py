@@ -10,3 +10,9 @@ from . import test_fsm_template_mail
 # polymorphic timers) is covered in test_fsm_live.py. The old files are kept in the repo as a
 # reference but are NOT imported.
 from . import test_fsm_instance_filters
+
+# test_fsm_debug y test_fsm_engine usan TestFSMCommon (la API VIVA), así que no
+# entran en la exclusión de arriba: simplemente no estaban importados y por eso
+# nunca corrieron.
+from . import test_fsm_debug
+from . import test_fsm_engine
