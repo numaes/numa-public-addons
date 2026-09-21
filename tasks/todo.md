@@ -52,17 +52,16 @@ Deleted: `numa_periodic_services` (unused, at the user's instruction).
   controller's `type='json'` routes and `request.context` reads were also brought
   up to 20.0, so the suite runs without a deprecation warning.
 
-## Open, and needing a decision
-
-- **`numa_big_id` + `account` breaks invoice creation and reconciliation.** Found on
-  the whole-repo run; pre-existing, not caused by the migration.
-  `fields.Integer._column_type = BIGINT` widens every integer column, including
-  `res_currency.decimal_places`, and core emits
-  `ROUND(SUM(...), curr.decimal_places)` -- for which Postgres has no
-  `round(numeric, bigint)`. Two ways out, both real, written up with the evidence in
-  `numa_big_id/README.md`. The recommendation is to create the missing overload once
-  at install; it is not applied, because creating a function in the customer's
-  `public` schema is a decision to take deliberately.
+- [x] **`numa_big_id` + `account` broke invoice creation, tax sync and
+  reconciliation.** Found on the whole-repo run; pre-existing, not caused by the
+  migration. Widening every integer column -- which is this module's stated design --
+  moves columns core writes SQL against out of the set of types those functions
+  accept: `ROUND(SUM(...), curr.decimal_places)` and
+  `BOOL_OR(COALESCE(BOOL(pay.id), FALSE))`, for neither of which PostgreSQL ships an
+  int8 signature. Narrowing the patch was rejected: seventeen fields in core addons
+  hold a record id in a plain `fields.Integer`. The module creates the two missing
+  overloads instead, from a table in `hooks.py` that names each core call site, and
+  `numa_big_id/README.md` says what to do when another turns up.
 
 ## Where it stands
 

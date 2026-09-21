@@ -266,6 +266,66 @@ def _widen_detaching_fks(cr, table, columns):
         _logger.info("[big_id] %s: %s foreign key(s) back in place", table, restored)
 
 
+# PostgreSQL defines a handful of functions for `integer` and not for `bigint`, and
+# core Odoo calls them on columns this module widens. Each entry is
+# `(signature, returns, body)`; the comment says which core call site needs it.
+_BIGINT_OVERLOADS = (
+    # account/models/account_move_line.py -- `ROUND(SUM(...), curr.decimal_places)`,
+    # and `res_currency.decimal_places` is an `Integer`, so it is int8 here.
+    ('round(numeric, bigint)', 'numeric', 'SELECT pg_catalog.round($1, $2::integer)'),
+    # account/models/account_move.py -- `BOOL_OR(COALESCE(BOOL(pay.id), FALSE))`.
+    # `bool(int4)` is PostgreSQL's int4-to-boolean cast function; there is no
+    # int8-to-boolean cast at all, so the call has nothing to resolve to.
+    ('bool(bigint)', 'boolean', 'SELECT $1 <> 0'),
+)
+
+
+def ensure_bigint_overloads(cr):
+    """Give PostgreSQL the int8 signatures core Odoo calls and PostgreSQL does not ship.
+
+    Widening every integer column -- which is what this module does, deliberately, in
+    both `migrate_to_bigint` and the `_column_type` patch -- moves columns core writes
+    SQL against out of the set of types those functions accept. Two showed up on a
+    database with `account` installed:
+
+        ROUND(SUM(part.debit_amount_currency), curr.decimal_places)
+        BOOL_OR(COALESCE(BOOL(pay.id), FALSE))
+
+    PostgreSQL has `round(numeric, integer)` and `bool(integer)` and neither int8
+    counterpart, so both queries fail with "function ... does not exist" and take
+    `account.move.create`, `_sync_tax_lines` and the partial-reconcile read with them.
+    Installing this module on a database with `account` broke invoicing outright.
+
+    The alternative was to stop widening plain `Integer` columns, which would leave the
+    seventeen fields in core addons that hold a record id in a plain `fields.Integer` --
+    `mail.alias.alias_force_thread_id`, `portal.share.res_id`, `snailmail.letter.res_id`
+    and the rest -- at 32 bits. Each of those is the overflow this module exists to
+    prevent, and a blocklist of seventeen does not survive an addon upgrade. The
+    overloads keep the guarantee and cost one function each.
+
+    They shadow nothing, because those signatures do not exist, and each one is undone
+    by `DROP FUNCTION public.<signature>`.
+
+    :return: the signatures created by this call (empty when they were all there)
+    """
+    created = []
+    for signature, returns, body in _BIGINT_OVERLOADS:
+        cr.execute("SELECT to_regprocedure(%s) IS NOT NULL", ('public.' + signature,))
+        if cr.fetchone()[0]:
+            continue
+        cr.execute(
+            "CREATE FUNCTION public.%s RETURNS %s "
+            "LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $ovl$ %s $ovl$"
+            % (signature, returns, body))
+        created.append(signature)
+
+    if created:
+        _logger.info("[big_id] created %s; core calls these on columns this module "
+                     "widened, and PostgreSQL ships only their int4 counterparts",
+                     ', '.join(created))
+    return created
+
+
 def migrate_to_bigint(cr, dry_run=False):
     """Widen every int4 column in the public schema. Resumable; safe to re-run.
 
@@ -497,6 +557,7 @@ def pre_init_hook(env):
                         "after the migration", materialized)
 
     migrate_to_bigint(cr)
+    ensure_bigint_overloads(cr)
     result = log_verification(cr)
     if not result['clean']:
         raise UserError(

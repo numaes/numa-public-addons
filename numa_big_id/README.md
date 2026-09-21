@@ -246,60 +246,72 @@ AND data_type != 'bigint';
 
 All sequences should be `bigint` after migration.
 
-## Known incompatibility: `account`, and `round(numeric, bigint)`
+## The int8 signatures PostgreSQL does not ship
 
-**Installing this module alongside `account` breaks invoice creation and
-reconciliation.** Found 2026-09-21 on a database with the whole repository installed;
-it is not new, and it is not caused by the 20.0 migration.
-
-`fields.Integer._column_type = BIGINT` widens *every* integer column, not only the ones
-that hold an id. One of them is `res_currency.decimal_places`, and core's accounting
-emits
+Widening *every* integer column -- which is what this module does, deliberately, in
+both `migrate_to_bigint` and the `_column_type` patch -- moves columns core writes SQL
+against out of the set of types those functions accept. Installing this module on a
+database with `account` used to break invoice creation, tax sync and reconciliation
+outright. Two calls in core are affected:
 
 ```sql
-ROUND(SUM(part.debit_amount_currency), curr.decimal_places)
+ROUND(SUM(part.debit_amount_currency), curr.decimal_places)   -- res_currency.decimal_places
+BOOL_OR(COALESCE(BOOL(pay.id), FALSE))                        -- account_payment.id
 ```
 
-Postgres has `round(numeric, integer)` and no `round(numeric, bigint)`, so the query
-fails with
+PostgreSQL has `round(numeric, integer)` and `bool(integer)` and **neither int8
+counterpart** -- there is no int8-to-boolean cast in PostgreSQL at all -- so both
+queries fail with
 
 ```
 ERROR: function round(numeric, bigint) does not exist
+ERROR: function bool(bigint) does not exist
 ```
 
-and takes `account.move.create`, `_compute_needed_terms` and the partial-reconcile
-read down with it.
+and the message names neither this module nor the columns it widened.
 
-### Why the broad scope is not simply wrong
+### Why the broad scope stays
 
 Narrowing the patch to ids would mean leaving plain `fields.Integer` columns at 32
-bits, and **17 fields in core addons alone store a record id in a plain `Integer`** --
-`mail.alias.alias_force_thread_id`, `portal.share.res_id`, `snailmail.letter.res_id`,
-`hr.expense.former_sheet_id` and so on. Each would be a latent overflow of exactly the
-kind this module exists to prevent, and a blocklist of seventeen is not maintainable
-across addon versions.
+bits, and **seventeen fields in core addons alone store a record id in a plain
+`Integer`** -- `mail.alias.alias_force_thread_id`, `portal.share.res_id`,
+`snailmail.letter.res_id`, `hr.expense.former_sheet_id` and the rest. Each would be a
+latent overflow of exactly the kind this module exists to prevent, and a blocklist of
+seventeen does not survive an addon upgrade.
 
-### The two ways out
+### What the module does instead
 
-1. **Add the missing overload**, once, when the module installs:
+`ensure_bigint_overloads` creates the missing signatures, once, from a table in
+`hooks.py` that names the core call site each one is for:
 
-   ```sql
-   CREATE OR REPLACE FUNCTION round(numeric, bigint) RETURNS numeric
-     LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT round($1, $2::integer) $$;
-   ```
+```sql
+CREATE FUNCTION public.round(numeric, bigint) RETURNS numeric
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+  AS $$ SELECT pg_catalog.round($1, $2::integer) $$;
 
-   It is additive -- it shadows nothing, because that signature does not exist -- and
-   it fixes every `round(numeric, <int8 column>)` in core and in any addon, present and
-   future. It is also a function created in the `public` schema of the customer's
-   database, which is a decision to take deliberately rather than as a side effect.
+CREATE FUNCTION public.bool(bigint) RETURNS boolean
+  LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+  AS $$ SELECT $1 <> 0 $$;
+```
 
-2. **Keep `Integer` narrow and widen `Many2oneReference` explicitly** (it subclasses
-   `Integer`, so one assignment covers `res_id` on `mail.message`, `ir.attachment` and
-   `ir.model.data`), accepting the seventeen plain-`Integer` id fields as a known risk
-   and auditing them per deployment.
+They shadow nothing -- those signatures do not exist -- and `bool(bigint)` answers
+exactly what `bool(integer)` answers, which is nonzero-is-true.
 
-Option 1 is the recommendation: it keeps the module's guarantee intact and its blast
-radius is one function. Neither is applied yet -- this is the owner's call.
+It runs from `pre_init_hook`, after the widening, and again from the final sweep in
+`models/base_sweep.py`, which is what covers a database restored from before this
+existed or one that gained `account` after the migration. It is a no-op once they are
+there.
+
+To undo: `DROP FUNCTION public.round(numeric, bigint)`,
+`DROP FUNCTION public.bool(bigint)`.
+
+### If another one turns up
+
+The symptom is always the same shape: `function <name>(... bigint ...) does not exist`
+on a query nobody in this repository wrote. Add it to `_BIGINT_OVERLOADS` in
+`hooks.py` with a comment naming the core call site, and add its semantics to
+`TestBigIntOverloads` -- an overload that does not match what the int4 one answers is
+worse than the missing function.
 
 ## Author
 

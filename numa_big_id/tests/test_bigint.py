@@ -145,3 +145,61 @@ class TestBigIntAutoFalseModels(TransactionCase):
         angostas = [fila[0] for fila in self.env.cr.fetchall()]
         self.assertFalse(angostas,
                          "these tables still hand out 32-bit ids: %s" % ', '.join(angostas))
+
+
+@tagged('post_install', '-at_install')
+class TestBigIntOverloads(TransactionCase):
+    """The int8 signatures core calls and PostgreSQL does not ship.
+
+    Widening every integer column moves columns core writes SQL against out of the set
+    of types those functions accept. Installing this module on a database with
+    `account` broke invoice creation, tax sync and reconciliation outright, with
+    "function round(numeric, bigint) does not exist" and "function bool(bigint) does
+    not exist" -- messages that name neither this module nor the columns it widened.
+    """
+
+    def test_01_every_declared_overload_exists(self):
+        from ..hooks import _BIGINT_OVERLOADS
+
+        for signature, _returns, _body in _BIGINT_OVERLOADS:
+            with self.subTest(signature=signature):
+                self.env.cr.execute(
+                    "SELECT to_regprocedure(%s) IS NOT NULL", ('public.' + signature,))
+                self.assertTrue(self.env.cr.fetchone()[0],
+                                "the install hook and the sweep both create it")
+
+    def test_02_round_rounds(self):
+        self.env.cr.execute("SELECT round(1.2345::numeric, 2::bigint)")
+        self.assertEqual(float(self.env.cr.fetchone()[0]), 1.23)
+
+    def test_03_bool_matches_the_int4_cast(self):
+        """`bool(int4)` is nonzero-is-true; the int8 one has to answer the same."""
+        self.env.cr.execute(
+            "SELECT bool(0::bigint), bool(1::bigint), bool(5::bigint), bool(-1::bigint)")
+        self.assertEqual(list(self.env.cr.fetchone()), [False, True, True, True])
+
+    def test_04_they_do_not_shadow_the_builtins(self):
+        """They add signatures; the int4 ones must answer as they always did."""
+        self.env.cr.execute(
+            "SELECT round(1.2345::numeric, 2), round(2.5::numeric), bool(0), bool(7)")
+        with_places, without, bool_zero, bool_seven = self.env.cr.fetchone()
+        self.assertEqual(float(with_places), 1.23)
+        self.assertEqual(float(without), 3.0)
+        self.assertIs(bool_zero, False)
+        self.assertIs(bool_seven, True)
+
+    def test_05_creating_them_twice_is_a_no_op(self):
+        from ..hooks import ensure_bigint_overloads
+
+        self.assertEqual(ensure_bigint_overloads(self.env.cr), [],
+                         "they are already there, so nothing is created")
+
+    def test_06_the_query_core_writes_runs(self):
+        """The shape that failed, against the column that was widened."""
+        if 'res.currency' not in self.env:
+            self.skipTest('res.currency is not available')
+        self.env.cr.execute("""
+            SELECT ROUND(1.23456::numeric, c.decimal_places)
+            FROM res_currency c LIMIT 1
+        """)
+        self.assertIsNotNone(self.env.cr.fetchone())

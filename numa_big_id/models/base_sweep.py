@@ -44,9 +44,18 @@ class Base(models.AbstractModel):
             return resultado
         setattr(registry, _SWEPT, True)
 
-        from ..hooks import _pending_columns, migrate_to_bigint, log_verification
+        from ..hooks import (
+            _pending_columns, ensure_bigint_overloads, log_verification,
+            migrate_to_bigint,
+        )
 
         cr = self.env.cr
+        # Before anything else, and regardless of whether there is widening left to do:
+        # a database restored from before these existed, or one that gained `account`
+        # after the migration, needs the overloads just as much as a fresh install
+        # does. It is a no-op once they are there.
+        ensure_bigint_overloads(cr)
+
         pendientes = _pending_columns(cr)
         if not pendientes:
             return resultado
