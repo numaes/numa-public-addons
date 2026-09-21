@@ -1,153 +1,125 @@
-# Numa Synch Slave - Nodo Branch
+# Numa Synch Slave — the branch node
 
-## Descripción
+**Odoo 20.0** | LGPL-3 | NUMA Extreme Systems
 
-`numa_synch_slave` convierte una instancia de Odoo en un "Nodo Branch" (Slave) del sistema de sincronización. Ejecuta un trabajo programado para detectar cambios locales, serializarlos, enviarlos al Master vía HTTP, y procesar respuestas para actualizar mapeos locales.
+**Status: migrated to Odoo 20.0** (module version `20.0.1.0.0`). Before the migration it
+**did not install**, and what it sent went well past what it was configured to send:
+see [What was found](#what-was-found-before-migrating).
 
-## Características
+Turns an Odoo instance into a branch node. On a schedule it finds what changed locally,
+serialises it, posts it to the Master, and records the ids that come back.
 
-- **Sincronización Programada**: Cron job cada 15 minutos (configurable)
-- **Delta Detection**: Detecta solo registros modificados desde última sincronización
-- **BFS Dependency Resolution**: Explora dependencias Many2one automáticamente
-- **Batch Processing**: Procesa en lotes con commits atómicos
-- **UUID Automático**: Genera token único para identificación
-- **Connection Testing**: Prueba de conexión al Master
-- **Manual Sync Trigger**: Sincronización manual desde la UI
+## Setup
 
-## Instalación
+### 1. Rules
+
+*Synchronization › Synchronization Rules*, one per model, with a domain filter and a
+direction that includes `outgoing`. The rules are also the namespace: nothing outside
+them leaves this node.
+
+### 2. The connection
+
+*Synchronization › Slave Connections*:
+
+| Field | Meaning |
+| --- | --- |
+| Master URL | the Master's base URL, e.g. `https://my-odoo.com` |
+| Master Database | the database name on the Master |
+| API Key | a global API key generated on the Master |
+| Slave Token | a UUID, generated here, never edited — this node's identity |
+| Batch Size | records per request (default 100; 50–200 is the useful range) |
+| Sync Interval | how often the connection's own cron runs |
+| Scheduled Time | or, instead, one run a day at a given hour |
+
+Each connection creates, updates and deletes its own `ir.cron` record. There is also a
+legacy global cron, shipped inactive, that would run every connection at once.
+
+### 3. Test Connection
+
+Sends an empty batch. It proves the URL resolves and the key is accepted, and writes
+nothing on either side. A refusal is reported with the Master's own reason.
+
+### 4. Run Sync Now
+
+Runs one cycle immediately, and raises if any batch was refused.
+
+## A cycle
+
+1. **Discovery** — for each rule, the records matching `get_delta_domain(last_sync_date)`:
+   the rule's filter ANDed with `write_date >` the last successful cycle.
+2. **Dependencies** — a breadth-first walk over many2one fields, so a record's targets
+   arrive with it. The walk stays inside the rules: a dependency no rule covers is not
+   followed and not sent.
+3. **Serialization** — scalars as themselves, many2one as references, binary and stored
+   computed fields according to the rule.
+4. **Transport** — split into batches and posted to
+   `/numa_synch/api/v1/sync_batch` with `Authorization: Bearer <api key>`. The metadata
+   that describes this node's schema travels with the first batch only.
+5. **Response** — the ids the Master returns are written into the mapping table, and
+   committed, so a cycle that fails at batch 300 keeps the 299 already accepted.
+6. **Finalization** — `last_sync_date` moves **only** if every batch was accepted.
+   Moving it on a failure would silently drop everything that cycle was carrying.
+
+## Dependencies
+
+`numa_synch`, and the `requests` Python library.
+
+## What was found before migrating
+
+The module did not install, and would not have worked if it had.
+
+- **`ir.cron` lost `numbercall` and `doall`.** Both were set, in the shipped cron data
+  and in the cron each connection builds. The data file failed to parse, so the install
+  stopped there. The two values said "run until deactivated" and "do not catch up on
+  missed runs", which is the only behaviour `ir.cron` has now — there is nothing left to
+  pass.
+- **`create` takes a list.** The override was declared `@api.model def create(self, vals)`
+  and Odoo 20 has no shim left for that, so any caller that batches — an import,
+  `load()`, copying several records at once — passed the list straight through and
+  `vals['slave_token'] = ...` died with "list indices must be integers". Creating one
+  connection at a time happened to work, which is why nothing noticed.
+- **`numa.synch.engine` had to become an `AbstractModel`.** Odoo 20 refuses an extension
+  that would turn an abstract model into a concrete one (`model_classes.py:256`).
+- **The views still used 17.0 syntax** — `attrs="{'invisible': ...}"` and `<tree>` — and
+  `ir.model.access.csv` is `ir.access.csv` now, with read and manage split.
+
+And two that no version change would have fixed:
+
+- **`Test Connection` reported success on every refusal.** It read the HTTP status code
+  alone, and the Master answers its refusals with HTTP 200 and an error body. A rejected
+  token, an unknown model, a mismatched schema — all of them came back to the operator
+  as "Connection test successful!", and the first real cycle then failed with nothing to
+  point at. It reads the body now, and repeats the Master's reason.
+- **The dependency walk left the namespace.** It appended whatever it reached. A rule
+  covering `res.partner` therefore pulled in the partner's company, its currency, its
+  salesperson — and serialised `res.users` rows, every stored field on them, onto the
+  wire. The Master dropped them on arrival for exactly this reason, which is the only
+  thing that kept it from being worse. The walk is now bounded by the rules, on this end
+  as well.
+
+The mid-cycle `cr.commit()` is kept — it is what makes a partial cycle worth something —
+but it is skipped under test, where the cursor belongs to the test's own transaction.
+
+## Tests
 
 ```bash
-# Desde el directorio de addons de Odoo
-# Requiere: numa_synch
-# External dependencies: requests (Python)
+odoo-bin -d <database> -u numa_synch_slave --without-demo \
+         --test-enable --test-tags=/numa_synch_slave --stop-after-init
 ```
 
-## Configuración
+Thirty-two tests, where there were none.
 
-### 1. Crear Reglas de Sincronización
+Seventeen on the connection: creating several at once, token generation, the cron being
+created, moved, deactivated and deleted with its connection, a scheduled time landing on
+the right hour, the four validation constraints, and `Test Connection` across a success
+body, a refusal body, an answer that is not JSON, and a rejected key.
 
-Ve a **Synchronization > Synchronization Rules** y crea reglas para los modelos que deseas sincronizar:
+Fifteen on the engine: batching, the flat payload and its header, metadata travelling
+with the first batch only, the three ways a batch fails without crashing, the returned
+ids becoming mappings, what does and does not need syncing, discovery staying inside the
+rules, an inactive connection sending nothing, and `last_sync_date` moving on a
+successful cycle and not on a failed one.
 
-1. **Name**: Nombre descriptivo
-2. **Model**: Selecciona el modelo
-3. **Domain Filter**: Define qué registros sincronizar
-4. **Direction**: `bidirectional` o `outgoing`
-5. **Binary Fields**: Configura sincronización de campos binary si es necesario
-6. **Computed Fields**: Configura sincronización de campos computados
-
-### 2. Configurar Conexión al Master
-
-Ve a **Synchronization > Slave Connections** y crea una nueva conexión:
-
-1. **Name**: Nombre descriptivo (ej: "Central Server")
-2. **Master URL**: URL base del Master (ej: `https://my-odoo.com`)
-3. **Master Database**: Nombre de la base de datos en el Master
-4. **API Key**: API Key generada en el Master
-5. **Slave Token**: Se genera automáticamente (UUID único, no editable)
-6. **Batch Size**: Tamaño de lote (default: 100, recomendado: 50-200)
-7. **Active**: Activar/desactivar sincronización
-
-### 3. Probar Conexión
-
-1. Haz clic en el botón **"Test Connection"**
-2. Verifica que la conexión sea exitosa
-3. Si falla, revisa:
-   - URL del Master
-   - API Key
-   - Conectividad de red
-
-### 4. Ejecutar Sincronización Manual
-
-1. Haz clic en el botón **"Run Sync Now"**
-2. Monitorea los logs para ver el progreso
-3. Verifica que `last_sync_date` se actualice
-
-## Flujo de Sincronización
-
-### 1. Discovery (Delta Detection)
-- Obtiene reglas activas
-- Para cada regla: busca registros modificados desde `last_sync_date`
-- Usa `get_delta_domain()` para combinar filtros
-
-### 2. Dependency Resolution (BFS)
-- Explora dependencias Many2one de registros encontrados
-- Agrega dependencias no mapeadas a la cola
-- Continúa hasta agotar todas las dependencias
-
-### 3. Serialization
-- Serializa cada registro usando `_serialize_record()`
-- Convierte Many2one a formato referencia
-- Incluye campos binary si está configurado
-- Incluye campos computados almacenados si está configurado
-
-### 4. Batching & Transport
-- Divide registros en lotes según `batch_size`
-- Envía POST a `/numa_synch/api/v1/sync_batch`
-- Headers: `Authorization: Bearer {api_key}`
-
-### 5. Response Processing
-- Si éxito: actualiza mappings con Master IDs
-- Commit transaction por cada batch exitoso
-- Si falla: rollback, no actualiza `last_sync_date`
-
-### 6. Finalization
-- Si todos los batches exitosos: actualiza `last_sync_date`
-- Si algún batch falla: no actualiza `last_sync_date` (Time Safety)
-
-## Cron Job
-
-El cron job se ejecuta automáticamente cada 15 minutos y procesa todas las conexiones activas.
-
-**Configuración del Cron**:
-- **Model**: `numa.synch.connection`
-- **Method**: `_cron_sync_all_connections()`
-- **Interval**: 15 minutos
-- **Active**: True
-
-Para modificar el intervalo, edita el registro `ir.cron` en **Settings > Technical > Automation > Scheduled Actions**.
-
-## Troubleshooting
-
-### La sincronización no se ejecuta
-
-1. Verifica que la conexión esté activa
-2. Verifica que haya reglas de sincronización activas
-3. Revisa los logs de Odoo para errores
-4. Prueba la conexión manualmente
-
-### Errores de autenticación
-
-1. Verifica que el API Key sea correcto
-2. Verifica que el API Key no haya expirado
-3. Verifica permisos del usuario asociado al API Key
-
-### Errores de red
-
-1. Verifica conectividad al Master
-2. Verifica que el Master URL sea correcto
-3. Verifica firewall/proxy settings
-
-### Campos binary no se sincronizan
-
-1. Verifica que `sync_binary_fields` esté habilitado en la regla
-2. Verifica que el tamaño del campo no exceda `binary_max_size_mb`
-3. Revisa logs para ver si hay errores de compresión
-
-### Campos computados no se recalculan
-
-1. Verifica que `sync_computed_fields` esté habilitado en la regla
-2. Verifica que `recalculate_computed` esté habilitado
-3. Revisa logs para ver si hay errores en el recálculo
-
-## Dependencias
-
-- `numa_synch`
-- `requests` (Python library)
-
-## Licencia
-
-LGPL-3
-
-## Autor
+## Author
 
 Gustavo Marino <gamarino@numaes.com>

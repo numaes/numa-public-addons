@@ -1,6 +1,6 @@
 {
     'name': 'Numa Synch Slave',
-    'version': '18.0.1.0.0',
+    'version': '20.0.1.0.0',
     'summary': 'Slave/Branch node implementation for offline-first synchronization system',
     'description': """
         Numa Synch Slave Module
@@ -30,7 +30,7 @@
         'python': ['requests'],
     },
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'data/ir_cron_data.xml',
         'views/numa_synch_connection_views.xml',
     ],

@@ -6,6 +6,11 @@ Odoo's domain widget for flexible filtering.
 """
 
 from odoo import models, fields, api, _
+# The domain-filter constraint raises this, and the module never imported it: an
+# invalid filter got saved, and the constraint that should have refused it died with
+# `NameError: name 'ValidationError' is not defined` -- reported as a server error
+# with no hint of which field was wrong.
+from odoo.exceptions import ValidationError
 # [20.0] `odoo.osv.expression` is gone; domains are `odoo.fields.Domain`
 # (odoo/orm/domains.py), and combining them is `Domain.AND`.
 from odoo.fields import Domain

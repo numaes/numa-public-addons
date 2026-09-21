@@ -375,19 +375,19 @@ class TestPolyBackfillAtScale(TransactionCase):
     def test_02_the_inline_limit_is_configurable(self):
         self.assertEqual(self.Task._poly_backfill_inline_limit(),
                          self.Task._poly_backfill_inline_limit())
-        self.Param.set_param('numa_poly.backfill_inline_limit', '7')
+        self.Param.set_str('numa_poly.backfill_inline_limit', '7')
         self.assertEqual(self.Task._poly_backfill_inline_limit(), 7)
-        self.Param.set_param('numa_poly.backfill_inline_limit', 'nonsense')
+        self.Param.set_str('numa_poly.backfill_inline_limit', 'nonsense')
         self.assertGreater(self.Task._poly_backfill_inline_limit(), 0,
                            "A bad parameter must fall back, not crash the upgrade.")
 
     def test_03_deferred_models_are_remembered_and_forgotten(self):
         self.Task._poly_backfill_defer()
         self.assertIn('project.task',
-                      self.Param.get_param('numa_poly.backfill_deferred_models'))
+                      self.Param.get_str('numa_poly.backfill_deferred_models'))
         self.Task._poly_backfill_undefer()
         self.assertNotIn('project.task',
-                         self.Param.get_param('numa_poly.backfill_deferred_models') or '')
+                         self.Param.get_str('numa_poly.backfill_deferred_models'))
 
     def test_04_the_cron_drains_a_deferred_model(self):
         tasks = self._orphan_tasks(4)
@@ -400,7 +400,7 @@ class TestPolyBackfillAtScale(TransactionCase):
         self.assertEqual(self.env.cr.fetchone()[0], 4,
                          "The cron must finish what the upgrade deferred.")
         self.assertNotIn('project.task',
-                         self.Param.get_param('numa_poly.backfill_deferred_models') or '',
+                         self.Param.get_str('numa_poly.backfill_deferred_models'),
                          "And drop the model once there is nothing left.")
 
     def test_05_a_batch_limit_leaves_the_rest_for_the_next_run(self):

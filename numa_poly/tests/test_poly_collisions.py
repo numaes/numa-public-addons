@@ -65,7 +65,7 @@ class TestPolyIdCollisions(TransactionCase):
 
     def _no_renumbering(self):
         """Have the backfill report collisions instead of resolving them."""
-        self.env['ir.config_parameter'].sudo().set_param(
+        self.env['ir.config_parameter'].sudo().set_str(
             'numa_poly.renumber_collisions', '0')
 
     def _reopen_pairs(self, model='project.task'):
@@ -272,8 +272,8 @@ class TestPolyIdCollisions(TransactionCase):
         self.assertIn('project.task', self._deferred_models())
 
     def _deferred_models(self):
-        param = self.env['ir.config_parameter'].sudo().get_param(
-            'numa_poly.backfill_deferred_models') or ''
+        param = self.env['ir.config_parameter'].sudo().get_str(
+            'numa_poly.backfill_deferred_models')
         return [name for name in param.split(',') if name]
 
     # -- moving a row that points at itself -------------------------------------

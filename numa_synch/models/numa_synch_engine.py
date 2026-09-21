@@ -17,6 +17,17 @@ from datetime import datetime
 _logger = logging.getLogger(__name__)
 
 
+class SchemaMismatch(UserError):
+    """The two sides run the same Odoo but model the data differently.
+
+    This is the one refusal that something downstream can hope to repair -- a field
+    renamed, a field added on one side -- by mapping one schema onto the other.
+    A version mismatch or absent metadata cannot be repaired that way, so they stay
+    plain :class:`UserError` and nothing is expected to catch them.
+    """
+
+
+
 class NumaSynchEngine(models.AbstractModel):
     """
     Abstract Synchronization Engine
@@ -340,15 +351,19 @@ class NumaSynchEngine(models.AbstractModel):
             # Fallback if exp_version is not available
             odoo_version = self.env['ir.module.module'].search([
                 ('name', '=', 'base')
-            ], limit=1).latest_version or '18.0'
+            ], limit=1).latest_version or '20.0'
         
-        db_uuid = self.env['ir.config_parameter'].sudo().get_param('database.uuid') or ''
+        # [20.0] `ir.config_parameter` lost the untyped `get_param`/`set_param` pair;
+        # the accessors are typed now (`get_str`, `get_bool`, `get_int`, `get_float`)
+        # and each carries its own default. This line raised `AttributeError`, which
+        # means no batch has ever carried its metadata.
+        db_uuid = self.env['ir.config_parameter'].sudo().get_str('database.uuid')
         
         # Get module version
         module = self.env['ir.module.module'].search([
             ('name', '=', 'numa_synch')
         ], limit=1)
-        module_version = module.latest_version if module else '18.0.1.0.0'
+        module_version = module.latest_version if module else '20.0.1.0.0'
         
         return {
             'odoo_version': odoo_version,
@@ -503,7 +518,7 @@ class NumaSynchEngine(models.AbstractModel):
                 continue
             
             if incoming_hash != local_hash:
-                raise UserError(_(
+                raise SchemaMismatch(_(
                     'Schema Mismatch in model %s.\n'
                     'Remote hash: %s\n'
                     'Local hash: %s\n\n'

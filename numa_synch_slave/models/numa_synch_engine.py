@@ -5,7 +5,7 @@ Implements the Slave-side logic for detecting changes, serializing records,
 and sending them to the Master server.
 """
 
-from odoo import models, api, _
+from odoo import models, api, tools, _
 from odoo.exceptions import ValidationError, UserError
 from odoo.fields import Datetime
 import logging
@@ -15,7 +15,9 @@ from collections import deque
 _logger = logging.getLogger(__name__)
 
 
-class NumaSynchEngineSlave(models.Model):
+# [20.0] `numa.synch.engine` is an AbstractModel, and Odoo 20 refuses an extension
+# that would turn it into a concrete one (model_classes.py:256).
+class NumaSynchEngineSlave(models.AbstractModel):
     """
     Slave Synchronization Engine
     
@@ -182,12 +184,26 @@ class NumaSynchEngineSlave(models.Model):
                     queue.append((rule.model_name, record))
         
         # Step 2: BFS exploration for dependencies
+        allowed_models = {rule.model_name for rule in rules if rule.model_name}
         while queue:
             model_name, record = queue.popleft()
-            
+
+            # A dependency is only followed as far as the rules reach. The walk used
+            # to append whatever it found -- a partner drags in its company, its
+            # currency, its salesperson -- so a Slave configured to send partners
+            # serialised `res.users` rows, with every stored field on them, and put
+            # them on the wire. The Master dropped them all on arrival for exactly
+            # this reason, which is the only thing that kept it from being worse:
+            # the rules are the namespace, on both ends.
+            if model_name not in allowed_models:
+                _logger.debug(
+                    'Reached %s (id %s) as a dependency, but no rule covers it; '
+                    'it is not sent.', model_name, record.id)
+                continue
+
             # Check if record needs synchronization
             needs_sync = self._record_needs_sync(model_name, record, connection)
-            
+
             if needs_sync:
                 records_to_sync.append(record)
             
@@ -306,7 +322,9 @@ class NumaSynchEngineSlave(models.Model):
             try:
                 # Get sync rule for this model (if available)
                 sync_rule = rules_by_model.get(record._name)
-                vals_dict, _ = self._serialize_record(record, sync_rule=sync_rule)
+                # Not `_`: that name is the translation function in this module.
+                vals_dict, _dependencies = self._serialize_record(
+                    record, sync_rule=sync_rule)
                 
                 # Add metadata
                 serialized_record = {
@@ -419,8 +437,15 @@ class NumaSynchEngineSlave(models.Model):
                     # Update mappings with returned Master IDs
                     self._process_batch_response(batch, response_data, connection)
                     
-                    # Commit transaction to save mapping progress
-                    self.env.cr.commit()
+                    # Keep the mappings this batch earned. A cycle can be hundreds
+                    # of batches long; without this, a failure at batch 300 throws
+                    # away the 299 that the Master already accepted, and the next
+                    # cycle sends them all again.
+                    #
+                    # Not under test, where the cursor belongs to the test's own
+                    # transaction and committing it breaks the rollback.
+                    if not tools.config['test_enable']:
+                        self.env.cr.commit()
                     
                     _logger.info('Batch %d sent successfully', batch_number)
                     return True

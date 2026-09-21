@@ -2,8 +2,8 @@
 <odoo>
     <data>
         <!-- Tree View for numa.synch.connection -->
-        <record id="view_numa_synch_connection_tree" model="ir.ui.view">
-            <field name="name">numa.synch.connection.tree</field>
+        <record id="view_numa_synch_connection_list" model="ir.ui.view">
+            <field name="name">numa.synch.connection.list</field>
             <field name="model">numa.synch.connection</field>
             <field name="arch" type="xml">
                 <list string="Synchronization Connections" decoration-muted="not active">
@@ -68,9 +68,11 @@
                         <group string="Scheduling">
                             <group>
                                 <field name="use_scheduled_time"/>
-                                <field name="sync_schedule_time" 
-                                       attrs="{'invisible': [('use_scheduled_time', '=', False)], 
-                                               'required': [('use_scheduled_time', '=', True)]}"/>
+                                <!-- [20.0] `attrs` was removed in 17.0; the conditions are
+                                     written on the attributes themselves. -->
+                                <field name="sync_schedule_time"
+                                       invisible="not use_scheduled_time"
+                                       required="use_scheduled_time"/>
                             </group>
                             <group>
                                 <field name="cron_id" readonly="1"/>
@@ -123,7 +125,7 @@
         <record id="action_numa_synch_connection" model="ir.actions.act_window">
             <field name="name">Synchronization Connections</field>
             <field name="res_model">numa.synch.connection</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="help" type="html">
                 <p class="o_view_nocontent_smiling_face">
                     Create a connection to the Master server

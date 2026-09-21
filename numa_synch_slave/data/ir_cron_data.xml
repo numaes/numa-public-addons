@@ -6,6 +6,9 @@
             Each connection creates its own cron job dynamically based on its configuration.
             This global cron can be disabled if all connections have their own cron jobs.
         -->
+        <!-- [20.0] `numbercall` and `doall` no longer exist: a cron runs until it is
+             deactivated and does not catch up on missed runs, which is exactly what
+             those two values said. -->
         <record id="ir_cron_sync_slave" model="ir.cron">
             <field name="name">Synchronize with Master (Legacy - All Connections)</field>
             <field name="model_id" ref="model_numa_synch_connection"/>
@@ -13,9 +16,7 @@
             <field name="code">model._cron_sync_all_connections()</field>
             <field name="interval_number">15</field>
             <field name="interval_type">minutes</field>
-            <field name="numbercall">-1</field>
             <field name="active" eval="False"/>
-            <field name="doall" eval="False"/>
         </record>
     </data>
 </odoo>

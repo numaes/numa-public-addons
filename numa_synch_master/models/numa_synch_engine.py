@@ -16,7 +16,9 @@ from datetime import datetime
 _logger = logging.getLogger(__name__)
 
 
-class NumaSynchEngineMaster(models.Model):
+# [20.0] `numa.synch.engine` is an AbstractModel, and Odoo 20 refuses an extension
+# that would turn it into a concrete one (model_classes.py:256).
+class NumaSynchEngineMaster(models.AbstractModel):
     """
     Master Synchronization Engine
     
@@ -62,119 +64,133 @@ class NumaSynchEngineMaster(models.Model):
         """
         if not slave_token:
             raise ValidationError(_('slave_token is required'))
-        
+
         if not records or not isinstance(records, list):
             raise ValidationError(_('records must be a non-empty list'))
-        
+
         # Validate metadata if provided (strict schema validation)
         if metadata:
             # Extract unique model names from records
             active_models = list(set(rec.get('model') for rec in records if rec.get('model')))
             if active_models:
                 self._validate_metadata(metadata, active_models)
+
+        # [20.0] This used to read `with self.env.context(sync_mode=True,
+        # tracking_disable=True):`. `env.context` is a read-only mapping, not a
+        # callable and not a context manager, so the line raised `TypeError` before
+        # a single record was looked at -- this method had never run to completion.
+        # The intent, an incoming batch that does not fire automations or chatter
+        # tracking, is what `with_context` does.
+        return self.with_context(
+            sync_mode=True, tracking_disable=True
+        )._process_incoming_batch(slave_token, records)
+
+    def _process_incoming_batch(self, slave_token, records):
+        """Apply an already validated batch, in two phases.
+
+        Runs under the synchronization context set by
+        :meth:`process_incoming_batch_master`; it is not meant to be called directly.
+        """
+        updated_mappings = []
         
-        # Wrap everything in sync context to disable automations
-        with self.env.context(sync_mode=True, tracking_disable=True):
-            updated_mappings = []
+        # Namespace Safety: Get allowed models from sync rules
+        allowed_models = self._get_allowed_models()
+        
+        # Get sync rules by model for computed fields configuration
+        rules_by_model = {}
+        for rule in self.env['numa.synch.rule'].search([
+            ('active', '=', True),
+            ('direction', 'in', ['bidirectional', 'incoming'])
+        ]):
+            if rule.model_name:
+                rules_by_model[rule.model_name] = rule
+        
+        # Phase 1: Create skeleton records (scalar fields only)
+        phase1_results = {}
+        for record_data in records:
+            model_name = record_data.get('model')
+            slave_local_id = record_data.get('local_id')
+            vals = record_data.get('vals', {})
+            incoming_write_date = record_data.get('write_date')
             
-            # Namespace Safety: Get allowed models from sync rules
-            allowed_models = self._get_allowed_models()
+            if not model_name or slave_local_id is None:
+                _logger.warning(
+                    'Skipping record with missing model or local_id: %s',
+                    record_data
+                )
+                continue
             
-            # Get sync rules by model for computed fields configuration
-            rules_by_model = {}
-            for rule in self.env['numa.synch.rule'].search([
-                ('active', '=', True),
-                ('direction', 'in', ['bidirectional', 'incoming'])
-            ]):
-                if rule.model_name:
-                    rules_by_model[rule.model_name] = rule
+            # Namespace Safety: Check if model is allowed
+            if model_name not in allowed_models:
+                _logger.warning(
+                    'Model %s is not allowed for synchronization (not in sync rules)',
+                    model_name
+                )
+                continue
             
-            # Phase 1: Create skeleton records (scalar fields only)
-            phase1_results = {}
-            for record_data in records:
-                model_name = record_data.get('model')
-                slave_local_id = record_data.get('local_id')
-                vals = record_data.get('vals', {})
-                incoming_write_date = record_data.get('write_date')
-                
-                if not model_name or slave_local_id is None:
-                    _logger.warning(
-                        'Skipping record with missing model or local_id: %s',
-                        record_data
-                    )
-                    continue
-                
-                # Namespace Safety: Check if model is allowed
-                if model_name not in allowed_models:
-                    _logger.warning(
-                        'Model %s is not allowed for synchronization (not in sync rules)',
-                        model_name
-                    )
-                    continue
-                
-                try:
-                    sync_rule = rules_by_model.get(model_name)
-                    result = self._process_record_phase1(
-                        model_name,
-                        slave_local_id,
-                        vals,
-                        slave_token,
-                        incoming_write_date,
-                        sync_rule
-                    )
-                    if result:
-                        phase1_results[(model_name, slave_local_id)] = result
-                        updated_mappings.append({
-                            'model': model_name,
-                            'slave_id': slave_local_id,
-                            'master_id': result['master_id']
-                        })
-                except Exception as e:
-                    _logger.error(
-                        'Error processing record Phase 1: %s (model: %s, slave_id: %s): %s',
-                        model_name, slave_local_id, str(e),
-                        exc_info=True
-                    )
-                    # Continue with other records
-                    continue
+            try:
+                sync_rule = rules_by_model.get(model_name)
+                result = self._process_record_phase1(
+                    model_name,
+                    slave_local_id,
+                    vals,
+                    slave_token,
+                    incoming_write_date,
+                    sync_rule
+                )
+                if result:
+                    phase1_results[(model_name, slave_local_id)] = result
+                    updated_mappings.append({
+                        'model': model_name,
+                        'slave_id': slave_local_id,
+                        'master_id': result['master_id']
+                    })
+            except Exception as e:
+                _logger.error(
+                    'Error processing record in Phase 1 (model: %s, slave_id: %s): %s',
+                    model_name, slave_local_id, str(e),
+                    exc_info=True
+                )
+                # Continue with other records
+                continue
+        
+        # Phase 2: Decorate with relations
+        for record_data in records:
+            model_name = record_data.get('model')
+            slave_local_id = record_data.get('local_id')
+            vals = record_data.get('vals', {})
             
-            # Phase 2: Decorate with relations
-            for record_data in records:
-                model_name = record_data.get('model')
-                slave_local_id = record_data.get('local_id')
-                vals = record_data.get('vals', {})
-                
-                if not model_name or slave_local_id is None:
-                    continue
-                
-                # Skip if Phase 1 failed
-                phase1_key = (model_name, slave_local_id)
-                if phase1_key not in phase1_results:
-                    continue
-                
-                master_id = phase1_results[phase1_key]['master_id']
-                
-                try:
-                    sync_rule = rules_by_model.get(model_name)
-                    self._process_record_phase2(
-                        model_name,
-                        master_id,
-                        vals,
-                        slave_token,
-                        sync_rule
-                    )
-                except Exception as e:
-                    _logger.error(
-                        'Error processing record Phase 2: %s (model: %s, master_id: %s): %s',
-                        model_name, master_id, str(e),
-                        exc_info=True
-                    )
-                    # Continue with other records
-                    continue
+            if not model_name or slave_local_id is None:
+                continue
             
-            return {
-                'updated_mappings': updated_mappings
-            }
+            # Skip if Phase 1 failed
+            phase1_key = (model_name, slave_local_id)
+            if phase1_key not in phase1_results:
+                continue
+            
+            master_id = phase1_results[phase1_key]['master_id']
+            
+            try:
+                sync_rule = rules_by_model.get(model_name)
+                self._process_record_phase2(
+                    model_name,
+                    master_id,
+                    vals,
+                    slave_token,
+                    sync_rule
+                )
+            except Exception as e:
+                _logger.error(
+                    'Error processing record in Phase 2 (model: %s, master_id: %s): %s',
+                    model_name, master_id, str(e),
+                    exc_info=True
+                )
+                # Continue with other records
+                continue
+        
+        return {
+            'updated_mappings': updated_mappings
+        }
 
     def _get_allowed_models(self):
         """
@@ -216,15 +232,15 @@ class NumaSynchEngineMaster(models.Model):
             slave_token
         )
         
-        # Get the model - validate it exists
-        try:
-            model = self.env[model_name]
-            if not model:
-                _logger.error('Model %s does not exist', model_name)
-                return None
-        except KeyError:
+        # Check that the model exists. The guard used to read `model = self.env[...]`
+        # followed by `if not model`, but an empty recordset is falsy, so it rejected
+        # every model there is -- every record of every batch was logged as
+        # "Model ... does not exist" and dropped. Membership is the question being
+        # asked, and `in self.env` is how it is asked.
+        if model_name not in self.env:
             _logger.error('Model %s does not exist', model_name)
             return None
+        model = self.env[model_name]
         
         # Parse incoming write_date
         incoming_timestamp = None
@@ -292,7 +308,7 @@ class NumaSynchEngineMaster(models.Model):
                 }
             except Exception as e:
                 _logger.error(
-                    'Error creating record in Phase 1: %s (model: %s): %s',
+                    'Error creating record in Phase 1 (model: %s): %s',
                     model_name, str(e),
                     exc_info=True
                 )
@@ -337,7 +353,7 @@ class NumaSynchEngineMaster(models.Model):
                 self._recalculate_computed_fields(master_record, sync_rule)
         except Exception as e:
             _logger.error(
-                'Error updating relational fields in Phase 2: %s (model: %s, ID: %s): %s',
+                'Error updating relational fields in Phase 2 (model: %s, ID: %s): %s',
                 model_name, master_id, str(e),
                 exc_info=True
             )

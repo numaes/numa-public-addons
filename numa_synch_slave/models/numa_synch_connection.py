@@ -115,14 +115,22 @@ class NumaSynchConnection(models.Model):
         help='Automatically created cron job for this connection'
     )
 
-    @api.model
-    def create(self, vals):
-        """Ensure slave_token is generated if not provided and create cron job"""
-        if 'slave_token' not in vals or not vals.get('slave_token'):
-            vals['slave_token'] = str(uuid.uuid4())
-        record = super().create(vals)
-        record._create_or_update_cron()
-        return record
+    # [20.0] `create` takes a list. The override was declared `@api.model` with a
+    # single `vals`, and Odoo 20 dropped the shim that used to wrap those: any caller
+    # that batches -- an import, `load()`, copying several records at once -- passed
+    # the list straight through, so `vals['slave_token'] = ...` died with
+    # "list indices must be integers". Creating one connection at a time happened to
+    # work, which is why nothing ever noticed.
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Give every connection a slave token, and its own cron."""
+        for vals in vals_list:
+            if not vals.get('slave_token'):
+                vals['slave_token'] = str(uuid.uuid4())
+        records = super().create(vals_list)
+        for record in records:
+            record._create_or_update_cron()
+        return records
     
     def write(self, vals):
         """Update cron job when sync settings change"""
@@ -243,9 +251,12 @@ class NumaSynchConnection(models.Model):
                 'code': cron_code,
                 'interval_number': self.sync_interval_number,
                 'interval_type': self.sync_interval_type,
-                'numbercall': -1,  # Unlimited
                 'active': self.active,
-                'doall': False,
+                # [20.0] `numbercall` and `doall` are gone from `ir.cron`. A cron now
+                # runs until it is deactivated -- which is what `numbercall = -1` meant
+                # -- and never catches up on missed runs, which is what `doall = False`
+                # meant. Both settings are the behaviour now, so there is nothing to
+                # pass; passing them raised "Invalid field" on every cron created here.
             }
             
             if nextcall:
@@ -292,9 +303,25 @@ class NumaSynchConnection(models.Model):
             )
             
             if response.status_code == 200:
+                # [20.0] The status code alone is not the answer. The Master returns
+                # its refusals with HTTP 200 and an `{"status": "error"}` body -- a
+                # wrong token, an unknown model, a rejected schema all look like this
+                # -- so reporting success on a 200 reported success on every one of
+                # them. What the body says is what decides.
+                try:
+                    body = response.json()
+                except ValueError:
+                    raise UserError(_(
+                        'The Master answered, but not with JSON. Check that the URL '
+                        'points at an Odoo server with numa_synch_master installed:\n\n%s'
+                    ) % response.text[:200])
+                if body.get('status') == 'success':
+                    raise UserError(_(
+                        'Connection test successful! Master server is reachable.'
+                    ))
                 raise UserError(_(
-                    'Connection test successful! Master server is reachable.'
-                ))
+                    'The Master is reachable but refused the test batch:\n\n%s'
+                ) % (body.get('message') or _('no reason given')))
             elif response.status_code == 401:
                 raise UserError(_(
                     'Authentication failed. Please check your API Key.'

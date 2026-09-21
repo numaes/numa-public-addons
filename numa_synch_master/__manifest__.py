@@ -1,6 +1,6 @@
 {
     'name': 'Numa Synch Master',
-    'version': '18.0.1.0.0',
+    'version': '20.0.1.0.0',
     'summary': 'Master server implementation for offline-first synchronization system',
     'description': """
         Numa Synch Master Module
@@ -24,9 +24,11 @@
     'category': 'Extra Tools',
     'depends': [
         'numa_synch',
-        'sale',
-        'stock',
-        'account',
+        # `sale`, `stock` and `account` used to be here and nothing in this module
+        # refers to any of them. What the Master accepts is decided by the
+        # synchronization rules, and a rule can only name a model that is installed,
+        # so the three dependencies bought nothing and made the Master impossible to
+        # put on a database that does not sell, stock or invoice.
     ],
     'data': [],
     'installable': True,

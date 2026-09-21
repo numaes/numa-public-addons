@@ -10,6 +10,8 @@ import logging
 from odoo import models, api, _
 from odoo.exceptions import UserError, ValidationError
 
+from odoo.addons.numa_synch.models.numa_synch_engine import SchemaMismatch
+
 _logger = logging.getLogger(__name__)
 
 
@@ -43,21 +45,34 @@ class NumaSynchEngineAiAssisted(models.AbstractModel):
         :param list active_models: List of model names in the batch
         :raises UserError: If validation fails and cannot be resolved
         """
-        # Try standard validation first
+        # Try standard validation first.
+        #
+        # Only a *schema* mismatch is caught. This used to catch `UserError`, which is
+        # every refusal the base engine makes: an Odoo version that does not match and
+        # metadata that is missing altogether were handed to the AI as well. Neither is
+        # something a field map can repair -- the answer this module produces says which
+        # field means which, and says nothing about a version -- so those refusals now
+        # travel out untouched, with the reason the operator needs to read.
         try:
             super()._validate_metadata(incoming_meta, active_models)
             # Standard validation succeeded, no AI needed
             return
-        except UserError as e:
+        except SchemaMismatch as mismatch:
             # Standard validation failed - try AI-assisted adaptation
             _logger.info(
                 'Standard metadata validation failed, attempting AI-assisted adaptation: %s',
-                str(e)
+                mismatch
             )
-            
+
             # Extract remote token from context or metadata
             remote_token = self.env.context.get('slave_token') or incoming_meta.get('remote_token', 'unknown')
-            
+
+            if not active_models:
+                # Nothing to analyse means nothing was repaired. Falling off the end of
+                # the loop below used to return `None`, which reads to the caller as
+                # "validated" -- a refusal turned into an acceptance.
+                raise
+
             # Check cache for each model
             for model_name in active_models:
                 cached_map = self._get_cached_mapping(remote_token, model_name)
