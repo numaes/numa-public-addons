@@ -1,20 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data>
-        <!-- Client Action: Permission Matrix -->
+        <menuitem id="menu_access_management" name="Roles and Permissions"
+                  parent="base.menu_administration" sequence="20"
+                  groups="base.group_system"/>
+
+        <menuitem id="menu_numa_roles" name="Roles"
+                  parent="menu_access_management" action="action_numa_roles"
+                  sequence="10" groups="base.group_system"/>
+
+        <menuitem id="menu_numa_permissions" name="Permissions"
+                  parent="menu_access_management" action="action_numa_permissions"
+                  sequence="20" groups="base.group_system"/>
+
         <record id="action_permission_matrix" model="ir.actions.client">
-            <field name="name">Matriz de Permisos</field>
+            <field name="name">Permission Matrix</field>
             <field name="tag">numa_roles.matrix_action</field>
         </record>
 
-        <!-- Menu: Permission Matrix -->
-        <menuitem
-            id="menu_permission_matrix"
-            name="Matriz de Seguridad"
-            parent="menu_access_management"
-            action="action_permission_matrix"
-            sequence="30"
-            groups="base.group_system"
-        />
+        <menuitem id="menu_permission_matrix" name="Permission Matrix"
+                  parent="menu_access_management" action="action_permission_matrix"
+                  sequence="30" groups="base.group_system"/>
     </data>
 </odoo>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!--
+            [20.0] These records used to live in `data/` and were listed under `data` in
+            the manifest, so every production install grew two example permissions and a
+            sample role named in Spanish. They are examples: they belong in `demo`.
+        -->
+        <record id="perm_view_dashboard" model="res.groups">
+            <field name="name">View Dashboard</field>
+            <field name="numa_type">permission</field>
+            <field name="technical_code">perm_view_dashboard</field>
+            <field name="is_template">True</field>
+            <field name="comment">Lets the user open the main dashboard.</field>
+        </record>
+
+        <record id="perm_export_data" model="res.groups">
+            <field name="name">Export Data</field>
+            <field name="numa_type">permission</field>
+            <field name="technical_code">perm_export_data</field>
+            <field name="is_template">True</field>
+            <field name="comment">Lets the user export data to Excel, CSV or other formats.</field>
+        </record>
+
+        <record id="role_data_analyst" model="res.groups">
+            <field name="name">Data Analyst</field>
+            <field name="numa_type">role</field>
+            <field name="is_template">True</field>
+            <field name="comment">Reads dashboards and takes the data out. Two permissions, no more.</field>
+            <field name="implied_ids" eval="[(4, ref('perm_view_dashboard')), (4, ref('perm_export_data'))]"/>
+        </record>
+    </data>
+</odoo>

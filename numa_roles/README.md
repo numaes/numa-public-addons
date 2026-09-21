@@ -1,156 +1,131 @@
-# Numa Roles - RBAC System
+# Numa Roles
 
-Strict RBAC (Role-Based Access Control) implementation for Odoo 18.0.
+**Odoo 20.0** | LGPL-3 | NUMA Extreme Systems
 
-## Overview
+**Status: migrated to Odoo 20.0** (module version `20.0.1.0.0`). Before the migration it
+**did not install**, and had not since 17.0 — see
+[What was found](#6-what-was-found-before-migrating).
 
-This module implements a Role-Based Access Control system on top of Odoo's native `res.groups` model, separating the concepts of "Roles" and "Permissions" while maintaining full technical compatibility.
+---
 
-## Architecture
+## 1. The idea
 
-### Three Types of Groups
+Odoo has one concept where role-based access control has two. A group both *grants*
+something and *is granted* to people, so a security model written in groups can only say
+what somebody may do by listing every group they carry — and nothing stops that list from
+growing into a pile nobody can audit.
 
-The module classifies `res.groups` records into three types using the `numa_type` field:
+This module does not add a mechanism. Everything still runs on `res.groups` and
+`implied_ids`, and nothing here is consulted when Odoo checks access. What it adds is a
+**discipline**, and enforces it:
 
-1. **Permissions** (`numa_type='permission'`):
-   - Atomic access units
-   - Examples: `perm_approve_discount`, `perm_view_dashboard`, `perm_export_data`
-   - **Cannot** be assigned directly to users
-   - Must have a unique `technical_code` (immutable)
-   - Can only inherit from other permissions or system groups
+| | |
+|---|---|
+| **Permission** | an atomic unit of access, with a stable technical code. Never assigned to a user. |
+| **Role** | a named bundle of permissions. The only thing a user gets. |
+| **System** | a native Odoo group, left alone. |
 
-2. **Roles** (`numa_type='role'`):
-   - Collections of permissions
-   - Examples: `role_sales_manager`, `role_data_analyst`
-   - **Can** be assigned to users
-   - Include permissions via `implied_ids`
-   - Can be marked as templates (`is_template=True`)
+The rules are constraints, not conventions: a permission with users attached is refused, a
+permission that includes a role is refused, a permission without a code is refused, and a
+code does not change once it is set.
 
-3. **System** (`numa_type='system'`):
-   - Native Odoo groups (legacy)
-   - Default type for backward compatibility
-   - Works as before
-
-## Key Features
-
-### Constraints
-
-The module enforces RBAC rules through Python constraints:
-
-1. **Permissions cannot have users**:
-   - Prevents direct assignment of permissions to users
-   - Permissions must be included in roles
-
-2. **Permissions cannot inherit from roles**:
-   - Maintains logical hierarchy: Roles → Permissions → System
-   - Prevents circular dependencies
-
-3. **Technical code required for permissions**:
-   - Must be unique
-   - Immutable once set
-   - Auto-generated from name if not provided
-
-### Views
-
-Conditional views based on `numa_type`:
-
-- **For Permissions**:
-  - Hide: Users, Rules, Views, Menus tabs
-  - Show: Technical code, category, inherited permissions (filtered)
-
-- **For Roles**:
-  - Hide: Views, Menus, Rules tabs (technical)
-  - Show: Permissions tab (editable tree), Users tab
-
-- **For System**:
-  - Standard Odoo view (unchanged)
-
-### Menu Structure
-
-- **Gestión de Accesos** (Access Management)
-  - **Roles**: List of all roles
-  - **Permisos**: List of all permissions
-
-## Usage
-
-### Creating a Permission
-
-1. Go to **Settings > Gestión de Accesos > Permisos**
-2. Create new permission
-3. Set `numa_type` to "Permiso"
-4. Enter `technical_code` (e.g., `perm_approve_discount`)
-5. Set category and description
-
-### Creating a Role
-
-1. Go to **Settings > Gestión de Accesos > Roles**
-2. Create new role
-3. Set `numa_type` to "Rol"
-4. In "Permisos" tab, add permissions via `implied_ids`
-5. Assign role to users in "Usuarios" tab
-
-### Assigning Roles to Users
-
-1. Open user form
-2. Go to "Access Rights" tab
-3. Assign roles (groups with `numa_type='role'`)
-4. User automatically gets all permissions included in the roles
-
-## Technical Details
-
-### Model Extension
-
-The module extends `res.groups` with:
-
-- `numa_type`: Selection field (role/permission/system)
-- `technical_code`: Char field (required for permissions, immutable)
-- `is_template`: Boolean (marks system-defined vs user-created)
-- `permission_count`: Computed field (number of permissions in a role)
-
-### Constraints Implementation
-
-All constraints are implemented in Python using `@api.constrains`:
+## 2. What makes it worth using: asking by name
 
 ```python
-@api.constrains('numa_type', 'users')
-def _check_permission_no_users(self):
-    # Prevents permissions from having users
+if order.user_id.has_permission('perm_approve_discount'):
+    ...
 ```
 
-### Auto-generation of technical_code
+A business rule asks for a permission by name instead of naming a group's XML id. The
+security model can then be rearranged — split a role, rename it, move the permission into
+a different bundle — without touching the rule. The answer resolves through
+`all_group_ids`, so a permission reached through a role two levels up counts.
 
-If a permission is created without `technical_code`, it's auto-generated from the name:
-- Convert to lowercase
-- Replace spaces/hyphens with underscores
-- Prefix with `perm_`
-- Remove special characters
+The question is about **that user**, not about how the calling code happens to be running:
+a `sudo()` environment does not turn the answer into yes.
 
-Example: "View Dashboard" → `perm_view_dashboard`
+## 3. What Odoo 20 does and does not do here
 
-## Data Examples
+Odoo 20 reworked groups considerably, and it is worth being precise about the overlap:
 
-The module includes demo data:
+| Odoo 20 has | What it is | Does it replace this? |
+|---|---|---|
+| `res.groups.privilege` ("Scope") | a label that groups groups in the UI | No. It organises the list; it does not separate what is assignable from what is atomic. |
+| `disjoint_ids` | groups that cannot be held together | No, and it composes fine with roles. |
+| `all_implied_ids` / `all_implied_by_ids` | the transitive closure, exposed | No — but this module now uses it instead of walking by hand. |
+| `ir.access` with `kind = permission / restriction` | replaces `ir.model.access` + `ir.rule` | No. That is a permission on **one model**; a permission here bundles several and means something to the business. Different levels, same word. |
 
-- **Permission**: `perm_view_dashboard` (View Dashboard)
-- **Permission**: `perm_export_data` (Export Data)
-- **Role**: `role_data_analyst` (Data Analyst) - includes both permissions
+So the separation this module enforces is still not in core, and the word "permission" now
+means two things in the same database. That is worth knowing before adopting it, and it is
+the one real argument against.
 
-## Migration Notes
+---
 
-### From Old Structure
+## 4. Installation and use
 
-If migrating from the old `is_role` boolean field:
+Depends on `web`. Adds four fields to `res.groups`, one method to `res.users`, three menus
+under **Settings → Roles and Permissions**, and a permission matrix — a client action
+where roles are columns, permissions are rows, and a tick adds or removes.
 
-1. Existing groups with `is_role=True` should be updated to `numa_type='role'`
-2. New permissions should be created with `numa_type='permission'`
-3. System groups remain with `numa_type='system'` (default)
+Two example permissions and a role are shipped as **demo** data, so an empty database can
+be looked at without a production one growing examples.
 
-### Backward Compatibility
+## 5. Tests
 
-- All existing `res.groups` records default to `numa_type='system'`
-- Standard Odoo functionality remains unchanged
-- Only new RBAC features are added
+```bash
+odoo-bin -d <database> -i numa_roles --without-demo \
+         --test-enable --test-tags=/numa_roles --stop-after-init
+```
 
-## License
+Nineteen tests: each rule of the discipline, the derived and immutable technical code, the
+permission count through nested roles, and the lookup API — including that it answers
+about the user and not the environment, that root holds everything, and that an unknown
+code denies rather than raising.
 
-LGPL-3
+---
+
+## 6. What was found before migrating
+
+The module was written for 18.0 and never ran. Four things, each enough on its own:
+
+1. **`@api.constrains('numa_type', 'users')`.** `res.groups.users` is `user_ids` in Odoo
+   20. A constraint naming a field that does not exist fails at registry setup, so the
+   module could not be installed at all.
+2. **The views hid pages with `attrs="{'invisible': [...]}"`**, which Odoo removed in
+   17.0 and rejects outright in 20.0. So the module had not installed since 17.0 either —
+   it was written against an Odoo that was already two versions old.
+3. **The pages it inherited do not exist.** It targeted `users`, `view_access`,
+   `rule_groups`, `menu_access` and `implied_ids`; the 20.0 group form has `user_ids`,
+   `inherit_groups`, `access_rights` and `menus`. It also used `<tree>` and
+   `category_id`, gone since 17.0 and 20.0 respectively.
+4. **`security/ir.model.access.csv` granted read, write, create and unlink on
+   `res.groups` to every user** — an empty `group_id` column means everybody. A module
+   about access control was handing out the ability to edit groups. Removed: core already
+   governs who may touch `res.groups`.
+
+And three that were quieter:
+
+- **`_check_technical_code_immutable` could never fire.** It compared
+  `group.technical_code` with `group._origin.technical_code`, and `_origin` on a stored
+  record returns the record itself (`models.py:5936`), so it compared a value with itself.
+  The live guard is the one in `write()`, which is where it belongs — a constraint runs
+  *after* the write and has nothing left to compare.
+- **`permission_count` counted only `implied_ids`**, so a role built out of other roles
+  reported zero. It now counts over `all_implied_ids`.
+- **The example records were loaded as data, not as demo**, so every production install
+  grew two permissions and a role, named in Spanish.
+
+One thing was found while writing the new API rather than in the old code, and it is worth
+recording because it is the kind of bug that looks like a feature:
+`has_permission` first short-circuited on `self.env.su`, which meant it answered **yes to
+anybody** whenever it was called from a sudo'd environment — most of the places a business
+rule runs. A permission check that says yes to everyone is worse than no check, because it
+looks like one. The test suite caught it.
+
+---
+
+## 7. License and Author
+
+- **Copyright:** NUMA Extreme Systems
+- **License:** LGPL-3
+- **Website:** [http://www.numaes.com](http://www.numaes.com)

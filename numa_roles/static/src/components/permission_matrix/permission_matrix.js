@@ -3,6 +3,7 @@
 import { Component, useState, onWillStart } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 import { registry } from "@web/core/registry";
+import { _t } from "@web/core/l10n/translation";
 
 export class PermissionMatrix extends Component {
     static template = "numa_roles.PermissionMatrix";
@@ -48,20 +49,20 @@ export class PermissionMatrix extends Component {
                 "res.groups",
                 [["numa_type", "=", "permission"]],
                 {
-                    fields: ["id", "name", "display_name", "category_id", "comment", "technical_code"],
-                    order: "category_id asc, name asc",
+                    // [20.0] `res.groups.category_id` is gone; groups are scoped by
+                    // `privilege_id` (res.groups.privilege), which carries the name.
+                    fields: ["id", "name", "display_name", "privilege_id", "comment", "technical_code"],
+                    order: "privilege_id asc, name asc",
                 }
             );
 
-            // Load category names for permissions
-            const categoryIds = [...new Set(permissions.map(p => p.category_id && p.category_id[0]).filter(Boolean))];
-            const categories = categoryIds.length > 0 
-                ? await this.orm.searchRead(
-                    "ir.module.category",
-                    [["id", "in", categoryIds]],
-                    { fields: ["id", "name"] }
-                  )
-                : [];
+            // A many2one comes back as [id, display_name], so the second element is
+            // already the label and no second read is needed. The old code went to
+            // `ir.module.category` for it.
+            const categoryIds = [...new Set(permissions.map(p => p.privilege_id && p.privilege_id[0]).filter(Boolean))];
+            const categories = permissions
+                .filter(p => p.privilege_id)
+                .map(p => ({ id: p.privilege_id[0], name: p.privilege_id[1] }));
 
             const categoryMap = {};
             categories.forEach(cat => {
@@ -71,8 +72,8 @@ export class PermissionMatrix extends Component {
             // Build permissions by category structure
             const permissionsByCategory = {};
             permissions.forEach(perm => {
-                const categoryId = perm.category_id ? perm.category_id[0] : null;
-                const categoryName = categoryId ? (categoryMap[categoryId] || "Sin Categoría") : "Sin Categoría";
+                const categoryId = perm.privilege_id ? perm.privilege_id[0] : null;
+                const categoryName = categoryId ? (categoryMap[categoryId] || "Unscoped") : "Unscoped";
                 
                 if (!permissionsByCategory[categoryName]) {
                     permissionsByCategory[categoryName] = [];
@@ -103,7 +104,7 @@ export class PermissionMatrix extends Component {
         } catch (error) {
             console.error("Error loading permission matrix data:", error);
             this.notification.add(
-                "Error al cargar la matriz de permisos",
+                _t("Could not load the permission matrix"),
                 { type: "danger" }
             );
             this.state.loading = false;
@@ -159,7 +160,7 @@ export class PermissionMatrix extends Component {
             this.state.matrix[roleId][permissionId] = currentValue;
             
             this.notification.add(
-                "Error al actualizar el permiso",
+                _t("Could not update the permission"),
                 { type: "danger" }
             );
         } finally {
@@ -180,10 +181,10 @@ export class PermissionMatrix extends Component {
     getPermissionTooltip(permission) {
         const parts = [permission.display_name];
         if (permission.technical_code) {
-            parts.push(`Código: ${permission.technical_code}`);
+            parts.push(_t("Code: %s", permission.technical_code));
         }
         if (permission.comment) {
-            parts.push(`Descripción: ${permission.comment}`);
+            parts.push(permission.comment);
         }
         return parts.join("\n");
     }

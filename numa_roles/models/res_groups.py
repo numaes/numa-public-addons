@@ -1,232 +1,242 @@
 # -*- coding: utf-8 -*-
-from odoo import models, fields, api, _
-from odoo.exceptions import ValidationError
+"""RBAC on top of ``res.groups``: roles are assigned, permissions are not.
+
+Odoo has one concept where role-based access control has two. A group both *grants*
+something and *is granted* to people, so a security model written in groups says what
+someone can do only by listing every group they carry, and nothing keeps that list from
+drifting into a pile.
+
+This module does not add a mechanism -- everything still runs on ``res.groups`` and
+``implied_ids``, and nothing here is needed at runtime for access checks. It adds a
+**discipline**, and enforces it:
+
+* a **permission** is an atomic unit of access, carries a stable ``technical_code``, and
+  is never assigned to a user directly;
+* a **role** is a named bundle of permissions, and is the only thing a user gets;
+* a **system** group is a native Odoo group, left alone.
+
+[20.0] A word on naming, because core took the word. Odoo 20 replaced ``ir.model.access``
+and ``ir.rule`` with ``ir.access``, whose ``kind`` is ``permission`` or ``restriction``.
+That is a permission on **one model**; a permission here is a group that bundles several
+of those and means something to the business ("approve a discount"). They sit at different
+levels and both names are right in their own vocabulary.
+"""
 import logging
+
+from odoo import _, api, fields, models, SUPERUSER_ID
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
+TYPE_ROLE = 'role'
+TYPE_PERMISSION = 'permission'
+TYPE_SYSTEM = 'system'
+
 
 class ResGroups(models.Model):
-    """
-    Extension of res.groups to implement RBAC (Role-Based Access Control).
-    
-    This module separates the concepts of "Roles" and "Permissions" while
-    maintaining technical compatibility with Odoo's native res.groups model.
-    
-    Architecture:
-    - Permissions: Atomic access units (e.g., 'perm_approve_discount'). 
-                   Not assigned directly to users.
-    - Roles: Collections of permissions (e.g., 'role_sales_manager'). 
-             Assigned to users.
-    - System: Native Odoo groups (Legacy).
-    """
     _inherit = 'res.groups'
 
     numa_type = fields.Selection(
         [
-            ('role', 'Rol'),
-            ('permission', 'Permiso'),
-            ('system', 'Sistema/Legacy'),
+            (TYPE_ROLE, 'Role'),
+            (TYPE_PERMISSION, 'Permission'),
+            (TYPE_SYSTEM, 'System / Legacy'),
         ],
-        string='Tipo',
+        string='Type',
         required=True,
-        default='system',
-        help="Tipo de grupo: Rol (asignable a usuarios), Permiso (unidad atómica), "
-             "o Sistema (grupos nativos de Odoo)"
+        default=TYPE_SYSTEM,
+        index=True,
+        help="Role: assigned to users, and bundles permissions.\n"
+             "Permission: an atomic unit of access, never assigned to a user directly.\n"
+             "System: a native Odoo group, left as it is.",
     )
 
     technical_code = fields.Char(
-        string='Código Técnico',
-        readonly=True,
+        string='Technical Code',
         copy=False,
-        help="Código técnico único e inmutable para permisos. "
-             "Solo requerido si tipo es 'permission'. "
-             "Ejemplo: 'perm_approve_discount', 'perm_view_dashboard'"
+        index='btree_not_null',
+        help="Stable identifier for a permission, so that code can ask for it by name "
+             "instead of by database id. Required for permissions, and immutable once "
+             "set. For example: 'perm_approve_discount'.",
     )
 
     is_template = fields.Boolean(
-        string='Es Plantilla',
+        string='Is a Template',
         default=False,
-        help="Marca roles que vienen definidos por código vs roles creados por usuario. "
-             "Útil para distinguir roles del sistema de roles personalizados."
+        help="Marks what came from code rather than from somebody using the interface. "
+             "Useful when reviewing what a database has grown on top of what was shipped.",
     )
 
-    # Computed field to show permission count for roles
     permission_count = fields.Integer(
-        string='Permisos',
+        string='Permissions',
         compute='_compute_permission_count',
-        help="Número de permisos incluidos en este rol"
+        help="How many permissions this role bundles, counting the ones it reaches "
+             "through other roles.",
     )
 
-    @api.depends('implied_ids', 'implied_ids.numa_type')
+    _technical_code_unique = models.UniqueIndex(
+        '(technical_code) WHERE technical_code IS NOT NULL',
+        'A technical code identifies one permission, and it is already taken.',
+    )
+
+    # ------------------------------------------------------------------
+    # Computed
+    # ------------------------------------------------------------------
+
+    @api.depends('numa_type', 'all_implied_ids', 'all_implied_ids.numa_type')
     def _compute_permission_count(self):
-        """Compute the number of permissions included in this role."""
+        """Count the permissions a role reaches, not only the ones it names.
+
+        [20.0] Over ``all_implied_ids``, the transitive closure Odoo 20 exposes
+        (``res_groups.py:79``). Counting only ``implied_ids`` answered a different
+        question -- how many permissions somebody typed into this form -- and a role
+        built out of other roles reported zero.
+        """
         for group in self:
-            if group.numa_type == 'role':
-                # Count only permissions (not other roles or system groups)
+            if group.numa_type == TYPE_ROLE:
                 group.permission_count = len(
-                    group.implied_ids.filtered(lambda g: g.numa_type == 'permission')
-                )
+                    group.all_implied_ids.filtered(lambda g: g.numa_type == TYPE_PERMISSION))
             else:
                 group.permission_count = 0
 
-    @api.constrains('numa_type', 'users')
+    # ------------------------------------------------------------------
+    # The rules of the discipline
+    # ------------------------------------------------------------------
+
+    @api.constrains('numa_type', 'user_ids')
     def _check_permission_no_users(self):
-        """
-        Constraint: A permission (numa_type='permission') cannot have users assigned.
-        
-        Permissions are atomic units that should only be included in roles,
-        not assigned directly to users.
+        """A permission is not assigned to anybody: roles are.
+
+        [20.0] The field is ``user_ids``; ``res.groups.users`` does not exist any more
+        (``res_groups.py:23``). An ``@api.constrains`` naming a field that is not there
+        fails at registry setup, so this module did not install at all.
         """
         for group in self:
-            if group.numa_type == 'permission' and group.users:
-                raise ValidationError(
-                    _("Un permiso (tipo 'permission') no puede tener usuarios asignados directamente. "
-                      "Los permisos deben ser incluidos en roles, y los roles son los que se asignan a usuarios.\n\n"
-                      "Grupo: %s") % group.name
-                )
+            if group.numa_type == TYPE_PERMISSION and group.user_ids:
+                raise ValidationError(_(
+                    "A permission cannot be assigned to users directly. Put it in a role "
+                    "and assign the role.\n\nPermission: %(name)s\nUsers: %(users)s",
+                    name=group.name,
+                    users=', '.join(group.user_ids.mapped('login')),
+                ))
 
     @api.constrains('numa_type', 'implied_ids', 'implied_ids.numa_type')
     def _check_permission_no_role_inheritance(self):
-        """
-        Constraint: A permission cannot inherit from a role (avoid logical cycles).
-        
-        Permissions should only inherit from other permissions or system groups,
-        not from roles. This maintains the logical hierarchy: Roles -> Permissions -> System.
+        """A permission does not contain a role: the hierarchy runs one way.
+
+        Roles -> permissions -> system groups. A permission that pulled in a role would
+        hand whoever holds it everything that role bundles, which is the pile this module
+        exists to prevent.
         """
         for group in self:
-            if group.numa_type == 'permission':
-                # Check if any implied group is a role
-                role_implied = group.implied_ids.filtered(lambda g: g.numa_type == 'role')
-                if role_implied:
-                    raise ValidationError(
-                        _("Un permiso no puede heredar de un rol. "
-                          "La jerarquía lógica es: Roles -> Permisos -> Sistema.\n\n"
-                          "Grupo: %s\n"
-                          "Roles heredados incorrectamente: %s") % (
-                            group.name,
-                            ', '.join(role_implied.mapped('name'))
-                        )
-                    )
+            if group.numa_type != TYPE_PERMISSION:
+                continue
+            roles = group.implied_ids.filtered(lambda g: g.numa_type == TYPE_ROLE)
+            if roles:
+                raise ValidationError(_(
+                    "A permission cannot include a role. The hierarchy is roles -> "
+                    "permissions -> system groups.\n\nPermission: %(name)s\n"
+                    "Roles it includes: %(roles)s",
+                    name=group.name, roles=', '.join(roles.mapped('name')),
+                ))
 
     @api.constrains('numa_type', 'technical_code')
     def _check_technical_code_required(self):
-        """
-        Constraint: technical_code is required and unique for permissions.
-        
-        Permissions must have a technical_code to ensure they can be referenced
-        programmatically and to avoid duplicates.
-        """
+        """A permission without a code cannot be asked for by name."""
         for group in self:
-            if group.numa_type == 'permission':
-                if not group.technical_code:
-                    raise ValidationError(
-                        _("El campo 'Código Técnico' es obligatorio para permisos.\n\n"
-                          "Grupo: %s") % group.name
-                    )
-                
-                # Check uniqueness (excluding self)
-                duplicate = self.search([
-                    ('technical_code', '=', group.technical_code),
-                    ('id', '!=', group.id),
-                    ('numa_type', '=', 'permission')
-                ], limit=1)
-                
-                if duplicate:
-                    raise ValidationError(
-                        _("El código técnico '%s' ya existe para otro permiso.\n\n"
-                          "Grupo actual: %s\n"
-                          "Grupo existente: %s") % (
-                            group.technical_code,
-                            group.name,
-                            duplicate.name
-                        )
-                    )
+            if group.numa_type == TYPE_PERMISSION and not group.technical_code:
+                raise ValidationError(_(
+                    "A permission needs a technical code, which is how code asks for "
+                    "it.\n\nPermission: %(name)s", name=group.name))
 
-    @api.constrains('technical_code')
-    def _check_technical_code_immutable(self):
-        """
-        Constraint: technical_code cannot be changed once set (immutable).
-        
-        This ensures that programmatic references to permissions remain stable.
-        """
-        for group in self:
-            if group.technical_code and group._origin.technical_code:
-                if group.technical_code != group._origin.technical_code:
-                    raise ValidationError(
-                        _("El código técnico no puede ser modificado una vez establecido.\n\n"
-                          "Grupo: %s\n"
-                          "Código original: %s\n"
-                          "Código intentado: %s") % (
-                            group.name,
-                            group._origin.technical_code,
-                            group.technical_code
-                        )
-                    )
+    # ------------------------------------------------------------------
+    # CRUD
+    # ------------------------------------------------------------------
 
     @api.model_create_multi
     def create(self, vals_list):
-        """
-        Override create to set default numa_type and validate technical_code.
-        """
         for vals in vals_list:
-            # Set default numa_type if not provided
-            if 'numa_type' not in vals:
-                vals['numa_type'] = 'system'
-            
-            # For permissions, ensure technical_code is set
-            if vals.get('numa_type') == 'permission' and not vals.get('technical_code'):
-                # Try to generate from name if not provided
-                if vals.get('name'):
-                    # Generate technical_code from name: lowercase, replace spaces with underscores
-                    name = vals['name'].lower().strip()
-                    technical_code = 'perm_' + name.replace(' ', '_').replace('-', '_')
-                    # Remove special characters
-                    technical_code = ''.join(c for c in technical_code if c.isalnum() or c == '_')
-                    vals['technical_code'] = technical_code
-                    _logger.info(
-                        f"Auto-generated technical_code '{technical_code}' for permission '{vals['name']}'"
-                    )
-        
+            if vals.get('numa_type') == TYPE_PERMISSION and not vals.get('technical_code'):
+                vals['technical_code'] = self._numa_code_from_name(vals.get('name') or '')
+                _logger.info("Derived technical code %r for permission %r",
+                             vals['technical_code'], vals.get('name'))
         return super().create(vals_list)
 
     def write(self, vals):
+        """Guard what must not move once it is set.
+
+        The technical code is a name other code depends on, and the type of a permission
+        is what keeps that name meaningful. Both are refused here rather than in an
+        ``@api.constrains``: a constraint runs *after* the write, when the stored value
+        is already the new one, so it has nothing to compare against. The module carried
+        such a constraint and it could never fire -- ``_origin`` on a stored record
+        returns the record itself (``models.py:5936``), so it compared a value to itself.
         """
-        Override write to prevent changing numa_type from permission to other types
-        if technical_code is set, and to prevent changing technical_code.
-        """
-        # Prevent changing numa_type from 'permission' if technical_code exists
-        if 'numa_type' in vals:
-            for group in self:
-                if group.numa_type == 'permission' and vals['numa_type'] != 'permission':
-                    if group.technical_code:
-                        raise ValidationError(
-                            _("No se puede cambiar el tipo de un permiso que tiene código técnico.\n\n"
-                              "Grupo: %s\n"
-                              "Código técnico: %s") % (group.name, group.technical_code)
-                        )
-        
-        # Prevent changing technical_code if it was already set
         if 'technical_code' in vals:
-            for group in self:
-                if group._origin.technical_code and vals['technical_code'] != group._origin.technical_code:
-                    raise ValidationError(
-                        _("El código técnico no puede ser modificado.\n\n"
-                          "Grupo: %s") % group.name
-                    )
-        
+            for group in self.filtered('technical_code'):
+                if vals['technical_code'] != group.technical_code:
+                    raise ValidationError(_(
+                        "A technical code cannot be changed once it is set: other code "
+                        "refers to it.\n\nPermission: %(name)s\nCurrent: %(current)s\n"
+                        "Attempted: %(new)s",
+                        name=group.name, current=group.technical_code,
+                        new=vals['technical_code']))
+
+        if vals.get('numa_type') and vals['numa_type'] != TYPE_PERMISSION:
+            offenders = self.filtered(
+                lambda g: g.numa_type == TYPE_PERMISSION and g.technical_code)
+            if offenders:
+                raise ValidationError(_(
+                    "A permission with a technical code cannot stop being a permission: "
+                    "code refers to it by that code.\n\n%(names)s",
+                    names='\n'.join('%s (%s)' % (g.name, g.technical_code) for g in offenders)))
+
         return super().write(vals)
 
-    def unlink(self):
+    # ------------------------------------------------------------------
+    # The API other modules are meant to use
+    # ------------------------------------------------------------------
+
+    @api.model
+    def _numa_code_from_name(self, name):
+        """``'Approve Discount'`` -> ``'perm_approve_discount'``."""
+        slug = (name or '').strip().lower().replace(' ', '_').replace('-', '_')
+        slug = ''.join(c for c in slug if c.isalnum() or c == '_')
+        return 'perm_%s' % slug if slug else ''
+
+    @api.model
+    def numa_permission(self, technical_code):
+        """The permission with that code, or an empty recordset."""
+        return self.sudo().search(
+            [('numa_type', '=', TYPE_PERMISSION), ('technical_code', '=', technical_code)],
+            limit=1)
+
+
+class ResUsers(models.Model):
+    _inherit = 'res.users'
+
+    def has_permission(self, technical_code):
+        """Whether this user holds the permission with that code.
+
+        This is what makes the discipline usable from code: a business rule asks
+        ``user.has_permission('perm_approve_discount')`` instead of naming a group's XML
+        id, and the security model can be rearranged -- split a role, rename it, move the
+        permission into a different bundle -- without touching the rule.
+
+        [20.0] Answered with ``all_group_ids`` (``res_users.py:252``), the user's groups
+        including everything they imply, so a permission reached through a role two
+        levels up counts. Root holds everything, as everywhere else in Odoo.
+
+        The question is about **this user**, not about how the code asking happens to be
+        running. An earlier version short-circuited on ``self.env.su`` and therefore
+        answered True for anybody whenever it was called from a sudo'd environment --
+        which is most of the places a business rule runs. A permission check that says
+        yes to everyone is worse than no permission check, because it looks like one.
         """
-        Prevent deletion of template roles/permissions (optional safety measure).
-        """
-        # Optional: Add protection for template records
-        # Uncomment if you want to prevent deletion of template records
-        # template_records = self.filtered('is_template')
-        # if template_records:
-        #     raise ValidationError(
-        #         _("No se pueden eliminar roles/permisos que son plantillas del sistema.\n\n"
-        #           "Registros: %s") % ', '.join(template_records.mapped('name'))
-        #     )
-        return super().unlink()
+        self.ensure_one()
+        if not technical_code:
+            return False
+        if self.id == SUPERUSER_ID:
+            return True
+        permission = self.env['res.groups'].numa_permission(technical_code)
+        return bool(permission) and permission in self.sudo().all_group_ids

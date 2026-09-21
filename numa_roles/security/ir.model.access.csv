@@ -1,2 +1,0 @@
-"id","name","model_id:id","group_id:id","perm_read","perm_write","perm_create","perm_unlink"
-access_res_groups_numa_roles,res.groups (Numa Roles),model_res_groups,,1,1,1,1
