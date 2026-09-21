@@ -34,7 +34,7 @@ Deleted: `numa_periodic_services` (unused, at the user's instruction).
 `numa_real_time_observability` is covered by `numa_real_time_observability_test`
 (18 tests) and needs nothing further.
 
-## Known open items, reported and not yet fixed
+## Known open items — all closed
 
 - [x] **`website` + `numa_poly` in the same run.** Fixed. `numa_poly` carried a full
   copy of core's `_write_multi`, and the copy was a version behind on the SQL that
@@ -44,5 +44,27 @@ Deleted: `numa_periodic_services` (unused, at the user's instruction).
   written through a polymorphic model was stored as `[{...}, false, {...}]`, and the
   next read died in `StoredTranslations`. The override is `super()` plus its two own
   lines now, and `numa_poly_test` has five tests on it (two go red against the fork).
-- **`numa_product_variant`'s browser tour stops at step 19 of 21.** The three JS
-  breakages ahead of it are fixed; the last one is not.
+- [x] **`numa_product_variant`'s browser tour.** Fixed, 21/21. Confirming the
+  configurator leaves the new line in edit mode, so the product sits in a
+  `textarea.o_input` -- its value, not the cell's text -- and
+  `.o_data_row:contains(...)` waited for text that was never there. The tour saves
+  first now, which also proves the configured variant survives a round trip. The
+  controller's `type='json'` routes and `request.context` reads were also brought
+  up to 20.0, so the suite runs without a deprecation warning.
+
+## Where it stands
+
+Every module installs on a clean database and carries its own tests. The full repo:
+
+| Module | Tests |
+| --- | --- |
+| numa_poly / numa_poly_test | 228 / 102 |
+| numa_product_variant | 113 (including a browser tour) |
+| numa_physical_product + 4 bridges | 90 |
+| numa_synch + slave + master + ai_assisted | 103 |
+| the rest (fsm family, asynch, background job, roles, imap, mail, observability, big_id, exceptions, web dates) | covered in waves 1-2 |
+
+The recurring finding across every wave, in the user's words: *lo que no se usa, no
+se prueba*. Most of what was fixed here was not version breakage — it was code that
+had not run in years, and in several modules the migration is the first time anyone
+found out.

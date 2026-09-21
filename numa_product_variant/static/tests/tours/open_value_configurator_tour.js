@@ -61,10 +61,20 @@ registry.category("web_tour.tours").add("numa_open_value_configurator_tour", {
             trigger: '.o_sale_product_configurator_dialog button:contains("Confirm")',
             run: "click",
         },
+        // [20.0] Confirming leaves the new line in edit mode, so the product sits in
+        // a `textarea.o_input` -- its value, not the cell's text -- and
+        // `.o_data_row:contains(...)` waited ten seconds for text that was never
+        // there. Saving first closes the row AND proves the line persisted, which is
+        // the stronger assertion anyway: what the configurator produced survives a
+        // round trip to the server.
+        ...stepUtils.saveForm(),
         {
-            content: "The dialog closes and the line carries the variant",
+            content: "The line carries the configured variant, and it was saved",
             trigger: '.o_data_row:contains("NUMA Cut piece")',
         },
-        ...stepUtils.discardForm(),
+        {
+            content: "And it carries the code the open values composed",
+            trigger: '.o_data_row:contains("NCUT.CRL1250")',
+        },
     ],
 });

@@ -75,18 +75,23 @@ class SaleOrderLine(models.Model):
     # `readonly=False` on the totals keeps the one thing the onchange allowed, which is
     # typing over a derived figure when the physical piece is not what the product
     # record says.
+    # `precompute=True` because core's `price_subtotal`, `price_tax`, `price_total`
+    # and `margin` are precomputed and now depend on `price_qty` through
+    # `_compute_amount`. Without it Odoo drops their precomputation with a warning per
+    # field, and every sale order line costs four extra recomputations on create.
     total_surface = fields.Float(
         string='Total Surface', compute='_compute_physical_totals',
-        store=True, readonly=False)
+        store=True, readonly=False, precompute=True)
     total_weight = fields.Float(
         string='Total Weight', compute='_compute_physical_totals',
-        store=True, readonly=False)
+        store=True, readonly=False, precompute=True)
     total_volume = fields.Float(
         string='Total Volume', compute='_compute_physical_totals',
-        store=True, readonly=False)
+        store=True, readonly=False, precompute=True)
 
     price_qty = fields.Float(
         string='Price Qty', compute='_compute_price_qty', store=True,
+        precompute=True,
         help="The quantity the price is applied to: the physical magnitude named by "
              "the product's price base, or the ordered quantity when it prices "
              "normally.")

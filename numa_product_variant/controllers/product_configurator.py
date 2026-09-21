@@ -17,7 +17,7 @@ class PurchaseProductConfiguratorController(SaleProductConfiguratorController):
     """
 
     @route(route='/purchase/product_configurator/get_values',
-           type='json', auth='user', methods=['POST'])
+           type='jsonrpc', auth='user', methods=['POST'])
     def purchase_product_configurator_get_values(
         self, product_template_id, quantity, so_date, currency_id=None,
         product_uom_id=None, company_id=None, pricelist_id=None,
@@ -42,7 +42,7 @@ class PurchaseProductConfiguratorController(SaleProductConfiguratorController):
         return result
 
     @route(route='/purchase/product_configurator/update_combination',
-           type='json', auth='user', methods=['POST'])
+           type='jsonrpc', auth='user', methods=['POST'])
     def purchase_product_configurator_update_combination(
         self, product_template_id, ptav_ids, so_date, quantity, currency_id=None,
         product_uom_id=None, company_id=None, pricelist_id=None, **kwargs,
@@ -59,7 +59,7 @@ class PurchaseProductConfiguratorController(SaleProductConfiguratorController):
         )
 
     @route(route='/purchase/product_configurator/create_product',
-           type='json', auth='user', methods=['POST'])
+           type='jsonrpc', auth='user', methods=['POST'])
     def purchase_product_configurator_create_product(self, product_template_id, ptav_ids):
         """Create (or reactivate) the variant for a dynamic combination."""
         return self.sale_product_configurator_create_product(product_template_id, ptav_ids)
@@ -70,7 +70,7 @@ class PurchaseProductConfiguratorController(SaleProductConfiguratorController):
         Guarded by the ``purchase_configurator`` context flag so ``/sale/*`` routes
         are unaffected (the derived controller class serves both route families).
         """
-        if not request.context.get('purchase_configurator'):
+        if not request.env.context.get('purchase_configurator'):
             return super()._get_basic_product_information(
                 product_or_template, pricelist, combination, **kwargs)
         basic = dict(**product_or_template.read(['description_sale', 'display_name'])[0])
@@ -142,14 +142,14 @@ class ProductConfiguratorValueResolver(SaleProductConfiguratorController):
         }
 
     @route(route='/sale/product_configurator/resolve_value',
-           type='json', auth='user', methods=['POST'])
+           type='jsonrpc', auth='user', methods=['POST'])
     def sale_product_configurator_resolve_value(
             self, product_template_id, ptal_id, payload, **kwargs):
         """Materialise an open value for the sales configurator."""
         return self._resolve_value(product_template_id, ptal_id, payload)
 
     @route(route='/purchase/product_configurator/resolve_value',
-           type='json', auth='user', methods=['POST'])
+           type='jsonrpc', auth='user', methods=['POST'])
     def purchase_product_configurator_resolve_value(
             self, product_template_id, ptal_id, payload, **kwargs):
         """Materialise an open value for the purchase configurator."""
