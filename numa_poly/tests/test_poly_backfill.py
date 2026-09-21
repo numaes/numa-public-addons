@@ -19,9 +19,14 @@ class TestPolyBackfill(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.Task = self.env['project.task']
-        if 'numa.planning.node' not in self.env:
+        # The skip comes first: a test that cannot run has to say so, not raise a
+        # KeyError on a model that is not in the registry. `project` happened to be
+        # installed wherever this ran, so the lookup below never failed -- until the
+        # suite was run on a database that has numa_poly and not project, and thirteen
+        # tests reported as errors what should have been thirteen skips.
+        if 'project.task' not in self.env or 'numa.planning.node' not in self.env:
             self.skipTest("numa_planning_project is not installed")
+        self.Task = self.env['project.task']
         self.Node = self.env['numa.planning.node']
         self.project = self.env['project.project'].create({'name': 'Backfill Project'})
         self._reopen_pairs()

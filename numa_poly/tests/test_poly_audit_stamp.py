@@ -31,6 +31,9 @@ class TestPolyAuditStamp(TransactionCase):
 
     def setUp(self):
         super().setUp()
+        # The skip comes first; see the note in test_poly_backfill.py.
+        if 'project.task' not in self.env:
+            self.skipTest("project is not installed")
         self.Task = self.env['project.task']
         if not self.Task._poly_get_depend_models():
             self.skipTest("project.task is not polymorphic here")

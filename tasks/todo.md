@@ -34,7 +34,7 @@ Deleted: `numa_periodic_services` (unused, at the user's instruction).
 `numa_real_time_observability` is covered by `numa_real_time_observability_test`
 (18 tests) and needs nothing further.
 
-## Known open items — all closed
+## Known open items
 
 - [x] **`website` + `numa_poly` in the same run.** Fixed. `numa_poly` carried a full
   copy of core's `_write_multi`, and the copy was a version behind on the SQL that
@@ -51,6 +51,18 @@ Deleted: `numa_periodic_services` (unused, at the user's instruction).
   first now, which also proves the configured variant survives a round trip. The
   controller's `type='json'` routes and `request.context` reads were also brought
   up to 20.0, so the suite runs without a deprecation warning.
+
+## Open, and needing a decision
+
+- **`numa_big_id` + `account` breaks invoice creation and reconciliation.** Found on
+  the whole-repo run; pre-existing, not caused by the migration.
+  `fields.Integer._column_type = BIGINT` widens every integer column, including
+  `res_currency.decimal_places`, and core emits
+  `ROUND(SUM(...), curr.decimal_places)` -- for which Postgres has no
+  `round(numeric, bigint)`. Two ways out, both real, written up with the evidence in
+  `numa_big_id/README.md`. The recommendation is to create the missing overload once
+  at install; it is not applied, because creating a function in the customer's
+  `public` schema is a decision to take deliberately.
 
 ## Where it stands
 

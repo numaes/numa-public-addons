@@ -246,6 +246,61 @@ AND data_type != 'bigint';
 
 All sequences should be `bigint` after migration.
 
+## Known incompatibility: `account`, and `round(numeric, bigint)`
+
+**Installing this module alongside `account` breaks invoice creation and
+reconciliation.** Found 2026-09-21 on a database with the whole repository installed;
+it is not new, and it is not caused by the 20.0 migration.
+
+`fields.Integer._column_type = BIGINT` widens *every* integer column, not only the ones
+that hold an id. One of them is `res_currency.decimal_places`, and core's accounting
+emits
+
+```sql
+ROUND(SUM(part.debit_amount_currency), curr.decimal_places)
+```
+
+Postgres has `round(numeric, integer)` and no `round(numeric, bigint)`, so the query
+fails with
+
+```
+ERROR: function round(numeric, bigint) does not exist
+```
+
+and takes `account.move.create`, `_compute_needed_terms` and the partial-reconcile
+read down with it.
+
+### Why the broad scope is not simply wrong
+
+Narrowing the patch to ids would mean leaving plain `fields.Integer` columns at 32
+bits, and **17 fields in core addons alone store a record id in a plain `Integer`** --
+`mail.alias.alias_force_thread_id`, `portal.share.res_id`, `snailmail.letter.res_id`,
+`hr.expense.former_sheet_id` and so on. Each would be a latent overflow of exactly the
+kind this module exists to prevent, and a blocklist of seventeen is not maintainable
+across addon versions.
+
+### The two ways out
+
+1. **Add the missing overload**, once, when the module installs:
+
+   ```sql
+   CREATE OR REPLACE FUNCTION round(numeric, bigint) RETURNS numeric
+     LANGUAGE sql IMMUTABLE STRICT AS $$ SELECT round($1, $2::integer) $$;
+   ```
+
+   It is additive -- it shadows nothing, because that signature does not exist -- and
+   it fixes every `round(numeric, <int8 column>)` in core and in any addon, present and
+   future. It is also a function created in the `public` schema of the customer's
+   database, which is a decision to take deliberately rather than as a side effect.
+
+2. **Keep `Integer` narrow and widen `Many2oneReference` explicitly** (it subclasses
+   `Integer`, so one assignment covers `res_id` on `mail.message`, `ir.attachment` and
+   `ir.model.data`), accepting the seventeen plain-`Integer` id fields as a known risk
+   and auditing them per deployment.
+
+Option 1 is the recommendation: it keeps the module's guarantee intact and its blast
+radius is one function. Neither is applied yet -- this is the owner's call.
+
 ## Author
 
 NUMA Extreme Systems
