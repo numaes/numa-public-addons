@@ -6856,11 +6856,34 @@ def _poly_contribute_definitions(registry, model_names):
         # A PolyReference is not shareable by construction -it is non-stored and
         # belongs to this registry-, so it is declared with _shareable=False so that
         # it does not enter SHARED_FIELD_CACHE (fields.py:422).
+        # [20.0] The parents are followed by every mixin they themselves provide and
+        # the concrete model already inherits directly. Without that, the order is
+        # impossible for C3: `conversation.session` declares `mail.thread`, and
+        # `fsm.instance` -- the base being added -- has `mail.thread` in its own MRO,
+        # so the base list asked for `mail.thread` BEFORE `fsm.instance` while
+        # `fsm.instance`'s own linearisation puts it after. The registry refused the
+        # whole model with "Cannot create a consistent method resolution order".
+        #
+        # Naming those mixins again after the parents is enough, because the `bases`
+        # accumulator in `add_to_registry` (model_classes.py:207) is a
+        # `LastOrderedSet`: re-adding a class moves it behind what came before.
+        ya_heredados = {
+            getattr(b, '_name', None) for b in getattr(model_class, '_base_classes__', ())
+        }
+        compartidos = []
+        for parent_name in parents:
+            parent_cls = registry[parent_name]
+            for ancestro in parent_cls.__mro__:
+                nombre = getattr(ancestro, '_name', None)
+                if (nombre and nombre not in (parent_name, model_name, 'base')
+                        and nombre in ya_heredados and nombre not in compartidos):
+                    compartidos.append(nombre)
+
         atributos = {
             '__module__': __name__,
             '_module': None,
             '_name': model_name,
-            '_inherit': [model_name] + parents,
+            '_inherit': [model_name] + parents + compartidos,
         }
         # What the model declares on its own is its own and is not replaced by a
         # version related to the base: that is the no-shadow rule.
