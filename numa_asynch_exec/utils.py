@@ -7,6 +7,7 @@ conversion of call arguments into something a ``Json`` field accepts, and the
 function a worker thread runs.
 """
 
+import atexit
 import logging
 import threading
 import time
@@ -30,6 +31,23 @@ JOB_MODEL = 'numa.asynch.job'
 _executor = None
 _executor_lock = threading.Lock()
 
+# Set when the process is on its way out. A worker that has not started yet must not
+# open a cursor against a registry that is being torn down: the job stays queued and the
+# recovery cron picks it up on the next start. Without this, a job sitting in the pool
+# when Odoo was asked to stop ran against a closed cursor and died with an error that
+# looked like a bug in the job.
+_shutting_down = threading.Event()
+
+
+def _stop_accepting_jobs():
+    """Refuse to START new jobs once the process is shutting down.
+
+    Registered with atexit right after the pool is created, so it runs BEFORE
+    ``ThreadPoolExecutor``'s own atexit hook (LIFO order), which waits for queued work.
+    The jobs that are already running are left to finish.
+    """
+    _shutting_down.set()
+
 
 def get_asynch_executor():
     """Return the process-wide thread pool, creating it on first use.
@@ -48,6 +66,7 @@ def get_asynch_executor():
                     max_workers=max_workers,
                     thread_name_prefix='numa_asynch_exec',
                 )
+                atexit.register(_stop_accepting_jobs)
                 _logger.info("Asynchronous executor started with %d workers", max_workers)
     return _executor
 
@@ -101,6 +120,12 @@ def run_job(job_id, db_name, context, delay=0):
 
 
 def _run_job(job_id, db_name, context, delay=0):
+    if _shutting_down.is_set():
+        _logger.info(
+            "Asynchronous job %s not started: the process is shutting down. It stays "
+            "queued and the recovery cron will run it.", job_id)
+        return
+
     threading.current_thread().dbname = db_name
 
     # The delay is honoured before a cursor is opened: sleeping with a cursor
