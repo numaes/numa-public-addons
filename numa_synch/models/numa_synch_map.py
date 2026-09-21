@@ -74,13 +74,13 @@ class NumaSynchMap(models.Model):
         store=False
     )
 
-    _sql_constraints = [
-        (
-            'unique_mapping',
-            'UNIQUE(model_id, local_id, node_token)',
-            'A mapping for this model, local ID, and node token already exists!'
-        ),
-    ]
+    # [20.0] Was `_sql_constraints`, which Odoo 20 ignores with a warning
+    # (model_classes.py:175). The index did not exist, so the same record could be
+    # mapped twice to the same node -- and `get_remote_id` answers with whichever row
+    # came first, which is how a synchronisation starts writing to the wrong record.
+    _unique_mapping = models.UniqueIndex(
+        '(model_id, local_id, node_token)',
+        "This record is already mapped to that node.")
 
     @api.depends('model_name', 'local_id', 'remote_id', 'node_token')
     def _compute_display_name(self):

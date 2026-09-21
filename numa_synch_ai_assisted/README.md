@@ -1,4 +1,26 @@
-# Numa Synch AI Assisted Module
+# Numa Synch AI Assisted
+
+**Odoo 20.0** | LGPL-3 | NUMA Extreme Systems
+
+**Status: migrated to Odoo 20.0**, and no longer requires an AI provider.
+
+## The provider is a seam, not a dependency
+
+This module knows what to ask an AI and what to do with the answer: which schema to
+read, which prompt to build, which transformation map to cache, which gap report to
+log. It does not know **who** answers.
+
+`numa_ai` used to be in `depends`, which made the whole feature -- cached schema
+adaptation, gap analysis, maps written by hand -- unavailable to any database that
+did not want an LLM, for the sake of one call. That call is now `_ask_llm`, declared
+here and implemented by `numa_synch_ai_assisted_numa_ai`, a bridge that installs
+itself when both sides are present.
+
+Without a provider the module installs and works up to the point where an answer is
+needed, and then says so plainly, naming the bridge that fixes it. A second provider
+would be a second bridge and no change here.
+
+---
 
 **Version:** 18.0.1.0.0  
 **Author:** Gustavo Marino <gamarino@numaes.com>  

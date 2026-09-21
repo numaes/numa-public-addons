@@ -2,8 +2,8 @@
 <odoo>
     <data>
         <!-- Tree View for numa.synch.rule -->
-        <record id="view_numa_synch_rule_tree" model="ir.ui.view">
-            <field name="name">numa.synch.rule.tree</field>
+        <record id="view_numa_synch_rule_list" model="ir.ui.view">
+            <field name="name">numa.synch.rule.list</field>
             <field name="model">numa.synch.rule</field>
             <field name="arch" type="xml">
                 <list string="Synchronization Rules" decoration-muted="not active">
@@ -110,7 +110,7 @@
                     <filter string="Bidirectional" name="bidirectional" domain="[('direction', '=', 'bidirectional')]"/>
                     <filter string="Outgoing" name="outgoing" domain="[('direction', '=', 'outgoing')]"/>
                     <filter string="Incoming" name="incoming" domain="[('direction', '=', 'incoming')]"/>
-                    <group expand="0" string="Group By">
+                    <group>
                         <filter string="Model" name="group_by_model" context="{'group_by': 'model_name'}"/>
                         <filter string="Direction" name="group_by_direction" context="{'group_by': 'direction'}"/>
                     </group>

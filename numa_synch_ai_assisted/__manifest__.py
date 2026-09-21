@@ -1,6 +1,6 @@
 {
     'name': 'Numa Synch AI Assisted',
-    'version': '18.0.1.0.0',
+    'version': '20.0.1.0.0',
     'summary': 'AI-assisted schema adaptation for synchronization with non-Odoo systems',
     'description': """
         Numa Synch AI Assisted Module
@@ -12,21 +12,26 @@
         uses AI to generate transformation maps.
         
         Features:
-        - Automatic schema mapping using AI
-        - Cached transformation maps for performance
+        - Cached transformation maps, hand-written or AI-generated
         - Gap analysis logging for unresolved issues
         - Dynamic payload transformation
+        - A provider seam: install `numa_ai` and the bridge module
+          `numa_synch_ai_assisted_numa_ai` wires it in by itself
     """,
     'author': 'Gustavo Marino <gamarino@numaes.com>',
     'website': 'https://www.numaes.com',
     'license': 'LGPL-3',
     'category': 'Extra Tools',
+    # `numa_ai` is deliberately NOT here. This module knows what to ask an AI and what
+    # to do with the answer; it does not know who answers. The provider is wired in by
+    # `numa_synch_ai_assisted_numa_ai`, which installs itself when both sides are
+    # present. A database without any provider still installs this one and uses its
+    # cached and hand-written maps.
     'depends': [
         'numa_synch',
-        'numa_ai',
     ],
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'views/numa_synch_ai_map_views.xml',
         'views/numa_synch_issue_views.xml',
     ],

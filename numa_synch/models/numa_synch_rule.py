@@ -6,7 +6,9 @@ Odoo's domain widget for flexible filtering.
 """
 
 from odoo import models, fields, api, _
-from odoo.osv import expression
+# [20.0] `odoo.osv.expression` is gone; domains are `odoo.fields.Domain`
+# (odoo/orm/domains.py), and combining them is `Domain.AND`.
+from odoo.fields import Domain
 import ast
 import logging
 
@@ -145,8 +147,8 @@ class NumaSynchRule(models.Model):
         # Combine user domain with write_date filter
         delta_domain = [('write_date', '>', last_sync_date)]
         
-        # Use Odoo's expression.AND to combine domains
-        combined_domain = expression.AND([user_domain, delta_domain])
+        # Combine the user's filter with the delta window.
+        combined_domain = Domain.AND([user_domain, delta_domain])
         
         return combined_domain
 

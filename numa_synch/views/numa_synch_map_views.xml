@@ -2,8 +2,8 @@
 <odoo>
     <data>
         <!-- Tree View for numa.synch.map -->
-        <record id="view_numa_synch_map_tree" model="ir.ui.view">
-            <field name="name">numa.synch.map.tree</field>
+        <record id="view_numa_synch_map_list" model="ir.ui.view">
+            <field name="name">numa.synch.map.list</field>
             <field name="model">numa.synch.map</field>
             <field name="arch" type="xml">
                 <list string="Synchronization Identity Mapping" >
@@ -52,7 +52,7 @@
                     <field name="node_token"/>
                     <separator/>
                     <filter string="Recent Sync" name="recent_sync" domain="[('last_sync_date', '!=', False)]"/>
-                    <group expand="0" string="Group By">
+                    <group>
                         <filter string="Model" name="group_by_model" context="{'group_by': 'model_name'}"/>
                         <filter string="Node Token" name="group_by_node" context="{'group_by': 'node_token'}"/>
                     </group>
@@ -64,7 +64,7 @@
         <record id="action_numa_synch_map" model="ir.actions.act_window">
             <field name="name">Synchronization Identity Mapping</field>
             <field name="res_model">numa.synch.map</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="help" type="html">
                 <p class="o_view_nocontent_smiling_face">
                     Create identity mappings between local and remote records

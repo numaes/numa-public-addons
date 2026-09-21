@@ -1,6 +1,6 @@
 {
     'name': 'Numa Synch',
-    'version': '18.0.1.0.0',
+    'version': '20.0.1.0.0',
     'summary': 'Foundational core module for offline-first synchronization system',
     'description': """
         Numa Synch Core Module
@@ -20,12 +20,11 @@
     'license': 'LGPL-3',
     'category': 'Extra Tools',
     'depends': [
-        'base',
         'mail',
         'web',
     ],
     'data': [
-        'security/ir.model.access.csv',
+        'security/ir.access.csv',
         'views/numa_synch_map_views.xml',
         'views/numa_synch_rule_views.xml',
     ],

@@ -1,0 +1,5 @@
+id,name,model_id,group_id/id,operation,domain
+access_numa_synch_map_user,numa.synch.map read,numa.synch.map,base.group_user,r,
+access_numa_synch_map_system,numa.synch.map manage,numa.synch.map,base.group_system,crud,
+access_numa_synch_rule_user,numa.synch.rule read,numa.synch.rule,base.group_user,r,
+access_numa_synch_rule_system,numa.synch.rule manage,numa.synch.rule,base.group_system,crud,

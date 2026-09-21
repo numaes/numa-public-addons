@@ -13,7 +13,7 @@ from odoo.exceptions import UserError, ValidationError
 _logger = logging.getLogger(__name__)
 
 
-class NumaSynchEngineAiAssisted(models.Model):
+class NumaSynchEngineAiAssisted(models.AbstractModel):
     """
     AI-Assisted Synchronization Engine
     
@@ -21,6 +21,10 @@ class NumaSynchEngineAiAssisted(models.Model):
     When standard metadata validation fails, this engine attempts
     to use AI to generate transformation maps.
     """
+    # [20.0] `numa.synch.engine` is an AbstractModel, and Odoo 20 refuses an extension
+    # that would turn it into a concrete one: "transforms the abstract model ... into a
+    # non-abstract model" (model_classes.py:256). Extending an abstract model means
+    # subclassing AbstractModel.
     _name = 'numa.synch.engine'
     _inherit = 'numa.synch.engine'
 
@@ -142,22 +146,39 @@ class NumaSynchEngineAiAssisted(models.Model):
         
         # Build AI prompt
         prompt = self._build_ai_prompt(local_schema, source_schema, model_name)
-        
-        # Call AI engine
+
         try:
-            ai_engine = self.env['numa.ai.engine']
-            response = ai_engine.ask_llm(prompt, json_mode=True)
-            
-            # Parse AI response
+            response = self._ask_llm(prompt)
             if isinstance(response, str):
-                ai_result = json.loads(response)
-            else:
-                ai_result = response
-            
-            return ai_result
+                return json.loads(response)
+            return response
         except Exception as e:
-            _logger.error('Error calling AI engine: %s', str(e))
+            _logger.error('Error calling the AI provider: %s', str(e))
             raise
+
+    def _ask_llm(self, prompt):
+        """Ask an AI provider for a JSON answer. Overridden by a provider bridge.
+
+        This module knows what to ask and what to do with the answer -- the schema it
+        reads, the prompt it builds, the map it caches, the gap it logs. It does not
+        know **who** answers, and it deliberately does not depend on any particular
+        provider: `numa_ai` is one, and a database that does not have it must still be
+        able to install this module and use its cached and hand-written maps.
+
+        The bridge that wires a provider in is `numa_synch_ai_assisted_numa_ai`, which
+        installs itself as soon as both sides are present. Without a bridge, the module
+        works up to the point where an answer is needed and then says so plainly, rather
+        than failing with a KeyError on a model that is not in the registry.
+
+        :param str prompt: the question, expecting a JSON object back
+        :return: the provider's answer, as a dict or as a JSON string
+        """
+        raise UserError(_(
+            "No AI provider is installed, so the schema mismatch cannot be analysed "
+            "automatically.\n\n"
+            "Install an AI provider -- `numa_ai` brings one, and the bridge module "
+            "`numa_synch_ai_assisted_numa_ai` connects it by itself -- or write the "
+            "transformation map by hand under Synchronization > AI Maps."))
 
     def _get_model_schema(self, model_name):
         """
