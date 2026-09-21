@@ -301,6 +301,16 @@ def _poly_force_related(field, related_path):
         # for the same reason: they belong to `setup_related`, which installs them
         # every time it runs, and a later `_setup_attrs` would null them again.
         #
+        # `default` goes because a default belongs to the model that STORES the field.
+        # Copied onto a non-stored related one, it turns every create of the concrete
+        # model into a write on the base: Odoo applies the default to the related field,
+        # and writing a related field writes THROUGH to its target. Measured: creating a
+        # `conversation.message.twilio` against a message explicitly created as
+        # `direction='inbound'` flipped that message to 'outbound', because the injected
+        # `direction` carried the base field's `default='outbound'`. Every inbound Twilio
+        # message was stored as an outgoing one. The default still applies where the
+        # value actually lives.
+        #
         # `precompute` rides along because it only ever means something on a stored
         # field, and the declaration we are copying may well carry it: the field
         # this runs on is frequently a stored compute -- `res.partner.user_id` is
@@ -314,11 +324,13 @@ def _poly_force_related(field, related_path):
         args = dict(args)
         args['store'] = False
         args['precompute'] = False
+        args['default'] = None
         field._args__ = args
         field.args = args  # Odoo keeps `args` as an alias of `_args__`
     field.related = related_path
     field.store = False
     field.precompute = False
+    field.default = None
     field.compute = None
     field.compute_sudo = None
     field.inverse = None
@@ -816,9 +828,18 @@ def _poly_warn_missing_base_once(field, record):
 
 
 def _poly_field_default_value(field, record):
-    """The field's declared default, in record form."""
+    """The field's declared default, in record form.
+
+    Taken from the field that STORES the value, not from the injected related one.
+    A related field carries no default of its own -- deliberately, because a default on
+    a non-stored related field is applied on create and written THROUGH to the base,
+    silently replacing what that row already held. The base field still has it, and this
+    is the one place where the concrete model needs to ask for it: answering a read on a
+    record whose base row is missing.
+    """
     try:
-        default = field.default
+        campo_con_el_valor = getattr(field, 'related_field', None) or field
+        default = campo_con_el_valor.default
         value = default(record) if callable(default) else default
         return field.convert_to_record(field.convert_to_cache(value, record), record)
     except Exception:
@@ -7019,11 +7040,27 @@ def _poly_contribute_definitions(registry, model_names, declared_inherits=None):
                 # an inherited field is copied like any other of the record: without
                 # this, duplicating a concrete model lost everything that lives on
                 # the base. What the base said explicitly is respected.
+                #
+                # `default=None` is stated, not left out, and that is the whole point:
+                # Odoo MERGES the attributes of same-named fields along the MRO, so an
+                # attribute this declaration stays silent about is taken from the base
+                # model's own. A default belongs to the model that STORES the field.
+                # Inherited onto a non-stored related one it turns every create of the
+                # concrete model into a write on the base, because Odoo applies the
+                # default to the related field and writing a related field writes
+                # THROUGH to its target.
+                #
+                # Measured: `conversation.message.twilio.direction` came out
+                # `related='poly_id.direction'` AND `default='outbound'`, so attaching a
+                # twilio row to a message explicitly created as `direction='inbound'`
+                # flipped it to 'outbound'. Every inbound message was stored as an
+                # outgoing one. The default still applies where the value lives.
                 args_base = getattr(campo_base, '_args__', None) or {}
                 atributos[fname] = type(campo_base)(
                     related='%s.%s' % (link_name, fname),
                     readonly=False,
                     copy=args_base.get('copy', True),
+                    default=None,
                     _shareable=False,
                 )
 

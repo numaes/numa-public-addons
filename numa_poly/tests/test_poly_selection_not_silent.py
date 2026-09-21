@@ -108,3 +108,65 @@ class TestCampoDesconocidoNoSeDescarta(TransactionCase):
             'no_existe_este_campo': 'x',
         })
         self.assertTrue(partner.exists())
+
+
+@tagged('post_install', '-at_install')
+class TestUnRelatedInyectadoNoLlevaDefault(TransactionCase):
+    """A default belongs to the model that STORES the field.
+
+    numa_poly injects the base's fields into the concrete model as non-stored related
+    ones. Copied along with them came the base field's `default`, and that turns every
+    create of the concrete model into a write on the base: Odoo applies the default to
+    the related field, and writing a related field writes THROUGH to its target.
+
+    Found on the Odoo 20 migration, in the Twilio channel. A `conversation.message`
+    created with `direction='inbound'` flipped to 'outbound' the moment a
+    `conversation.message.twilio` row was attached to it, because that model's injected
+    `direction` carried `default='outbound'` from the base. Every inbound message was
+    recorded as an outgoing one.
+    """
+
+    def setUp(self):
+        super().setUp()
+        if 'conversation.message.twilio' not in self.env:
+            self.skipTest('numa_conversation_engine_twilio is not installed')
+        self.driver = self.env['conversation.driver'].search([], limit=1)
+        if not self.driver:
+            self.skipTest('no conversation.driver to hang a message on')
+
+    def test_01_el_related_inyectado_no_tiene_default(self):
+        """The premise, stated directly on the field."""
+        campo = self.env['conversation.message.twilio']._fields['direction']
+        self.assertTrue(campo.related, "this test is about an injected related field")
+        self.assertFalse(campo.store)
+        self.assertFalse(
+            campo.default,
+            "a non-stored related field must not carry the base field's default")
+
+    def test_02_un_valor_de_la_base_sobrevive_al_hijo(self):
+        mensaje = self.env['conversation.message'].create({
+            'body': '<p>entrante</p>', 'direction': 'inbound', 'driver_id': self.driver.id})
+        self.assertEqual(mensaje.direction, 'inbound')
+
+        self.env['conversation.message.twilio'].create({
+            'poly_id': mensaje.id, 'twilio_sid': 'SM-prueba'})
+        mensaje.invalidate_recordset()
+        self.assertEqual(mensaje.direction, 'inbound',
+                         "the child's default was written through to the base")
+
+    def test_03_lo_que_el_hijo_pide_explicitamente_si_llega_a_la_base(self):
+        """The guard removes the default, not the ability to write."""
+        mensaje = self.env['conversation.message'].create({
+            'body': '<p>entrante</p>', 'direction': 'inbound', 'driver_id': self.driver.id})
+        hijo = self.env['conversation.message.twilio'].create({
+            'poly_id': mensaje.id, 'twilio_sid': 'SM-prueba-2'})
+        hijo.direction = 'outbound'
+        mensaje.invalidate_recordset()
+        self.assertEqual(mensaje.direction, 'outbound',
+                         "an explicit write through the related field must still land")
+
+    def test_04_el_default_sigue_valiendo_donde_el_valor_vive(self):
+        mensaje = self.env['conversation.message'].create({
+            'body': '<p>sin direccion</p>', 'driver_id': self.driver.id})
+        self.assertEqual(mensaje.direction, 'outbound',
+                         "the base model keeps its own default")
