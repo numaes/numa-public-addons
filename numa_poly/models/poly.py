@@ -3724,8 +3724,21 @@ class PolyBase(_original_BaseModel):
                 return inh[0]
             return None
 
+        # Only the classes a MODULE declared count. `cls.mro()` also contains the
+        # registry's own aggregate class -- which by construction holds EVERY field of
+        # the model, including the ones poly injected -- and the contribution class poly
+        # generates. Counting those made "native" mean "any field at all": `project.task`
+        # reported the whole `pln_*` set as its own although its bridge only declares
+        # `_depend_models`, so a field that belongs to `numa.planning.node` resolved to
+        # the leftover column on `project_task` instead of to the base.
+        declaradas = set()
+        for _defs in odoo.models.MetaModel._module_to_models__.values():
+            declaradas.update(_defs)
+
         native = set()
         for klass in cls.mro():
+            if klass not in declaradas:
+                continue
             # Skip the classes that belong to a dependent base model: their fields are
             # the polymorphic capability we DO want to inject as related.
             if _class_model_name(klass) in dep_models:
