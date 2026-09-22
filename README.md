@@ -33,6 +33,11 @@ This repository houses our public, open-source modules designed to solve hard en
 This branch is the 20.0 port. Where a suite has been run on a 20.0 database, the number
 is what the runner reported; where it has not, this says so rather than implying health.
 
+[BACKPORT-18.0.md](BACKPORT-18.0.md) plans the other direction — which of the defects
+this port found are also present in 18.0, and which of them can go back without moving
+an interface. Its first item is a single line that grants every user full access to
+`res.groups`.
+
 | Module | Suite | Notes |
 |---|---|---|
 | `numa_poly` | **0 failed of 139** | Includes the guards added during the port |
