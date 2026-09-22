@@ -77,8 +77,17 @@ class TestPolyOwnFields(TransactionCase):
                 f.name for f in getattr(contribucion, '_field_definitions', ())
                 if (getattr(f, '_args__', None) or {}).get('related')
             }
+            de_las_bases = self._clases_de_las_bases(modelo)
             for klass in modelo.mro():
                 if klass is contribucion or getattr(klass, 'pool', None) is not None:
+                    continue
+                # A compute declared by the BASE's own code is not the collision: the
+                # related points at the base's row and the base computes it there,
+                # which is the whole mechanism. The concrete model's MRO contains the
+                # base's classes (`_inherit = [model] + bases`), so without this the
+                # scan reports every computed field of every polymorphic base —a
+                # hundred of them here— and says nothing about any of them.
+                if klass in de_las_bases:
                     continue
                 for campo in getattr(klass, '_field_definitions', ()):
                     if campo.name in redirigidos and (getattr(campo, '_args__', None) or {}).get('compute'):
@@ -88,6 +97,24 @@ class TestPolyOwnFields(TransactionCase):
             culpables,
             "numa_poly redirects with related fields that another class in the chain "
             "declares computed; Odoo drops the compute:\n  " + "\n  ".join(culpables))
+
+    def _clases_de_las_bases(self, modelo):
+        """Every class that builds this model's polymorphic bases, transitively.
+
+        A base can itself be polymorphic — `conversation.message` is a
+        `digital.event` — so the closure has to follow `_depend_models` down.
+        """
+        pendientes = list(getattr(modelo, '_depend_models', ()) or ())
+        vistos, clases = set(), set()
+        while pendientes:
+            nombre = pendientes.pop()
+            if nombre in vistos or nombre not in self.env.registry:
+                continue
+            vistos.add(nombre)
+            base = self.env.registry[nombre]
+            clases.update(base.mro())
+            pendientes.extend(getattr(base, '_depend_models', ()) or ())
+        return clases
 
     def test_04_the_inherited_field_still_works_on_the_concrete(self):
         """What the filter must NOT break: the mixin's field still arrives."""
