@@ -30,8 +30,11 @@ class TestProviderSeam(TransactionCase):
         """Naming the provider is how the seam is explained; reaching for it is the
         thing that must not happen here. So this looks for use -- a model lookup or an
         import -- and not for the word."""
-        USOS = ("env['numa.ai", 'env["numa.ai', 'from odoo.addons.numa_ai',
-                'import numa_ai')
+        # Both spellings: numa_ai's models are named `numa_ai.<thing>` with an
+        # UNDERSCORE, and a pattern written with a dot would have missed every
+        # one of them.
+        USOS = ("env['numa.ai", 'env["numa.ai', "env['numa_ai", 'env["numa_ai',
+                'from odoo.addons.numa_ai', 'import numa_ai')
         culpables = []
         for archivo in RAIZ.rglob('*.py'):
             if 'tests' in archivo.parts or '__pycache__' in archivo.parts:
@@ -44,9 +47,20 @@ class TestProviderSeam(TransactionCase):
 
     def test_03_without_a_provider_the_seam_says_so(self):
         """And says it as a UserError, not as a KeyError on a model that is not in the
-        registry, which is what asking `env['numa.ai.engine']` would have done."""
-        if 'numa.ai.engine' in self.env:
-            self.skipTest("a provider is installed, so the seam is implemented")
+        registry, which is what reaching for a provider's model would have done.
+
+        Whether the seam is still the base one is decided by the BRIDGE being
+        installed, not by a model name: this guard used to ask for
+        `numa.ai.engine`, a model that has never existed under that name, so it
+        never skipped and the test died on the very KeyError it exists to
+        prevent.
+        """
+        puente = self.env['ir.module.module'].search([
+            ('name', '=', 'numa_synch_ai_assisted_numa_ai'),
+            ('state', '=', 'installed'),
+        ])
+        if puente:
+            self.skipTest("the bridge is installed, so the seam is implemented")
         with self.assertRaises(UserError) as ctx:
             self.env['numa.synch.engine']._ask_llm('anything')
         mensaje = str(ctx.exception)
