@@ -53,7 +53,7 @@ class BaseGeneralException(models.Model):
     def create(self, vals_list):
         for vals in vals_list:
             if not vals.get('name'):
-                vals['name'] = self.env['ir.sequence'].next_by_code('base.general_exception') or '/'
+                vals['name'] = self.env['ir.sequence'].sudo().next_by_code('base.general_exception') or '/'
         return super().create(vals_list)
 
     def action_frames(self):
