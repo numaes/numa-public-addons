@@ -15,7 +15,7 @@ from collections import deque
 _logger = logging.getLogger(__name__)
 
 
-class NumaSynchEngineSlave(models.Model):
+class NumaSynchEngineSlave(models.AbstractModel):
     """
     Slave Synchronization Engine
     

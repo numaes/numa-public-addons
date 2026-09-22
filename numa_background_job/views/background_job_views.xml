@@ -88,7 +88,7 @@
         <record id="background_job_action" model="ir.actions.act_window">
             <field name="name">Background job</field>
             <field name="res_model">res.background_job</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
         </record>
 
         <menuitem id="background_job_menu"

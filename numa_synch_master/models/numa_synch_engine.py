@@ -16,7 +16,7 @@ from datetime import datetime
 _logger = logging.getLogger(__name__)
 
 
-class NumaSynchEngineMaster(models.Model):
+class NumaSynchEngineMaster(models.AbstractModel):
     """
     Master Synchronization Engine
     

@@ -15,24 +15,30 @@
                     <field name="permission_count" invisible="numa_type != 'role'"/>
                 </field>
 
-                <!-- For PERMISSIONS: Hide Users, Rules, Views, Menus tabs -->
-                <!-- Hide standard notebook pages for permissions -->
+                <!-- For PERMISSIONS: Hide Users, Rules, Views, Menus tabs.
+
+                     The pages used to be named after the field they hold
+                     (view_access, rule_groups, menu_access); they are named after
+                     what they show now (views, record_rules, menus). The fields kept
+                     their names, which is why the old spelling reads like one. Only
+                     `users` survived unchanged, so three of these four xpaths located
+                     nothing and the whole view was refused. -->
                 <xpath expr="//page[@name='users']" position="attributes">
-                    <attribute name="attrs">{'invisible': [('numa_type', '=', 'permission')]}</attribute>
+                    <attribute name="invisible">numa_type == 'permission'</attribute>
                 </xpath>
-                <xpath expr="//page[@name='view_access']" position="attributes">
-                    <attribute name="attrs">{'invisible': [('numa_type', '=', 'permission')]}</attribute>
+                <xpath expr="//page[@name='views']" position="attributes">
+                    <attribute name="invisible">numa_type == 'permission'</attribute>
                 </xpath>
-                <xpath expr="//page[@name='rule_groups']" position="attributes">
-                    <attribute name="attrs">{'invisible': [('numa_type', '=', 'permission')]}</attribute>
+                <xpath expr="//page[@name='record_rules']" position="attributes">
+                    <attribute name="invisible">numa_type == 'permission'</attribute>
                 </xpath>
-                <xpath expr="//page[@name='menu_access']" position="attributes">
-                    <attribute name="attrs">{'invisible': [('numa_type', '=', 'permission')]}</attribute>
+                <xpath expr="//page[@name='menus']" position="attributes">
+                    <attribute name="invisible">numa_type == 'permission'</attribute>
                 </xpath>
 
                 <!-- Add a simplified view for permissions -->
                 <xpath expr="//notebook" position="inside">
-                    <page string="Información Técnica" attrs="{'invisible': [('numa_type', '!=', 'permission')]}">
+                    <page string="Información Técnica" invisible="numa_type != 'permission'">
                         <group>
                             <group>
                                 <field name="technical_code" readonly="1"/>
@@ -48,53 +54,50 @@
                             <field name="implied_ids" 
                                    domain="[('numa_type', 'in', ['permission', 'system'])]"
                                    context="{'default_numa_type': 'permission'}">
-                                <tree>
+                                <list>
                                     <field name="name"/>
                                     <field name="numa_type"/>
                                     <field name="technical_code"/>
-                                </tree>
+                                </list>
                             </field>
                         </group>
                     </page>
                 </xpath>
 
                 <!-- For ROLES: Hide technical tabs (Views, Menus, Rules) -->
-                <!-- Show Permissions tab and Users tab -->
-                <xpath expr="//page[@name='implied_ids']" position="attributes">
+                <!-- Show Permissions tab and Users tab. The page holding `implied_ids`
+                     is `inherit_groups` now. -->
+                <xpath expr="//page[@name='inherit_groups']" position="attributes">
                     <attribute name="string">Permisos</attribute>
-                    <attribute name="attrs">{'invisible': [('numa_type', '!=', 'role')]}</attribute>
+                    <attribute name="invisible">numa_type != 'role'</attribute>
                 </xpath>
-                <xpath expr="//page[@name='implied_ids']//field[@name='implied_ids']" position="attributes">
+                <xpath expr="//page[@name='inherit_groups']//field[@name='implied_ids']" position="attributes">
                     <attribute name="domain">[('numa_type', '=', 'permission')]</attribute>
                     <attribute name="context">{'default_numa_type': 'permission'}</attribute>
                 </xpath>
 
-                <!-- Hide technical pages for roles -->
-                <xpath expr="//page[@name='view_access']" position="attributes">
-                    <attribute name="attrs">{'invisible': ['|', ('numa_type', '=', 'role'), ('numa_type', '=', 'permission')]}</attribute>
+                <!-- Hide technical pages for roles. This block sets the same three pages
+                     as the one above and, being later, is the one that wins: they end up
+                     hidden for both roles and permissions, i.e. shown only for 'system'. -->
+                <xpath expr="//page[@name='views']" position="attributes">
+                    <attribute name="invisible">numa_type in ('role', 'permission')</attribute>
                 </xpath>
-                <xpath expr="//page[@name='rule_groups']" position="attributes">
-                    <attribute name="attrs">{'invisible': ['|', ('numa_type', '=', 'role'), ('numa_type', '=', 'permission')]}</attribute>
+                <xpath expr="//page[@name='record_rules']" position="attributes">
+                    <attribute name="invisible">numa_type in ('role', 'permission')</attribute>
                 </xpath>
-                <xpath expr="//page[@name='menu_access']" position="attributes">
-                    <attribute name="attrs">{'invisible': ['|', ('numa_type', '=', 'role'), ('numa_type', '=', 'permission')]}</attribute>
+                <xpath expr="//page[@name='menus']" position="attributes">
+                    <attribute name="invisible">numa_type in ('role', 'permission')</attribute>
                 </xpath>
             </field>
         </record>
 
-        <!-- Extend res.groups tree view to show numa_type -->
-        <record id="view_groups_tree_numa_roles" model="ir.ui.view">
-            <field name="name">res.groups.tree.numa_roles</field>
-            <field name="model">res.groups</field>
-            <field name="inherit_id" ref="base.view_groups_tree"/>
-            <field name="arch" type="xml">
-                <field name="name" position="after">
-                    <field name="numa_type"/>
-                    <field name="technical_code" invisible="numa_type != 'permission'"/>
-                    <field name="permission_count" invisible="numa_type != 'role'"/>
-                </field>
-            </field>
-        </record>
+        <!-- There used to be a list view here adding numa_type, technical_code and
+             permission_count to the groups list. It inherited `base.view_groups_tree`,
+             an xmlid that does not exist: Odoo 18's base declares only a search and a
+             form view for res.groups and lets the list be generated. Inheriting a view
+             that is not there is what kept this module from installing at all, so the
+             record is gone. Putting those columns back needs a standalone list view,
+             which is new UI rather than a repair. -->
 
         <!-- Extend res.groups search view -->
         <record id="view_groups_search_numa_roles" model="ir.ui.view">
@@ -106,7 +109,9 @@
                     <field name="numa_type"/>
                     <field name="technical_code"/>
                 </field>
-                <filter name="group_system" position="after">
+                <!-- `group_system` is not a filter of the core search view; the one
+                     it ships is `filter_no_share`. -->
+                <filter name="filter_no_share" position="after">
                     <filter string="Roles" name="filter_roles" domain="[('numa_type', '=', 'role')]"/>
                     <filter string="Permisos" name="filter_permissions" domain="[('numa_type', '=', 'permission')]"/>
                     <filter string="Sistema" name="filter_system" domain="[('numa_type', '=', 'system')]"/>
@@ -118,7 +123,7 @@
         <record id="action_res_groups_roles" model="ir.actions.act_window">
             <field name="name">Roles</field>
             <field name="res_model">res.groups</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="domain">[('numa_type', '=', 'role')]</field>
             <field name="context">{'default_numa_type': 'role', 'search_default_filter_roles': 1}</field>
             <field name="help">Los roles son agrupaciones de permisos que se asignan a usuarios. 
@@ -129,7 +134,7 @@
         <record id="action_res_groups_permissions" model="ir.actions.act_window">
             <field name="name">Permisos</field>
             <field name="res_model">res.groups</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="domain">[('numa_type', '=', 'permission')]</field>
             <field name="context">{'default_numa_type': 'permission', 'search_default_filter_permissions': 1}</field>
             <field name="help">Los permisos son unidades atómicas de acceso. 

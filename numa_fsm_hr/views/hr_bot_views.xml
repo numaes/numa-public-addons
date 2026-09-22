@@ -27,7 +27,7 @@
         <record model="ir.actions.act_window" id="action_hr_bot">
             <field name="name">HR Bots</field>
             <field name="res_model">hr.bot</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="domain">[('type', '=', 'hr_bot')]</field>
             <field name="context">{'default_type': 'hr_bot'}</field>
         </record>

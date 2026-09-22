@@ -158,7 +158,7 @@ class HrEmployee(models.Model):
             'type': 'ir.actions.act_window',
             'name': _('Assign HR Bot'),
             'res_model': 'hr.bot',
-            'view_mode': 'tree,form',
+            'view_mode': 'list,form',
             'target': 'new',
             'domain': [('state', '=', 'production')],
             'context': {

@@ -6,13 +6,13 @@
             <field name="name">numa.synch.ai.map.tree</field>
             <field name="model">numa.synch.ai.map</field>
             <field name="arch" type="xml">
-                <tree string="AI Mapping" decoration-muted="not active">
+                <list string="AI Mapping" decoration-muted="not active">
                     <field name="display_name"/>
                     <field name="remote_token"/>
                     <field name="model_name"/>
                     <field name="confidence_score"/>
                     <field name="active"/>
-                </tree>
+                </list>
             </field>
         </record>
 
@@ -24,9 +24,9 @@
                 <form string="AI Mapping">
                     <header>
                         <button name="toggle_active" type="object" string="Deactivate" 
-                                class="oe_highlight" attrs="{'invisible': [('active', '=', False)]}"/>
+                                class="oe_highlight" invisible="not active"/>
                         <button name="toggle_active" type="object" string="Activate" 
-                                attrs="{'invisible': [('active', '=', True)]}"/>
+                                invisible="active"/>
                     </header>
                     <sheet>
                         <group>
@@ -75,7 +75,7 @@
         <record id="action_numa_synch_ai_map" model="ir.actions.act_window">
             <field name="name">AI Mappings</field>
             <field name="res_model">numa.synch.ai.map</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="help" type="html">
                 <p class="o_view_nocontent_smiling_face">
                     No AI mappings yet

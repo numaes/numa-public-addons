@@ -9,7 +9,7 @@ NUMA IMAP extension
 """,
 	'summary': "IMAP extension",
     'version': '18.0.0.1',
-    'depends': ['base','fetchmail'],
+    'depends': ['base', 'mail'],
     'data': [
         'security/ir.model.access.csv',
         'security/security.xml',

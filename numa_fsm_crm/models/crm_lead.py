@@ -161,7 +161,7 @@ class CrmLead(models.Model):
             'type': 'ir.actions.act_window',
             'name': _('Assign CRM Bot'),
             'res_model': 'crm.bot',
-            'view_mode': 'tree,form',
+            'view_mode': 'list,form',
             'target': 'new',
             'domain': [('state', '=', 'production')],
             'context': {

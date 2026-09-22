@@ -13,7 +13,7 @@ from odoo.exceptions import UserError, ValidationError
 _logger = logging.getLogger(__name__)
 
 
-class NumaSynchEngineAiAssisted(models.Model):
+class NumaSynchEngineAiAssisted(models.AbstractModel):
     """
     AI-Assisted Synchronization Engine
     

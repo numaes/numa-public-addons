@@ -6,7 +6,7 @@
             <field name="name">numa.synch.issue.tree</field>
             <field name="model">numa.synch.issue</field>
             <field name="arch" type="xml">
-                <tree string="Synchronization Issues" decoration-success="resolved" decoration-muted="resolved">
+                <list string="Synchronization Issues" decoration-success="resolved" decoration-muted="resolved">
                     <field name="display_name"/>
                     <field name="remote_token"/>
                     <field name="model_name"/>
@@ -14,7 +14,7 @@
                     <field name="confidence_score"/>
                     <field name="resolved"/>
                     <field name="create_date"/>
-                </tree>
+                </list>
             </field>
         </record>
 
@@ -26,7 +26,7 @@
                 <form string="Synchronization Issue">
                     <header>
                         <button name="action_resolve" type="object" string="Mark as Resolved" 
-                                class="oe_highlight" attrs="{'invisible': [('resolved', '=', True)]}"/>
+                                class="oe_highlight" invisible="resolved"/>
                     </header>
                     <sheet>
                         <group>
@@ -80,7 +80,7 @@
         <record id="action_numa_synch_issue" model="ir.actions.act_window">
             <field name="name">Synchronization Issues</field>
             <field name="res_model">numa.synch.issue</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="domain">[('resolved', '=', False)]</field>
             <field name="context">{'search_default_unresolved': 1}</field>
             <field name="help" type="html">
