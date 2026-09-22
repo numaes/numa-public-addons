@@ -236,16 +236,35 @@ Measured on databases built from nothing, after Batch 1:
 
 | Module | Suite on 18.0 |
 |---|---|
-| `numa_poly` | **2 failed, 18 errors of 134** — untouched by this work |
+| `numa_poly` | **0 of 134** — with `project`, `numa_planning` and `numa_planning_purchase` installed |
 | `numa_fsm` | 0 of 62 (was 56; two previously unrun tests now pass, four skipped) |
 | `numa_fsm_crm` | 0 of 3 |
 | `numa_fsm_hr` | 0 of 2 |
 | `numa_fixed_output_mail` | 0 of 4, all skipped |
 | `numa_background_job` | 0 of 0 — it has a test file and runs nothing |
 
-**`numa_poly` is 20 red out of 134 on 18.0 today**, on a fresh database with only
-that module installed. Batch 2 changes `numa_poly`; that is the number to compare
-against, and diagnosing those twenty is work that belongs before it.
+**`numa_poly` is green on 18.0: 0 of 134.** That is the number Batch 2 has to
+preserve.
+
+Getting it took two corrections worth recording, because both are traps for
+anyone measuring a baseline. On a fresh database with **only** `numa_poly`
+installed the suite reports 2 failed and 18 errors, and none of the twenty is a
+defect:
+- The 18 errors are all `KeyError: 'project.task'`. `numa_poly`'s own suite
+  exercises the polymorphic machinery through `project.task` and
+  `numa.planning.*`, so it needs `project` (core) and `numa_planning` — which
+  lives in the **private** repository. A public module's suite depending on a
+  private module is worth knowing on its own.
+- The last failure, `TestPolyIdSpace.test_03_claiming_is_idempotent`, asserts
+  that claiming the shared id space twice changes nothing. It assumes
+  `res_partner` is **already** claimed when it starts, and `res.partner` only
+  becomes polymorphic when `numa_planning_purchase` is installed. Without it the
+  first claim legitimately changes the column default and the test reads that as
+  a defect.
+
+So the database Batch 2 must be measured on is: `numa_poly`, `project`,
+`numa_planning`, `numa_planning_project`, `numa_planning_purchase`. Anything
+less and the suite invents failures.
 
 One more thing to know before Batch 2: on a database where `numa_poly` and
 `numa_fsm_crm` are both installed, a test run can die in poly's own strict view
@@ -661,8 +680,12 @@ suite that arrives alone.
 - **The 18.0 baseline now exists for the modules Batch 1 touched** — see the
   table above. For the rest of Batches 2–4 it still does not: record the numbers
   before changing anything, or a backport regression is indistinguishable from
-  something that was already red. `numa_poly`'s 20 red of 134 is the one that
-  matters most.
+  something that was already red.
+- **Measure on a database that has what the suite actually needs.** `numa_poly`
+  reads as 20 red on a database with only `numa_poly` in it, and green once
+  `project`, `numa_planning` and `numa_planning_purchase` are there. A baseline
+  taken on too small a database is worse than no baseline: it hands you twenty
+  failures to chase that were never there.
 - **`numa_poly` is load-bearing for the private repository too.** Item 16 of
   `numa-addons-20.0/BACKPORT-18.0.md` (`res.partner` and the polymorphic company
   default) depends on how poly injects fields. Read both documents before
