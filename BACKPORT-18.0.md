@@ -7,19 +7,28 @@ than re-litigated per module.
 
 ---
 
+## Status
+
+**Batches 0 and 1 are done**, on `numa-public-addons-18.0`, branch 18.0, five
+commits ending `66842adf` (2026-09-22). What executing them proved, and what it
+corrected in this document, is in "What Batch 1 actually found" below. Batches 2
+onward are untouched.
+
+---
+
 ## The whole plan on one screen
 
 | # | What | Cost | Moves an interface? |
 |---|---|---|---|
-| **0** | `numa_roles` grants **every user** CRUD on `res.groups` | one deleted line | no |
-| 1 | Four views with `attrs=` do not load in 18.0 | small | no |
-| 2 | 11 committed `__pycache__` files (Python 3.7) | trivial | no |
-| 3 | `numa_fsm_crm` / `numa_fsm_hr` controllers: four dead public routes, duplicated | delete | no |
-| 4 | `action_assign_bot` asks for `view_mode: tree` | one word | no |
-| 5 | `numa_imap` UID marker survives a duplicate | two words | no |
-| 6 | `numa_exceptions` overrides `_name_search`, removed in 17.0 | delete | no |
-| 7 | An orphan test file in `numa_fixed_output_mail` | trivial | no |
-| 8 | `numa_fsm`'s seven orphan tests target a dead API | decide | no |
+| **0** | ~~`numa_roles` grants **every user** CRUD on `res.groups`~~ **DONE** | one deleted line | no |
+| 1 | ~~Four views with `attrs=` do not load in 18.0~~ **DONE** | small | no |
+| 2 | ~~11 committed `__pycache__` files (Python 3.7)~~ **DONE** | trivial | no |
+| 3 | ~~`numa_fsm_crm` / `numa_fsm_hr` controllers: four dead public routes, duplicated~~ **DONE** | delete | no |
+| 4 | ~~`action_assign_bot` asks for `view_mode: tree`~~ **DONE** | one word | no |
+| 5 | ~~`numa_imap` UID marker survives a duplicate~~ **DONE** | two words | no |
+| 6 | ~~`numa_exceptions` overrides `_name_search`, removed in 17.0~~ **DONE** | delete | no |
+| 7 | ~~An orphan test file in `numa_fixed_output_mail`~~ **DONE** | trivial | no |
+| 8 | ~~`numa_fsm`'s seven orphan tests target a dead API~~ **DONE** | decide | no |
 | **9** | `numa_poly.create` drops unknown keys in silence | cherry-pick | no |
 | **10** | An injected related field carries the base's `default` | cherry-pick | no |
 | **11** | `_poly_native_field_names` counts every field | cherry-pick + check | no |
@@ -168,6 +177,82 @@ Zero interface risk beyond things that do not work starting to work.
 **Deliberately not in this batch:** `<tree>` → `<list>` (5 files; both spellings
 valid in 18.0) and `_sql_constraints` → `models.Constraint` / `models.UniqueIndex`
 (6 files; `_sql_constraints` **works** in 18.0 — see "Traps").
+
+---
+
+## What Batch 1 actually found, and what it corrects here
+
+Executing batches 0 and 1 on a database built from nothing contradicted this
+document in four places. They are corrected above; they are listed here because
+each says something about how the rest of the plan should be read.
+
+**Four of the eleven affected modules did not install at all.** The plan named
+single defects; modules that have not been installed in years have them stacked,
+and each one hides the next. `numa_roles` took six passes: `attrs=` in two
+spellings, four page anchors renamed (`view_access`/`rule_groups`/`menu_access`/
+`implied_ids` → `views`/`record_rules`/`menus`/`inherit_groups`), a list view
+inheriting an xmlid Odoo 18 does not declare, and a search filter that does not
+exist. Budget for the tail, not for the item.
+
+**`<tree>` is NOT valid in 18.0.** This document said both spellings work and put
+the conversion under "deliberately not in this batch". Odoo 18 answers
+`Invalid view type: 'tree'. Allowed types are: list, form, graph, pivot,
+calendar, kanban, search, qweb, hierarchy, activity`. Nine tags in four files;
+they had to be converted.
+
+**`view_mode: tree,form` is worse than the plan said.** Not one action in
+`numa_fsm_hr` but **nine actions across seven modules**, five of which install
+perfectly well today — `view_mode` is a Char, so nothing fails at install and
+the menu simply does not open when a user clicks it.
+
+**`fetchmail` is not a module in Odoo 18.** This document said it still was, and
+filed `numa_imap`'s hook split under "does not go back" on that basis.
+`fetchmail.server` lives in `mail` since 17.0. `numa_imap` declared
+`'depends': ['base', 'fetchmail']` and was therefore **uninstallable**, and its
+view inherited `fetchmail.view_email_server_form`. Both corrected. Item 15 (the
+`message_process` fork) is unaffected and still stands.
+
+**Three defects the plan did not know about**, all of the same class — the
+module cannot load:
+- `numa_synch_slave`, `numa_synch_master` and `numa_synch_ai_assisted` all
+  extend the abstract `numa.synch.engine` as `models.Model`, which Odoo refuses
+  outright. This is listed in the project notes as a 20.0 breakage; it is a 17.0
+  one.
+- `numa_synch_slave`'s cron sets `numbercall` and `doall`, removed in 17.0.
+- `numa_roles`'s list view inherits `base.view_groups_tree`, which does not
+  exist.
+
+**Two of the "live" orphan tests were not live.** `test_fsm_form_input` builds
+`fsm.form_input` records with `instance_id` and `unrelated_identifier`; the model
+has `name` and `json_event`. It joined the deleted pile. `test_fsm_templates` was
+worth keeping — two of its six tests pass — but the other four need a complete
+`fsm.definition` fixture that `common.py` does not build, and are skipped with
+that reason on each. `numa_fixed_output_mail`'s orphan references demo records
+that were never written anywhere, and is skipped with that reason.
+
+### The 18.0 baseline, now that there is one
+
+Measured on databases built from nothing, after Batch 1:
+
+| Module | Suite on 18.0 |
+|---|---|
+| `numa_poly` | **2 failed, 18 errors of 134** — untouched by this work |
+| `numa_fsm` | 0 of 62 (was 56; two previously unrun tests now pass, four skipped) |
+| `numa_fsm_crm` | 0 of 3 |
+| `numa_fsm_hr` | 0 of 2 |
+| `numa_fixed_output_mail` | 0 of 4, all skipped |
+| `numa_background_job` | 0 of 0 — it has a test file and runs nothing |
+
+**`numa_poly` is 20 red out of 134 on 18.0 today**, on a fresh database with only
+that module installed. Batch 2 changes `numa_poly`; that is the number to compare
+against, and diagnosing those twenty is work that belongs before it.
+
+One more thing to know before Batch 2: on a database where `numa_poly` and
+`numa_fsm_crm` are both installed, a test run can die in poly's own strict view
+validation with `action_sale_quotations_new is not a valid action on crm.lead`,
+even with `sale_crm` installed and the method present at runtime. It is an
+ordering problem in `_poly_finalize_view_validation`, it predates this work, and
+it makes some suites unrunnable on that combination.
 
 ---
 
@@ -468,7 +553,10 @@ bridge loses its own compute — `numa_planning_purchase`'s
   already reads by UID with `BODY.PEEK[]` and keeps the marker
   (`fetchmail.py:67-100`); the "set-then-clear" the 20.0 commit criticises is not
   there. The hook split follows a `fetch_mail` / `_fetch_mails` / `_fetch_mail`
-  refactor that is Odoo 20's, and `fetchmail` is still its own module in 18.0.
+  refactor that is Odoo 20's.
+  *Corrected during Batch 1:* this entry used to add "and `fetchmail` is still its
+  own module in 18.0". It is not — `fetchmail.server` moved into `mail` in 17.0,
+  which is why `numa_imap` could not be installed at all.
 - **`numa_product_variant`'s other four breakages** (`ir.access.csv`,
   `sale.prod_config_main`, `product.product_category_all`,
   `_is_combination_possible(parent_combination=…)`, the missing `categ_id`
@@ -570,9 +658,11 @@ suite that arrives alone.
 
 - **The 18.0 branch is alive**: 84 commits in the last 60 days, the most recent
   2026-09-18. Every "byte-identical" claim here has a shelf life.
-- **No 18.0 baseline exists.** Before starting, run the suites of every module in
-  Batches 2–4 and record the numbers. Without that, a backport regression is
-  indistinguishable from something that was already red.
+- **The 18.0 baseline now exists for the modules Batch 1 touched** — see the
+  table above. For the rest of Batches 2–4 it still does not: record the numbers
+  before changing anything, or a backport regression is indistinguishable from
+  something that was already red. `numa_poly`'s 20 red of 134 is the one that
+  matters most.
 - **`numa_poly` is load-bearing for the private repository too.** Item 16 of
   `numa-addons-20.0/BACKPORT-18.0.md` (`res.partner` and the polymorphic company
   default) depends on how poly injects fields. Read both documents before
