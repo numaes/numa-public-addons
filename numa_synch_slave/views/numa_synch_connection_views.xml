@@ -68,9 +68,9 @@
                         <group string="Scheduling">
                             <group>
                                 <field name="use_scheduled_time"/>
-                                <field name="sync_schedule_time" 
-                                       attrs="{'invisible': [('use_scheduled_time', '=', False)], 
-                                               'required': [('use_scheduled_time', '=', True)]}"/>
+                                <field name="sync_schedule_time"
+                                       invisible="not use_scheduled_time"
+                                       required="use_scheduled_time"/>
                             </group>
                             <group>
                                 <field name="cron_id" readonly="1"/>
@@ -123,7 +123,7 @@
         <record id="action_numa_synch_connection" model="ir.actions.act_window">
             <field name="name">Synchronization Connections</field>
             <field name="res_model">numa.synch.connection</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="help" type="html">
                 <p class="o_view_nocontent_smiling_face">
                     Create a connection to the Master server
