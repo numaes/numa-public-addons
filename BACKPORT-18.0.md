@@ -9,10 +9,10 @@ than re-litigated per module.
 
 ## Status
 
-**Batches 0 and 1 are done**, on `numa-public-addons-18.0`, branch 18.0, five
-commits ending `66842adf` (2026-09-22). What executing them proved, and what it
-corrected in this document, is in "What Batch 1 actually found" below. Batches 2
-onward are untouched.
+**Batches 0, 1 and 2 are done**, on `numa-public-addons-18.0`, branch 18.0, six
+commits ending `23deff1b` (2026-09-22). What executing them proved, and what it
+corrected in this document, is in "What Batch 1 actually found" and "What Batch 2
+actually found" below. Batch 3 onward is untouched.
 
 ---
 
@@ -29,9 +29,9 @@ onward are untouched.
 | 6 | ~~`numa_exceptions` overrides `_name_search`, removed in 17.0~~ **DONE** | delete | no |
 | 7 | ~~An orphan test file in `numa_fixed_output_mail`~~ **DONE** | trivial | no |
 | 8 | ~~`numa_fsm`'s seven orphan tests target a dead API~~ **DONE** | decide | no |
-| **9** | `numa_poly.create` drops unknown keys in silence | cherry-pick | no |
-| **10** | An injected related field carries the base's `default` | cherry-pick | no |
-| **11** | `_poly_native_field_names` counts every field | cherry-pick + check | no |
+| **9** | ~~`numa_poly.create` drops unknown keys in silence~~ **DONE** | cherry-pick | no |
+| **10** | ~~An injected related field carries the base's `default`~~ **DONE** | cherry-pick | no |
+| **11** | ~~`_poly_native_field_names` counts every field~~ **DONE** | cherry-pick + check | no |
 | 12 | `product.weight` / `.volume` unstored; the core reads them in SQL | two words | two new columns |
 | 13 | `numa_big_id`: the int8 signatures PostgreSQL does not ship | cherry-pick | no |
 | 14 | `numa_fixed_output_mail`: mail leaves through another company's mailbox | cherry-pick | behaviour |
@@ -237,6 +237,9 @@ Measured on databases built from nothing, after Batch 1:
 | Module | Suite on 18.0 |
 |---|---|
 | `numa_poly` | **0 of 134** — with `project`, `numa_planning` and `numa_planning_purchase` installed |
+| `numa_poly_test` | 0 of 93 (82 before Batch 2) |
+| `numa_planning` | 0 of 174 |
+| `numa_planning_project` / `_purchase` | 0 of 7 each |
 | `numa_fsm` | 0 of 62 (was 56; two previously unrun tests now pass, four skipped) |
 | `numa_fsm_crm` | 0 of 3 |
 | `numa_fsm_hr` | 0 of 2 |
@@ -328,6 +331,44 @@ that accidental protection.** Item 11 must therefore ship with a check that no
 bridge loses its own compute — `numa_planning_purchase`'s
 `purchase.order.line.pln_constraint_date` is the case, and 18.0's own
 `numa_poly/tests/test_poly_no_shadow.py:32` is the test that watches it.
+
+---
+
+## What Batch 2 actually found
+
+All three were present and all three are in. Two things are worth carrying
+forward.
+
+**The symptom of item 11 is not what you see from a shell.** `_poly_native_field_names`
+is cached, and the cache is filled during registry setup, when the aggregate
+class is not yet populated. Asking for the value afterwards returns the cached,
+correct answer; **recomputing** it returns 43 extra names for `project.task`,
+among them the whole `pln_*` set. A first measurement that read the cache said
+the defect was absent. It is not — the answer simply depends on when it is
+asked, which is the defect. The test clears the cache before asking, twice.
+
+**The dependency the plan warned about is satisfied, and was checked rather than
+assumed.** With the filter in place, `purchase.order.line.pln_constraint_date`
+is still not related, still carries its own `_compute_` and `_inverse_`, and is
+still native, while `project.task.pln_constraint_type` correctly resolves to
+`planning_node_id.pln_constraint_type`. The filter keeps the classes a module
+declared, so a bridge stays protected by its declaration instead of by an
+accident of the scan.
+
+**The 18.0 tests live in `numa_poly_test`**, with a `base_defaulted` field added
+to `test.poly.base` so the default case can be exercised without any module from
+outside this repository. Eleven tests across three classes. Each of the three
+fixes was seen red on its own:
+
+| Fix removed | Test that fails |
+|---|---|
+| the create guard | `test_01_un_create_con_campo_inexistente_falla` |
+| `default = None` | `test_01_el_related_inyectado_no_tiene_default`, `test_03_un_valor_explicito_de_la_base_sobrevive` |
+| the declared-classes filter | `test_02_un_campo_de_la_base_no_es_nativo_aunque_la_clase_lo_lleve` |
+
+Green together: `numa_poly` 0 of 134 (baseline preserved), `numa_poly_test` 0 of
+93 (82 + 11), `numa_planning` 0 of 174, `numa_planning_project` 0 of 7,
+`numa_planning_purchase` 0 of 7.
 
 ---
 
