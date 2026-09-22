@@ -100,6 +100,9 @@ _logger = logging.getLogger(__name__)
 # que fallar como en Odoo estándar: descartar el valor en silencio pierde el dato y esconde el bug.
 POLY_PROPAGATED = 'poly_propagated_vals'
 
+# Keys the polymorphic create handles itself, which are not fields of the model.
+_POLY_CREATE_TECHNICAL_KEYS = frozenset({'id', 'concrete_model_id', 'poly_payload'})
+
 
 def poly_vals_propagados(env):
     """¿Estos vals los propagó poly desde otro modelo, en vez de pedirlos el llamador?"""
@@ -293,6 +296,13 @@ def _poly_force_related(field, related_path):
         args = dict(args)
         args['store'] = False
         args['precompute'] = False
+        # A default belongs to the model that STORES the field, and this one no longer
+        # does. Odoo MERGES the attributes of same-named fields along the MRO, so a
+        # field left silent about `default` inherits the base model's -- and comes out
+        # `related` AND defaulted. Odoo applies a default on create, and writing a
+        # related field writes THROUGH to its target, so creating a polymorphic child
+        # against an EXISTING base row overwrote values that row already held.
+        args['default'] = None
         field._args__ = args
         field.args = args  # Odoo keeps `args` as an alias of `_args__`
     field.related = related_path
@@ -302,6 +312,7 @@ def _poly_force_related(field, related_path):
     field.compute_sudo = None
     field.inverse = None
     field.search = None
+    field.default = None
     return field
 
 
@@ -792,9 +803,15 @@ def _poly_warn_missing_base_once(field, record):
 
 
 def _poly_field_default_value(field, record):
-    """The field's declared default, in record form."""
+    """The field's declared default, in record form.
+
+    Read off `related_field` when there is one: an injected related field no longer
+    carries a default of its own (see `_poly_force_related`), and the field that
+    actually stores the value is the one that declares it.
+    """
     try:
-        default = field.default
+        default = getattr(field, 'related_field', None)
+        default = (default or field).default
         value = default(record) if callable(default) else default
         return field.convert_to_record(field.convert_to_cache(value, record), record)
     except Exception:
@@ -3720,11 +3737,26 @@ class PolyBase(_original_BaseModel):
                 return inh[0]
             return None
 
+        # Only the classes a MODULE declared count. `cls.mro()` also contains the
+        # registry's own aggregate class, which by construction holds EVERY field of the
+        # model, including the ones poly injected. Counting it made "native" mean "any
+        # field at all": `project.task` reported the whole `pln_*` set as its own
+        # although its bridge only declares `_depend_models`, so a field belonging to
+        # `numa.planning.node` resolved to the leftover column on `project_task`
+        # instead of to the base.
+        #
+        # Odoo 18 spells this index `MetaModel.module_to_models`.
+        declaradas = set()
+        for _defs in odoo.models.MetaModel.module_to_models.values():
+            declaradas.update(_defs)
+
         native = set()
         for klass in cls.mro():
             # Skip the classes that belong to a dependent base model: their fields are
             # the polymorphic capability we DO want to inject as related.
             if _class_model_name(klass) in dep_models:
+                continue
+            if klass not in declaradas:
                 continue
             # Odoo stores field definitions either as class attributes (Field instances)
             # or in _field_definitions (dict {name: field} or list[field]); scan both.
@@ -4098,6 +4130,33 @@ class PolyBase(_original_BaseModel):
                 )
             base_model = self.env[base_name]
             base_model.check_access('create')
+
+        # A key nobody recognises is an ERROR, not something to drop.
+        #
+        # The polymorphic create below distributes the values between this model, its
+        # bases and the link fields, and every one of those branches is written as
+        # `if k in <some>._fields`. A key that matches none of them falls through all of
+        # them and is silently lost: the record is created without it and nothing is
+        # logged. Odoo itself raises ValueError for an unknown field, but that check
+        # lives in `BaseModel.create`, which this branch never calls.
+        #
+        # This is the same criterion the propagated-vals filter a few lines below
+        # already applies, for the same reason the comment there gives: dropping a value
+        # in silence loses the data and hides the bug.
+        #
+        # Skipped for values propagated by poly itself: those are filtered on purpose,
+        # because a parent's value may legitimately not exist on a child.
+        if not poly_vals_propagados(self.env):
+            conocidos = set(self._fields)
+            for base_name in depend_models:
+                if base_name == '_is_poly_enabled' or base_name not in self.pool:
+                    continue
+                conocidos.update(self.env[base_name]._fields)
+            conocidos.update(_POLY_CREATE_TECHNICAL_KEYS)
+            for vals in data_list:
+                for k in vals:
+                    if k not in conocidos:
+                        raise ValueError(f"Invalid field {k!r} in {self._name!r}")
 
         # If this is a polymorphic create of a subclass handle it recursively
 

@@ -49,6 +49,10 @@ class TestPolyBase(PolyModel):
     _depend_models = {}
 
     base_field = fields.Char(string='Base Field')
+    # A base field WITH a default, so that the injected related version on the concrete
+    # models can be checked not to carry it: a default belongs to the model that stores
+    # the field, and writing a related field writes through to its target.
+    base_defaulted = fields.Char(string='Base Field With Default', default='de-la-base')
 
 
 class TestPolyChildA(PolyModel):
