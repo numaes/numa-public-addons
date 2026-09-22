@@ -21,8 +21,11 @@ class FetchmailServer(models.Model):
 
     _inherit = 'fetchmail.server'
 
-    last_uid_validity = fields.Integer('Last validity identifier')
-    last_uid = fields.Integer('Last received UID')
+    # `copy=False`: duplicating a server carried the original's marker across, and
+    # the copy then skipped every message older than a UID belonging to a different
+    # mailbox. `readonly`: the fetch writes these, not a person.
+    last_uid_validity = fields.Integer('Last validity identifier', readonly=True, copy=False)
+    last_uid = fields.Integer('Last received UID', readonly=True, copy=False)
     initially_from = fields.Date('Initial load, from date')
 
     def fetch_mail(self):

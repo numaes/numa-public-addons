@@ -91,15 +91,25 @@ class Frame(models.Model):
             record.display_name = "%s %d" % (record.file_name, record.line_number)
 
     @api.model
-    def _name_search(self, name, domain=None, operator='ilike', limit=80, order=None):
+    def _search_display_name(self, operator, value):
+        """Allow searching frames by file name or line number.
+
+        This was written as `_name_search`, which Odoo has not called since
+        17.0 — the hook is `_search_display_name` and it returns a domain
+        rather than running the search itself. So the override was dead, and
+        what ran instead was the default, which finds no `_rec_name` on this
+        model (there is no `name` field), logs "Cannot search on display_name"
+        and returns a domain that matches EVERYTHING. Searching a frame
+        returned every frame.
         """
-        Allows searching frames by file name or line number.
-        """
-        domain = domain or []
-        if operator != 'ilike' or (name or '').strip():
-            name_domain = ['|', ('file_name', operator, name), ('line_number', operator, name)]
-            domain = expression.AND([name_domain, domain])
-        return self._search(domain, limit=limit, order=order)
+        if operator.endswith('like') and not value and '=' not in operator:
+            return expression.FALSE_DOMAIN if operator in expression.NEGATIVE_TERM_OPERATORS \
+                else expression.TRUE_DOMAIN
+        aggregator = expression.AND if operator in expression.NEGATIVE_TERM_OPERATORS else expression.OR
+        return aggregator([
+            [('file_name', operator, value)],
+            [('line_number', operator, value)],
+        ])
 
 class GeneralException (models.Model):
     """
