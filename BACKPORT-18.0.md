@@ -14,6 +14,9 @@ commits ending `23deff1b` (2026-09-22). What executing them proved, and what it
 corrected in this document, is in "What Batch 1 actually found" and "What Batch 2
 actually found" below. Batch 3 onward is untouched.
 
+**Item 22 is done** too (`955868f3` on 18.0, 2026-09-23), with its own data plan;
+see the note under item 22.
+
 ---
 
 ## The whole plan on one screen
@@ -42,7 +45,7 @@ actually found" below. Batch 3 onward is untouched.
 | 19 | `numa_product_variant`: two labels for the same product | re-derive | visible label |
 | 20 | `numa_asynch_exec` starts a job while shutting down | re-derive | needs the cron too |
 | 21 | The `_write_multi` fork drops the audit fields | cherry-pick | no |
-| 22 | The four `physical_product` bridges do not price by weight | **a project** | columns, methods, labels |
+| 22 | ~~The four `physical_product` bridges do not price by weight~~ **DONE** | a project | columns, methods |
 | 23 | `numa_roles`: what NOT to port | — | — |
 | 24 | `numa_fsm_*`: the redesign does NOT go back | — | — |
 
@@ -572,6 +575,28 @@ Green together: `numa_poly` 0 of 134 (baseline preserved), `numa_poly_test` 0 of
     **Proposal:** treat this as its own project with its own data plan, not as
     part of the backport. What can go in earlier and cheaply is item 12
     (`store=True` on weight and volume), which is independent.
+
+    **Done 2026-09-23, `955868f3` on 18.0.** What executing it corrected here:
+    - *"Odoo recomputes them during the upgrade and overwrites values typed by
+      hand"* is true only of new columns. A field that turns computed over an
+      existing column is not recomputed, so the `total_*` fields keep their
+      values; the risk was the three new `stock.move.line.unit_*` columns, whose
+      computation could cascade into the totals. A pre-migration script creates
+      them from the recorded totals. The other side of the same fact: the lines
+      the onchange never reached stay at zero unless something fills them, so the
+      sale and purchase post-migrations do -- only on orders whose products all
+      price normally, where the order total does not move. Orders with a
+      magnitude-priced product are logged for a person to decide.
+    - 18.0 had a defect 20.0 did not: the order totals are built from
+      `_prepare_base_line_for_taxes_computation` since 18.0, and the sale fork of
+      `_compute_amount` only priced the line -- 150.00 on the line, 12.00 at the
+      bottom. The hook fixes both, as in 20.0.
+    - `purchase._compute_amount` did not depend on `price_qty` in either branch;
+      fixed in both (`137355f` on 20.0).
+    - The labels were not ported, as proposed. `show_update_pricelist` still
+      exists in 18.0 core, so the 20.0 test asserting its absence was dropped.
+    - Verified on a copy of cm-test-18.0: order, invoice and stock totals
+      unchanged; 58 tests green, 47 red against the previous code.
 
 23. **`numa_roles`: what not to port.** Beyond item 16, the 20.0 commit also
     moves the sample records from `data` to `demo` — which **deletes existing
