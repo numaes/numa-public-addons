@@ -220,8 +220,12 @@ class TestPolyBackfill(TransactionCase):
         second = self.Task.create({'name': 'Successor', 'project_id': self.project.id,
                                    'depend_on_ids': [(6, 0, [first.id])]})
         self.env.flush_all()
-        self.env['numa.planning.link'].search(
-            [('target_node_id', '=', second.id)]).unlink()
+        # The links are *lost*, as in legacy data: removed under the ORM. Unlinking them
+        # through the ORM would be a user deleting the dependency, which the project
+        # bridge mirrors back onto depend_on_ids, leaving nothing to rebuild.
+        self.env.cr.execute(
+            "DELETE FROM numa_planning_link WHERE target_node_id = %s", (second.id,))
+        self.env.invalidate_all()
         self._orphan(first | second)
 
         self.Task._poly_backfill_base_rows()
