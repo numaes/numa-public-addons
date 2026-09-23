@@ -24,6 +24,7 @@ It adds:
     'assets': {
         'web.assets_tests': [
             'numa_product_variant/static/tests/tours/open_value_configurator_tour.js',
+            'numa_product_variant/static/tests/tours/purchase_configurator_tour.js',
         ],
         'web.assets_backend': [
             'numa_product_variant/static/src/js/purchase_product_configurator_dialog.js',

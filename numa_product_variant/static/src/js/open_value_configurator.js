@@ -2,7 +2,7 @@
 
 import { patch } from "@web/core/utils/patch";
 import { rpc } from "@web/core/network/rpc";
-import { useSubEnv } from "@odoo/owl";
+import { useSubEnv } from "@web/owl2/utils";
 import { Many2XAutocomplete } from "@web/views/fields/relational_utils";
 import { ProductConfiguratorDialog } from "@sale/js/product_configurator_dialog/product_configurator_dialog";
 import { ProductTemplateAttributeLine } from "@sale/js/product_template_attribute_line/product_template_attribute_line";

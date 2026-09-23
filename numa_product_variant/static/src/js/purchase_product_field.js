@@ -1,11 +1,13 @@
-import { t, useEffect, useProps } from "@odoo/owl";
+import { t, useProps } from "@odoo/owl";
 import {
     accountProductField,
     AccountProductField,
 } from "@account/components/account_product_field/account_product_field";
 import { registry } from "@web/core/registry";
 import { serializeDateTime } from "@web/core/l10n/dates";
+import { rpc } from "@web/core/network/rpc";
 import { useService } from "@web/core/utils/hooks";
+import { useLayoutEffect } from "@web/owl2/utils";
 import { many2OneFieldProps } from "@web/views/fields/many2one/many2one_field";
 import { PurchaseProductConfiguratorDialog } from "./purchase_product_configurator_dialog";
 
@@ -40,8 +42,10 @@ export class PurchaseOrderLineProductField extends AccountProductField {
         this.isInternalUpdate = false;
         let isMounted = false;
 
-        useEffect(() => {
-            const value = this.value && this.value.id;
+        useLayoutEffect(() => {
+            // [20.0] AccountProductField wraps the Many2One component and has no `value`
+            // getter: `this.value` was always undefined, so the configurator never opened.
+            const value = this.props.record.data[this.props.name]?.id;
             if (!isMounted) {
                 isMounted = true;
             } else if (value && this.isInternalUpdate && this.relation === "product.template") {
@@ -90,19 +94,32 @@ export class PurchaseOrderLineProductField extends AccountProductField {
         }
     }
 
-    _openProductConfigurator() {
+    /**
+     * [20.0] The sale dialog no longer loads its own data: the caller fetches the
+     * products and passes them in (`products`, `optionalProducts`), and the props
+     * `ptavIds`, `quantity` and `productUOMId` are gone. Passing the 18.0 props made
+     * the dialog refuse to open ("Invalid component props").
+     */
+    async _openProductConfigurator() {
         const record = this.props.record;
         const orderRecord = record.model.root;
+        const soDate = serializeDateTime(orderRecord.data.date_order);
+        const data = await rpc("/purchase/product_configurator/get_values", {
+            product_template_id: record.data.product_template_id.id,
+            quantity: record.data.product_qty || 1,
+            so_date: soDate,
+            currency_id: orderRecord.data.currency_id?.id,
+            company_id: orderRecord.data.company_id?.id,
+            ptav_ids: [],
+        });
         this.dialog.add(PurchaseProductConfiguratorDialog, {
             productTemplateId: record.data.product_template_id.id,
-            ptavIds: [],
+            products: data.products,
+            optionalProducts: data.optional_products || [],
             customPtavs: [],
-            quantity: record.data.product_qty || 1,
-            // [20.0] `purchase.order.line.product_uom` became `uom_id`.
-            productUOMId: record.data.uom_id?.id,
             companyId: orderRecord.data.company_id?.id,
             currencyId: orderRecord.data.currency_id?.id,
-            soDate: serializeDateTime(orderRecord.data.date_order),
+            soDate: soDate,
             options: { showPrice: false, showQuantity: true },
             save: async (mainProduct) => {
                 await record.update({

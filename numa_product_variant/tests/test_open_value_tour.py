@@ -74,3 +74,21 @@ class TestOpenValueConfiguratorTour(HttpCase):
     def test_open_value_configurator_tour(self):
         self.start_tour(
             "/odoo", 'numa_open_value_configurator_tour', login='admin')
+
+
+@tagged('post_install', '-at_install')
+class TestPurchaseConfiguratorTour(TestOpenValueConfiguratorTour):
+    """The purchase side: a configurable template on a purchase line opens the
+    configurator, which only an effect of the line's product field triggers."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.env['res.partner'].create({'name': 'NUMA Tour Vendor'})
+
+    def test_open_value_configurator_tour(self):
+        """Covered by the parent class; not repeated here."""
+
+    def test_purchase_configurator_tour(self):
+        action = self.env.ref('purchase.purchase_rfq')
+        self.start_tour("/odoo/action-%s/new" % action.id, 'numa_purchase_configurator_tour', login='admin')
