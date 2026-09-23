@@ -10,3 +10,4 @@ from . import test_poly_reference_forms
 from . import test_poly_inherited_relational
 from . import test_translated_fields
 from . import test_unknown_field_not_dropped
+from . import test_poly_ui

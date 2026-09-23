@@ -459,6 +459,18 @@ _poly_is_polymorphic_cache: dict = {}
 _POLY_CREATE_TECHNICAL_KEYS = frozenset({'id', 'concrete_model_id', 'poly_payload'})
 
 
+def _poly_is_root(model_class):
+    """A root of a polymorphic hierarchy: `_depend_models` declared, and empty.
+
+    An ordinary model inherits `_depend_models = None` from the patched BaseModel.
+    """
+    depend = getattr(model_class, '_depend_models', None)
+    return (depend is not None and not depend
+            and getattr(model_class, '_name', None) != 'ir.poly_base'
+            and not getattr(model_class, '_abstract', False)
+            and not getattr(model_class, '_transient', False))
+
+
 def _poly_is_polymorphic(model):
     """
     Determine whether a model is polymorphic by analysing its MRO chain and the presence of _depend_models.
@@ -2347,18 +2359,94 @@ class PolyBase(_original_BaseModel):
         """
         pass
 
+    @api.model
+    def _poly_create_through_root(self, data_list):
+        """Create each row on the subtype its payload names, in order.
+
+        Keys starting with "__" in the payload are the client's annotations and are
+        dropped. A row naming no subtype (or the root itself) is created on the root.
+        The records come back as records of the root: the ids are shared across the
+        hierarchy.
+        """
+        IrModel = self.env['ir.model'].sudo()
+        ids = []
+        for vals in data_list:
+            vals = dict(vals)
+            payload = vals.pop('poly_payload', None)
+            if payload:
+                try:
+                    loaded = json.loads(payload)
+                except json.JSONDecodeError as e:
+                    raise ValidationError(_("Invalid JSON in polymorphic payload: %s") % e) from e
+                if not isinstance(loaded, dict):
+                    raise ValidationError(_("The polymorphic payload must be a JSON object."))
+                vals.update({k: v for k, v in loaded.items() if not k.startswith('__')})
+            concrete_id = vals.pop('concrete_model_id', None)
+            target = IrModel.browse(concrete_id).exists().model if concrete_id else None
+            model = self.env[target] if target and target != self._name else self
+            ids.append(model.create([vals]).id)
+        return self.browse(ids)
+
+    @api.model
     def get_poly_subclasses_info(self):
+        """The subtypes a user may create where this model is expected.
+
+        Returns a list of ``{'model': ..., 'name': ...}``. By default, every concrete
+        model registered under this one in the poly hierarchy, directly or through
+        another subtype, named as ``ir.model`` names it (translated). A business model
+        overrides this to narrow, reorder, rename or add to the list, for instance to
+        offer the base model itself.
+
+        It used to return ``[]`` unless overridden, so the polymorphic list and widget
+        never offered a subtype.
         """
-        Returns information about valid polymorphic subclasses.
-        
-        This method should be overridden by business models to return
-        a list of dictionaries with 'model' and 'name' keys.
-        
-        Returns:
-            list: List of dicts with 'model' and 'name' keys.
-                 Example: [{'model': 'project.crane', 'name': 'Crane'}]
+        children = defaultdict(list)
+        for base_name, dep_name in self.env['ir.poly_base'].sudo()._poly_dependent_pairs():
+            children[base_name].append(dep_name)
+        found, pending = [], list(children.get(self._name, []))
+        while pending:
+            name = pending.pop(0)
+            if name in found:
+                continue
+            found.append(name)
+            pending.extend(children.get(name, []))
+        IrModel = self.env['ir.model'].sudo()
+        result = []
+        for name in found:
+            model = self.env[name]
+            if model._abstract or model._transient:
+                continue
+            record = IrModel._get(name)
+            result.append({'model': name, 'name': record.name if record else name})
+        return result
+
+    @api.model
+    def poly_ui_subclasses(self):
+        """`get_poly_subclasses_info()` plus each subtype's ``ir.model`` id.
+
+        The client needs the id to send `concrete_model_id` with a new record, and
+        ordinary users cannot read ``ir.model`` themselves.
         """
-        return []
+        IrModel = self.env['ir.model'].sudo()
+        result = []
+        for info in self.get_poly_subclasses_info() or []:
+            record = IrModel._get(info.get('model'))
+            if record:
+                result.append({'model': record.model, 'name': info.get('name') or record.name,
+                               'model_id': record.id})
+        return result
+
+    @api.model
+    def poly_ui_concrete_models(self, ids):
+        """``{id: concrete model name}`` for the given records of this model.
+
+        What the polymorphic list and widget open when a row is clicked. Read with
+        sudo on ``ir.poly_base``: the concrete type is structure, not data.
+        """
+        records = self.browse(ids)
+        records.check_access('read')
+        bases = self.env['ir.poly_base'].sudo().browse(records.ids).exists()
+        return {base.id: base.concrete_model_id.model for base in bases}
 
     # --- POLY ENGINE HELPERS ---
 
@@ -4045,6 +4133,14 @@ class PolyBase(_original_BaseModel):
         # mentioned. True of non-polymorphic models too — numa.planning.allocation is one.
         self._poly_repair_base_references(data_list)
 
+        # A root of a hierarchy is not "polymorphic" in the sense below (it has no base),
+        # so the payload handling of the polymorphic branch never saw it. Yet a one2many
+        # of the root is exactly where `numa_polimorphic_widget` sends a new line: its
+        # subtype and values travel in `poly_payload`, and must land on the subtype.
+        if _poly_is_root(type(self)) and any(
+                vals.get('poly_payload') or vals.get('concrete_model_id') for vals in data_list):
+            return self._poly_create_through_root(data_list)
+
         # [poly] ir.poly_base IS NOT polymorphic, it is the common base.
         # Standard Odoo models that ARE NOT polymorphic must also be handled by Odoo.
         _is_poly = _poly_is_polymorphic(self)
@@ -4182,9 +4278,6 @@ class PolyBase(_original_BaseModel):
             # Make a copy to avoid mutating the original
             processed_vals = vals.copy()
 
-            if 'concrete_model_id' in processed_vals:
-                concrete_model_id = processed_vals['concrete_model_id']
-
             # Check if poly_payload exists and is not empty
             payload = processed_vals.pop('poly_payload', None)
             if payload:
@@ -4194,7 +4287,10 @@ class PolyBase(_original_BaseModel):
                     if isinstance(loaded_data, dict):
                         # Merge the payload data into vals
                         # Payload data takes precedence over existing vals
-                        processed_vals.update(loaded_data)
+                        # Keys starting with "__" are the client's own annotations (the
+                        # widget keeps the subtype's model name there), never fields.
+                        processed_vals.update({k: v for k, v in loaded_data.items()
+                                               if not k.startswith('__')})
                     else:
                         _logger.warning(
                             "poly_payload contains non-dict JSON data, ignoring: %s",
@@ -4216,10 +4312,26 @@ class PolyBase(_original_BaseModel):
                     raise UserError(
                         _("Error processing polymorphic payload: %s") % str(e)
                     ) from e
-            
+
+            # Read after the payload is merged: a new line of a polymorphic one2many
+            # carries its subtype inside the payload, since `concrete_model_id` is a
+            # read-only field the client does not send on its own.
+            if 'concrete_model_id' in processed_vals:
+                concrete_model_id = processed_vals['concrete_model_id']
+
             processed_vals_list.append(processed_vals)
 
         data_list = processed_vals_list
+
+        # A batch mixing subtypes (a one2many saved with a Test2 and a Test3 line) must
+        # not be dispatched as one: the redirect below sends the whole list to a single
+        # concrete model, which used to be the last line's. Each line goes on its own,
+        # in order.
+        concrete_ids = {vals.get('concrete_model_id') for vals in data_list}
+        if len(data_list) > 1 and len(concrete_ids) > 1:
+            # Each create returns its concrete model; the ids are shared across the
+            # hierarchy, so the batch comes back as records of this model.
+            return self.browse([self.create([vals]).id for vals in data_list])
 
         # Capture the field names of the input BEFORE the creation loop consumes them
         # (it routes/pops the inherited fields towards the sub-creates of the bases). They are
@@ -5188,7 +5300,10 @@ class PolyBase(_original_BaseModel):
                 if isinstance(loaded_data, dict):
                     # Merge the payload data into vals
                     # Payload data takes precedence over existing vals
-                    processed_vals.update(loaded_data)
+                    # Keys starting with "__" are the client's own annotations (the
+                    # widget keeps the subtype's model name there), never fields.
+                    processed_vals.update({k: v for k, v in loaded_data.items()
+                                           if not k.startswith('__')})
                 else:
                     _logger.warning(
                         "poly_payload contains non-dict JSON data, ignoring: %s",
@@ -6878,6 +6993,65 @@ def _poly_base_field_names(registry, base_name, _vistos=None):
     return declarados
 
 
+_POLY_ROOTS_CONTRIBUTED_ATTR = '_poly_roots_contributed'
+
+
+def _poly_contribute_root_bookkeeping(registry):
+    """[poly][20.0] Give each hierarchy root `concrete_model_id` and `poly_payload`.
+
+    A root declares `_depend_models = {}`. Its subtypes get these two fields through
+    ir.poly_base, which `_poly_contribute_definitions` puts among their bases; a root
+    has no base, so it did not have them. Yet the root is what a list or a one2many of
+    the hierarchy shows: without them a list could not show a record's type, and a
+    new line of a one2many (`numa_polimorphic_widget`) could not carry its subtype and
+    values to the create.
+
+    They are declared the same way as the bases, as a contributed definition, so they
+    survive every rebuild of the registry. Neither is stored: no column is added.
+    """
+    from odoo.orm.model_classes import add_to_registry
+
+    done = registry.__dict__.get(_POLY_ROOTS_CONTRIBUTED_ATTR)
+    if done is None:
+        done = set()
+        setattr(registry, _POLY_ROOTS_CONTRIBUTED_ATTR, done)
+    for model_name in sorted(registry):
+        model_class = registry[model_name]
+        if model_name in done or not isinstance(model_class, type) or not _poly_is_root(model_class):
+            continue
+        atributos = {
+            '__module__': __name__,
+            '_module': None,
+            '_name': model_name,
+            '_inherit': [model_name],
+        }
+        declarados = set(_poly_declared_fields(model_class))
+        if 'concrete_model_id' not in declarados:
+            atributos['concrete_model_id'] = fields.Many2one(
+                'ir.model', string='Concrete Model', store=False, readonly=True,
+                compute='_compute_concrete_model_id', compute_sudo=True, _shareable=False)
+        if 'poly_payload' not in declarados:
+            atributos['poly_payload'] = fields.Text(
+                string='Polymorphic Payload', store=False, prefetch=False,
+                compute='_compute_payload_dummy', inverse='_inverse_payload_dummy',
+                help='Technical field carrying a new subtype record as JSON.', _shareable=False)
+        if len(atributos) == 4:
+            done.add(model_name)
+            continue
+        definition = odoo.models.MetaModel(
+            'PolyRootBookkeeping_%s' % model_name.replace('.', '_'),
+            (odoo.models.Model,),
+            atributos,
+        )
+        try:
+            add_to_registry(registry, definition)
+        except Exception:
+            _logger.error("[poly] could not declare the bookkeeping fields of root %s",
+                          model_name, exc_info=True)
+            continue
+        done.add(model_name)
+
+
 def _poly_contribute_definitions(registry, model_names, declared_inherits=None,
                                  declared_fields=None):
     """[poly][20.0] Declare the polymorphic bases as model definitions.
@@ -7025,6 +7199,18 @@ def _poly_contribute_definitions(registry, model_names, declared_inherits=None,
         # every definition Odoo has imported. The union is what the model declares.
         nativos = set(_poly_declared_fields(model_class))
         nativos.update((declared_fields or {}).get(model_name, ()))
+
+        # `concrete_model_id` comes from ir.poly_base, where it is stored and required.
+        # On a subtype it is read-only and computed from the shared base row, so nobody
+        # can fill it on a new record: left required, every form showing it (Odoo's
+        # generated form, for one) refused to save. The post-setup pass that set
+        # required=False did not reach what the client is told (fields_get), so it is
+        # declared here, on the most derived definition, where its attributes win.
+        if 'concrete_model_id' not in nativos:
+            atributos['concrete_model_id'] = fields.Many2one(
+                'ir.model', string='Concrete Model', store=False, required=False,
+                readonly=True, compute='_compute_concrete_model_id', compute_sudo=True,
+                _shareable=False)
 
         for base_name, link_name in dep_map.items():
             if base_name not in registry or not link_name:
@@ -7278,6 +7464,7 @@ def _poly_registry_setup_models(self, cr, model_names=None):
     # See doc/plan-2026-09-20-odoo-20-redesign.md, section 2.1.
     _poly_contribute_definitions(self, poly_models_names_to_process,
                                  _poly_declared_inherits, _poly_declared_campos)
+    _poly_contribute_root_bookkeeping(self)
 
     # [poly] Phase 2: Clear the per-class _poly_fields_built flag before every
     # setup_models call (including test-reset invocations).  Without this,

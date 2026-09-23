@@ -14,3 +14,4 @@ access_test_plain_delegate_parent,access_test_plain_delegate_parent,test.plain.d
 access_test_plain_delegate_child,access_test_plain_delegate_child,test.plain.delegate.child,base.group_user,crud,
 access_test_poly_mixed_base,access_test_poly_mixed_base,test.poly.mixed.base,base.group_user,crud,
 access_test_poly_mixed_child,access_test_poly_mixed_child,test.poly.mixed.child,base.group_user,crud,
+access_test_poly_site,access_test_poly_site,test.poly.site,base.group_user,crud,

@@ -11,6 +11,12 @@
     ],
     'data': [
         'security/ir.access.csv',
+        'views/poly_ui_views.xml',
     ],
+    'assets': {
+        'web.assets_tests': [
+            'numa_poly_test/static/tests/tours/poly_ui_tours.js',
+        ],
+    },
     'installable': True,
 }

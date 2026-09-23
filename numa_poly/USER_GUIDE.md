@@ -38,15 +38,20 @@ The `numa_polimorphic_widget` is a custom OWL widget that extends the standard X
 ### Architecture Flow
 
 ```
-User clicks "Add" 
-  → Widget fetches available subclasses
-  → If multiple: Shows selection dialog
-  → Opens form for selected subclass
-  → User fills form
-  → Data serialized to JSON payload
-  → Virtual record created with payload
-  → Backend processes payload on parent save
+User clicks "Add"
+  → Widget asks the server for the subtypes (poly_ui_subclasses)
+  → If several: a dialog asks which one (one: no question; none: an ordinary one2many)
+  → The subtype's form opens in a dialog; nothing is written yet
+  → On "Save", its values become a new line of the base model:
+      poly_payload = JSON of the values + the subtype (concrete_model_id)
+  → When the parent is saved, the base model's create reads poly_payload
+    and creates the record on the subtype
+Opening a saved line shows the concrete form in a dialog; it saves on its own.
+Opening an unsaved line reopens the subtype's form with what was entered.
 ```
+
+A batch that mixes subtypes (a parent saved with a Crane line and a Truck line)
+creates each line on its own subtype.
 
 ---
 
@@ -69,21 +74,18 @@ class MyPolyModel(models.Model):
     # Your model-specific fields here
 ```
 
-### Step 2: Implement get_poly_subclasses_info
+### Step 2 (optional): Override get_poly_subclasses_info
 
-Override the `get_poly_subclasses_info()` method to return available subclasses:
+By default `get_poly_subclasses_info()` returns every concrete model registered
+under the base in the poly hierarchy, directly or through another subtype, named as
+`ir.model` names them (translated). Override it only to narrow, reorder or rename the
+list, or to offer the base model itself:
 
 ```python
+@api.model
 def get_poly_subclasses_info(self):
-    """
-    Returns information about valid polymorphic subclasses.
-    
-    Returns:
-        list: List of dicts with 'model' and 'name' keys
-    """
     return [
         {'model': 'project.crane', 'name': 'Crane'},
-        {'model': 'project.excavator', 'name': 'Excavator'},
         {'model': 'project.truck', 'name': 'Truck'},
     ]
 ```
@@ -218,7 +220,10 @@ If you are converting an existing model with data into a polymorphic model (by a
 
 ### Step 1: Include poly_payload in List View
 
-**CRITICAL**: The `poly_payload` field MUST be included in the list view, even if invisible:
+**CRITICAL**: The `poly_payload` field MUST be included in the list view, even if
+invisible: it is how a new line carries its subtype and values to the server. Without
+it the widget behaves as an ordinary one2many. `concrete_model_id` (the "Type" column)
+exists on the base too, as a non-stored field.
 
 ```xml
 <field name="equipment_ids" widget="numa_polimorphic_widget">

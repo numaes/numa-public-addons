@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- A standalone list of the polymorphic base: rows open the concrete form. -->
+    <record id="test_test1_poly_list" model="ir.ui.view">
+        <field name="name">test.test1.poly.list</field>
+        <field name="model">test.test1</field>
+        <field name="arch" type="xml">
+            <list js_class="poly_list">
+                <field name="concrete_model_id" string="Type"/>
+                <field name="a1"/>
+                <field name="site_id"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_test_test1_poly_list" model="ir.actions.act_window">
+        <field name="name">Polymorphic items</field>
+        <field name="res_model">test.test1</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="test_test1_poly_list"/>
+    </record>
+
+    <!-- Each subtype has its own form, as a real subtype would. -->
+    <record id="test_test2_form" model="ir.ui.view">
+        <field name="name">test.test2.form</field>
+        <field name="model">test.test2</field>
+        <field name="arch" type="xml">
+            <form>
+                <group>
+                    <field name="a1"/>
+                    <field name="a3"/>
+                </group>
+            </form>
+        </field>
+    </record>
+
+    <record id="test_test3_form" model="ir.ui.view">
+        <field name="name">test.test3.form</field>
+        <field name="model">test.test3</field>
+        <field name="arch" type="xml">
+            <form>
+                <group>
+                    <field name="a1"/>
+                    <field name="a4"/>
+                </group>
+            </form>
+        </field>
+    </record>
+
+    <!-- A form holding a polymorphic one2many. -->
+    <record id="test_poly_site_form" model="ir.ui.view">
+        <field name="name">test.poly.site.form</field>
+        <field name="model">test.poly.site</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                    </group>
+                    <field name="item_ids" widget="numa_polimorphic_widget">
+                        <list>
+                            <field name="concrete_model_id" string="Type"/>
+                            <field name="a1"/>
+                            <field name="poly_payload" column_invisible="1"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_test_poly_site" model="ir.actions.act_window">
+        <field name="name">Polymorphic sites</field>
+        <field name="res_model">test.poly.site</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>
