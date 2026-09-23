@@ -45,6 +45,12 @@ an interface. Its first item is a single line that grants every user full access
 | `numa_asynch_exec` | not run on 20.0 | Shutdown behaviour fixed during the port |
 | everything else here | not run on 20.0 | Installs, but no suite has been executed against it |
 
+**Web client (OWL 3).** Odoo 20 runs OWL 3. `numa_poly`, `numa_background_job`,
+`numa_fsm`, `numa_product_variant` and `numa_roles` were ported on 2026-09-23, and each
+has a browser test (`tests/test_web_client.py`, or a tour) that was run red on the OWL 2
+code before it was trusted green. Details, and what the port found, are in
+numa-addons-20.0's MIGRATION-20.0.md ("OWL 3 port").
+
 **What "not run" means.** Installing cleanly says a module loads. It does not say the
 code works: the port found renamed fields, removed models and changed behaviour that no
 install ever touches, and the only thing that surfaced them was running the suites.
