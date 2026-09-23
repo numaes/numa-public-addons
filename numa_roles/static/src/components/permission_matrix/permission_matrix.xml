@@ -10,14 +10,14 @@
                 </p>
             </div>
 
-            <div t-if="state.loading" class="o_permission_matrix_loading">
+            <div t-if="this.state.loading" class="o_permission_matrix_loading">
                 <div class="spinner-border text-primary" role="status">
                     <span class="visually-hidden">Loading...</span>
                 </div>
                 <p class="mt-2">Loading the permission matrix...</p>
             </div>
 
-            <div t-if="!state.loading" class="o_permission_matrix_content">
+            <div t-if="!this.state.loading" class="o_permission_matrix_content">
                 <div class="table-responsive">
                     <table class="table table-bordered table-hover o_list_view">
                         <thead>
@@ -27,11 +27,11 @@
                                         Permissions
                                     </div>
                                 </th>
-                                <t t-foreach="state.roles" t-as="role" t-key="role.id">
+                                <t t-foreach="this.state.roles" t-as="role" t-key="role.id">
                                     <th class="o_permission_matrix_role_col">
                                         <div class="o_permission_matrix_role_header" t-att-title="role.display_name">
                                             <span class="o_permission_matrix_role_name">
-                                                <t t-esc="role.display_name"/>
+                                                <t t-out="role.display_name"/>
                                             </span>
                                         </div>
                                     </th>
@@ -44,40 +44,40 @@
                                 <tr class="o_permission_matrix_category_row">
                                     <td colspan="1" class="o_permission_matrix_category_cell">
                                         <strong>
-                                            <t t-esc="categoryName"/>
+                                            <t t-out="categoryName"/>
                                         </strong>
                                     </td>
-                                    <td t-att-colspan="state.roles.length" class="o_permission_matrix_category_spacer"></td>
+                                    <td t-att-colspan="this.state.roles.length" class="o_permission_matrix_category_spacer"></td>
                                 </tr>
                                 
                                 <!-- Permissions in this category -->
-                                <t t-foreach="state.permissionsByCategory[categoryName]" t-as="permission" t-key="permission.id">
+                                <t t-foreach="this.state.permissionsByCategory[categoryName]" t-as="permission" t-key="permission.id">
                                     <tr class="o_permission_matrix_permission_row">
                                         <td class="o_permission_matrix_permission_cell">
                                             <div class="o_permission_matrix_permission_info">
                                                 <span 
                                                     class="o_permission_matrix_permission_name"
-                                                    t-att-title="getPermissionTooltip(permission)">
-                                                    <t t-esc="permission.display_name"/>
+                                                    t-att-title="this.getPermissionTooltip(permission)">
+                                                    <t t-out="permission.display_name"/>
                                                 </span>
                                                 <t t-if="permission.technical_code">
                                                     <small class="text-muted d-block">
-                                                        <code><t t-esc="permission.technical_code"/></code>
+                                                        <code><t t-out="permission.technical_code"/></code>
                                                     </small>
                                                 </t>
                                             </div>
                                         </td>
-                                        <t t-foreach="state.roles" t-as="role" t-key="role.id">
+                                        <t t-foreach="this.state.roles" t-as="role" t-key="role.id">
                                             <td class="o_permission_matrix_cell text-center">
                                                 <div class="form-check d-flex justify-content-center">
                                                     <input 
                                                         type="checkbox" 
                                                         class="form-check-input o_permission_matrix_checkbox"
-                                                        t-att-checked="state.matrix[role.id][permission.id]"
-                                                        t-att-disabled="isSaving(role.id, permission.id)"
+                                                        t-att-checked="this.state.matrix[role.id][permission.id]"
+                                                        t-att-disabled="this.isSaving(role.id, permission.id)"
                                                         t-on-click="() => this.onTogglePermission(role.id, permission.id)"
                                                     />
-                                                    <t t-if="isSaving(role.id, permission.id)">
+                                                    <t t-if="this.isSaving(role.id, permission.id)">
                                                         <span class="spinner-border spinner-border-sm ms-2" role="status">
                                                             <span class="visually-hidden">Guardando...</span>
                                                         </span>
@@ -92,15 +92,15 @@
                     </table>
                 </div>
 
-                <t t-if="state.roles.length === 0">
+                <t t-if="this.state.roles.length === 0">
                     <div class="alert alert-info">
-                        <p>No roles yet. Create them from <strong>Settings > Roles and Permissions > Roles</strong>.</p>
+                        <p>No roles yet. Create them from <strong>Settings &gt; Roles and Permissions &gt; Roles</strong>.</p>
                     </div>
                 </t>
 
-                <t t-if="state.permissions.length === 0">
+                <t t-if="this.state.permissions.length === 0">
                     <div class="alert alert-info">
-                        <p>No permissions yet. Create them from <strong>Settings > Roles and Permissions > Permissions</strong>.</p>
+                        <p>No permissions yet. Create them from <strong>Settings &gt; Roles and Permissions &gt; Permissions</strong>.</p>
                     </div>
                 </t>
             </div>

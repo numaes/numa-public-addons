@@ -1,6 +1,7 @@
 /** @odoo-module **/
 
-import { Component, useState, onWillStart } from "@odoo/owl";
+import { Component, onWillStart, proxy, usePlugin } from "@odoo/owl";
+import { NotificationPlugin } from "@web/core/notifications/notification_plugin";
 import { useService } from "@web/core/utils/hooks";
 import { registry } from "@web/core/registry";
 import { _t } from "@web/core/l10n/translation";
@@ -10,9 +11,9 @@ export class PermissionMatrix extends Component {
 
     setup() {
         this.orm = useService("orm");
-        this.notification = useService("notification");
+        this.notification = usePlugin(NotificationPlugin);
         
-        this.state = useState({
+        this.state = proxy({
             roles: [],
             permissions: [],
             permissionsByCategory: {},
@@ -38,20 +39,20 @@ export class PermissionMatrix extends Component {
             const roles = await this.orm.searchRead(
                 "res.groups",
                 [["numa_type", "=", "role"]],
-                {
-                    fields: ["id", "name", "display_name", "implied_ids"],
-                    order: "name asc",
-                }
+                // The field list is its own argument; passed inside the options it was
+                // rejected with "Invalid fields" and the matrix never loaded.
+                ["id", "name", "display_name", "implied_ids"],
+                { order: "name asc" }
             );
 
             // Load permissions (numa_type = 'permission')
             const permissions = await this.orm.searchRead(
                 "res.groups",
                 [["numa_type", "=", "permission"]],
+                // [20.0] `res.groups.category_id` is gone; groups are scoped by
+                // `privilege_id` (res.groups.privilege), which carries the name.
+                ["id", "name", "display_name", "privilege_id", "comment", "technical_code"],
                 {
-                    // [20.0] `res.groups.category_id` is gone; groups are scoped by
-                    // `privilege_id` (res.groups.privilege), which carries the name.
-                    fields: ["id", "name", "display_name", "privilege_id", "comment", "technical_code"],
                     order: "privilege_id asc, name asc",
                 }
             );
