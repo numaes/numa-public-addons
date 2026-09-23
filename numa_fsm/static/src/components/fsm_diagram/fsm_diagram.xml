@@ -2,78 +2,78 @@
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMDiagram" owl="1">
         <div class="o_fsm_diagram_container overflow-hidden"
-             t-ref="container"
+             t-ref="this.containerRef"
              tabindex="0"
-             t-on-wheel="onWheel">
+             t-on-wheel="this.onWheel">
             <div class="o_fsm_diagram_toolbar d-flex gap-2">
-                <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
+                <button class="btn btn-secondary shadow-sm" t-on-click="this.zoomToFit" title="Ajustar Vista">
                     <i class="oi" data-icon="expand_content"/>
                 </button>
-                <button class="btn btn-primary shadow-sm" t-on-click="validateDiagram" title="Validar Diagrama">
+                <button class="btn btn-primary shadow-sm" t-on-click="this.validateDiagram" title="Validar Diagrama">
                     <i class="oi" data-icon="check"/> Validar
                 </button>
-                <button class="btn btn-info shadow-sm text-white" t-on-click="showHelp" title="Ayuda">
+                <button class="btn btn-info shadow-sm text-white" t-on-click="this.showHelp" title="Ayuda">
                     <i class="oi" data-icon="help"/> Ayuda
                 </button>
             </div>
 
-            <div t-if="state.dataLoaded"
+            <div t-if="this.state.dataLoaded"
                  class="o_fsm_viewport"
-                 t-att-style="'transform: translate(' + state.transform.x + 'px, ' + state.transform.y + 'px) scale(' + state.transform.k + ');'"
-                 t-on-dblclick="onDblClick">
+                 t-att-style="'transform: translate(' + this.state.transform.x + 'px, ' + this.state.transform.y + 'px) scale(' + this.state.transform.k + ');'"
+                 t-on-dblclick="this.onDblClick">
 
                 <!-- Connections Layer (SVG) -->
                 <svg class="o_fsm_connections">
-                    <t t-foreach="state.connections" t-as="conn" t-key="conn.id">
-                        <path t-att-d="getCurvePath(conn)"
+                    <t t-foreach="this.state.connections" t-as="conn" t-key="conn.id">
+                        <path t-att-d="this.getCurvePath(conn)"
                               t-att-class="{
                                   'o_fsm_connection': true,
-                                  'o_fsm_connection_selected': state.selectedIds.has(conn.id)
+                                  'o_fsm_connection_selected': this.state.selectedIds.has(conn.id)
                               }"/>
-                        <path t-att-d="getCurvePath(conn)"
+                        <path t-att-d="this.getCurvePath(conn)"
                               class="o_fsm_connection_hitbox"/>
                     </t>
-                    <path t-if="state.newConnection"
-                          t-att-d="`M ${state.newConnection.x1} ${state.newConnection.y1} L ${state.newConnection.x2} ${state.newConnection.y2}`"
+                    <path t-if="this.state.newConnection"
+                          t-att-d="`M ${this.state.newConnection.x1} ${this.state.newConnection.y1} L ${this.state.newConnection.x2} ${this.state.newConnection.y2}`"
                           class="o_fsm_new_connection"/>
                 </svg>
 
                 <!-- Nodes Layer (HTML) -->
                 <div class="o_fsm_nodes">
-                    <t t-foreach="state.nodes" t-as="node" t-key="node.id">
+                    <t t-foreach="this.state.nodes" t-as="node" t-key="node.id">
                         <FSMNode node="node"
-                                 diagramScale="state.transform.k"
-                                 selected="state.selectedIds.has(node.id)"
-                                 onMove="onNodeMove"
-                                 onResize="onNodeResize"
-                                 onPortMouseDown="onPortMouseDown"
-                                 onNodeDblClick="onNodeDblClick"/>
+                                 diagramScale="this.state.transform.k"
+                                 selected="this.state.selectedIds.has(node.id)"
+                                 onMove="this.onNodeMove"
+                                 onResize="this.onNodeResize"
+                                 onPortMouseDown="this.onPortMouseDown"
+                                 onNodeDblClick="this.onNodeDblClick"/>
                     </t>
                 </div>
             </div>
 
-            <FSMNodeCreator t-if="state.isCreatingNode"
-                            x="state.creatorPos.x"
-                            y="state.creatorPos.y"
-                            onSave="onNodeCreate"
-                            onClose="onNodeCreatorClose"/>
+            <FSMNodeCreator t-if="this.state.isCreatingNode"
+                            x="this.state.creatorPos.x"
+                            y="this.state.creatorPos.y"
+                            onSave="this.onNodeCreate"
+                            onClose="this.onNodeCreatorClose"/>
 
-            <FSMTransitionEditor t-if="state.editingNodeType === 'transition' or state.editingNodeType === 'start'"
-                                 node="state.editingNode"
-                                 onSave="onEditorSave"
-                                 onClose="onEditorClose"/>
+            <FSMTransitionEditor t-if="this.state.editingNodeType === 'transition' or this.state.editingNodeType === 'start'"
+                                 node="this.state.editingNode"
+                                 onSave="this.onEditorSave"
+                                 onClose="this.onEditorClose"/>
 
-            <FSMStateEditor t-if="state.editingNodeType === 'state'"
-                            node="state.editingNode"
-                            onSave="onEditorSave"
-                            onClose="onEditorClose"/>
+            <FSMStateEditor t-if="this.state.editingNodeType === 'state'"
+                            node="this.state.editingNode"
+                            onSave="this.onEditorSave"
+                            onClose="this.onEditorClose"/>
 
             <!-- Help Modal -->
-            <div t-if="state.showHelp" class="o_fsm_help_modal" t-on-click="hideHelp">
+            <div t-if="this.state.showHelp" class="o_fsm_help_modal" t-on-click="this.hideHelp">
                 <div class="o_fsm_help_content shadow-lg" t-on-click.stop="">
                     <div class="o_fsm_help_header">
                         <h4 class="mb-0">Manual de Uso - Editor FSM</h4>
-                        <button class="btn-close" t-on-click="hideHelp"></button>
+                        <button class="btn-close" t-on-click="this.hideHelp"></button>
                     </div>
                     <div class="o_fsm_help_body mt-3">
                         <ul class="list-unstyled">
@@ -88,7 +88,7 @@
                         </ul>
                     </div>
                     <div class="text-end mt-3">
-                        <button class="btn btn-primary" t-on-click="hideHelp">Entendido</button>
+                        <button class="btn btn-primary" t-on-click="this.hideHelp">Entendido</button>
                     </div>
                 </div>
             </div>

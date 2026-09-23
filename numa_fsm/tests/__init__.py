@@ -16,3 +16,4 @@ from . import test_fsm_instance_filters
 # nunca corrieron.
 from . import test_fsm_debug
 from . import test_fsm_engine
+from . import test_web_client

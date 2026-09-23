@@ -2,10 +2,10 @@
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMNode" owl="1">
         <div class="o_fsm_node"
-             t-att-style="'transform: translate(' + props.node.x + 'px, ' + props.node.y + 'px);'"
-             t-on-mousedown="onMouseDown">
+             t-att-style="'transform: translate(' + this.props.node.x + 'px, ' + this.props.node.y + 'px);'"
+             t-on-mousedown="this.onMouseDown">
             <div class="o_fsm_node_header">
-                <t t-esc="props.node.label"/>
+                <t t-out="this.props.node.label"/>
             </div>
             <div class="o_fsm_node_body">
                 <!-- Ports will go here -->

@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <t t-name="numa_fsm.FSMGraphView">
-        <div t-ref="root" class="fsm-graph-root" t-attf-class="#{state.meta.is_simulation ? 'simulation-env' : ''}">
+        <div t-ref="root" class="fsm-graph-root" t-attf-class="#{this.state.meta.is_simulation ? 'simulation-env' : ''}">
             <div class="fsm-graph-main">
                 <div class="fsm-controls">
-                    <button type="button" class="btn btn-primary" t-on-click="addState">Nuevo Estado</button>
-                    <button type="button" class="btn btn-secondary" t-on-click="addDecision">Nueva Transición/Decisión</button>
-                    <button type="button" class="btn btn-success" t-on-click="save">Guardar</button>
-                    <button type="button" class="btn btn-outline-danger" t-on-click="deleteSelected">Borrar seleccionado</button>
+                    <button type="button" class="btn btn-primary" t-on-click="this.addState">Nuevo Estado</button>
+                    <button type="button" class="btn btn-secondary" t-on-click="this.addDecision">Nueva Transición/Decisión</button>
+                    <button type="button" class="btn btn-success" t-on-click="this.save">Guardar</button>
+                    <button type="button" class="btn btn-outline-danger" t-on-click="this.deleteSelected">Borrar seleccionado</button>
                 </div>
 
                 <div class="fsm-workarea">
                     <div class="fsm-canvas-wrap">
-                        <div t-ref="canvas" class="fsm-graph-canvas" t-att-style="`transform: translate(${state.transform.x}px, ${state.transform.y}px) scale(${state.transform.k});`">
+                        <div t-ref="canvas" class="fsm-graph-canvas" t-att-style="`transform: translate(${this.state.transform.x}px, ${this.state.transform.y}px) scale(${this.state.transform.k});`">
                             <!-- SVG edges layer -->
                             <svg class="fsm-graph-edges" width="0" height="0" style="overflow: visible; position: absolute; inset: 0;">
                                 <defs>
@@ -21,26 +21,26 @@
                                     </marker>
                                 </defs>
                                 <g>
-                                    <t t-foreach="state.edges" t-as="edge" t-key="edge.id">
-                                        <path class="fsm-edge-path" t-attf-class="#{isSelectedEdge(edge) ? 'selected' : ''}" t-att-d="edgePath(edge)" marker-end="url(#fsmArrow)" t-on-click="(ev) => onEdgeClick(edge, ev)"/>
-                                        <text class="fsm-edge-label" t-att-x="edgeMid(edge).x" t-att-y="edgeMid(edge).y">
+                                    <t t-foreach="this.state.edges" t-as="edge" t-key="edge.id">
+                                        <path class="fsm-edge-path" t-attf-class="#{this.isSelectedEdge(edge) ? 'selected' : ''}" t-att-d="this.edgePath(edge)" marker-end="url(#fsmArrow)" t-on-click="(ev) => this.onEdgeClick(edge, ev)"/>
+                                        <text class="fsm-edge-label" t-att-x="this.edgeMid(edge).x" t-att-y="this.edgeMid(edge).y">
                                             <t t-esc="edge.label or ''"/>
                                         </text>
                                     </t>
-                                    <path t-if="state.connect.active" class="fsm-edge-path ghost" t-att-d="ghostPath()"/>
+                                    <path t-if="this.state.connect.active" class="fsm-edge-path ghost" t-att-d="this.ghostPath()"/>
                                 </g>
                             </svg>
 
                             <!-- Nodes layer: absolute HTML elements above SVG -->
                             <div class="fsm-graph-nodes">
-                                <t t-foreach="state.nodes" t-as="node" t-key="node.id">
-                                    <div t-if="node.type === 'state'" class="fsm-node fsm-state" t-attf-class="#{(isSelectedNode(node) ? 'selected' : '') + ' ' + getNodeCss(node)}" t-on-mousedown="(ev) => onNodeMouseDown(node, ev)" t-on-mouseup="(ev) => onNodeMouseUp(node, ev)" t-att-style="`left:${node.x}px; top:${node.y}px; width:140px; height:60px;`">
+                                <t t-foreach="this.state.nodes" t-as="node" t-key="node.id">
+                                    <div t-if="node.type === 'state'" class="fsm-node fsm-state" t-attf-class="#{(this.isSelectedNode(node) ? 'selected' : '') + ' ' + this.getNodeCss(node)}" t-on-mousedown="(ev) => this.onNodeMouseDown(node, ev)" t-on-mouseup="(ev) => this.onNodeMouseUp(node, ev)" t-att-style="`left:${node.x}px; top:${node.y}px; width:140px; height:60px;`">
                                         <div class="fsm-node-label" t-esc="node.label || node.id"/>
-                                        <div class="fsm-port out" title="Conectar" t-on-mousedown.stop.prevent="(ev) => onStartConnect(node, ev)"/>
+                                        <div class="fsm-port out" title="Conectar" t-on-mousedown.stop.prevent="(ev) => this.onStartConnect(node, ev)"/>
                                     </div>
-                                    <div t-if="node.type === 'decision'" class="fsm-node fsm-decision" t-attf-class="#{(isSelectedNode(node) ? 'selected' : '') + ' ' + getNodeCss(node)}" t-on-mousedown="(ev) => onNodeMouseDown(node, ev)" t-on-mouseup="(ev) => onNodeMouseUp(node, ev)" t-att-style="`left:${node.x}px; top:${node.y}px; width:100px; height:100px;`">
+                                    <div t-if="node.type === 'decision'" class="fsm-node fsm-decision" t-attf-class="#{(this.isSelectedNode(node) ? 'selected' : '') + ' ' + this.getNodeCss(node)}" t-on-mousedown="(ev) => this.onNodeMouseDown(node, ev)" t-on-mouseup="(ev) => this.onNodeMouseUp(node, ev)" t-att-style="`left:${node.x}px; top:${node.y}px; width:100px; height:100px;`">
                                         <div class="fsm-node-label" t-esc="node.label || node.id"/>
-                                        <div class="fsm-port out" title="Conectar" t-on-mousedown.stop.prevent="(ev) => onStartConnect(node, ev)"/>
+                                        <div class="fsm-port out" title="Conectar" t-on-mousedown.stop.prevent="(ev) => this.onStartConnect(node, ev)"/>
                                     </div>
                                 </t>
                             </div>
@@ -49,10 +49,10 @@
 
                     <!-- Sidebar -->
                     <div class="fsm-sidebar">
-                        <t t-if="state.selected">
-                            <t t-set="sel" t-value="state.selected"/>
+                        <t t-if="this.state.selected">
+                            <t t-set="sel" t-value="this.state.selected"/>
                             <t t-if="sel.type === 'node'">
-                                <t t-set="node" t-value="state.nodes.find(n => n.id === sel.id)"/>
+                                <t t-set="node" t-value="this.state.nodes.find(n => n.id === sel.id)"/>
                                 <t t-if="node">
                                     <h4>Propiedades del Nodo</h4>
                                     <div class="o_form_group">
@@ -61,12 +61,12 @@
                                     </div>
                                     <div class="o_form_group">
                                         <label>Nombre</label>
-                                        <input type="text" t-model="node.label" placeholder="label"/>
+                                        <input type="text" t-custom-model="node.label" placeholder="label"/>
                                     </div>
                                     <t t-if="node.type === 'state'">
                                         <div class="o_form_group">
                                             <label>Subtipo</label>
-                                            <select t-model="node.subtype">
+                                            <select t-custom-model="node.subtype">
                                                 <option value="initial">Inicial</option>
                                                 <option value="final">Final</option>
                                                 <option value="normal">Normal</option>
@@ -76,35 +76,35 @@
                                     <t t-if="node.type === 'decision'">
                                         <div class="o_form_group">
                                             <label>Evento</label>
-                                            <input type="text" t-model="node.label" placeholder="event_name"/>
+                                            <input type="text" t-custom-model="node.label" placeholder="event_name"/>
                                         </div>
                                         <div class="o_form_group">
                                             <label>Código Python</label>
-                                            <textarea class="code" rows="8" t-model="node.code" placeholder="# outcome = 'success'"/>
+                                            <textarea class="code" rows="8" t-custom-model="node.code" placeholder="# outcome = 'success'"/>
                                         </div>
                                         <div class="o_form_group">
                                             <label>Outcomes</label>
                                             <div class="fsm-outcomes">
                                                 <t t-set="outs" t-value="node.outcomes or []"/>
-                                                <t t-foreach="outs" t-as="out" t-key="out + '_' + loop.index">
+                                                <t t-foreach="outs" t-as="out" t-key="out + '_' + this.loop.index">
                                                     <div class="fsm-outcome-row">
-                                                        <input type="text" t-att-value="out" t-on-input="(ev) => updateOutcome(node, loop.index0, ev.target.value)"/>
-                                                        <button type="button" class="btn btn-sm btn-outline-danger" t-on-click="removeOutcome(node, loop.index0)">−</button>
+                                                        <input type="text" t-att-value="out" t-on-input="(ev) => this.updateOutcome(node, this.loop.index0, ev.target.value)"/>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" t-on-click="this.removeOutcome(node, this.loop.index0)">−</button>
                                                     </div>
                                                 </t>
-                                                <button type="button" class="btn btn-sm btn-outline-primary" t-on-click="addOutcome(node)">+ Outcome</button>
+                                                <button type="button" class="btn btn-sm btn-outline-primary" t-on-click="this.addOutcome(node)">+ Outcome</button>
                                             </div>
                                         </div>
                                     </t>
                                 </t>
                             </t>
                             <t t-if="sel.type === 'edge'">
-                                <t t-set="edge" t-value="state.edges.find(e => e.id === sel.id)"/>
+                                <t t-set="edge" t-value="this.state.edges.find(e => e.id === sel.id)"/>
                                 <t t-if="edge">
                                     <h4>Propiedades de la Conexión</h4>
                                     <div class="o_form_group">
                                         <label>Etiqueta</label>
-                                        <input type="text" t-model="edge.label" placeholder="label (outcome o evento)"/>
+                                        <input type="text" t-custom-model="edge.label" placeholder="label (outcome o evento)"/>
                                     </div>
                                     <div class="o_form_group small">
                                         <div>source: <t t-esc="edge.source"/> → target: <t t-esc="edge.target"/></div>
@@ -112,7 +112,7 @@
                                 </t>
                             </t>
                         </t>
-                        <t t-if="!state.selected">
+                        <t t-if="!this.state.selected">
                             <div class="placeholder">
                                 <p>Seleccione un nodo o una conexión para editar sus propiedades.</p>
                             </div>

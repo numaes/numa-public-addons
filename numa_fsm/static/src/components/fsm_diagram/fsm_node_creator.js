@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState } from "@odoo/owl";
+import { Component, proxy } from "@odoo/owl";
 
 export class FSMNodeCreator extends Component {
     static template = "numa_fsm.FSMNodeCreator";
@@ -12,7 +12,7 @@ export class FSMNodeCreator extends Component {
     };
 
     setup() {
-        this.state = useState({
+        this.state = proxy({
             type: 'state',
             label: 'State_' + Math.floor(Math.random() * 1000),
         });

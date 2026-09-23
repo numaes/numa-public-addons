@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState } from "@odoo/owl";
+import { Component, proxy } from "@odoo/owl";
 
 export class FSMStateEditor extends Component {
     static template = "numa_fsm.FSMStateEditor";
@@ -12,7 +12,7 @@ export class FSMStateEditor extends Component {
     };
 
     setup() {
-        this.state = useState({
+        this.state = proxy({
             label: this.props.node.label || '',
             events: [...(this.props.node.events || [])],
             is_global: this.props.node.is_global || false,

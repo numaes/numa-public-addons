@@ -4,16 +4,16 @@
         <div class="o_fsm_editor_panel">
             <div class="o_fsm_editor_header">
                 <h3>Edit State</h3>
-                <button class="btn-close" t-on-click="props.onClose"/>
+                <button class="btn-close" t-on-click="this.props.onClose"/>
             </div>
             <div class="o_fsm_editor_body">
                 <div class="mb-3">
                     <label for="stateName" class="form-label">State Name</label>
-                    <input type="text" class="form-control" id="stateName" t-model="state.label" t-att-disabled="props.readonly"/>
+                    <input type="text" class="form-control" id="stateName" t-custom-model="this.state.label" t-att-disabled="this.props.readonly"/>
                 </div>
                 <div class="mb-3">
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="isGlobal" t-model="state.is_global" t-att-disabled="props.readonly"/>
+                        <input class="form-check-input" type="checkbox" id="isGlobal" t-custom-model="this.state.is_global" t-att-disabled="this.props.readonly"/>
                         <label class="form-check-label" for="isGlobal">
                             <strong>Global State</strong>
                             <small class="d-block text-muted">Events in this state are available in any state. Only one global state allowed per FSM.</small>
@@ -22,20 +22,20 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Events (Outputs)</label>
-                    <div t-foreach="state.events" t-as="event" t-key="event_index" class="input-group mb-2">
-                        <input type="text" class="form-control" placeholder="Event Name" t-model="event.name" t-att-disabled="props.readonly"/>
-                        <button class="btn btn-outline-danger" t-on-click="() => removeEvent(event_index)" t-if="!props.readonly">
+                    <div t-foreach="this.state.events" t-as="event" t-key="event_index" class="input-group mb-2">
+                        <input type="text" class="form-control" placeholder="Event Name" t-custom-model="event.name" t-att-disabled="this.props.readonly"/>
+                        <button class="btn btn-outline-danger" t-on-click="() => this.removeEvent(event_index)" t-if="!this.props.readonly">
                             <i class="oi" data-icon="delete"/>
                         </button>
                     </div>
-                    <button class="btn btn-secondary btn-sm" t-on-click="addEvent" t-if="!props.readonly">
+                    <button class="btn btn-secondary btn-sm" t-on-click="this.addEvent" t-if="!this.props.readonly">
                         <i class="oi" data-icon="add"/> Add Event
                     </button>
                 </div>
             </div>
             <div class="o_fsm_editor_footer">
-                <button class="btn btn-primary" t-on-click="save" t-if="!props.readonly">Save</button>
-                <button class="btn btn-secondary" t-on-click="props.onClose"><t t-esc="props.readonly ? 'Close' : 'Cancel'"/></button>
+                <button class="btn btn-primary" t-on-click="this.save" t-if="!this.props.readonly">Save</button>
+                <button class="btn btn-secondary" t-on-click="this.props.onClose"><t t-esc="this.props.readonly ? 'Close' : 'Cancel'"/></button>
             </div>
         </div>
     </t>

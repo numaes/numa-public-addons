@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useState } from "@odoo/owl";
+import { Component, proxy } from "@odoo/owl";
 import { CodeEditor } from "@web/core/code_editor/code_editor";
 
 export class FSMTransitionEditor extends Component {
@@ -21,7 +21,7 @@ export class FSMTransitionEditor extends Component {
                 target: this.props.node.outcomes[key]
             }));
 
-        this.state = useState({
+        this.state = proxy({
             eventName: this.props.node.label || '', 
             code: this.props.node.code || '',
             outcomes: outcomesArray,

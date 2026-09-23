@@ -3,7 +3,7 @@
  */
 /** @odoo-module **/
 
-import { Component, useState, onWillStart, onWillUpdateProps, useRef, onMounted, onWillUnmount } from "@odoo/owl";
+import { Component, onMounted, onWillStart, onWillUnmount, onWillUpdateProps, proxy, signal } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
 import { _lt } from "@web/core/l10n/translation";
@@ -42,10 +42,10 @@ export class FSMGraphView extends Component {
     };
 
     setup() {
-        this.rootEl = useRef("root");
-        this.canvasEl = useRef("canvas");
+        this.rootEl = signal.ref();
+        this.canvasEl = signal.ref();
 
-        this.state = useState({
+        this.state = proxy({
             nodes: [], // {id, x, y, type, label}
             edges: [], // {id, source, target, label}
             transform: { ...DEFAULTS.transform },
@@ -106,7 +106,7 @@ export class FSMGraphView extends Component {
         onWillUpdateProps((nextProps) => initFromProps(nextProps));
 
         onMounted(() => {
-            const root = this.rootEl.el;
+            const root = this.rootEl();
             if (!root) return;
             root.addEventListener("mousedown", this.onMouseDownBackground);
             window.addEventListener("mousemove", this.onMouseMove);
@@ -116,7 +116,7 @@ export class FSMGraphView extends Component {
         });
 
         onWillUnmount(() => {
-            const root = this.rootEl.el;
+            const root = this.rootEl();
             if (root) {
                 root.removeEventListener("mousedown", this.onMouseDownBackground);
                 root.removeEventListener("wheel", this.onWheel);
@@ -204,7 +204,7 @@ export class FSMGraphView extends Component {
 
     // Coordinate helpers
     screenToCanvas(clientX, clientY) {
-        const rect = this.rootEl.el.getBoundingClientRect();
+        const rect = this.rootEl().getBoundingClientRect();
         const x = (clientX - rect.left - this.state.transform.x) / this.state.transform.k;
         const y = (clientY - rect.top - this.state.transform.y) / this.state.transform.k;
         return { x, y };
@@ -342,14 +342,14 @@ export class FSMGraphView extends Component {
 
     addState = () => {
         const id = `state_${Date.now()}`;
-        const center = this.screenToCanvas(this.rootEl.el.clientWidth / 2, this.rootEl.el.clientHeight / 2);
+        const center = this.screenToCanvas(this.rootEl().clientWidth / 2, this.rootEl().clientHeight / 2);
         this.state.nodes.push({ id, x: center.x - 70, y: center.y - 30, type: 'state', label: 'state', subtype: 'normal' });
         this.state.selected = { type: 'node', id };
     };
 
     addDecision = () => {
         const id = `dec_${Date.now()}`;
-        const center = this.screenToCanvas(this.rootEl.el.clientWidth / 2 + 50, this.rootEl.el.clientHeight / 2);
+        const center = this.screenToCanvas(this.rootEl().clientWidth / 2 + 50, this.rootEl().clientHeight / 2);
         this.state.nodes.push({ id, x: center.x - 50, y: center.y - 50, type: 'decision', label: 'event', code: "# outcome = 'success'\n", outcomes: ['success'] });
         this.state.selected = { type: 'node', id };
     };

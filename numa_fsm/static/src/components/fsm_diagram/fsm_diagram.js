@@ -1,9 +1,10 @@
 /** @odoo-module **/
 
-import { Component, useState, useRef, onMounted, onWillUnmount, useExternalListener, useEffect } from "@odoo/owl";
+import { Component, onMounted, onWillUnmount, proxy, signal, useListener, usePlugin } from "@odoo/owl";
+import { NotificationPlugin } from "@web/core/notifications/notification_plugin";
 import { registry } from "@web/core/registry";
+import { useLayoutEffect } from "@web/owl2/utils";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
-import { useService } from "@web/core/utils/hooks";
 import { FSMNode } from "./fsm_node";
 import { FSMTransitionEditor } from "./fsm_transition_editor";
 import { FSMStateEditor } from "./fsm_state_editor";
@@ -41,9 +42,9 @@ export class FSMDiagram extends Component {
 
     setup() {
         console.log("[FSMDiagram] setup started. props.value:", this.props.value, "record.resId:", this.props.record?.resId);
-        this.notification = useService("notification");
-        this.containerRef = useRef("container");
-        this.state = useState({
+        this.notification = usePlugin(NotificationPlugin);
+        this.containerRef = signal.ref();
+        this.state = proxy({
             nodes: [],
             connections: [],
             transform: { x: 0, y: 0, k: 1 },
@@ -64,10 +65,10 @@ export class FSMDiagram extends Component {
         this.maxHistory = 50;
         this.initTimeout = null;
 
-        useEffect(
+        useLayoutEffect(
             (val, resId, recordMode) => {
                 const directVal = this.props.record.data[this.props.name];
-                console.log("[FSMDiagram] useEffect triggered:", {
+                console.log("[FSMDiagram] useLayoutEffect triggered:", {
                     val: typeof val,
                     directVal: typeof directVal,
                     resId,
@@ -78,7 +79,7 @@ export class FSMDiagram extends Component {
                 const dataToLoad = (val !== undefined) ? val : directVal;
 
                 if (dataToLoad !== undefined) {
-                    console.log("[FSMDiagram] useEffect: Data found, calling loadData");
+                    console.log("[FSMDiagram] useLayoutEffect: Data found, calling loadData");
                     this.loadData(dataToLoad);
                     if (this.initTimeout) {
                         clearTimeout(this.initTimeout);
@@ -89,11 +90,11 @@ export class FSMDiagram extends Component {
 
                 if (this.state.dataLoaded) return;
 
-                console.log("[FSMDiagram] useEffect: value is undefined. Waiting for Odoo...");
+                console.log("[FSMDiagram] useLayoutEffect: value is undefined. Waiting for Odoo...");
                 if (!this.initTimeout) {
                     this.initTimeout = setTimeout(() => {
                         if (!this.state.dataLoaded) {
-                            console.log("[FSMDiagram] useEffect: Timeout reached, forcing default load.");
+                            console.log("[FSMDiagram] useLayoutEffect: Timeout reached, forcing default load.");
                             this.loadData(null);
                         }
                     }, 4000); 
@@ -115,9 +116,9 @@ export class FSMDiagram extends Component {
             }
         });
 
-        useExternalListener(document, "pointermove", this.onGlobalMouseMove);
-        useExternalListener(document, "pointerup", this.onGlobalMouseUp);
-        useExternalListener(document, "keydown", this.onKeyDown);
+        useListener(document, "pointermove", this.onGlobalMouseMove.bind(this));
+        useListener(document, "pointerup", this.onGlobalMouseUp.bind(this));
+        useListener(document, "keydown", this.onKeyDown.bind(this));
     }
 
     takeSnapshot() {
@@ -151,8 +152,8 @@ export class FSMDiagram extends Component {
         if (isToolbar || isEditor) return;
         if (ev.button !== 0) return;
         
-        if (this.containerRef.el) {
-            this.containerRef.el.focus();
+        if (this.containerRef()) {
+            this.containerRef().focus();
         }
 
         // Port Click logic (starting a connection)
@@ -236,7 +237,7 @@ export class FSMDiagram extends Component {
                 return node;
             });
         } else if (this.dragState.type === 'connection') {
-            const rect = this.containerRef.el.getBoundingClientRect();
+            const rect = this.containerRef().getBoundingClientRect();
             const k = this.state.transform.k;
             const x2 = (ev.clientX - rect.left - this.state.transform.x) / k;
             const y2 = (ev.clientY - rect.top - this.state.transform.y) / k;
@@ -323,7 +324,7 @@ export class FSMDiagram extends Component {
         if (nodeEl) {
             this.onNodeDblClick(nodeEl.dataset.nodeId);
         } else if (isBackground && !this.isReadonly) {
-            const rect = this.containerRef.el.getBoundingClientRect();
+            const rect = this.containerRef().getBoundingClientRect();
             this.state.creatorPos = {
                 x: (ev.clientX - rect.left - this.state.transform.x) / this.state.transform.k,
                 y: (ev.clientY - rect.top - this.state.transform.y) / this.state.transform.k,
@@ -370,7 +371,14 @@ export class FSMDiagram extends Component {
             } else {
                 console.log("[FSMDiagram] loadData: setting state nodes/connections");
                 this.state.nodes = JSON.parse(JSON.stringify(nodes));
-                this.state.connections = JSON.parse(JSON.stringify(connections));
+                // The engine compiles connections by their endpoints and never needs an id,
+                // so a definition written as JSON (or by code) may carry none. The designer
+                // keys its list by id: derive one from the endpoints, as addConnection does
+                // for the connections drawn here.
+                this.state.connections = JSON.parse(JSON.stringify(connections)).map((conn) => ({
+                    ...conn,
+                    id: conn.id || `conn_${conn.fromNodeId}_${conn.fromPortName}_${conn.toNodeId}`,
+                }));
             }
             
             this.state.dataLoaded = true;
@@ -406,11 +414,11 @@ export class FSMDiagram extends Component {
     }
 
     zoomToFit = () => {
-        if (!this.containerRef.el || this.state.nodes.length === 0) {
-            console.log("[FSMDiagram] zoomToFit skipped. containerRef.el:", !!this.containerRef.el, "nodes:", this.state.nodes.length);
+        if (!this.containerRef() || this.state.nodes.length === 0) {
+            console.log("[FSMDiagram] zoomToFit skipped. containerRef.el:", !!this.containerRef(), "nodes:", this.state.nodes.length);
             return;
         }
-        const rect = this.containerRef.el.getBoundingClientRect();
+        const rect = this.containerRef().getBoundingClientRect();
         console.log("[FSMDiagram] zoomToFit. Container rect:", rect.width, "x", rect.height);
         
         if (rect.width === 0 || rect.height === 0) {

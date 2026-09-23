@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, useRef, onMounted, onPatched } from "@odoo/owl";
+import { Component, onMounted, onPatched, signal } from "@odoo/owl";
 
 export class FSMNode extends Component {
     static template = "numa_fsm.FSMNode";
@@ -21,7 +21,7 @@ export class FSMNode extends Component {
 
     setup() {
         console.log("[FSMNode] setup. nodeId:", this.props.node.id);
-        this.nodeRef = useRef("node");
+        this.nodeRef = signal.ref();
         this.lastHeight = 0;
 
         onMounted(() => {
@@ -34,8 +34,8 @@ export class FSMNode extends Component {
     }
 
     checkSize() {
-        if (this.nodeRef.el) {
-            const height = this.nodeRef.el.offsetHeight;
+        if (this.nodeRef()) {
+            const height = this.nodeRef().offsetHeight;
             if (height !== this.lastHeight) {
                 this.lastHeight = height;
                 if (this.props.onResize) {

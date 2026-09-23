@@ -5,43 +5,43 @@
             <div class="o_fsm_modal_content">
                 <div class="o_fsm_modal_header">
                     <h3>Add Node</h3>
-                    <button class="btn-close" t-on-click="props.onClose"/>
+                    <button class="btn-close" t-on-click="this.props.onClose"/>
                 </div>
                 <div class="o_fsm_modal_body">
                     <div class="d-flex justify-content-around mb-4">
                         <button class="btn btn-outline-primary d-flex flex-column align-items-center p-3"
-                                t-att-class="{active: state.type === 'state'}"
-                                t-on-click="() => setType('state')">
+                                t-att-class="{active: this.state.type === 'state'}"
+                                t-on-click="() => this.setType('state')">
                             <i class="oi oi-2x mb-2" data-icon="radio_button_unchecked"/>
                             <span>State</span>
                         </button>
                         <button class="btn btn-outline-secondary d-flex flex-column align-items-center p-3"
-                                t-att-class="{active: state.type === 'transition'}"
-                                t-on-click="() => setType('transition')">
+                                t-att-class="{active: this.state.type === 'transition'}"
+                                t-on-click="() => this.setType('transition')">
                             <i class="oi oi-2x mb-2" data-icon="arrow_forward"/>
                             <span>Transition</span>
                         </button>
                         <button class="btn btn-outline-danger d-flex flex-column align-items-center p-3"
-                                t-att-class="{active: state.type === 'end'}"
-                                t-on-click="() => setType('end')">
+                                t-att-class="{active: this.state.type === 'end'}"
+                                t-on-click="() => this.setType('end')">
                             <i class="oi oi-2x mb-2" data-icon="stop_circle"/>
                             <span>End</span>
                         </button>
                     </div>
 
-                    <div class="mb-3" t-if="state.type === 'state'">
+                    <div class="mb-3" t-if="this.state.type === 'state'">
                         <label for="nodeLabel" class="form-label">State Name</label>
-                        <input type="text" class="form-control" id="nodeLabel" t-model="state.label" placeholder="e.g. Waiting for Input"/>
+                        <input type="text" class="form-control" id="nodeLabel" t-custom-model="this.state.label" placeholder="e.g. Waiting for Input"/>
                     </div>
 
-                    <div class="mb-3" t-if="state.type === 'transition'">
+                    <div class="mb-3" t-if="this.state.type === 'transition'">
                         <label for="nodeLabel" class="form-label">Transition Name (Optional)</label>
-                        <input type="text" class="form-control" id="nodeLabel" t-model="state.label" placeholder="Auto-generated if empty"/>
+                        <input type="text" class="form-control" id="nodeLabel" t-custom-model="this.state.label" placeholder="Auto-generated if empty"/>
                     </div>
                 </div>
                 <div class="o_fsm_modal_footer">
-                    <button class="btn btn-primary" t-on-click="save">Create</button>
-                    <button class="btn btn-secondary" t-on-click="props.onClose">Cancel</button>
+                    <button class="btn btn-primary" t-on-click="this.save">Create</button>
+                    <button class="btn btn-secondary" t-on-click="this.props.onClose">Cancel</button>
                 </div>
             </div>
         </div>

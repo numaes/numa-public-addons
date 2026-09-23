@@ -3,48 +3,48 @@
     <t t-name="numa_fsm.FSMTransitionEditor" owl="1">
         <div class="o_fsm_editor_panel">
             <div class="o_fsm_editor_header">
-                <h3>Edit <t t-esc="props.node.type === 'start' ? 'Start' : 'Transition'"/></h3>
-                <button class="btn-close" t-on-click="props.onClose"/>
+                <h3>Edit <t t-esc="this.props.node.type === 'start' ? 'Start' : 'Transition'"/></h3>
+                <button class="btn-close" t-on-click="this.props.onClose"/>
             </div>
             <div class="o_fsm_editor_body">
-                <div class="mb-3" t-if="props.node.type !== 'start'">
+                <div class="mb-3" t-if="this.props.node.type !== 'start'">
                     <label for="eventName" class="form-label">Event Name</label>
-                    <input type="text" class="form-control" id="eventName" t-model="state.eventName" t-att-disabled="props.readonly"/>
+                    <input type="text" class="form-control" id="eventName" t-custom-model="this.state.eventName" t-att-disabled="this.props.readonly"/>
                 </div>
                 <div class="mb-3 form-check">
-                    <input type="checkbox" class="form-check-input" id="isBreakpoint" t-model="state.is_breakpoint" t-att-disabled="props.readonly"/>
+                    <input type="checkbox" class="form-check-input" id="isBreakpoint" t-custom-model="this.state.is_breakpoint" t-att-disabled="this.props.readonly"/>
                     <label class="form-check-label" for="isBreakpoint">Is Breakpoint</label>
                 </div>
                 <div class="mb-3" style="height: 400px; display: flex; flex-direction: column;">
                     <label class="form-label">Code</label>
                     <div style="flex-grow: 1; border: 1px solid #ccc; position: relative;">
                         <CodeEditor
-                            mode="python"
-                            value="state.code"
-                            onChange.bind="onCodeChange"
-                            theme="monokai"
+                            mode="this.python"
+                            value="this.state.code"
+                            onChange.bind="this.onCodeChange"
+                            theme="this.monokai"
                             class="'h-100 w-100'"
-                            readonly="props.readonly"
+                            readonly="this.props.readonly"
                         />
                     </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Outcomes</label>
                     <div class="text-muted mb-2"><small>Default outcome is always available.</small></div>
-                    <div t-foreach="state.outcomes" t-as="outcome" t-key="outcome_index" class="input-group mb-2">
-                        <input type="text" class="form-control" placeholder="Outcome Name" t-model="outcome.name" t-att-disabled="props.readonly"/>
-                        <button class="btn btn-outline-danger" t-on-click="() => removeOutcome(outcome_index)" t-if="!props.readonly">
+                    <div t-foreach="this.state.outcomes" t-as="outcome" t-key="outcome_index" class="input-group mb-2">
+                        <input type="text" class="form-control" placeholder="Outcome Name" t-custom-model="outcome.name" t-att-disabled="this.props.readonly"/>
+                        <button class="btn btn-outline-danger" t-on-click="() => this.removeOutcome(outcome_index)" t-if="!this.props.readonly">
                             <i class="oi" data-icon="delete"/>
                         </button>
                     </div>
-                    <button class="btn btn-secondary btn-sm" t-on-click="addOutcome" t-if="!props.readonly">
+                    <button class="btn btn-secondary btn-sm" t-on-click="this.addOutcome" t-if="!this.props.readonly">
                         <i class="oi" data-icon="add"/> Add Outcome
                     </button>
                 </div>
             </div>
             <div class="o_fsm_editor_footer">
-                <button class="btn btn-primary" t-on-click="save" t-if="!props.readonly">Save</button>
-                <button class="btn btn-secondary" t-on-click="props.onClose"><t t-esc="props.readonly ? 'Close' : 'Cancel'"/></button>
+                <button class="btn btn-primary" t-on-click="this.save" t-if="!this.props.readonly">Save</button>
+                <button class="btn btn-secondary" t-on-click="this.props.onClose"><t t-esc="this.props.readonly ? 'Close' : 'Cancel'"/></button>
             </div>
         </div>
     </t>
