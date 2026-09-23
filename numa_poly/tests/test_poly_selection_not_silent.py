@@ -81,12 +81,10 @@ class TestCampoDesconocidoNoSeDescarta(TransactionCase):
     ``search([('mobile', '=', ...)])`` raised as it should.
     """
 
-    def test_01_un_create_con_campo_inexistente_falla(self):
-        with self.assertRaises(ValueError):
-            self.env['res.partner'].create({
-                'name': 'Prueba campo desconocido',
-                'no_existe_este_campo': 'x',
-            })
+    # The polymorphic cases (an unknown key rejected, a base field accepted, a propagated
+    # key filtered) run in numa_poly_test on a polymorphic fixture model:
+    # res.partner is polymorphic only when another module adopts it, and on a plain
+    # res.partner those cases exercise Odoo's own create, not poly's.
 
     def test_02_el_caso_real_de_la_migracion(self):
         """`mobile` was merged into `phone` in Odoo 20."""
@@ -96,18 +94,6 @@ class TestCampoDesconocidoNoSeDescarta(TransactionCase):
                 'name': 'Prueba mobile',
                 'mobile': '+54 9 11 6123 4567',
             })
-
-    def test_03_un_campo_heredado_de_una_base_sigue_siendo_valido(self):
-        """The guard must accept what the bases define, or it breaks every poly create."""
-        partner = self.env['res.partner'].create({'name': 'Prueba base valida'})
-        self.assertTrue(partner.exists())
-
-    def test_04_lo_propagado_por_poly_se_sigue_filtrando(self):
-        partner = self.env['res.partner'].with_context(**{POLY_PROPAGATED: True}).create({
-            'name': 'Propagado desconocido',
-            'no_existe_este_campo': 'x',
-        })
-        self.assertTrue(partner.exists())
 
 
 @tagged('post_install', '-at_install')

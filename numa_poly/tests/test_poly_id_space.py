@@ -52,7 +52,11 @@ class TestPolyIdSpace(TransactionCase):
     def test_01_every_shared_table_draws_from_the_one_allocator(self):
         """The structural invariant: no table of the space with a sequence of its own."""
         tables = self._shared_tables()
-        self.assertTrue(tables, "no polymorphic table was detected")
+        if not tables:
+            # numa_poly declares no polymorphic model of its own: the space exists only
+            # once a module adopts it (numa_poly_test, numa_planning, ...). Nothing to
+            # check here, which is not the same as the check passing.
+            self.skipTest("no polymorphic model is installed; numa_poly_test covers this")
 
         propias = [t for t in tables if POLY_ID_SEQUENCE not in self._column_default(t)]
 

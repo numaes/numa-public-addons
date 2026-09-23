@@ -67,15 +67,29 @@ class TestTranslatedFields(TransactionCase):
         lang = self.env['res.lang']._activate_lang('fr_FR')
         if not lang:
             self.skipTest('fr_FR is not available in this database')
-        record = self.Child.create({'child_a_field': 'A', 'translated_field': 'Hello'})
+        # Created in English on purpose: what Odoo stores for the other languages depends
+        # on the language the record is created in and on whether en_US is active.
+        record = self.Child.with_context(lang='en_US').create(
+            {'child_a_field': 'A', 'translated_field': 'Hello'})
         self.env.flush_all()
 
         record.with_context(lang='fr_FR').translated_field = 'Bonjour'
 
         value, kind = self._stored(record)
         self.assertEqual(kind, 'object')
-        self.assertEqual(value['en_US'], 'Hello')
         self.assertEqual(value['fr_FR'], 'Bonjour')
+        if self.env['res.lang']._lang_get('en_US').active:
+            self.assertEqual(value['en_US'], 'Hello')
+        # Otherwise Odoo keeps en_US, the fallback, in step with the latest write: that
+        # is core's rule, not poly's.
+
+        # Exactly what Odoo stores for an ordinary translated field, either way.
+        core = self.env['res.partner.category'].with_context(lang='en_US').create({'name': 'Hello'})
+        self.env.flush_all()
+        core.with_context(lang='fr_FR').name = 'Bonjour'
+        self.env.flush_all()
+        self.env.cr.execute("SELECT name FROM res_partner_category WHERE id = %s", [core.id])
+        self.assertEqual(value, self.env.cr.fetchone()[0])
 
     def test_05_the_record_can_be_copied(self):
         """`copy_data` reads the raw translations, which is where the read blew up."""

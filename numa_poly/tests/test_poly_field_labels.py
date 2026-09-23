@@ -40,13 +40,28 @@ class TestPolyFieldLabels(TransactionCase):
                     return base_field, dependent
         return None
 
+    def _translate(self, field_row, text):
+        """Set the second-language label the way a .po import does: en_US untouched.
+
+        Neither an ORM write in another language nor `update_field_translations` is the
+        same thing. When en_US is not an active language, both keep en_US in step with
+        the latest value, so the base's source label changes and the clone no longer
+        matches it. The translation importer only adds the language's key.
+        """
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE ir_model_fields SET field_description = field_description || "
+            "jsonb_build_object(%s, %s) WHERE id = %s",
+            (self.lang.code, text, field_row.id))
+        field_row.invalidate_recordset(['field_description'])
+
     def test_the_pairs_are_found_at_all(self):
         self.assertTrue(self.poly._poly_dependent_pairs())
 
     def test_the_clone_adopts_the_base_translation(self):
         base_field, dependent = self.pair
         code = self.lang.code
-        base_field.with_context(lang=code).field_description = 'Etiqueta base'
+        self._translate(base_field, 'Etiqueta base')
 
         self.poly._poly_sync_dependent_field_labels()
         dependent.invalidate_recordset()
@@ -63,7 +78,7 @@ class TestPolyFieldLabels(TransactionCase):
         """A dependent that renames a field keeps what it said."""
         base_field, dependent = self.pair
         dependent.with_context(lang='en_US').field_description = 'Its own name'
-        base_field.with_context(lang=self.lang.code).field_description = 'Otra'
+        self._translate(base_field, 'Otra')
 
         self.poly._poly_sync_dependent_field_labels()
         dependent.invalidate_recordset()
@@ -74,6 +89,6 @@ class TestPolyFieldLabels(TransactionCase):
 
     def test_running_it_twice_writes_nothing_the_second_time(self):
         base_field, _dependent = self.pair
-        base_field.with_context(lang=self.lang.code).field_description = 'Dos'
+        self._translate(base_field, 'Dos')
         self.poly._poly_sync_dependent_field_labels()
         self.assertEqual(self.poly._poly_sync_dependent_field_labels(), 0)

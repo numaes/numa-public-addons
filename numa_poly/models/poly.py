@@ -1342,7 +1342,11 @@ class IrPolyBase(models.Model):
                 "dependency graph may hold a cycle.", max_passes)
 
         if total:
-            self.env.registry.clear_cache()
+            # [20.0] Registry.clear_cache() is gone. The labels were written in SQL, and
+            # translated labels are served by ir.model.fields._get_fields_cached, an
+            # ormcache in the 'stable' set: both caches have to forget the old text.
+            self.env['ir.model.fields'].invalidate_model(['field_description'])
+            self.env.transaction.invalidate_ormcache('stable')
             _logger.info("[poly] adopted %s label(s) onto dependent models.",
                          total)
         return total
