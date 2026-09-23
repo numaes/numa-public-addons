@@ -4,3 +4,4 @@
 from . import common
 from . import test_status
 from . import test_access
+from . import test_web_client

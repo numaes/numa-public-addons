@@ -3,3 +3,4 @@
 
 from . import test_end_to_end
 from . import test_background_jobs
+from . import test_spinner_widget

@@ -12,19 +12,19 @@
     <t t-name="numa_background_job.bj_spinner" owl="1" >
         <div class="bj_spinner">
             <div >
-                <p t-esc="state_msg"/>
+                <p t-out="this.state_msg"/>
             </div>
 
             <div class="o_bjprogressbar">
                 <div class="o_bjprogressbar_indicator"
-                     t-att-class="'o_bjprogressbar_' + spinner_state"
-                     t-attf-style="width: {{ progress_pct }}%;"/>
+                     t-att-class="'o_bjprogressbar_' + this.spinner_state"
+                     t-attf-style="width: {{ this.progress_pct }}%;"/>
                 <div class="o_bjprogressbar_frame">
-                    <span class="o_bjprogressbar_value" t-esc="progress_pct + ' %'"/>
+                    <span class="o_bjprogressbar_value" t-out="this.progress_pct + ' %'"/>
                 </div>
             </div>
 
-            <div t-if="spinner_state == 'init' || spinner_state == 'started'"
+            <div t-if="this.spinner_state == 'init' || this.spinner_state == 'started'"
                  class="o_bjprogressbar_abort" >
                 <button t-on-click="() => this.click_abort()">
                     Cancel
@@ -32,10 +32,10 @@
             </div>
 
             <div class="o_bjprogressbar_message" >
-                <span t-esc="current_status"/>
+                <span t-out="this.current_status"/>
             </div>
-            <div t-if="error_msg" class="o_bjprogressbar_error" >
-                <span t-esc="error_msg"/>
+            <div t-if="this.error_msg" class="o_bjprogressbar_error" >
+                <span t-out="this.error_msg"/>
             </div>
         </div>
     </t>

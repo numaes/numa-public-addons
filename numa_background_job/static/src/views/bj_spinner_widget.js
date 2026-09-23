@@ -10,13 +10,15 @@
  * before any notification was sent.
  */
 
-import { Component, onWillStart, onWillUnmount, useState } from "@odoo/owl";
+import { BusPlugin } from "@bus/services/bus_plugin";
+import { Component, onWillStart, onWillUnmount, proxy, usePlugin } from "@odoo/owl";
 import { browser } from "@web/core/browser/browser";
 import { deserializeDateTime, formatDateTime } from "@web/core/l10n/dates";
 import { _t } from "@web/core/l10n/translation";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { standardFieldProps } from "@web/views/fields/standard_field_props";
+import { ActionPlugin } from "@web/webclient/actions/action_plugin";
 
 const NOTIFICATION_TYPE = "res.background_job/state";
 
@@ -45,13 +47,13 @@ export class BJSpinner extends Component {
         super.setup();
 
         this.orm = useService("orm");
-        this.action = useService("action");
-        this.bus = useService("bus_service");
+        this.action = usePlugin(ActionPlugin);
+        this.bus = usePlugin(BusPlugin);
         // Nothing has changed at mount time: what is read from the job came with the
         // form, so there is nothing to reload yet.
         this.mounted = false;
 
-        this.state = useState({
+        this.state = proxy({
             spinner_name: "...",
             spinner_state: "init",
             state_msg: _t("Starting ..."),
