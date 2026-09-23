@@ -51,6 +51,13 @@ has a browser test (`tests/test_web_client.py`, or a tour) that was run red on t
 code before it was trusted green. Details, and what the port found, are in
 numa-addons-20.0's MIGRATION-20.0.md ("OWL 3 port").
 
+**Upgrading next to website.** Odoo 20 made `ir.ui.view.visibility` (website) a
+required column whose default only the ORM knows. During an upgrade, a module that
+does not depend on website loads before it, so a new view it inserts gets NULL and the
+whole upgrade aborts. Reproduced on Odoo 20 with no numa module. `numa_website_compat`
+installs itself wherever website is and gives the column the same default in the
+database.
+
 **What "not run" means.** Installing cleanly says a module loads. It does not say the
 code works: the port found renamed fields, removed models and changed behaviour that no
 install ever touches, and the only thing that surfaced them was running the suites.
