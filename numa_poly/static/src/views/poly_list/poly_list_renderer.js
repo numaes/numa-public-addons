@@ -5,7 +5,8 @@ import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import { Dialog } from "@web/core/dialog/dialog";
 import { _t } from "@web/core/l10n/translation";
-import { Component, useState } from "@odoo/owl";
+import { Component, proxy, usePlugin } from "@odoo/owl";
+import { ActionPlugin } from "@web/webclient/actions/action_plugin";
 
 /**
  * Dialog component for selecting polymorphic subclass type
@@ -21,7 +22,7 @@ class PolyTypeSelectionDialog extends Component {
     };
 
     setup() {
-        this.state = useState({ selectedModel: null });
+        this.state = proxy({ selectedModel: null });
     }
 
     onSelect(model) {
@@ -53,7 +54,7 @@ class PolyTypeSelectionDialog extends Component {
 export class PolyListRenderer extends ListRenderer {
     setup() {
         super.setup();
-        this.actionService = useService("action");
+        this.actionService = usePlugin(ActionPlugin);
         this.rpc = useService("rpc");
         this.dialog = useService("dialog");
     }

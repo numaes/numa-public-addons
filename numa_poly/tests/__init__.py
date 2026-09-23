@@ -15,3 +15,4 @@ from . import test_poly_views_valid
 from . import test_poly_registry_stabilization
 from . import test_poly_create_db_errors
 from . import test_poly_selection_not_silent
+from . import test_web_client
