@@ -147,3 +147,14 @@ class PurchaseOrderLine(models.Model):
         if self.product_id.price_base != 'normal' and self.price_qty:
             values['quantity'] = self.price_qty
         return values
+
+    @api.depends('price_qty')
+    def _compute_amount(self):
+        """Recompute the amounts when the physical quantity moves.
+
+        Core's `_compute_amount` depends on `product_qty`; ours is driven by
+        `price_qty`, which core has never heard of. Without this, a total typed over by
+        hand changed `price_qty` and left the subtotal it had already computed where it
+        was -- the line said 47 kg and charged for 50.
+        """
+        return super()._compute_amount()

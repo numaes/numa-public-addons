@@ -180,6 +180,22 @@ class TestSalePriceQty(TransactionCase):
 
         self.assertEqual(order.so_weight, 100.0)
 
+    def test_16_the_order_total_is_the_magnitude_total(self):
+        """The order's untaxed amount is what the lines charge, not units times price.
+
+        The order's amounts are built from `_prepare_base_line_for_taxes_computation`,
+        not from the lines' stored subtotals, so this is what proves the hook is the
+        one the order reads.
+        """
+        slab = self._product('weight', price=3.0, weight=12.5)
+        order = self._order(slab, qty=4.0)
+
+        self.assertEqual(order.amount_untaxed, 150.0)
+
+        order.order_line.total_weight = 47.0
+
+        self.assertEqual(order.amount_untaxed, 141.0)
+
     # ------------------------------------------------------------------
     # Taxes
     # ------------------------------------------------------------------

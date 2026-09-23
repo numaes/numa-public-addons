@@ -163,6 +163,23 @@ class TestPurchasePriceQty(TransactionCase):
 
         self.assertEqual(order.po_weight, 100.0)
 
+    def test_13_the_order_total_is_the_magnitude_total(self):
+        """The order's untaxed amount follows the magnitude, a typed-over one included.
+
+        `test_07` passed without the `price_qty` dependency on `_compute_amount` only
+        because it never read the subtotal before typing over the total. Once computed,
+        the subtotal stayed where it was.
+        """
+        slab = self._product('weight', weight=12.5)
+        order = self._order(slab, qty=4.0)
+
+        self.assertEqual(order.amount_untaxed, 150.0)
+
+        order.order_line.total_weight = 47.0
+
+        self.assertEqual(order.order_line.price_subtotal, 141.0)
+        self.assertEqual(order.amount_untaxed, 141.0)
+
     # ------------------------------------------------------------------
     # Taxes
     # ------------------------------------------------------------------
