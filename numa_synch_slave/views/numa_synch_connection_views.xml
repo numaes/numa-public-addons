@@ -29,12 +29,12 @@
                                 type="object"
                                 string="Test Connection"
                                 class="btn-primary"
-                                icon="fa-plug"/>
+                                icon="power"/>
                         <button name="action_run_sync"
                                 type="object"
                                 string="Run Sync Now"
                                 class="btn-secondary"
-                                icon="fa-refresh"/>
+                                icon="refresh"/>
                     </header>
                     <sheet>
                         <group>

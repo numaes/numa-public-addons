@@ -24,11 +24,11 @@
                     <div t-foreach="state.outcomes" t-as="outcome" t-key="outcome_index" class="input-group mb-2">
                         <input type="text" class="form-control" placeholder="Outcome Name" t-model="outcome.name"/>
                         <button class="btn btn-outline-danger" t-on-click="() => this.removeOutcome(outcome_index)">
-                            <i class="fa fa-trash"/>
+                            <i class="oi" data-icon="delete"/>
                         </button>
                     </div>
                     <button class="btn btn-secondary btn-sm" t-on-click="addOutcome">
-                        <i class="fa fa-plus"/> Add Outcome
+                        <i class="oi" data-icon="add"/> Add Outcome
                     </button>
                 </div>
             </div>

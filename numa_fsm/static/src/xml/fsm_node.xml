@@ -19,8 +19,8 @@
             <div t-if="props.node.type !== 'start'" class="o_fsm_port o_fsm_port_in" t-att-data-node-id="props.node.id" data-port-type="in"/>
 
             <div class="o_fsm_node_header">
-                <i t-if="props.node.is_breakpoint" class="fa fa-hand-paper-o me-2" title="Breakpoint"/>
-                <i t-if="props.node.is_global &amp;&amp; props.node.type === 'state'" class="fa fa-globe me-2 text-info" title="Global State - Events available in any state"/>
+                <i t-if="props.node.is_breakpoint" class="oi me-2" data-icon="back_hand" title="Breakpoint"/>
+                <i t-if="props.node.is_global &amp;&amp; props.node.type === 'state'" class="oi me-2 text-info" data-icon="public" title="Global State - Events available in any state"/>
                 <t t-esc="props.node.label"/>
             </div>
             <div class="o_fsm_node_body">

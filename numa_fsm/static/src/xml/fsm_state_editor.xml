@@ -25,11 +25,11 @@
                     <div t-foreach="state.events" t-as="event" t-key="event_index" class="input-group mb-2">
                         <input type="text" class="form-control" placeholder="Event Name" t-model="event.name" t-att-disabled="props.readonly"/>
                         <button class="btn btn-outline-danger" t-on-click="() => removeEvent(event_index)" t-if="!props.readonly">
-                            <i class="fa fa-trash"/>
+                            <i class="oi" data-icon="delete"/>
                         </button>
                     </div>
                     <button class="btn btn-secondary btn-sm" t-on-click="addEvent" t-if="!props.readonly">
-                        <i class="fa fa-plus"/> Add Event
+                        <i class="oi" data-icon="add"/> Add Event
                     </button>
                 </div>
             </div>

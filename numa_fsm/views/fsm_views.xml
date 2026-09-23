@@ -17,7 +17,7 @@
                     </header>
                     <sheet>
                         <div class="oe_button_box" name="button_box">
-                            <button class="oe_stat_button" icon="fa-check-shield" invisible="not is_verified">
+                            <button class="oe_stat_button" icon="verified" invisible="not is_verified">
                                 <div class="o_stat_info">
                                     <span class="o_stat_text text-success">Verified</span>
                                 </div>

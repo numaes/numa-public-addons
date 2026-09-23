@@ -9,16 +9,16 @@
                  t-on-wheel="onWheel">
                 <div class="o_fsm_diagram_toolbar d-flex gap-2">
                     <button class="btn btn-secondary shadow-sm" t-on-click="zoomToFit" title="Ajustar Vista">
-                        <i class="fa fa-expand"/>
+                        <i class="oi" data-icon="expand_content"/>
                     </button>
                     <button class="btn btn-primary shadow-sm" t-on-click="onValidateClick" title="Validar Diagrama">
-                        <i class="fa fa-check"/> Validar
+                        <i class="oi" data-icon="check"/> Validar
                     </button>
                     <button class="btn btn-info shadow-sm text-white" t-on-click="showHelp" title="Ayuda">
-                        <i class="fa fa-question-circle"/> Ayuda
+                        <i class="oi" data-icon="help"/> Ayuda
                     </button>
                     <div t-if="props.record.data.is_verified" class="badge rounded-pill bg-success d-flex align-items-center px-3 shadow-sm" title="Verificado">
-                        <i class="fa fa-shield me-1"/> Verificado
+                        <i class="oi me-1" data-icon="security"/> Verificado
                     </div>
                 </div>
 
@@ -107,14 +107,14 @@
                     </div>
                     <div class="o_fsm_help_body mt-3">
                         <ul class="list-unstyled">
-                            <li class="mb-2"><i class="fa fa-mouse-pointer text-primary me-2"/> <strong>Click simple:</strong> Seleccionar elemento.</li>
-                            <li class="mb-2"><i class="fa fa-arrows-alt text-primary me-2"/> <strong>Arrastrar:</strong> Mover nodos (múltiples si están seleccionados).</li>
-                            <li class="mb-2"><i class="fa fa-plus-circle text-primary me-2"/> <strong>Doble Click Fondo:</strong> Crear nuevo Nodo/Transición/Fin.</li>
-                            <li class="mb-2"><i class="fa fa-edit text-primary me-2"/> <strong>Doble Click Nodo:</strong> Editar propiedades y código.</li>
-                            <li class="mb-2"><i class="fa fa-link text-primary me-2"/> <strong>Arrastrar desde Puerto:</strong> Crear nueva conexión.</li>
-                            <li class="mb-2"><i class="fa fa-trash text-danger me-2"/> <strong>Supr / Backspace:</strong> Borrar elementos seleccionados.</li>
-                            <li class="mb-2"><i class="fa fa-undo text-success me-2"/> <strong>Ctrl + Z:</strong> Deshacer último cambio.</li>
-                            <li class="mb-2"><i class="fa fa-search-plus text-primary me-2"/> <strong>Rueda Ratón:</strong> Zoom In/Out.</li>
+                            <li class="mb-2"><i class="oi text-primary me-2" data-icon="arrow_selector_tool"/> <strong>Click simple:</strong> Seleccionar elemento.</li>
+                            <li class="mb-2"><i class="oi text-primary me-2" data-icon="open_with"/> <strong>Arrastrar:</strong> Mover nodos (múltiples si están seleccionados).</li>
+                            <li class="mb-2"><i class="oi text-primary me-2" data-icon="add_circle"/> <strong>Doble Click Fondo:</strong> Crear nuevo Nodo/Transición/Fin.</li>
+                            <li class="mb-2"><i class="oi text-primary me-2" data-icon="edit"/> <strong>Doble Click Nodo:</strong> Editar propiedades y código.</li>
+                            <li class="mb-2"><i class="oi text-primary me-2" data-icon="link"/> <strong>Arrastrar desde Puerto:</strong> Crear nueva conexión.</li>
+                            <li class="mb-2"><i class="oi text-danger me-2" data-icon="delete"/> <strong>Supr / Backspace:</strong> Borrar elementos seleccionados.</li>
+                            <li class="mb-2"><i class="oi text-success me-2" data-icon="undo"/> <strong>Ctrl + Z:</strong> Deshacer último cambio.</li>
+                            <li class="mb-2"><i class="oi text-primary me-2" data-icon="zoom_in"/> <strong>Rueda Ratón:</strong> Zoom In/Out.</li>
                         </ul>
                     </div>
                     <div class="text-end mt-3">

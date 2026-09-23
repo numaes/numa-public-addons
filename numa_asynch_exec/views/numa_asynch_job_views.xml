@@ -20,7 +20,7 @@
                        decoration-success="state == 'done'"
                        decoration-info="state == 'running'"
                        decoration-warning="state == 'waiting'"/>
-                <button name="action_requeue" type="object" string="Requeue" icon="fa-repeat"
+                <button name="action_requeue" type="object" string="Requeue" icon="redo"
                         invisible="state == 'done'"/>
             </list>
         </field>
