@@ -1,6 +1,6 @@
 import logging
 
-from odoo import fields, models, api, _
+from odoo import fields, models, api
 
 _logger = logging.getLogger(__name__)
 
@@ -13,13 +13,14 @@ UNIT_PER_TYPE = {
     'weight': 'kg',
 }
 
-FIELD_NAME_PER_TYPE = {
-    'length': 'product_length',
-    'width': 'product_width',
-    'height': 'product_height',
-    'surface': 'surface',
-    'volume': 'volume',
-    'weight': 'weight',
+# The three price bases that also have a total on the line, which a user may type
+# over when the physical piece is not what the product record says. For those, the
+# line's own figure is what the price is applied to; for the rest there is nothing to
+# override and the product answers.
+OVERRIDABLE_TOTAL_PER_BASE = {
+    'surface': 'total_surface',
+    'weight': 'total_weight',
+    'volume': 'total_volume',
 }
 
 
@@ -29,7 +30,7 @@ class SaleOrder(models.Model):
     so_weight = fields.Float('Weight', compute='_compute_weight_volume')
     so_volume = fields.Float('Volume', compute='_compute_weight_volume')
 
-    @api.depends('order_line')
+    @api.depends('order_line.total_weight', 'order_line.total_volume')
     def _compute_weight_volume(self):
         for so in self:
             so.so_weight = 0.0
@@ -38,21 +39,18 @@ class SaleOrder(models.Model):
                 so.so_weight += line.total_weight
                 so.so_volume += line.total_volume
 
-    def _get_real_price_currency(self, product, rule_id, qty, uom, pricelist_id):
-        return 0.0, False
-
-    def update_prices(self):
-        self.ensure_one()
-        lines_to_update = []
-        for line in self.order_line.filtered(lambda line: not line.display_type):
-            line_quantity = line.product_uom_qty
-            line.product_id_change()
-            line.product_uom_qty = line_quantity
-            line._compute_unit_price_uom()
-            line.compute_totals()
-        self.show_update_pricelist = False
-        self.message_post(body=_("Product prices have been recomputed according to pricelist <b>%s<b> ",
-                                 self.pricelist_id.display_name))
+    # Two methods were removed from here, both of them overriding core methods that no
+    # longer exist.
+    #
+    # `_get_real_price_currency` was dropped from `sale.order` in 17.0. This override
+    # returned `(0.0, False)` -- had core still called it, every line would have been
+    # priced at zero.
+    #
+    # `update_prices` is `action_update_prices` / `_recompute_prices` in core since
+    # 17.0, so nothing called this override any more. The body called
+    # `product_id_change()` and `compute_totals()` by hand to refill the physical
+    # quantities; those are computed fields now, so a pricelist change refills them by
+    # itself and there is nothing left for this method to do.
 
 
 class SaleOrderLine(models.Model):
@@ -65,23 +63,42 @@ class SaleOrderLine(models.Model):
     unit_weight = fields.Float(string='Unit Weight', related='product_id.weight', readonly=True)
     unit_volume = fields.Float(string='Unit Volume', related='product_id.volume', readonly=True)
 
-    total_surface = fields.Float(string='Total Surface')
-    total_weight = fields.Float(string='Total Weight')
-    total_volume = fields.Float(string='Total Volume')
+    # These four were plain stored fields, filled only by `@api.onchange`
+    # handlers -- so they were filled only when a human typed into the form. A line
+    # created any other way (a quotation template, an import, the website shop, an API
+    # call, duplicating an order) kept them at zero. And `price_qty` is what
+    # `_prepare_base_line_for_taxes_computation` puts on the tax base, so a slab priced
+    # by weight was invoiced by the unit: four slabs at 3.00/kg came to 12.00 instead
+    # of 150.00, with nothing in the log and a plausible-looking number on the invoice.
+    #
+    # They are computed fields now. `store=True` keeps them queryable and reportable;
+    # `readonly=False` on the totals keeps the one thing the onchange allowed, which is
+    # typing over a derived figure when the physical piece is not what the product
+    # record says.
+    # `precompute=True` because core's `price_subtotal`, `price_tax`, `price_total`
+    # and `margin` are precomputed and now depend on `price_qty` through
+    # `_compute_amount`. Without it Odoo drops their precomputation with a warning per
+    # field, and every sale order line costs four extra recomputations on create.
+    total_surface = fields.Float(
+        string='Total Surface', compute='_compute_physical_totals',
+        store=True, readonly=False, precompute=True)
+    total_weight = fields.Float(
+        string='Total Weight', compute='_compute_physical_totals',
+        store=True, readonly=False, precompute=True)
+    total_volume = fields.Float(
+        string='Total Volume', compute='_compute_physical_totals',
+        store=True, readonly=False, precompute=True)
 
-    price_qty = fields.Float(string='Price Qty')
-    unit_price_uom_id = fields.Many2one('uom.uom', 'Price UoM')
+    price_qty = fields.Float(
+        string='Price Qty', compute='_compute_price_qty', store=True,
+        precompute=True,
+        help="The quantity the price is applied to: the physical magnitude named by "
+             "the product's price base, or the ordered quantity when it prices "
+             "normally.")
+    unit_price_uom_id = fields.Many2one(
+        'uom.uom', 'Price UoM', compute='_compute_unit_price_uom', store=True)
 
-    @api.onchange('product_id')
-    def product_id_change(self):
-        for sol in self:
-            sol.compute_totals()
-
-    @api.onchange('product_uom', 'product_uom_qty')
-    def product_uom_change(self):
-        for sol in self:
-            sol.compute_totals()
-
+    @api.depends('product_id', 'product_id.price_base', 'product_id.uom_id')
     def _compute_unit_price_uom(self):
         uom_model = self.env['uom.uom']
 
@@ -97,9 +114,9 @@ class SaleOrderLine(models.Model):
             else:
                 sol.unit_price_uom_id = False
 
-    @api.onchange('product_uom_qty', 'product_uom')
-    @api.depends('product_uom_qty', 'product_uom')
-    def compute_totals(self):
+    @api.depends('product_uom_qty', 'product_uom', 'product_id',
+                 'unit_surface', 'unit_weight', 'unit_volume')
+    def _compute_physical_totals(self):
         for sol in self:
             normalized_qty = sol.product_uom._compute_quantity(sol.product_uom_qty, sol.product_id.uom_id) \
                 if sol.product_uom else sol.product_uom_qty
@@ -107,44 +124,51 @@ class SaleOrderLine(models.Model):
             sol.total_weight = normalized_qty * sol.unit_weight
             sol.total_volume = normalized_qty * sol.unit_volume
 
-            sol.compute_price()
-
-    @api.onchange('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'product_uom')
-    @api.depends('total_surface', 'total_weight', 'total_volume', 'product_uom_qty', 'product_uom')
-    def compute_price(self):
+    @api.depends('total_surface', 'total_weight', 'total_volume', 'product_uom_qty',
+                 'product_uom', 'product_id', 'product_id.price_base',
+                 'unit_length', 'unit_width', 'unit_height')
+    def _compute_price_qty(self):
+        # The six-way branch that used to be here is `product._get_price_qty`, which
+        # `numa_physical_product` centralises for exactly these three bridges. The only
+        # thing that is not the product's answer is a total the user typed over.
         for sol in self:
-            normalized_qty = sol.product_uom._compute_quantity(sol.product_uom_qty, sol.product_id.uom_id) \
-                             if sol.product_uom else sol.product_uom_qty
-            price_type = sol.product_id.price_base
-            if price_type == 'length':
-                price_qty = sol.unit_length * normalized_qty
-            elif price_type == 'width':
-                price_qty = sol.unit_width * normalized_qty
-            elif price_type == 'height':
-                price_qty = sol.unit_height * normalized_qty
-            elif price_type == 'surface':
-                price_qty = sol.total_surface
-            elif price_type == 'weight':
-                price_qty = sol.total_weight
-            elif price_type == 'volume':
-                price_qty = sol.total_volume
+            if not sol.product_id:
+                sol.price_qty = sol.product_uom_qty
+                continue
+            total_field = OVERRIDABLE_TOTAL_PER_BASE.get(sol.product_id.price_base)
+            if total_field:
+                sol.price_qty = sol[total_field]
             else:
-                price_qty = normalized_qty
-            sol.price_qty = price_qty
+                sol.price_qty = sol.product_id._get_price_qty(
+                    sol.product_uom_qty, uom=sol.product_uom)
 
-            sol._compute_amount()
+    def _prepare_base_line_for_taxes_computation(self, **kwargs):
+        """Tax the physical quantity, not the number of units.
 
-    @api.depends('price_qty', 'discount', 'price_unit', 'tax_id')
+        This used to be a fork of `_compute_amount`: it called `tax_id.compute_all`
+        itself and wrote `price_subtotal`, `price_total` and `price_tax` by hand. The
+        line was right, but only the line: since 18.0 the order's `amount_untaxed`,
+        `amount_tax` and tax totals are built from this hook, not from the line's stored
+        amounts, so an order priced by weight showed per-kilo subtotals on its lines and
+        a per-unit total at the bottom. The down payment wizard reads the same hook.
+
+        The hook hands core a base line and lets it compute. What this module changes is
+        one number in that line.
+        """
+        values = super()._prepare_base_line_for_taxes_computation(**kwargs)
+        if self.product_id.price_base != 'normal' and self.price_qty:
+            values['quantity'] = self.price_qty
+        return values
+
+    @api.depends('price_qty')
     def _compute_amount(self):
-        for sol in self:
-            price = sol.price_unit * (1 - (sol.discount or 0.0) / 100.0)
-            taxes = sol.tax_id.compute_all(price, sol.order_id.currency_id, sol.price_qty,
-                                           product=sol.product_id, partner=sol.order_id.partner_id)
-            sol.update({
-                'price_tax': sum(t.get('amount', 0.0) for t in taxes.get('taxes', [])),
-                'price_total': taxes['total_included'],
-                'price_subtotal': taxes['total_excluded'],
-            })
+        """Recompute the amounts when the physical quantity moves.
+
+        Core's `_compute_amount` depends on `product_uom_qty`; ours is driven by
+        `price_qty`, which core has never heard of. Declaring the extra dependency here
+        and delegating is what keeps the totals in step without forking the computation.
+        """
+        return super()._compute_amount()
 
     def _prepare_invoice_line(self, **optional_values):
         """
@@ -247,44 +271,9 @@ class SaleOrderLine(models.Model):
         else:
             return self.qty_to_invoice, self.qty_to_invoice
 
-    @api.model
-    def _get_price_total_and_subtotal_model(self, price_unit, quantity, discount,
-                                            currency, product, partner, taxes, move_type):
-        ''' This method is used to compute 'price_total' & 'price_subtotal'.
-
-        :param price_unit:  The current price unit.
-        :param quantity:    The current quantity.
-        :param discount:    The current discount.
-        :param currency:    The line's currency.
-        :param product:     The line's product.
-        :param partner:     The line's partner.
-        :param taxes:       The applied taxes.
-        :param move_type:   The type of the move.
-        :return:            A dictionary containing 'price_subtotal' & 'price_total'.
-        '''
-        res = {}
-
-        # Compute 'price_subtotal'.
-        line_discount_price_unit = price_unit * (1 - (discount / 100.0))
-        subtotal = self.price_qty * line_discount_price_unit
-
-        # Compute 'price_total'.
-        if taxes:
-            force_sign = -1 if move_type in ('out_invoice', 'in_refund', 'out_receipt') else 1
-            taxes_res = taxes._origin.with_context(force_sign=force_sign).compute_all(
-                line_discount_price_unit,
-                quantity=self.price_qty,
-                currency=currency,
-                product=product,
-                partner=partner,
-                is_refund=move_type in ('out_refund', 'in_refund'))
-            res['price_subtotal'] = taxes_res['total_excluded']
-            res['price_total'] = taxes_res['total_included']
-        else:
-            res['price_total'] = res['price_subtotal'] = subtotal
-
-        # In case of multi currency, round before it's use for computing debit credit
-        if currency:
-            res = {k: currency.round(v) for k, v in res.items()}
-        return res
-
+    # `_get_price_total_and_subtotal_model` was removed from here. It is an
+    # `account.move.line` method from Odoo 14 -- it never belonged on a sale order line,
+    # so nothing ever called it -- and it computed taxes with `compute_all(...,
+    # force_sign=...)`, an API the current tax engine no longer has. What it was reaching
+    # for, taxing the physical quantity instead of the unit count, is what
+    # `_prepare_base_line_for_taxes_computation` above does through the supported hook.

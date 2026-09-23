@@ -20,9 +20,9 @@
                             <field name="unit_volume"/>
                         </group>
                         <group>
-                            <field name="total_surface" readonly="True" force_save="True"/>
-                            <field name="total_weight" readonly="True" force_save="True"/>
-                            <field name="total_volume" readonly="True" force_save="True"/>
+                            <field name="total_surface"/>
+                            <field name="total_weight"/>
+                            <field name="total_volume"/>
                         </group>
                     </group>
                 </xpath>

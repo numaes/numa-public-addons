@@ -12,6 +12,15 @@ UNIT_PER_TYPE = {
     'weight': 'kg',
 }
 
+# The three price bases that also have a total on the line, which a user may type over
+# when the physical piece is not what the product record says. For those, the line's
+# own figure is what the price is applied to.
+OVERRIDABLE_TOTAL_PER_BASE = {
+    'surface': 'total_surface',
+    'weight': 'total_weight',
+    'volume': 'total_volume',
+}
+
 
 class Invoice(models.Model):
     _inherit = 'account.move'
@@ -19,7 +28,9 @@ class Invoice(models.Model):
     invoice_weight = fields.Float('Weight', compute='_compute_weight_volume')
     invoice_volume = fields.Float('Volume', compute='_compute_weight_volume')
 
-    @api.depends('line_ids')
+    # It depended on `line_ids` alone, so the figures went stale the moment a line's
+    # quantity moved -- the list of lines had not changed, only what was on them.
+    @api.depends('invoice_line_ids.total_weight', 'invoice_line_ids.total_volume')
     def _compute_weight_volume(self):
         for invoice in self:
             if invoice.is_invoice():
@@ -63,44 +74,78 @@ class InvoiceLine(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        mls = super().create(vals_list)
-        to_sync = mls.filtered(
-            lambda l: l.move_id.is_invoice(include_receipts=True) and l.product_id
-        )
-        if to_sync:
-            to_sync._sync_price_qty()
-            to_sync._compute_totals()
-        return mls
+        lines = super().create(vals_list)
+
+        physical = self.env['account.move.line']
+        keep_price_qty = self.env['account.move.line']
+        for line, vals in zip(lines, vals_list):
+            if not line.move_id.is_invoice(include_receipts=True) or not line.product_id:
+                continue
+            physical |= line
+            if 'price_qty' in vals:
+                keep_price_qty |= line
+
+        if physical:
+            physical._sync_dimension_totals()
+            # A line that arrived with its own `price_qty` keeps it. The sale order it
+            # came from reads weight and volume off what the delivery actually weighed
+            # -- which is the whole reason the stock bridge records them per line --
+            # and recomputing here from the catalogue would bill a different figure
+            # from the one that was picked, with both documents looking correct.
+            (physical - keep_price_qty)._sync_price_qty()
+            physical._compute_totals()
+        return lines
+
+    def write(self, vals):
+        result = super().write(vals)
+
+        if not {'quantity', 'product_id', 'product_uom_id'} & set(vals):
+            return result
+
+        physical = self.filtered(
+            lambda line: line.move_id.is_invoice(include_receipts=True) and line.product_id)
+        if physical:
+            # Changing the quantity on an existing line used to leave `price_qty`
+            # where it was, and `price_qty` is what the tax base is computed on. Only
+            # the form refreshed it, through an onchange; an edit made in code, by an
+            # import or by a credit note billed the previous quantity.
+            physical._sync_dimension_totals()
+            if 'price_qty' not in vals:
+                physical._sync_price_qty()
+        return result
+
+    def _sync_dimension_totals(self):
+        """The physical magnitudes this line carries, from the product and the quantity."""
+        for il in self:
+            normalized_qty = il._normalized_qty()
+            il.total_surface = normalized_qty * il.unit_surface
+            il.total_weight = normalized_qty * il.unit_weight
+            il.total_volume = normalized_qty * il.unit_volume
 
     def _sync_price_qty(self):
-        """Compute price_qty and dimension totals from product dimensions and quantity.
-        Called on programmatic creation (SO/PO invoicing, credit notes) and from onchange handlers.
+        """The quantity the price is applied to.
+
+        The six-way branch that used to be here is `product._get_price_qty`, which
+        `numa_physical_product` centralises for exactly these bridges. The only thing
+        that is not the product's answer is a total the user typed over.
         """
         for il in self:
             if not il.product_id or not il.product_uom_id:
                 il.price_qty = il.quantity or 1.0
                 continue
-
-            normalized_qty = il.product_uom_id._compute_quantity(il.quantity, il.product_id.uom_id)
-            il.total_surface = normalized_qty * il.unit_surface
-            il.total_weight = normalized_qty * il.unit_weight
-            il.total_volume = normalized_qty * il.unit_volume
-
-            price_type = il.product_id.price_base
-            if price_type == 'length':
-                il.price_qty = il.product_id.product_length * normalized_qty
-            elif price_type == 'width':
-                il.price_qty = il.product_id.product_width * normalized_qty
-            elif price_type == 'height':
-                il.price_qty = il.product_id.product_height * normalized_qty
-            elif price_type == 'surface':
-                il.price_qty = il.total_surface
-            elif price_type == 'weight':
-                il.price_qty = il.total_weight
-            elif price_type == 'volume':
-                il.price_qty = il.total_volume
+            total_field = OVERRIDABLE_TOTAL_PER_BASE.get(il.product_id.price_base)
+            if total_field:
+                il.price_qty = il[total_field]
             else:
-                il.price_qty = normalized_qty
+                il.price_qty = il.product_id._get_price_qty(
+                    il.quantity, uom=il.product_uom_id)
+
+    def _normalized_qty(self):
+        self.ensure_one()
+        if self.product_id and self.product_uom_id:
+            return self.product_uom_id._compute_quantity(
+                self.quantity, self.product_id.uom_id)
+        return self.quantity
 
     @api.onchange('product_id')
     def product_id_change(self):
@@ -108,6 +153,7 @@ class InvoiceLine(models.Model):
             if not il.move_id.is_invoice(include_receipts=True):
                 continue
             il.compute_unit_price_uom()
+            il._sync_dimension_totals()
             il._sync_price_qty()
             il._compute_totals()
 
@@ -118,6 +164,7 @@ class InvoiceLine(models.Model):
                 continue
             if not il.product_id or not il.product_uom_id:
                 continue
+            il._sync_dimension_totals()
             il._sync_price_qty()
             il._compute_totals()
 
@@ -127,13 +174,9 @@ class InvoiceLine(models.Model):
         for il in self:
             if not il.move_id.is_invoice(include_receipts=True) or not il.product_id:
                 continue
-            price_type = il.product_id.price_base
-            if price_type == 'surface':
-                il.price_qty = il.total_surface
-            elif price_type == 'weight':
-                il.price_qty = il.total_weight
-            elif price_type == 'volume':
-                il.price_qty = il.total_volume
+            total_field = OVERRIDABLE_TOTAL_PER_BASE.get(il.product_id.price_base)
+            if total_field:
+                il.price_qty = il[total_field]
             il._compute_totals()
 
     def compute_unit_price_uom(self):
@@ -157,25 +200,10 @@ class InvoiceLine(models.Model):
     def _compute_totals(self):
         super()._compute_totals()
 
-    def _get_fields_onchange_balance(self, quantity=None, discount=None, amount_currency=None, move_type=None, currency=None, taxes=None, price_subtotal=None, force_computation=False):
-        self.ensure_one()
-        return self._get_fields_onchange_balance_model(
-            quantity=(quantity or self.quantity) if self.product_id.price_base == 'normal' else self.price_qty,
-            discount=discount or self.discount,
-            amount_currency=amount_currency or self.amount_currency,
-            move_type=move_type or self.move_id.move_type,
-            currency=currency or self.currency_id or self.move_id.currency_id,
-            taxes=taxes or self.tax_ids,
-            price_subtotal=price_subtotal or self.price_subtotal,
-            force_computation=force_computation,
-        )
-
-    @api.model
-    def _get_fields_onchange_balance_model(self, quantity, discount, amount_currency, move_type, currency, taxes,
-                                           price_subtotal, force_computation=False):
-        if not self or not self.product_id:
-            return {}
-        else:
-            return super()._get_fields_onchange_balance_model(
-                quantity, discount, amount_currency, move_type, currency, taxes,
-                price_subtotal, force_computation=force_computation)
+    # `_get_fields_onchange_balance` and `_get_fields_onchange_balance_model`
+    # were overridden here, and neither exists in Odoo any more -- they went with the
+    # accounting rework several versions ago. The overrides called a `super()` that was
+    # not there, so they were dead code that would have raised the day something called
+    # them. The physical quantity reaches the tax computation through
+    # `_prepare_product_base_line_for_taxes_computation` above, which is the hook the
+    # current engine calls.

@@ -2,7 +2,7 @@
 
 {
     'name': 'NUMA Physical Product - Purchase',
-    'version': '18.0.0.1',
+    'version': '18.0.0.2',
     'category': 'Product',
     'description': """
 Technical module to expand purchase by physical products
