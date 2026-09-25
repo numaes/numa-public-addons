@@ -18,31 +18,17 @@ msgstr ""
 #. module: numa_physical_product
 #: model_terms:ir.ui.view,arch_db:numa_physical_product.product_normal_form_view
 msgid ""
-"A magnitude is inherited from the product template until this variant "
-"states its own. Untick to inherit again."
+"A magnitude is inherited from the product template until this variant states"
+" its own. Untick to inherit again."
 msgstr ""
-"Una magnitud se hereda de la plantilla del producto hasta que esta "
-"variante declara la suya. Destildá para volver a heredarla."
-
+"Una magnitud se hereda de la plantilla del producto hasta que esta variante "
+"declara la suya. Destildá para volver a heredarla."
 
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__price_base
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_template__price_base
 msgid "Base of Price"
 msgstr "Precio basado en"
-
-#. module: numa_physical_product
-#: model:ir.model.fields,help:numa_physical_product.field_product_pricelist_item__base
-msgid ""
-"Base price for computation.\n"
-"Sales Price: The base price will be the Sales Price.\n"
-"Cost Price: The base price will be the cost price.\n"
-"Other Pricelist: Computation of the base price based on another Pricelist."
-msgstr ""
-"Precio base para el cálculo.\n"
-"Precio de venta: El precio base será el precio de venta.\n"
-"Precio de coste El precio base será el precio de coste.\n"
-"Otra lista de precios: Cálculo del precio base en base a otra lista de precios."
 
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_pricelist_item__base
@@ -83,7 +69,6 @@ msgstr "Basado en el ancho [m]"
 #: model:ir.model,name:numa_physical_product.model_numa_physical_magnitudes
 msgid "Derived Physical Magnitudes"
 msgstr "Magnitudes físicas derivadas"
-
 
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__product_height
@@ -132,7 +117,6 @@ msgstr "Longitud, precio por [m]"
 msgid "Normal"
 msgstr "Normal"
 
-
 #. module: numa_physical_product
 #: model:ir.model.fields.selection,name:numa_physical_product.selection__product_template__price_base__normal
 msgid "Normal, per product UoM"
@@ -143,48 +127,40 @@ msgstr "Normal, por UdM del producto"
 msgid "Own Height"
 msgstr "Alto propio"
 
-
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_length_set
 msgid "Own Length"
 msgstr "Largo propio"
-
 
 #. module: numa_physical_product
 #: model_terms:ir.ui.view,arch_db:numa_physical_product.product_normal_form_view
 msgid "Own Magnitudes"
 msgstr "Magnitudes propias"
 
-
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_surface_set
 msgid "Own Surface"
 msgstr "Superficie propia"
-
 
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_volume_set
 msgid "Own Volume"
 msgstr "Volumen propio"
 
-
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_weight_set
 msgid "Own Weight"
 msgstr "Peso propio"
-
 
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_weight_factor_set
 msgid "Own Weight Factor"
 msgstr "Factor de peso propio"
 
-
 #. module: numa_physical_product
 #: model:ir.model.fields,field_description:numa_physical_product.field_product_product__variant_width_set
 msgid "Own Width"
 msgstr "Ancho propio"
-
 
 #. module: numa_physical_product
 #: model_terms:ir.ui.view,arch_db:numa_physical_product.product_template_form_view
@@ -338,3 +314,58 @@ msgstr "Basado en el ancho"
 #: model:ir.model.fields.selection,name:numa_physical_product.selection__product_pricelist_item__base__width
 msgid "Width, price per m"
 msgstr "Ancho, precio por [m]"
+
+#. module: numa_physical_product
+#: model:ir.module.module,description:base.module_numa_physical_product
+msgid ""
+"\n"
+"This module extends the handling of physical dimensions on products.\n"
+"It adds width, heigth, length and surface.\n"
+"It computes automatically surface and volume and it can compute weights automatically \n"
+"for products where the weight can be calculated on a factor multiplied by length, surface or volume\n"
+"\n"
+msgstr ""
+"\n"
+"Este módulo amplía el manejo de las dimensiones físicas de los productos.\n"
+"Agrega ancho, alto, largo y superficie.\n"
+"Calcula automáticamente la superficie y el volumen, y puede calcular el peso automáticamente\n"
+"en los productos cuyo peso se obtiene multiplicando un factor por el largo, la superficie o el volumen.\n"
+"\n"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,help:numa_physical_product.field_product_pricelist_item__base
+msgid ""
+"Base price for computation.\n"
+"Sales Price: The base price will be the Sales Price.\n"
+"Cost Price : The base price will be the cost price.\n"
+"Prefered Supplier's price : The vendor's price.'\n"
+"Other Pricelist : Computation of the base price based on another Pricelist.\n"
+"Context price: Price dependant context, for example other factor in Sale Order line"
+msgstr ""
+"Precio base para el cálculo.\n"
+"Precio de venta: el precio base será el precio de venta.\n"
+"Precio de costo: el precio base será el precio de costo.\n"
+"Precio del proveedor preferido: el precio del proveedor.\n"
+"Otra lista de precios: el precio base se calcula a partir de otra lista de precios.\n"
+"Precio de contexto: precio que depende del contexto, por ejemplo de otro factor en la línea del pedido de venta"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_numa_physical_magnitudes__display_name
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_pricelist_item__display_name
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__display_name
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template__display_name
+msgid "Display Name"
+msgstr "Nombre mostrado"
+
+#. module: numa_physical_product
+#: model:ir.model.fields,field_description:numa_physical_product.field_numa_physical_magnitudes__id
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_pricelist_item__id
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_product__id
+#: model:ir.model.fields,field_description:numa_physical_product.field_product_template__id
+msgid "ID"
+msgstr "ID"
+
+#. module: numa_physical_product
+#: model:ir.module.module,shortdesc:base.module_numa_physical_product
+msgid "NUMA Physical Product"
+msgstr "NUMA Producto Físico"
