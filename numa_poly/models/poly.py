@@ -7199,6 +7199,19 @@ def _poly_contribute_definitions(registry, model_names, declared_inherits=None,
         # every definition Odoo has imported. The union is what the model declares.
         nativos = set(_poly_declared_fields(model_class))
         nativos.update((declared_fields or {}).get(model_name, ()))
+        # So is what it takes from a mixin it declares: `mrp.workcenter` has its
+        # `company_id` from `resource.mixin` (related to its resource, defaulting to the
+        # current company). On a clean start the mixin's classes are not in the MRO yet,
+        # so only the declarations can say it; without them that `company_id` was
+        # replaced by the planning base's, with no default, and a work center was
+        # created with no company. The poly bases and their own ancestors are left out:
+        # their fields are the ones this contribution exists to relate.
+        de_las_bases = {'ir.poly_base'}
+        for base_name in dep_map:
+            de_las_bases.add(base_name)
+            de_las_bases |= _ancestros_declarados(base_name)
+        for ancestro in _ancestros_declarados(model_name) - de_las_bases:
+            nativos.update((declared_fields or {}).get(ancestro, ()))
 
         # `concrete_model_id` comes from ir.poly_base, where it is stored and required.
         # On a subtype it is read-only and computed from the shared base row, so nobody

@@ -49,6 +49,12 @@ Odoo version's source before upgrading.
   only base-only fields are injected as related (`_poly_native_field_names`,
   `_poly_leaf_columns`). Breaking this re-introduces the res.partner/project.task
   `MissingError` and Text-vs-Char registry crashes. (Tests: bridge suites.)
+  "Own" includes what the model takes from a mixin it declares: `mrp.workcenter`'s
+  `company_id` comes from `resource.mixin`. On a clean start the mixin's classes are
+  not in the MRO yet, so the contribution reads the declarations of every declared
+  ancestor except the poly bases. A suite run with `-u` does not see this class of
+  bug; run the tests on a normal start too. (Test: numa_planning_mrp
+  `test_workcenter_company`.)
 - **Field-state restoration:** `create()` flips `store`/`related`/`inherited` on shared
   Field objects and restores them in a `try/finally`. The finally must always run.
   (Test: `test_10_create_failure_restores_field_state`.)
