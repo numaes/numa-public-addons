@@ -49,6 +49,10 @@ def parse_po(path):
 class TranslationCoverage(object):
     """Mixin: every term of ``TRANSLATED_MODULE`` is translated into Spanish."""
 
+    #: Odoo collects only the test methods a class defines itself; without this,
+    #: none of the checks below ever ran in the classes that use the mixin.
+    allow_inherited_tests_method = True
+
     #: The module whose terms are checked. Set it in the subclass.
     TRANSLATED_MODULE = None
     #: The language file that has to cover them.
@@ -80,6 +84,8 @@ class TranslationCoverage(object):
         perfectly correct. That happened once and cost an afternoon.
         """
         from odoo.tools.translate import code_translations
+        if not self._terms_in_the_module(python_only=True):
+            self.skipTest("%s has no messages in Python code" % self.TRANSLATED_MODULE)
         self.assertTrue(
             code_translations.get_python_translations(
                 self.TRANSLATED_MODULE, self.TRANSLATED_LANG),
