@@ -5759,7 +5759,9 @@ class PolyBase(_original_BaseModel):
             return True
         return super()._valid_field_parameter(field, name)
 
-    def _field_to_sql(self, alias: str, fname: str, query: (Query | None) = None, flush: bool = True) -> SQL:
+    # [20.0] Odoo 20 dropped the `flush` argument (models.py:2380); passing it on made
+    # every non-polymorphic call fail -- reloading a chart of accounts, for one.
+    def _field_to_sql(self, alias: str, fname: str, query: (Query | None) = None) -> SQL:
         """
         Return an :class:`SQL` object that represents the value of the given field.
 
@@ -5774,7 +5776,7 @@ class PolyBase(_original_BaseModel):
 
         # [poly] STRICT ISOLATION: if not a poly model, delegate immediately.
         if not _poly_is_polymorphic(self):
-            return super()._field_to_sql(alias, fname, query, flush)
+            return super()._field_to_sql(alias, fname, query)
 
         # [poly] Infinite-recursion prevention by means of a stack on the Environment.
         # Odoo 18 calls _field_to_sql recursively for related fields.
@@ -5828,7 +5830,7 @@ class PolyBase(_original_BaseModel):
                 return model._field_to_sql(alias, field.name, query)
 
             try:
-                return super()._field_to_sql(alias, fname, query, flush)
+                return super()._field_to_sql(alias, fname, query)
             except KeyError as e:
                 # [poly] DO NOT TOUCH the related PATHS at runtime if it fails.
                 # Report the error for debugging but delegate to Odoo.
