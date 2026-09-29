@@ -47,7 +47,7 @@ class Invoice(models.Model):
         result = super()._prepare_product_base_line_for_taxes_computation(product_line)
         if (
             self.is_invoice(include_receipts=True)
-            and product_line.price_qty is not False
+            and product_line.price_base in UNIT_PER_TYPE
             and abs((product_line.price_qty or 0.0) - product_line.quantity) > 0.0001
         ):
             result['quantity'] = product_line.price_qty
