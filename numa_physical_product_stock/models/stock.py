@@ -1,10 +1,15 @@
 """Physical magnitudes on stock moves: what was actually shipped, not what the catalogue says."""
 
 import logging
+from collections import defaultdict
 
 from odoo import api, fields, models
+from odoo.tools.sql import create_index
 
 _logger = logging.getLogger(__name__)
+
+# Key in `cr.cache` for the arrivals already looked up while `_action_assign` runs.
+_LAST_ARRIVAL_MEMO = 'numa_physical_product_stock.last_arrival'
 
 UNIT_PER_TYPE = {
     'length': 'm',
@@ -84,6 +89,24 @@ class StockMove(models.Model):
         product record's, and the operator corrects it from there.
         """
         result = super()._prepare_move_line_vals(quantity=quantity, reserved_quant=reserved_quant)
+        result.update(self._last_arrival_dimensions())
+        return result
+
+    def _last_arrival_dimensions(self):
+        """The unit dimensions a new line of this move opens at.
+
+        For a product tracked by serial number core calls `_prepare_move_line_vals`
+        once per unit: confirming a purchase of 15000 meters asked the same question
+        15000 times, each one a search over every line the product ever had, and the
+        request outlived the worker's time limit. Inside `_action_assign` the answer
+        cannot change -- nothing becomes done there -- so it is looked up once per
+        product and location and kept until the assignment ends.
+        """
+        self.ensure_one()
+        key = (self.product_id.id, self.location_id.id)
+        memo = self.env.cr.cache.get(_LAST_ARRIVAL_MEMO)
+        if memo is not None and key in memo:
+            return memo[key]
 
         last_ingress = self.env['stock.move.line'].search([
             ('product_id', '=', self.product_id.id),
@@ -92,39 +115,66 @@ class StockMove(models.Model):
         ], order='write_date desc', limit=1)
 
         source = last_ingress or self
-        result['unit_weight'] = source.unit_weight
-        result['unit_surface'] = source.unit_surface
-        result['unit_volume'] = source.unit_volume
-
-        return result
+        dimensions = {
+            'unit_weight': source.unit_weight,
+            'unit_surface': source.unit_surface,
+            'unit_volume': source.unit_volume,
+        }
+        if memo is not None:
+            memo[key] = dimensions
+        return dimensions
 
     def _action_assign(self, force_qty=False):
         """Carry the dimensions of this order's previous delivery onto the new one."""
-        move_line_model = self.env['stock.move.line']
+        cache = self.env.cr.cache
+        owns_memo = _LAST_ARRIVAL_MEMO not in cache
+        if owns_memo:
+            cache[_LAST_ARRIVAL_MEMO] = {}
+        try:
+            result = super()._action_assign(force_qty=force_qty)
+            self._carry_previous_delivery_dimensions()
+        finally:
+            if owns_memo:
+                cache.pop(_LAST_ARRIVAL_MEMO, None)
+        return result
 
-        result = super()._action_assign(force_qty=force_qty)
+    def _carry_previous_delivery_dimensions(self):
+        """The same search per line, and a write per line, did not scale with serials
+        either: lines asking the same question share one search, and lines getting the
+        same answer share one write."""
+        move_line_model = self.env['stock.move.line']
+        previous_delivery = {}
+        line_ids_per_dimensions = defaultdict(list)
 
         for move in self:
-            if not move.picking_id.sale_id:
+            sale = move.picking_id.sale_id
+            if not sale:
                 continue
             for move_line in move.move_line_ids:
-                last_ingress = move_line_model.search([
-                    ('picking_id.sale_id', '=', move.picking_id.sale_id.id),
-                    ('product_id', '=', move_line.product_id.id),
-                    ('location_dest_id', '=', move_line.location_id.id),
-                    ('picking_id.state', '=', 'done'),
-                ], order='write_date desc', limit=1)
+                key = (sale.id, move_line.product_id.id, move_line.location_id.id)
+                if key not in previous_delivery:
+                    previous_delivery[key] = move_line_model.search([
+                        ('picking_id.sale_id', '=', sale.id),
+                        ('product_id', '=', move_line.product_id.id),
+                        ('location_dest_id', '=', move_line.location_id.id),
+                        ('picking_id.state', '=', 'done'),
+                    ], order='write_date desc', limit=1)
+                last_ingress = previous_delivery[key]
                 if last_ingress:
-                    move_line.write({
-                        'unit_weight': last_ingress.unit_weight,
-                        'unit_surface': last_ingress.unit_surface,
-                        'unit_volume': last_ingress.unit_volume,
-                    })
+                    dimensions = (last_ingress.unit_weight,
+                                  last_ingress.unit_surface,
+                                  last_ingress.unit_volume)
+                    line_ids_per_dimensions[dimensions].append(move_line.id)
                 # With no previous delivery there is nothing to carry over, and
                 # `_compute_unit_dimensions` has already seeded the line from the
                 # product record.
 
-        return result
+        for (weight, surface, volume), line_ids in line_ids_per_dimensions.items():
+            move_line_model.browse(line_ids).write({
+                'unit_weight': weight,
+                'unit_surface': surface,
+                'unit_volume': volume,
+            })
 
 
 class StockMoveLine(models.Model):
@@ -169,6 +219,16 @@ class StockMoveLine(models.Model):
     sale_order_id = fields.Many2one(
         'sale.order', string='Pedido', related='picking_id.sale_id',
         readonly=True, store=True)
+
+    def init(self):
+        super().init()
+        # `_last_arrival_dimensions`: the last done line of a product into a location.
+        # Only `product_id` was indexed, so each lookup read every line the product
+        # ever had -- 63000 for a meter that is bought by the 15000 -- to keep none.
+        create_index(
+            self.env.cr, 'stock_move_line_numa_last_arrival_index', self._table,
+            ['product_id', 'location_dest_id', 'write_date DESC'],
+            where="state = 'done'")
 
     @api.depends('product_id')
     def _compute_unit_dimensions(self):

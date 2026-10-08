@@ -1,5 +1,7 @@
 """What a delivery actually weighed, recorded on the delivery."""
 
+from unittest.mock import patch
+
 from odoo.tests import TransactionCase, tagged
 
 
@@ -277,3 +279,67 @@ class TestStockPhysicals(TransactionCase):
         vals = outgoing._prepare_move_line_vals(quantity=1.0)
 
         self.assertEqual(vals['unit_weight'], 10.0)
+
+    # ------------------------------------------------------------------
+    # Serial numbers: one line per unit
+    # ------------------------------------------------------------------
+
+    def _serial_receipt(self, qty):
+        product = self._product(tracking='serial')
+        picking_type = self.env.ref('stock.picking_type_in')
+        picking_type.use_create_lots = True
+        move = self.env['stock.move'].create({
+            'name': 'Meter',
+            'product_id': product.id,
+            'product_uom_qty': qty,
+            'location_id': self.env.ref('stock.stock_location_suppliers').id,
+            'location_dest_id': self.stock.id,
+            'picking_type_id': picking_type.id,
+        })
+        return move
+
+    def _count_lookups(self):
+        """Patch the lookup on the registry class and count the searches it runs."""
+        StockMove = type(self.env['stock.move'])
+        original = StockMove._last_arrival_dimensions
+        searches = []
+        StockMoveLine = type(self.env['stock.move.line'])
+        original_search = StockMoveLine.search
+
+        def counting_lookup(move):
+            def counting_search(lines, domain, *args, **kwargs):
+                searches.append(domain)
+                return original_search(lines, domain, *args, **kwargs)
+            with patch.object(StockMoveLine, 'search', counting_search):
+                return original(move)
+
+        return patch.object(StockMove, '_last_arrival_dimensions', counting_lookup), searches
+
+    def test_17_a_serial_receipt_looks_up_the_last_arrival_once(self):
+        """Confirming 15000 serial-tracked meters timed the worker out.
+
+        Core prepares one move line per unit, and every one of them searched every line
+        the product ever had for the same answer. The answer cannot change while the
+        moves are being assigned, so it is asked once.
+        """
+        move = self._serial_receipt(25)
+        patcher, searches = self._count_lookups()
+
+        with patcher:
+            move._action_confirm()
+
+        self.assertEqual(len(move.move_line_ids), 25)
+        self.assertEqual(len(searches), 1)
+        self.assertEqual(set(move.move_line_ids.mapped('unit_weight')), {10.0})
+
+    def test_18_the_memo_does_not_outlive_the_assignment(self):
+        """A line marked done afterwards is the new last arrival, and must be seen."""
+        move = self._serial_receipt(3)
+        move._action_confirm()
+
+        self.assertNotIn('numa_physical_product_stock.last_arrival', self.env.cr.cache)
+
+    def test_19_the_last_arrival_lookup_has_its_index(self):
+        self.env.cr.execute(
+            "SELECT 1 FROM pg_indexes WHERE indexname = 'stock_move_line_numa_last_arrival_index'")
+        self.assertTrue(self.env.cr.rowcount)
