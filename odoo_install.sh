@@ -96,6 +96,50 @@ echo -e "\n---- Creating the ODOO PostgreSQL User  ----"
 createuser -s "pg-$PROJECT-$OE_VERSION"
 
 #--------------------------------------------------
+# Tune PostgreSQL
+#--------------------------------------------------
+# Los valores de fabrica son para una maquina minima: 128 MB de shared_buffers. Con eso,
+# en argisen (2026-10-08) confirmar una compra de 15000 unidades con numero de serie leia
+# stock_move_line del disco una y otra vez y pasaba el limit_time_real del worker; con
+# shared_buffers en 2 GB confirmo.
+#
+# Los valores son para la maquina estandar de 16 GB, con Odoo en la misma maquina: hasta 9
+# workers de unos 400 MB cada uno en uso normal (limit_memory_soft los recicla en 2 GB).
+# max_connections queda en 100, que es contra lo que se calcula db_maxconn mas abajo.
+# Va en conf.d, que se lee despues de postgresql.conf, y se escribe una sola vez: una
+# segunda instancia en la misma maquina no pisa lo que se haya ajustado a mano.
+PG_CONF_DIR="$(dirname "$(sudo -u postgres psql -X -At -c 'SHOW config_file')")/conf.d"
+PG_TUNING="$PG_CONF_DIR/10-numa-tuning.conf"
+if [ ! -f "$PG_TUNING" ]; then
+  echo -e "\n---- Tuning PostgreSQL for a 16 GB machine ($PG_TUNING) ----"
+  sudo mkdir -p "$PG_CONF_DIR"
+  sudo tee "$PG_TUNING" > /dev/null <<'EOF'
+# Written by odoo_install.sh for the standard 16 GB machine, Odoo on the same host.
+
+# Memory
+shared_buffers = 4GB                 # 25% of RAM (requires restart)
+effective_cache_size = 10GB          # shared_buffers + OS page cache left after Odoo
+work_mem = 32MB                      # per sort/hash node, per connection
+maintenance_work_mem = 1GB           # VACUUM FULL, CREATE INDEX, restores
+autovacuum_work_mem = 256MB          # per autovacuum worker, instead of maintenance_work_mem
+
+# Storage (SSD)
+random_page_cost = 1.1
+effective_io_concurrency = 200
+
+# WAL / checkpoints
+max_wal_size = 4GB
+min_wal_size = 1GB
+checkpoint_completion_target = 0.9
+
+# Diagnosis: slow statements and lock waits go to the PostgreSQL log
+log_min_duration_statement = 2000    # ms
+log_lock_waits = on
+EOF
+  sudo systemctl restart postgresql
+fi
+
+#--------------------------------------------------
 # Install Dependencies
 #--------------------------------------------------
 echo -e "\n--- Installing Python 3 + pip3 --"
