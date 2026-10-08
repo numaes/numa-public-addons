@@ -2,7 +2,7 @@
 
 {
     'name': 'NUMA Physical Product - Stock',
-    'version': '20.0.1.0.0',
+    'version': '20.0.1.0.1',
     'category': 'Product',
     'description': """
 Technical module to expand stock by physical products
