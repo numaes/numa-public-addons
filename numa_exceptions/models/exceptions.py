@@ -84,10 +84,71 @@ def is_sensitive(name):
     return any(keyword in lowered for keyword in SENSITIVE_KEYWORDS)
 
 
-def format_value(value):
+# JSON-RPC services whose positional arguments carry a credential, and where:
+# ``common.login/authenticate(db, login, password, ...)`` and
+# ``object.execute(_kw)(db, uid, password, ...)`` at 2, ``db.*(master_password, ...)`` at 0.
+JSONRPC_CREDENTIAL_POSITIONS = {'common': 2, 'object': 2, 'db': 0}
+# Shorter values are not treated as secrets: replacing them would mangle the text.
+MIN_SECRET_LENGTH = 6
+
+
+def collect_secrets(params):
+    """The credential values carried by the parameters of a failing call.
+
+    Values of fields named like a secret, at any depth, and the password of an
+    external JSON-RPC call, which travels by position (``/jsonrpc``: db, uid,
+    password, ...), whether ``args`` is a list or, as some clients send it, an
+    object keyed by position.
+
+    :param params: the parameters of the call (dict, list or anything)
+    :return: a set of strings that must never be stored or logged
+    """
+    secrets = set()
+
+    def walk(node, depth=0):
+        if depth > 20:
+            return
+        if isinstance(node, dict):
+            index = JSONRPC_CREDENTIAL_POSITIONS.get(node.get('service'))
+            args = node.get('args')
+            if index is not None:
+                if isinstance(args, (list, tuple)) and len(args) > index:
+                    candidate = args[index]
+                elif isinstance(args, dict):
+                    candidate = args.get(str(index), args.get(index))
+                else:
+                    candidate = None
+                if isinstance(candidate, str):
+                    secrets.add(candidate)
+            for key, value in node.items():
+                if isinstance(value, str) and is_sensitive(key):
+                    secrets.add(value)
+                else:
+                    walk(value, depth + 1)
+        elif isinstance(node, (list, tuple)):
+            for value in node:
+                walk(value, depth + 1)
+
+    try:
+        walk(params)
+    except Exception:  # noqa: BLE001 - redaction must never break logging
+        pass
+    return {secret for secret in secrets if len(secret) >= MIN_SECRET_LENGTH}
+
+
+def scrub(text, secrets):
+    """``text`` with every secret replaced by the placeholder."""
+    if not secrets or not isinstance(text, str):
+        return text
+    for secret in sorted(secrets, key=len, reverse=True):
+        text = text.replace(secret, FILTERED_PLACEHOLDER)
+    return text
+
+
+def format_value(value, secrets=()):
     """Render a local variable as a bounded, filtered string."""
     try:
-        text = str(value)
+        text = scrub(str(value), secrets)
     except Exception:  # noqa: BLE001 - any __str__ may raise, and must not break logging
         return UNSERIALIZABLE_PLACEHOLDER
     if len(text) > MAX_VALUE_LENGTH:
@@ -95,7 +156,7 @@ def format_value(value):
     return text
 
 
-def capture_locals(frame):
+def capture_locals(frame, secrets=()):
     """Build the ``base.variable_value`` commands for the locals of a frame.
 
     Names matching a sensitive keyword are replaced by a placeholder, and
@@ -112,7 +173,7 @@ def capture_locals(frame):
     values = []
     for name, value in frame_locals.items():
         name = str(name)
-        values.append((name, FILTERED_PLACEHOLDER if is_sensitive(name) else format_value(value)))
+        values.append((name, FILTERED_PLACEHOLDER if is_sensitive(name) else format_value(value, secrets)))
     values.sort(key=lambda item: item[0])
     return [
         Command.create({'sequence': sequence, 'name': name, 'value': value})
@@ -144,7 +205,7 @@ def capture_source(frame):
     return Markup("<pre>\n%s</pre>\n") % Markup("").join(rendered)
 
 
-def capture_frames(tb):
+def capture_frames(tb, secrets=()):
     """Build the ``base.frame`` commands for a traceback.
 
     Frames are stored innermost first, which is where the reader starts. A
@@ -164,7 +225,7 @@ def capture_frames(tb):
             'file_name': frame.f_code.co_filename,
             'line_number': frame.f_lineno,
             'src_code': capture_source(frame),
-            'locals': capture_locals(frame),
+            'locals': capture_locals(frame, secrets),
         })
         for frame in frames[:MAX_STACK_FRAMES]
     ]
@@ -182,8 +243,8 @@ def format_exception_chain(e):
     return "\n\nCaused by:\n".join(messages)
 
 
-def serialize_params(params):
-    """Render the parameters of the failing call as a bounded string."""
+def serialize_params(params, secrets=()):
+    """Render the parameters of the failing call as a bounded string, without its secrets."""
     if params is None:
         return '{}'
     try:
@@ -194,6 +255,7 @@ def serialize_params(params):
     except Exception as error:  # noqa: BLE001 - serialization must never break logging
         _logger.warning("Error serializing params in register_exception: %s", error)
         return '<Error serializing params: %s>' % exception_to_unicode(error)
+    text = scrub(text, secrets)
     if len(text) > MAX_PARAMS_LENGTH:
         text = text[:MAX_PARAMS_LENGTH] + TRUNCATION_SUFFIX
     return text
@@ -216,14 +278,17 @@ def build_exception_vals(service_name, method, params, uid, e, tb=None):
     """
     if tb is None:
         tb = e.__traceback__ or sys.exc_info()[2]
+    # A credential in the parameters (an external JSON-RPC call carries the
+    # password by position) must not reach the record, its frames or the log.
+    secrets = collect_secrets(params)
     return {
         'service': service_name or 'unknown',
-        'exception': format_exception_chain(e),
+        'exception': scrub(format_exception_chain(e), secrets),
         'method': method or 'unknown',
-        'params': serialize_params(params),
+        'params': serialize_params(params, secrets),
         'do_not_purge': False,
         'user': uid or False,
-        'frames': capture_frames(tb),
+        'frames': capture_frames(tb, secrets),
     }
 
 

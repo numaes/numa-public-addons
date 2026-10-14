@@ -31,6 +31,18 @@ class Unprintable:
         raise RuntimeError("cannot be printed")
 
 
+SECRET = '0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd'
+# What an external JSON-RPC client sent in production: args as an object keyed
+# by position, the password at "2" (and the uid missing).
+JSONRPC_PARAMS = {'service': 'object', 'method': 'execute_kw', 'args': {
+    '0': 'prod-db', '2': SECRET, '3': 'crm.lead', '4': 'create', '5': [{'name': 'Lead'}]}}
+
+
+def _fail_with_params(params):
+    args = params['args']
+    db, uid, passwd = args[0], int(args[1]), args[2]  # KeyError: 0, as in production
+
+
 class TestCapture(BaseCommon):
 
     def _caught(self, func, *args):
@@ -40,6 +52,28 @@ class TestCapture(BaseCommon):
         except Exception as error:
             return error
         self.fail("%s was expected to raise" % func.__name__)
+
+    # -- secrets in the parameters -------------------------------------------
+
+    def test_a_jsonrpc_password_never_reaches_the_record(self):
+        """The password of an external JSON-RPC call travels by position: it was
+        stored in the record, its frames' locals and the server log."""
+        error = self._caught(_fail_with_params, JSONRPC_PARAMS)
+        vals = capture.build_exception_vals('jsonrpc', 'dispatch', {'params': JSONRPC_PARAMS}, 1, error)
+        stored = repr(vals)
+        self.assertNotIn(SECRET, stored)
+        self.assertIn(capture.FILTERED_PLACEHOLDER, vals['params'])
+        self.assertIn('crm.lead', vals['params'], "the rest of the call is kept for diagnosis")
+
+    def test_secrets_are_collected_by_name_and_position(self):
+        self.assertEqual(capture.collect_secrets(JSONRPC_PARAMS), {SECRET})
+        self.assertEqual(capture.collect_secrets({'service': 'object', 'args': ['db', 2, SECRET, 'res.partner']}),
+                         {SECRET})
+        self.assertEqual(capture.collect_secrets({'service': 'db', 'args': ['master-pass-123', 'db']}),
+                         {'master-pass-123'})
+        self.assertEqual(capture.collect_secrets({'login': 'admin', 'password': 'p4ssw0rd!'}), {'p4ssw0rd!'})
+        self.assertEqual(capture.collect_secrets({'service': 'object', 'args': ['db', 2, 'abc']}), set(),
+                         "too short to be replaced safely")
 
     # -- locals ------------------------------------------------------------
 
