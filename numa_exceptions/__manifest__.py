@@ -24,7 +24,7 @@
     'author': 'Numa Extreme Systems',
     'website': 'https://www.numaes.com',
     'category': 'Technical Settings',
-    'version': '18.0.0.1',
+    'version': '18.0.0.2',
     'license': 'LGPL-3',
     'summary': 'Advanced Exception Logging and Traceability',
     'description': """

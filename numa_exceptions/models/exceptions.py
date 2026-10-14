@@ -52,6 +52,74 @@ MAX_STACK_FRAMES = 100
 # Keywords to filter from local variables (security: prevent logging sensitive data)
 SENSITIVE_KEYWORDS = ['password', 'passwd', 'pwd', 'token', 'secret', 'key', 'api_key', 
                       'access_token', 'auth', 'credential', 'private', 'sensitive']
+FILTERED_PLACEHOLDER = '<FILTERED - sensitive information>'
+
+
+def is_sensitive(name):
+    """Tell whether a variable or field name looks like it holds a secret."""
+    lowered = str(name).lower()
+    return any(keyword in lowered for keyword in SENSITIVE_KEYWORDS)
+
+
+# JSON-RPC services whose positional arguments carry a credential, and where:
+# ``common.login/authenticate(db, login, password, ...)`` and
+# ``object.execute(_kw)(db, uid, password, ...)`` at 2, ``db.*(master_password, ...)`` at 0.
+JSONRPC_CREDENTIAL_POSITIONS = {'common': 2, 'object': 2, 'db': 0}
+# Shorter values are not treated as secrets: replacing them would mangle the text.
+MIN_SECRET_LENGTH = 6
+
+
+def collect_secrets(params):
+    """The credential values carried by the parameters of a failing call.
+
+    Values of fields named like a secret, at any depth, and the password of an
+    external JSON-RPC call, which travels by position (``/jsonrpc``: db, uid,
+    password, ...), whether ``args`` is a list or, as some clients send it, an
+    object keyed by position.
+
+    :param params: the parameters of the call (dict, list or anything)
+    :return: a set of strings that must never be stored or logged
+    """
+    secrets = set()
+
+    def walk(node, depth=0):
+        if depth > 20:
+            return
+        if isinstance(node, dict):
+            index = JSONRPC_CREDENTIAL_POSITIONS.get(node.get('service'))
+            args = node.get('args')
+            if index is not None:
+                if isinstance(args, (list, tuple)) and len(args) > index:
+                    candidate = args[index]
+                elif isinstance(args, dict):
+                    candidate = args.get(str(index), args.get(index))
+                else:
+                    candidate = None
+                if isinstance(candidate, str):
+                    secrets.add(candidate)
+            for key, value in node.items():
+                if isinstance(value, str) and is_sensitive(key):
+                    secrets.add(value)
+                else:
+                    walk(value, depth + 1)
+        elif isinstance(node, (list, tuple)):
+            for value in node:
+                walk(value, depth + 1)
+
+    try:
+        walk(params)
+    except Exception:  # noqa: BLE001 - redaction must never break logging
+        pass
+    return {secret for secret in secrets if len(secret) >= MIN_SECRET_LENGTH}
+
+
+def scrub(text, secrets):
+    """``text`` with every secret replaced by the placeholder."""
+    if not secrets or not isinstance(text, str):
+        return text
+    for secret in sorted(secrets, key=len, reverse=True):
+        text = text.replace(secret, FILTERED_PLACEHOLDER)
+    return text
 
 
 class VariableValue(models.Model):
@@ -268,6 +336,9 @@ def register_exception(service_name, method, params, db, uid, e):
         return None
 
     if "base.general_exception" in db_registry:
+        # A credential in the parameters (an external JSON-RPC call carries the
+        # password by position) must not reach the record, its frames or the log.
+        secrets = collect_secrets(params)
         try:
             with db_registry.cursor() as new_cr:
                 env = api.Environment(new_cr, SUPERUSER_ID, {})
@@ -292,7 +363,7 @@ def register_exception(service_name, method, params, db, uid, e):
                                     else:
                                         try:
                                             # Truncate very long values to prevent excessive storage
-                                            str_value = str(v)
+                                            str_value = scrub(str(v), secrets)
                                             if len(str_value) > 1000:
                                                 str_value = str_value[:1000] + '... (truncated)'
                                             filtered_locals[k] = str_value
@@ -333,7 +404,7 @@ def register_exception(service_name, method, params, db, uid, e):
                             return "%s\n\nCaused by:\n%s" % (str(exc), get_exception_chain(exc.__cause__))
                         return str(exc)
 
-                    exc_description = get_exception_chain(e)
+                    exc_description = scrub(get_exception_chain(e), secrets)
 
                     # Serialize params safely to prevent issues with non-serializable objects
                     params_str = None
@@ -355,6 +426,7 @@ def register_exception(service_name, method, params, db, uid, e):
                         _logger.warning("Error serializing params in register_exception: %s", serialize_error)
                         params_str = '<Error serializing params: %s>' % str(serialize_error)
 
+                    params_str = scrub(params_str, secrets)
                     vals = {
                         'service': service_name,
                         'exception': exc_description,
@@ -364,8 +436,8 @@ def register_exception(service_name, method, params, db, uid, e):
                         'user': uid if uid else False,
                         'frames': frames,
                     }
-                    _logger.error("About to log exception [%s], on service [%s, %s, %s]" %
-                                  (exc_description, service_name, method, params))
+                    _logger.error("About to log exception [%s], on service [%s, %s, %s]",
+                                  exc_description, service_name, method, (params_str or '')[:2000])
                     try:
                         ge = ge_obj.sudo().create(vals)
                         ename = ge.name
