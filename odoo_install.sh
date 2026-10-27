@@ -30,7 +30,7 @@ read -r -e -p "Odoo longpolling port: " -i "8072" LONGPOLLING_PORT
 
 # Choose the Odoo version which you want to install. For example: 13.0, 12.0, 11.0 or saas-18. When using 'master' the master version will be installed.
 # IMPORTANT! This script contains extra libraries that are specifically needed for Odoo 13.0
-read -r -e -p "Odoo version: " -i "18.0" OE_VERSION
+read -r -e -p "Odoo version: " -i "20.0" OE_VERSION
 
 # Set this to True if you want to install the Odoo enterprise version!
 read -r -e -p "Is enterprise? [True/False]: " -i "False" IS_ENTERPRISE
@@ -62,21 +62,27 @@ if [ "$INSTALL_NGINX" = "True" ]; then
 
 fi
 
-# Set the superadmin password - if GENERATE_RANDOM_PASSWORD is set to "True" we will automatically generate a random password, otherwise we use this one
-read -r -e -p "Superadmin name: " -i "admin" OE_SUPERADMIN
-
-# Set to "True" to generate a random password, "False" to use the variable in OE_SUPERADMIN.
-# Random is the default: a guessable master password is how another installation lost its database.
-read -r -e -p "Generate random password for admin? [True/False]: " -i "True" GENERATE_RANDOM_PASSWORD
+# The master password is always random and is stored hashed: a guessable one ("admin", "admin7...") is how
+# installations lost databases in 2026, so the installer no longer offers to choose it.
 
 # Project name
 read -r -e -p "Project name (blank if no project): " PROJECT
 
 PROJECT_REPO='False'
+OE_DATABASE=''
 if [ "$PROJECT" != "" ]; then
   # Project repo
   read -r -e -p "Use a project repository? [True/False]: " -i "True" PROJECT_REPO
+
+  # The database this instance serves. It becomes `dbfilter = ^<name>$` and the target of the daily
+  # backup. With list_db = False a filter that matches several databases selects none (login answers
+  # 303, the websocket 404), so one instance serves one database.
+  read -r -e -p "Database this instance serves (blank: decide later): " -i "$PROJECT-prod-${OE_VERSION}" OE_DATABASE
 fi
+
+# Key-only SSH and no root login. Every server hardened in October 2026 had password logins enabled;
+# this is skipped when the current user has no authorized key, since it would lock everybody out.
+read -r -e -p "Harden SSH (key-only, no root login)? [True/False]: " -i "False" HARDEN_SSH
 
 #--------------------------------------------------
 # Update Server
@@ -90,10 +96,60 @@ sudo apt-get upgrade -y
 #--------------------------------------------------
 echo -e "\n---- Install PostgreSQL Server ----"
 sudo apt-get install postgresql postgresql-contrib postgresql-client postgresql-client-common postgresql-server-dev-all libpq-dev -y
-sudo -u postgres createuser -s "$USER"
 
-echo -e "\n---- Creating the ODOO PostgreSQL User  ----"
-createuser -s "pg-$PROJECT-$OE_VERSION"
+#--------------------------------------------------
+# PostgreSQL roles and authentication
+#--------------------------------------------------
+# No role but postgres is SUPERUSER. A superuser Odoo role turns any Odoo admin session into a shell:
+# a server action running `COPY ... FROM PROGRAM` executes as the postgres OS user. That is how the
+# mr-group servers were taken over in 2026 (a crypto miner as root). Odoo needs CREATEDB, not more;
+# pg_trgm and unaccent are trusted extensions, so the database owner can create them.
+#
+# The OS user owns no data itself: it is a member of the Odoo role, so dbbackup.sh and dbrestore.sh,
+# which connect as the OS user, can read and create that role's databases.
+#
+# Authentication is `peer` through the pg_ident map odoo_os: the OS user may log in as the Odoo role
+# (that is how Odoo connects, over the socket, without a password) and every other OS user only as
+# its own name. The `trust` that our servers had let any local user, www-data included, in as
+# postgres.
+OE_DB_ROLE="pg-$PROJECT-$OE_VERSION"
+echo -e "\n---- PostgreSQL roles: $USER and $OE_DB_ROLE, no superusers ----"
+for role in "$USER" "$OE_DB_ROLE"; do
+  if [ "$(sudo -u postgres psql -X -At -c "SELECT 1 FROM pg_roles WHERE rolname = '$role'")" != "1" ]; then
+    sudo -u postgres psql -X -q -c "CREATE ROLE \"$role\" LOGIN"
+  fi
+  sudo -u postgres psql -X -q -c "ALTER ROLE \"$role\" NOSUPERUSER CREATEDB"
+done
+sudo -u postgres psql -X -q -c "GRANT \"$OE_DB_ROLE\" TO \"$USER\""
+
+PG_HBA="$(sudo -u postgres psql -X -At -c 'SHOW hba_file')"
+PG_IDENT="$(sudo -u postgres psql -X -At -c 'SHOW ident_file')"
+sudo cp -p "$PG_HBA" "$PG_HBA.bak-numa"
+sudo cp -p "$PG_IDENT" "$PG_IDENT.bak-numa"
+add_ident_line() {  # add_ident_line <system user> <role>: appends one mapping unless it is there
+  sudo grep -qE "^odoo_os[[:space:]]+$1[[:space:]]+$2[[:space:]]*$" "$PG_IDENT" ||
+    echo "odoo_os   $1   $2" | sudo tee -a "$PG_IDENT" > /dev/null
+}
+sudo grep -q '^# odoo_install.sh' "$PG_IDENT" ||
+  echo '# odoo_install.sh: the OS user that runs Odoo may use the Odoo roles; any other OS user only its own name' |
+    sudo tee -a "$PG_IDENT" > /dev/null
+add_ident_line "$USER" "$USER"
+add_ident_line "$USER" "$OE_DB_ROLE"
+# The identity rule goes once, at the end; rules are tried in order and any match grants the login.
+sudo grep -qF 'odoo_os   /^(.*)$   \1' "$PG_IDENT" || echo 'odoo_os   /^(.*)$   \1' | sudo tee -a "$PG_IDENT" > /dev/null
+sudo sed -i -E 's/^(local[[:space:]]+all[[:space:]]+all[[:space:]]+)(peer|trust)[[:space:]]*$/\1peer map=odoo_os/' "$PG_HBA"
+sudo systemctl reload postgresql
+sleep 1
+if psql -X -At -U "$OE_DB_ROLE" -d postgres -c "SELECT 1" > /dev/null &&
+   psql -X -At -d postgres -c "SELECT 1" > /dev/null; then
+  echo "PostgreSQL: $USER logs in as itself and as $OE_DB_ROLE through the peer map."
+else
+  echo "ERROR: the peer map does not let $USER log in; pg_hba.conf and pg_ident.conf were restored."
+  sudo cp -p "$PG_HBA.bak-numa" "$PG_HBA"
+  sudo cp -p "$PG_IDENT.bak-numa" "$PG_IDENT"
+  sudo systemctl reload postgresql
+  exit 1
+fi
 
 #--------------------------------------------------
 # Tune PostgreSQL
@@ -296,14 +352,16 @@ if [ "$PROJECT" != "" ]; then
     OE_DB_MAXCONN=$(( 90 / (OE_WORKERS + 2) ))
     OE_MAJOR="${OE_VERSION%%.*}"
 
-    # The master password guards creating, backing up, restoring and dropping databases.
-    if [ "$GENERATE_RANDOM_PASSWORD" = "True" ]; then
-      OE_ADMIN_PASSWD=$(head -c 1024 /dev/urandom | tr -dc A-Za-z0-9 | head -c 24)
-    else
-      OE_ADMIN_PASSWD="$OE_SUPERADMIN"
-    fi
+    # The master password guards creating, backing up, restoring and dropping databases. It is
+    # written here in clear and replaced by its pbkdf2 hash once the venv has passlib (below).
+    OE_ADMIN_PASSWD=$(head -c 1024 /dev/urandom | tr -dc A-Za-z0-9 | head -c 24)
+    # The dot is the only regex character a database name of ours carries.
+    OE_DBFILTER=""
+    [ -n "$OE_DATABASE" ] && OE_DBFILTER="^${OE_DATABASE//./\\.}\$"
 
+    NEW_CONFIG=False
     if [ ! -f 'odoo.config' ]; then
+          NEW_CONFIG=True
           cat > odoo.config <<EOF
 [options]
 admin_passwd = $OE_ADMIN_PASSWD
@@ -313,10 +371,10 @@ proxy_mode = $INSTALL_NGINX
 $(if [ "$INSTALL_NGINX" = "True" ]; then echo "http_interface = 127.0.0.1"; fi)
 data_dir = $DATA_DIR
 
-# The database manager stays disabled (incident 2026-09-12). Create databases with odoo-bin, and back
-# them up or restore them with dbbackup.sh and dbrestore.sh. With a single database Odoo selects it by
-# itself; with several, set dbfilter or open /web/login?db=<name>, since nginx blocks the selector too.
+# The database manager stays disabled (incidents 2026-09-12 and 2026-10-27). Create databases with
+# ./start.sh --crear-base, and back them up or restore them with dbbackup.sh and dbrestore.sh.
 list_db = False
+$(if [ -n "$OE_DBFILTER" ]; then echo "dbfilter = $OE_DBFILTER"; fi)
 
 # Sin workers Odoo corre en un solo proceso con hilos: no hay pool, y una impresion que
 # bloquea su worker bloquea todo. Con wkhtmltopdf ademas hace falta que sobren workers,
@@ -385,7 +443,76 @@ rm -f mantenimiento.lock
     python3 -m pip freeze 2>/dev/null
 } > deployed.txt
 
-exec ../numa-public-odoo-$OE_VERSION-numa/odoo-bin -c "\$CURRENT_DIR/odoo.config" "\$@"
+ODOO_BIN=../numa-public-odoo-$OE_VERSION-numa/odoo-bin
+
+# odoo-bin CREA la base que nombra -d si no existe, con base instalado y el usuario admin con
+# clave "admin". Asi entraron a los servidores de mr-group en 2026, dos veces: alguien corrio
+# \`./start.sh -d <nombre con un error de tipeo>\` (un guion por un guion bajo), Odoo creo una
+# base vacia con admin/admin, y un escaner la encontro en minutos. Por eso aca -d solo acepta
+# bases que existen. Para crear una a proposito: ./start.sh --crear-base -d <base> [-i modulos]
+CREAR_BASE=0
+BASES=()
+ARGS=()
+SIGUIENTE_ES_BASE=0
+for a in "\$@"; do
+    if [ "\$SIGUIENTE_ES_BASE" -eq 1 ]; then BASES+=("\$a"); SIGUIENTE_ES_BASE=0; ARGS+=("\$a"); continue; fi
+    case "\$a" in
+        --crear-base) CREAR_BASE=1; continue ;;
+        -d|--database) SIGUIENTE_ES_BASE=1 ;;
+        --database=*) BASES+=("\${a#--database=}") ;;
+        -d?*) BASES+=("\${a#-d}") ;;
+    esac
+    ARGS+=("\$a")
+done
+if [ "\${#ARGS[@]}" -eq 0 ]; then set --; else set -- "\${ARGS[@]}"; fi
+# db_name en el config tiene el mismo efecto que -d.
+CFG_DB="\$(sed -n 's/^db_name *= *//p' odoo.config | head -1)"
+[ "\${#BASES[@]}" -eq 0 ] && [ -n "\$CFG_DB" ] && [ "\$CFG_DB" != "False" ] && BASES+=("\$CFG_DB")
+
+FALTAN=()
+for lista in "\${BASES[@]}"; do
+    IFS=',' read -r -a nombres <<< "\$lista"
+    for b in "\${nombres[@]}"; do
+        EXISTE="\$(psql -X -At -d postgres -v nombre="\$b" <<'SQL' 2>/dev/null
+SELECT 1 FROM pg_database WHERE datname = :'nombre';
+SQL
+)"
+        # Si PostgreSQL no contesta no se puede saber; odoo-bin fallara solo y con su propio mensaje.
+        [ \$? -eq 0 ] && [ "\$EXISTE" != "1" ] && FALTAN+=("\$b")
+    done
+done
+
+if [ "\${#FALTAN[@]}" -gt 0 ] && [ "\$CREAR_BASE" -eq 0 ]; then
+    echo "No existe la base: \${FALTAN[*]}" >&2
+    echo "Odoo la crearia con el usuario admin y clave 'admin'. No arranco." >&2
+    echo "Bases que existen:" >&2
+    psql -X -At -d postgres -c "SELECT '    ' || datname FROM pg_database WHERE NOT datistemplate AND datname <> 'postgres' ORDER BY 1" >&2
+    echo "Si era un error de tipeo, corregi el nombre. Para crearla a proposito:" >&2
+    echo "    ./start.sh --crear-base -d \${FALTAN[0]} -i base" >&2
+    exit 1
+fi
+
+if [ "\$CREAR_BASE" -eq 1 ]; then
+    [ "\${#BASES[@]}" -gt 0 ] || { echo "--crear-base necesita la base: ./start.sh --crear-base -d <base> -i base" >&2; exit 1; }
+    [ "\${#FALTAN[@]}" -gt 0 ] || { echo "--crear-base: \${BASES[*]} ya existe, no hay nada que crear." >&2; exit 1; }
+    # Se crea y se para (--stop-after-init): la base nueva no se sirve ni un segundo con admin/admin.
+    # Despues se le pone al admin una clave al azar, que se muestra una sola vez.
+    "\$ODOO_BIN" -c "\$CURRENT_DIR/odoo.config" "\$@" --stop-after-init || exit \$?
+    for b in "\${FALTAN[@]}"; do
+        CLAVE_ADMIN="\$(head -c 1024 /dev/urandom | tr -dc A-Za-z0-9 | head -c 20)"
+        # La clave va por el entorno, no por argumentos: los argumentos se ven en ps.
+        CLAVE_ADMIN="\$CLAVE_ADMIN" "\$ODOO_BIN" shell -c "\$CURRENT_DIR/odoo.config" -d "\$b" --no-http --log-level=warn <<'PY' || exit \$?
+import os
+env.ref('base.user_admin').password = os.environ['CLAVE_ADMIN']
+env.cr.commit()
+PY
+        echo "Base '\$b' creada. Usuario admin, clave: \$CLAVE_ADMIN"
+        echo "Guardala ahora: no se vuelve a mostrar. Arranca el ambiente con ./onboot.sh --si-no-corre"
+    done
+    exit 0
+fi
+
+exec "\$ODOO_BIN" -c "\$CURRENT_DIR/odoo.config" "\$@"
 START_EOF
     chmod +x ./start.sh
 
@@ -425,7 +552,7 @@ if [ "\$MODO" = "--si-no-corre" ]; then
     # Un apagado deliberado deja un candado. No arrancar encima de un mantenimiento en
     # curso; y que el candado caduque, para que uno abandonado no deje el ambiente caido
     # indefinidamente. Silencioso mientras el mantenimiento es reciente.
-    # Dos horas, no treinta minutos: un `-u all` sobre una base con datos pasa los treinta
+    # Dos horas, no treinta minutos: un \`-u all\` sobre una base con datos pasa los treinta
     # sin ser un mantenimiento abandonado. El numero solo tiene que ser mas largo que el
     # trabajo mas largo que se haga a mano; para que un ambiente no quede caido para
     # siempre alcanza con que caduque alguna vez.
@@ -478,15 +605,6 @@ fi
 
 source venv/bin/activate
 exec ./start.sh --pidfile=running-odoo.pid --logfile="\$LOG" &
-ONBOOT_EOF
-#!/bin/bash
-# Sin shebang, el \`@reboot /bin/bash -c .../onboot.sh\` del crontab termina ejecutando
-# esto con /bin/sh (dash), que no conoce \`source\`: el venv no se activa y odoo-bin muere
-# con ModuleNotFoundError. \$CWD se interpola aca a proposito: cron arranca en otro
-# directorio y necesita la ruta absoluta.
-cd "$CWD" || exit 1
-source venv/bin/activate
-exec ./start.sh --pidfile=running-odoo.pid --logfile=log/odoo-server.log &
 ONBOOT_EOF
       chmod +x ./onboot.sh
     fi
@@ -869,6 +987,24 @@ NUMA_DBRESTORE_EOF
     source venv/bin/activate
     "../numa-public-odoo-$OE_VERSION-numa/odoo-bin" -c odoo.config -s --stop-after-init
 
+    # The master password in clear in odoo.config was readable by anything that could read the
+    # file. Odoo accepts the pbkdf2 hash in its place; the clear one is shown once, at the end.
+    # The secret goes through stdin, never argv, which ps shows to every user.
+    if [ "$NEW_CONFIG" = "True" ]; then
+      printf '%s' "$OE_ADMIN_PASSWD" | python3 -c '
+import re, sys
+from passlib.context import CryptContext
+hashed = CryptContext(["pbkdf2_sha512"]).hash(sys.stdin.read())
+with open("odoo.config") as f:
+    text = f.read()
+text, n = re.subn(r"^admin_passwd\s*=.*$", lambda m: "admin_passwd = " + hashed, text, flags=re.M)
+if n != 1:
+    sys.exit("admin_passwd not found in odoo.config")
+with open("odoo.config", "w") as f:
+    f.write(text)
+' && chmod 600 odoo.config && echo "Master password stored hashed in odoo.config."
+    fi
+
     cd ..
   fi
 fi
@@ -973,9 +1109,11 @@ NGINX_EOF
   large_client_header_buffers 4 64k;
   client_max_body_size 0;
 
-  # The database manager must never be reachable from the internet (incident 2026-09-12).
-  location ~* ^/+web/database {
-    deny all;
+  # The database manager must never be reachable from the internet (incidents 2026-09-12 and
+  # 2026-10-27), neither the page nor the database service of XML-RPC, which scanners poll daily
+  # to find a database to log into. /xmlrpc/2/common and /object, and /jsonrpc, stay open.
+  location ~* ^/+(web/+database|xmlrpc/+(2/+)?db(/|\$)) {
+    return 403;
   }
 
   location / {
@@ -1122,9 +1260,56 @@ else
 fi
 
 #--------------------------------------------------
-# Enable ssl with certbot
+# Start on boot, supervise, back up
 #--------------------------------------------------
+# Of the seven production servers reviewed in October 2026, one had no autostart at all (up 308
+# days: a reboot would have left three ERPs down), one had `@reboot bin/bash` without the slash
+# (the ERP stayed down a day after the provider rebooted it), and four had no backup but the
+# partner's manual download through the database manager, which is now closed.
+if [ -n "$PROJECT" ]; then
+  echo -e "\n---- crontab of $USER: start on boot, restart if it dies, daily backup ----"
+  CRON_LINES=("@reboot /bin/bash $ODOO_ROOT/onboot.sh"
+              "*/5 * * * * /bin/bash $ODOO_ROOT/onboot.sh --si-no-corre >> $LOG_DIR/supervision.log 2>&1")
+  if [ -n "$OE_DATABASE" ]; then
+    # 03:00 of the server's clock: check `timedatectl`, cloud images often run in UTC.
+    CRON_LINES+=("0 3 * * * cd $ODOO_ROOT && KEEP=14 nice -n 10 ionice -c3 ./dbbackup.sh $OE_DATABASE >> $LOG_DIR/dbbackup.log 2>&1")
+  fi
+  CURRENT_CRONTAB="$(crontab -l 2>/dev/null || true)"
+  NEW_CRONTAB="$CURRENT_CRONTAB"
+  for line in "${CRON_LINES[@]}"; do
+    grep -qxF -- "$line" <<< "$CURRENT_CRONTAB" || NEW_CRONTAB="$NEW_CRONTAB"$'\n'"$line"
+  done
+  if [ "$NEW_CRONTAB" != "$CURRENT_CRONTAB" ]; then
+    printf '%s\n' "$NEW_CRONTAB" | sed '/./,$!d' | crontab -
+  fi
+  crontab -l | grep -F "$ODOO_ROOT"
+fi
 
+#--------------------------------------------------
+# SSH: keys only, no root
+#--------------------------------------------------
+if [ "$HARDEN_SSH" = "True" ]; then
+  if [ ! -s ~/.ssh/authorized_keys ]; then
+    echo "WARNING: SSH left as it is: $USER has no ~/.ssh/authorized_keys, so key-only SSH would lock it out."
+  else
+    echo -e "\n---- SSH: keys only, no root login ----"
+    # A drop-in, not an edit of sshd_config: Ubuntu reads sshd_config.d first and the first value wins.
+    sudo tee /etc/ssh/sshd_config.d/00-hardening.conf > /dev/null <<'SSHD_EOF'
+# Written by odoo_install.sh: passwords are guessed, keys are not.
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+SSHD_EOF
+    if sudo sshd -t; then
+      sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
+      echo "SSH now accepts keys only. Before closing this session, check from another terminal that"
+      echo "you still get in, and that everybody who needs access has sent the public key."
+    else
+      sudo rm -f /etc/ssh/sshd_config.d/00-hardening.conf
+      echo "WARNING: sshd rejected the hardening drop-in; it was removed and SSH is as it was."
+    fi
+  fi
+fi
 
 echo "-----------------------------------------------------------"
 echo "Done!. Specifications:"
@@ -1133,8 +1318,15 @@ echo "Project: $PROJECT"
 echo "Project directory: $(pwd)/$PROJECT-$OE_VERSION"
 echo "Configuraton file location: $(pwd)/$PROJECT-$OE_VERSION/odoo.config"
 echo "Logfile location: $(pwd)/$PROJECT-$OE_VERSION/log"
-echo "User PostgreSQL: pg-$PROJECT-$OE_VERSION"
-echo "Master password (admin_passwd): $(sed -n 's/^admin_passwd *= *//p' "$ODOO_ROOT/odoo.config" 2>/dev/null | head -1)"
+echo "User PostgreSQL: $OE_DB_ROLE (no password: peer map odoo_os, user $USER)"
+if [ "$NEW_CONFIG" = "True" ]; then
+  echo "Master password: $OE_ADMIN_PASSWD"
+  echo "                 odoo.config keeps only its hash: store it now, it is not shown again."
+fi
+if [ -n "$OE_DATABASE" ]; then
+  echo "Database: $OE_DATABASE (dbfilter). Create it with:"
+  echo "    cd $ODOO_ROOT && ./start.sh --crear-base -d $OE_DATABASE -i base && ./onboot.sh --si-no-corre"
+fi
 if [ "$INSTALL_NGINX" = "True" ]; then
   echo "Nginx configuration file: /etc/nginx/sites-available/$WEBSITE_NAME"
 fi

@@ -30,7 +30,7 @@ if [ "$MODO" = "--si-no-corre" ]; then
     # Un apagado deliberado deja un candado. No arrancar encima de un mantenimiento en
     # curso; y que el candado caduque, para que uno abandonado no deje el ambiente caido
     # indefinidamente. Silencioso mientras el mantenimiento es reciente.
-    # Dos horas, no treinta minutos: un  sobre una base con datos pasa los treinta
+    # Dos horas, no treinta minutos: un `-u all` sobre una base con datos pasa los treinta
     # sin ser un mantenimiento abandonado. El numero solo tiene que ser mas largo que el
     # trabajo mas largo que se haga a mano; para que un ambiente no quede caido para
     # siempre alcanza con que caduque alguna vez.
