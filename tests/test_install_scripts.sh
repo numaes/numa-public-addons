@@ -91,7 +91,15 @@ if [ "$BLOCKS" -lt 4 ]; then
 fi
 
 # --- 2. ejecutarlos -------------------------------------------------------------------
-( cd "$WORK" && bash generate.sh ) || { echo "FALLA: los bloques generadores no corren." >&2; exit 1; }
+( cd "$WORK" && bash generate.sh ) 2> "$WORK/generate.err" || { echo "FALLA: los bloques generadores no corren." >&2; exit 1; }
+# Generating must be silent. A backquote left unescaped in an interpolated block runs as a command at
+# install time: "un `-u all` sobre una base" ran `-u all`, failed on stderr, and every onboot.sh
+# installed since then carries the comment cut down to "un  sobre una base".
+if [ -s "$WORK/generate.err" ]; then
+    echo "FALLA: generating the scripts wrote to stderr (an unescaped \` or \$( in an interpolated block?):" >&2
+    sed 's/^/         /' "$WORK/generate.err" >&2
+    exit 1
+fi
 
 GENERATED=$(cd "$WORK" && ls -1 *.sh 2>/dev/null | grep -v '^generate\.sh$' || true)
 [ -n "$GENERATED" ] || { echo "FALLA: no se genero ningun script." >&2; exit 1; }
@@ -161,8 +169,8 @@ if [ -z "$CFG_SRC" ]; then
     report "FALLA  no pude extraer el bloque de odoo.config"
     FAILED=1
 else
-    render_config () {  # render_config <INSTALL_NGINX> <output file>
-        ( export OE_PORT=8069 LONGPOLLING_PORT=8072 OE_ADMIN_PASSWD=generated-secret \
+    render_config () {  # render_config <INSTALL_NGINX> <output file> [<dbfilter>]
+        ( export OE_PORT=8069 LONGPOLLING_PORT=8072 OE_ADMIN_PASSWD=generated-secret OE_DBFILTER="${3:-}" \
                  OE_SUPERADMIN=admin INSTALL_NGINX="$1" DATA_DIR=./data \
                  IS_ENTERPRISE=False INSTALL_PRIVATE=True PROJECT_REPO=True
           OE_CORES=$(nproc 2>/dev/null || echo 2)
@@ -173,7 +181,7 @@ else
 $CFG_SRC
 EOF" ) > "$2" 2>/dev/null
     }
-    render_config True "$WORK/odoo.config"
+    render_config True "$WORK/odoo.config" '^cm-prod-18\.0$'
     render_config False "$WORK/odoo-no-nginx.config"
 
     val () { sed -n "s/^$1 *= *//p" "$WORK/odoo.config" | head -1; }
@@ -217,8 +225,18 @@ EOF" ) > "$2" 2>/dev/null
     [ "$(val admin_passwd)" = "generated-secret" ] && R=ok || R=no
     check "$R" "admin_passwd comes from OE_ADMIN_PASSWD"
 
-    grep -qE 'read .*-i "True" GENERATE_RANDOM_PASSWORD' "$INSTALLER" && R=ok || R=no
-    check "$R" "the master password is random unless the operator chooses otherwise"
+    # The operator could once answer "False" and get "admin" as master password.
+    grep -qE 'GENERATE_RANDOM_PASSWORD|OE_ADMIN_PASSWD="\$OE_SUPERADMIN"' "$INSTALLER" && R=no || R=ok
+    check "$R" "the master password is always random (no path to a chosen one)"
+
+    grep -q 'CryptContext(\["pbkdf2_sha512"\]).hash(sys.stdin.read())' "$INSTALLER" && R=ok || R=no
+    check "$R" "the master password is replaced by its pbkdf2 hash, read from stdin"
+
+    [ "$(val dbfilter)" = '^cm-prod-18\.0$' ] && R=ok || R=no
+    check "$R" "dbfilter anchored to the one database the instance serves"
+
+    grep -q '^dbfilter' "$WORK/odoo-no-nginx.config" && R=no || R=ok
+    check "$R" "no dbfilter while the database is still undecided"
 
     [ "$(val http_interface)" = "127.0.0.1" ] && R=ok || R=no
     check "$R" "http_interface = 127.0.0.1 behind nginx (nothing bypasses the proxy)"
@@ -263,7 +281,8 @@ else
         lacks "$f" "localhost"
         has   "$f" " server 127.0.0.1:8069;"
         has   "$f" " server 127.0.0.1:8072;"
-        has   "$f" "location ~* ^/+web/database {"
+        has   "$f" "location ~* ^/+(web/+database|xmlrpc/+(2/+)?db(/|\$)) {"
+        has   "$f" "return 403;"
         has   "$f" "proxy_set_header X-Forwarded-Host \$host;"
         lacks "$f" "HTTP_X_FORWARDED_HOST"
         has   "$f" "access_log /var/log/nginx/cm.example.com-access.log;"
@@ -314,6 +333,89 @@ else
         report "skip   nginx -t (needs docker and the $NGINX_IMAGE image)"
     fi
 fi
+
+# --- 9. PostgreSQL and heredocs of the installer itself ---------------------------------------
+# A superuser Odoo role is a shell for anyone who gets an Odoo admin session (COPY ... FROM PROGRAM):
+# that is how the mr-group servers became crypto miners in October 2026.
+echo
+echo "installer:"
+grep -qE 'createuser +(-s|--superuser)' "$INSTALLER" && R=no || R=ok
+check "$R" "no createuser -s: no PostgreSQL role but postgres is superuser"
+grep -q 'ALTER ROLE \\"\$role\\" NOSUPERUSER CREATEDB' "$INSTALLER" && R=ok || R=no
+check "$R" "the roles it creates are NOSUPERUSER CREATEDB"
+grep -q 'peer map=odoo_os/' "$INSTALLER" && R=ok || R=no
+check "$R" "local connections use peer map=odoo_os, never trust"
+
+# Every heredoc delimiter must close exactly as often as it opens. Lines left after a closing
+# delimiter are commands of the installer: a copy of onboot.sh stayed there, after its
+# ONBOOT_EOF, and ran start.sh in the background before pip install.
+STRAY=$(awk '
+    { if (match($0, /<<-?[[:space:]]*'"'"'?[A-Za-z_][A-Za-z0-9_]*'"'"'?/)) {
+          d = substr($0, RSTART + 2, RLENGTH - 2); gsub(/^-|[[:space:]]|'"'"'/, "", d); opened[d]++ } }
+    { closed[$0]++ }
+    END { for (d in opened) if (closed[d] != opened[d]) print d " opens " opened[d] " closes " closed[d] + 0 }
+' "$INSTALLER")
+[ -z "$STRAY" ] && R=ok || R=no
+check "$R" "each heredoc delimiter closes once per opening${STRAY:+ ($STRAY)}"
+
+# --- 10. start.sh refuses to auto-create a database ---------------------------------------
+# odoo-bin -d <missing database> creates it with admin/admin. A typo in -d is how both mr-group
+# servers were entered. Run the generated start.sh against a fake psql and a fake odoo-bin.
+echo
+echo "start.sh -d guard:"
+ST="$WORK/st"
+mkdir -p "$ST/env/venv/bin" "$ST/numa-public-odoo-18.0-numa" "$ST/bin"
+cp "$WORK/start.sh" "$ST/env/start.sh"
+: > "$ST/env/venv/bin/activate"
+printf '[options]\ndb_name = False\n' > "$ST/env/odoo.config"
+cat > "$ST/numa-public-odoo-18.0-numa/odoo-bin" <<'FAKE'
+#!/bin/bash
+echo "odoo-bin $* CLAVE_ADMIN=${CLAVE_ADMIN:+set}" >> "$CALLS"
+[ "$1" = "shell" ] && cat >> "$CALLS"
+exit 0
+FAKE
+cat > "$ST/bin/psql" <<'FAKE'
+#!/bin/bash
+# Only cm-prod-18.0 exists.
+for a in "$@"; do case "$a" in nombre=cm-prod-18.0) echo 1 ;; esac; done
+case "$*" in *datistemplate*) echo "    cm-prod-18.0" ;; esac
+cat > /dev/null
+exit 0
+FAKE
+chmod +x "$ST/env/start.sh" "$ST/numa-public-odoo-18.0-numa/odoo-bin" "$ST/bin/psql"
+
+guard () {  # guard <expected exit> <description> -- <start.sh arguments>
+    local want="$1" desc="$2"; shift 3
+    : > "$ST/calls"
+    CALLS="$ST/calls" PATH="$ST/bin:$PATH" "$ST/env/start.sh" "$@" > "$ST/out" 2>&1 < /dev/null
+    local got=$?
+    [ "$got" = "$want" ] && R=ok || R=no
+    check "$R" "$desc (exit $got)"
+    [ "$R" = ok ] || sed 's/^/         /' "$ST/out"
+}
+guard 1 "-d with a missing database is refused" -- -d cm-prod-18.O
+[ ! -s "$ST/calls" ] && R=ok || R=no; check "$R" "  ...and odoo-bin never ran"
+grep -q "cm-prod-18.0" "$ST/out" && grep -q -- "--crear-base" "$ST/out" && R=ok || R=no
+check "$R" "  ...and the message lists the existing databases and the way to create one"
+guard 1 "--database=<missing> is refused" -- --database=typo
+guard 1 "-d<missing> (glued) is refused" -- -dtypo
+guard 1 "a list with one missing database is refused" -- -d cm-prod-18.0,typo
+guard 0 "-d with an existing database starts" -- -d cm-prod-18.0
+grep -q "^odoo-bin -c .*/odoo.config -d cm-prod-18.0 " "$ST/calls" && R=ok || R=no
+check "$R" "  ...passing the arguments through"
+guard 0 "no -d starts (onboot.sh, the normal case)" --
+printf '[options]\ndb_name = typo\n' > "$ST/env/odoo.config"
+guard 1 "db_name in odoo.config naming a missing database is refused" --
+printf '[options]\ndb_name = False\n' > "$ST/env/odoo.config"
+guard 1 "--crear-base on an existing database is refused" -- --crear-base -d cm-prod-18.0
+guard 0 "--crear-base creates a missing database" -- --crear-base -d nueva -i base
+grep -q "^odoo-bin -c .*/odoo.config -d nueva -i base --stop-after-init CLAVE_ADMIN=$" "$ST/calls" && R=ok || R=no
+check "$R" "  ...with --stop-after-init, so it is never served with admin/admin"
+grep -q "^odoo-bin shell .* -d nueva --no-http .*CLAVE_ADMIN=set$" "$ST/calls" &&
+    grep -q "env.ref('base.user_admin').password = os.environ\['CLAVE_ADMIN'\]" "$ST/calls" && R=ok || R=no
+check "$R" "  ...then sets a random admin password, passed through the environment"
+grep -qE "Usuario admin, clave: [A-Za-z0-9]{20}$" "$ST/out" && R=ok || R=no
+check "$R" "  ...and shows it once"
 
 echo
 if [ "$UPDATE" -eq 1 ]; then
